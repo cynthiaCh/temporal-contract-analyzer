@@ -70,17 +70,27 @@ async function findPython(configured, options = {}) {
   throw new Error('找不到 Python 3.9+。请在设置 Temporal Contracts: Python Path 中填写 Python 可执行文件路径。');
 }
 
-async function analyze(extensionPath, request, {pythonPath = '', timeout, signal, node = process.execPath} = {}) {
+async function invoke(extensionPath, request, {pythonPath = '', timeout, signal, node = process.execPath} = {}) {
   const python = await findPython(pythonPath, {cwd: extensionPath, signal});
   const result = await execute(python.executable,
     [...python.prefix, '-I', '-S', '-B', '-X', 'utf8', path.join(extensionPath, 'python/bridge.py')],
     {cwd: extensionPath, signal, timeout, input: JSON.stringify({...request, node})});
   let parsed;
   try { parsed = JSON.parse(result); } catch { throw new Error('分析器未返回有效 JSON；请查看 Temporal Contracts 日志。'); }
+  return parsed;
+}
+
+async function analyze(extensionPath, request, options = {}) {
+  const parsed = await invoke(extensionPath, request, options);
+  if (parsed.archive?.status === 'failed') {
+    const error = new Error(`分析失败（已归档 ${parsed.archive.report_id}）：${parsed.archive.error}`);
+    error.archive = parsed.archive;
+    throw error;
+  }
   if (parsed.report?.schema_version !== 'temporal-contract-analysis-1' || !parsed.ranges || typeof parsed.markdown !== 'string') {
     throw new Error('分析器返回了不兼容的报告。');
   }
   return parsed;
 }
 
-module.exports = {analyze, execute, findPython, Cancelled};
+module.exports = {analyze, invoke, execute, findPython, Cancelled};

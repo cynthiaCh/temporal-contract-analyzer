@@ -11,6 +11,8 @@ from .report import markdown, html_report
 def main(argv=None):
     p=argparse.ArgumentParser(prog='temporal-contract-analyzer', description=__doc__)
     sub=p.add_subparsers(dest='command',required=True)
+    from . import archive_cli
+    archive_cli.register(sub)
     s=sub.add_parser('scan',help='Analyze an explicit candidate root, e.g. case/base')
     s.add_argument('candidate',type=Path)
     c=sub.add_parser('compare',help='Compare two candidate roots; never apply or execute patches')
@@ -33,6 +35,8 @@ def main(argv=None):
         cmd.add_argument('--output',type=Path,help='New file only; refuses overwrites')
     args=p.parse_args(argv)
     try:
+        if args.command == 'reports':
+            return archive_cli.run(args)
         if args.command in {'profile','verify-profile'}:
             from .profile import build_profile_evidence, verify_profile_evidence
             packet=json.loads(args.packet.read_text(encoding='utf-8'))

@@ -15,6 +15,7 @@ fs.mkdirSync(path.join(dest, 'temporal_contract_analyzer'), {recursive: true});
 for (const name of fs.readdirSync(path.join(root, 'temporal_contract_analyzer'))) {
   if (name.endsWith('.py')) fs.copyFileSync(path.join(root, 'temporal_contract_analyzer', name), path.join(dest, 'temporal_contract_analyzer', name));
 }
+fs.cpSync(path.join(root, 'temporal_contract_analyzer/web'), path.join(dest, 'temporal_contract_analyzer/web'), {recursive: true});
 const target = path.join(dest, 'tools/temporal-contract-analyzer');
 fs.mkdirSync(target, {recursive: true});
 for (const name of ['parse.cjs', 'package.json', 'package-lock.json']) fs.copyFileSync(path.join(parser, name), path.join(target, name));

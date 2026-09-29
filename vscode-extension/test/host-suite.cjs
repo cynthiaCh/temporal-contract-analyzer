@@ -33,6 +33,10 @@ exports.run = async () => {
   await replace(document, source);
   const first = await vscode.commands.executeCommand('temporalContracts.scanFile');
   assert.equal(first.report.status, 'parsed');
+  assert(first.archive?.report_id, 'The plugin persists a shared report ID');
+  const archived = JSON.parse(await fs.readFile(path.join(first.archive.archive_path, 'snapshot.json'), 'utf8'));
+  assert.equal(archived.sources['Demo.vue'], source, 'The archive preserves the exact dirty buffer');
+  assert.equal(first.archive.origin, 'vscode');
   assert.equal(await fs.readFile(uri.fsPath, 'utf8'), original, 'Unsaved buffer is not written');
   const hint = hints(uri).find(d => d.code === 'effect-after-await');
   assert(hint, 'Real Problems diagnostics include temporal hints');
@@ -40,6 +44,12 @@ exports.run = async () => {
   assert.equal(document.getText(hint.range), 'await fetch()');
   assert.equal(hint.relatedInformation.length, 2);
   console.log('PASS: unsaved Vue scan, real diagnostics, exact positions');
+  const previousClipboard = await vscode.env.clipboard.readText();
+  try {
+    assert.equal(await vscode.commands.executeCommand('temporalContracts.copyReportId'), first.archive.report_id);
+    assert.equal(await vscode.env.clipboard.readText(), first.archive.report_id);
+  } finally { await vscode.env.clipboard.writeText(previousClipboard); }
+  console.log('PASS: shared archive preserves editor snapshots and exposes report IDs');
 
   const row = api.getRows().find(item => item.resourceUri?.toString() === uri.toString());
   const evidence = row.children[0].children[1];
@@ -70,10 +80,13 @@ exports.run = async () => {
   console.log('PASS: external filesystem changes invalidate directory results');
 
   // Starting a newer scan prevents a slower/older request from publishing.
+  // Use an unchanged target: delayed filesystem events from the previous test
+  // legitimately cancel scans of Broken.vue and are unrelated to supersession.
+  const stable = vscode.Uri.joinPath(root, 'Stable.vue');
   const old = vscode.commands.executeCommand('temporalContracts.scanFile', uri);
-  const recent = vscode.commands.executeCommand('temporalContracts.scanFile', broken);
+  const recent = vscode.commands.executeCommand('temporalContracts.scanFile', stable);
   await Promise.all([old, recent]);
-  assert.equal(api.getLastResult().report.files[0].path, 'Broken.vue');
+  assert.equal(api.getLastResult().report.files[0].path, 'Stable.vue');
   assert.equal(hints(uri).length, 0);
   console.log('PASS: superseded scans cannot overwrite newer results');
 

@@ -1,7 +1,7 @@
 'use strict';
 const vscode = require('vscode');
 const path = require('node:path');
-const {analyze, Cancelled} = require('./runner');
+const {analyze, invoke, Cancelled} = require('./runner');
 
 const EXTENSIONS = new Set(['.vue', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.py']);
 const EXCLUDED = new Set(['oracle', 'reference', 'references', 'mutants', 'negative-controls', 'results', 'studies', 'evidence', 'paper', 'node_modules', 'vendor', 'dist', 'build', '__pycache__', '.git', '.venv', 'venv']);
@@ -115,7 +115,7 @@ function activate(context) {
     const snapshot = reports.get(uri.toString());
     return snapshot ? (snapshot.stale ? '> 这是源码修改前的历史报告，定位已失效。请重新扫描。\n\n' : '') + snapshot.text : '此报告已过期，请重新扫描。';
   }};
-  let active, latest, sequence = 0, timer, disposed = false;
+  let active, latest, lastArchive, sequence = 0, timer, disposed = false;
   const config = uri => vscode.workspace.getConfiguration('temporalContracts', uri);
   const relevant = (scan, uri) => scan && uri.scheme === 'file' &&
     (scan.request.mode === 'file' ? uri.fsPath === scan.filePath : inside(scan.root, uri.fsPath));
@@ -129,6 +129,7 @@ function activate(context) {
     clearTimeout(timer);
     cancel();
     latest = undefined;
+    lastArchive = undefined;
     diagnostics.clear();
     tree.set([]);
     view.message = undefined;
@@ -171,13 +172,15 @@ function activate(context) {
     const started = Date.now();
     try {
       const settings = config(filePath ? vscode.Uri.file(filePath) : vscode.Uri.file(root));
-      const result = await analyze(context.extensionPath, request, {
+      const result = await analyze(context.extensionPath, {...request, root,
+        archive: settings.get('archiveEnabled', true), store: settings.get('reportStore', '') || undefined}, {
         pythonPath: settings.get('pythonPath', ''),
         timeout: settings.get('timeoutSeconds', 90) * 1000,
         signal: controller.signal,
       });
       if (disposed || id !== sequence) return;
       latest = {...job, result, stale: false};
+      lastArchive = result.archive;
       const shown = presentation(result, root);
       diagnostics.set(shown.diagnostics);
       tree.set(shown.rows);
@@ -187,11 +190,13 @@ function activate(context) {
       status.tooltip = `${summary.parsed_files}/${summary.files} 个文件解析完成，${summary.review_hints} 条待核查。点击扫描当前文件。`;
       view.message = `${request.mode === 'file' ? '当前文件' : '目录'} · ${summary.parsed_files}/${summary.files} 个文件 · ${summary.review_hints} 条待核查${incomplete ? ' · 分析未完整' : ''}。提示不是缺陷判决。`;
       output.appendLine(`${new Date().toISOString()} ${request.mode}: ${filePath || root} — ${result.report.status}, ${summary.review_hints} hints, ${Date.now() - started} ms`);
+      if (lastArchive) output.appendLine(`  已归档 ${lastArchive.report_id} → ${lastArchive.archive_path}`);
       for (const file of result.report.files.filter(f => f.status !== 'parsed')) output.appendLine(`  ${file.path}: ${file.error?.message || file.status}`);
       if (!quiet && shown.rows.length) await view.reveal(shown.rows[0], {focus: false, select: false, expand: true});
       return result;
     } catch (error) {
       if (error instanceof Cancelled || disposed || id !== sequence) return;
+      lastArchive = error.archive;
       diagnostics.clear();
       tree.set([notice('分析未完成', error.message)]);
       status.text = '$(warning) Temporal';
@@ -254,12 +259,29 @@ function activate(context) {
     if (!latest) { vscode.window.showInformationMessage('请先扫描当前文件或目录。'); return; }
     const uri = vscode.Uri.parse(`temporal-contract-report:/scan-${sequence}-${Date.now()}.md`);
     const scope = latest.request.mode === 'file' ? '当前文件的编辑器快照；其他文件未纳入分析。' : '目录源码快照，包含扫描开始时已打开文件的未保存内容。';
-    reports.set(uri.toString(), {text: '> ' + scope + '\n\n' + latest.result.markdown, stale: latest.stale,
+    const archived = latest.result.archive ? '> 已归档：' + latest.result.archive.report_id + '\n> 路径：' + latest.result.archive.archive_path + '\n\n' : '';
+    reports.set(uri.toString(), {text: '> ' + scope + '\n\n' + archived + latest.result.markdown, stale: latest.stale,
       root: latest.root, filePath: latest.filePath, request: {mode: latest.request.mode}});
     while (reports.size > 10) reports.delete(reports.keys().next().value);
     const document = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(document, {preview: true, viewColumn: vscode.ViewColumn.Beside});
     return uri;
+  }
+
+  async function openArchive() {
+    if (!vscode.workspace.isTrusted) throw new Error('请先信任工作区。');
+    const settings = config(vscode.window.activeTextEditor?.document.uri);
+    const value = await invoke(context.extensionPath, {operation: 'open_hub', store: settings.get('reportStore', '') || undefined},
+      {pythonPath: settings.get('pythonPath', ''), timeout: 20000});
+    const url = value.hub.url + (lastArchive && lastArchive.store === value.hub.store ? '/#report=' + lastArchive.report_id : '/');
+    await vscode.env.openExternal(vscode.Uri.parse(url));
+    return url;
+  }
+
+  async function copyReportId() {
+    if (!lastArchive) { vscode.window.showInformationMessage('当前还没有归档报告，请先扫描。'); return; }
+    await vscode.env.clipboard.writeText(lastArchive.report_id);
+    return lastArchive.report_id;
   }
 
   const command = (name, callback) => vscode.commands.registerCommand(name, async (...args) => {
@@ -272,6 +294,8 @@ function activate(context) {
     command('temporalContracts.scanFile', uri => scanFile(uri)),
     command('temporalContracts.scanFolder', scanFolder),
     command('temporalContracts.showReport', showReport),
+    command('temporalContracts.openArchive', openArchive),
+    command('temporalContracts.copyReportId', copyReportId),
     command('temporalContracts.clear', clear),
     command('temporalContracts.showOutput', () => output.show(true)),
     vscode.workspace.onDidChangeTextDocument(event => { if (event.contentChanges.length) invalidate(event.document.uri); }),

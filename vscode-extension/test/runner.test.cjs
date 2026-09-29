@@ -79,3 +79,18 @@ test('candidate code and imports are never executed', async t => {
   assert.equal(result.report.status, 'parsed');
   await assert.rejects(fs.access(sentinel));
 });
+
+test('editor archive is independently readable from the shared store', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'tca-shared-archive-'));
+  t.after(() => fs.rm(root, {recursive:true, force:true}));
+  const project = path.join(root, 'project'); await fs.mkdir(project);
+  const result = await analyze(extension, {mode:'file', root:project, path:'Demo.vue', text:source,
+    archive:true, store:path.join(root,'reports')});
+  assert.equal(result.archive.status,'parsed');
+  assert.equal(result.archive.input_kind,'editor_snapshot');
+  const snapshot=JSON.parse(await fs.readFile(path.join(result.archive.archive_path,'snapshot.json'),'utf8'));
+  assert.equal(snapshot.sources['Demo.vue'],source);
+  const report=JSON.parse(await fs.readFile(path.join(result.archive.archive_path,'report.json'),'utf8'));
+  assert.deepEqual(report,result.report);
+  assert.match(await fs.readFile(path.join(result.archive.archive_path,'report.html'),'utf8'),/时序源码/);
+});

@@ -16,15 +16,22 @@
 ## VS Code 插件
 
 日常审查可使用 `vscode-extension/` 中的 **Temporal Contracts** 插件，安装包位于
-`dist/temporal-contract-analyzer-0.1.0.vsix`。在 VS Code 扩展面板的 `…` 菜单中选择
+`dist/temporal-contract-analyzer-0.2.0.vsix`。在 VS Code 扩展面板的 `…` 菜单中选择
 **Install from VSIX…** 安装。插件内置当前分析器和 Vue/Babel 依赖，仅需 Python 3.9+。
 
 - 保存 Vue、JS/TS 或 Python 文件后自动扫描，也可手动扫描未保存内容或指定目录。
 - 在 Problems 和 Temporal Contracts 侧栏查看信息级提示，点击证据跳到原始源码。
 - 源码变化会清除旧定位；最近的完整报告以只读 Markdown 展示。
+- 默认将每次结果与实际源码快照归档；用“打开统一报告库”查看历史、核查记录和前后对比。
 
 配置、范围限制、构建与测试方法见 [插件使用说明](vscode-extension/README.md)。
 插件复用本仓库的 Python 规则，并保留下面的独立 CLI；不是另写一套检测器。
+
+## 统一报告库与 Codex（0.6.0）
+
+CLI、插件与 Codex MCP 共用同一报告目录和报告 ID。本地网页集中查看历史证据、源码快照、人工核查和 Agent 材料交付记录。
+
+配置和使用方法见 [统一报告库使用说明](docs/REPORT_CENTER.md)。
 
 ## 环境
 
@@ -122,12 +129,11 @@ B/C/D 来自同一次扫描并共享同一组位置。它们是不同信息干�
 ## 测试
 
 ```sh
-python3 -m unittest discover -s tests -p 'test_temporal*.py'
-python3 -m unittest discover -s tests -p 'test_profile_evidence.py'
+python3 -m unittest discover -s tests
 ```
 
 `case-clusters/` 和 `templates/` 中只保留了冻结单元测试所需的最小夹具，它们不是独立 benchmark 的案例注册表或 Paper 1 数据副本。
 
 ## 尚未迁移的部分
 
-模型调度、案例条件物化、Web 页面、评分器、运行档案和 Paper 1 结果仍属于 `temporal-contract-bench`。`temporal_contract_analyzer.experiment` 中与 benchmark 资源统计相关的适配点暂时保留；独立 CLI 的扫描、冻结和校验路径不依赖这些运行器功能。
+模型调度、案例条件物化、bench Web 页面、评分器、运行档案和 Paper 1 结果仍属于 `temporal-contract-bench`。`temporal_contract_analyzer.experiment` 中与 benchmark 资源统计相关的适配点暂时保留；独立 CLI 的扫描、冻结和校验路径不依赖这些运行器功能。

@@ -8,10 +8,13 @@ async function main() {
   // Some editor terminals export this; the test host must start as Electron.
   delete process.env.ELECTRON_RUN_AS_NODE;
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'tca-vscode-host-'));
+  process.env.TCA_REPORT_STORE = path.join(temporary, 'reports');
+  process.env.TCA_CONFIG = path.join(temporary, 'config.json');
   const workspace = path.join(temporary, 'workspace');
   fs.mkdirSync(workspace);
   fs.writeFileSync(path.join(workspace, 'Demo.vue'), '<template><div>Demo</div></template>\n<script setup>const value = 1;</script>\n');
   fs.writeFileSync(path.join(workspace, 'Broken.vue'), '<script src="./external.js"></script>');
+  fs.writeFileSync(path.join(workspace, 'Stable.vue'), '<script setup>stableCall();</script>');
   fs.mkdirSync(path.join(workspace, '.vscode'));
   fs.writeFileSync(path.join(workspace, '.vscode/settings.json'), JSON.stringify({'temporalContracts.scanOnSave': false}));
   const installed = '/Applications/Visual Studio Code.app/Contents/MacOS/Code';

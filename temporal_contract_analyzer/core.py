@@ -13,7 +13,7 @@ from .python_adapter import analyze as python_analyze
 from .lifecycle import lifecycle_patterns
 from .reentrancy import reentrancy_patterns
 
-VERSION='0.5.0'
+VERSION='0.6.0'
 ROOT=Path(__file__).resolve().parents[1]
 JS_EXT={'.js','.mjs','.cjs','.jsx','.ts','.tsx'}
 CODE_EXT=JS_EXT|{'.py','.vue','.go','.java','.rs','.c','.h','.cpp','.cs','.rb'}
