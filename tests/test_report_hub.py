@@ -89,6 +89,25 @@ class ReportHubTests(unittest.TestCase):
         with self.call('/api/reports/'+meta['report_id']) as response:
             self.assertIsNone(json.load(response)['report'])
 
+    def test_measurement_template_and_append_api_remain_human_authored(self):
+        meta = archive.scan_path(self.project, self.store)['archive']
+        base = '/api/reports/' + meta['report_id']
+        with self.call(base + '/measurement-template') as response:
+            draft = json.load(response)
+        self.assertEqual(draft['workflow_status'], 'draft')
+        self.assertEqual(draft['obligations'], [])
+        with self.call(base + '/measurements', draft) as response:
+            saved = json.load(response)
+        self.assertEqual(saved['measurement']['obligation_count'], 0)
+        with self.call(base + '/measurement-review-template?record_id=' + saved['record_id'] + '&reviewer=reviewer-a') as response:
+            review = json.load(response)
+        self.assertEqual(review['reviewer_id'], 'reviewer-a')
+        self.assertEqual(review['measurement_sha256'], saved['measurement']['measurement_sha256'])
+        with self.call(base) as response:
+            detail = json.load(response)
+        self.assertEqual(len(detail['measurements']), 1)
+        self.assertEqual(detail['measurements'][0]['document']['obligations'], [])
+
     def test_background_service_is_reused_and_can_be_stopped(self):
         store = self.root/'background'
         self.addCleanup(lambda: hub.stop_server(store))

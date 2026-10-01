@@ -200,6 +200,10 @@ def verify(report_id, store=None):
             raise EvidenceError('Metadata and report differ')
         if (root/'bundle').exists():
             verify_bundle(root/'bundle', report['input_sha256'])
+    # Append-only semantic records live outside the immutable scan directory,
+    # but every read still verifies their own bindings and derived checksums.
+    measurement_records(report_id, store)
+    legacy_measurement_records(report_id, store)
     return dict(verified=True, report_id=report_id, files=len(files), analysis_validity='not_checked')
 
 
@@ -309,12 +313,18 @@ def read_report(report_id, store=None):
     root = _report_dir(store, report_id)
     return dict(metadata=metadata(report_id, store),
                 report=_read(root/'report.json') if (root/'report.json').exists() else None,
-                notes=records('notes', report_id, store), deliveries=records('deliveries', report_id, store))
+                notes=records('notes', report_id, store), deliveries=records('deliveries', report_id, store),
+                measurements=measurement_records(report_id, store),
+                legacy_measurements=legacy_measurement_records(report_id, store))
+
+
+def read_sources(report_id, store=None):
+    verify(report_id, store)
+    return _read(_report_dir(store, report_id)/'snapshot.json')['sources']
 
 
 def read_source(report_id, name, store=None):
-    verify(report_id, store)
-    sources = _read(_report_dir(store, report_id)/'snapshot.json')['sources']
+    sources = read_sources(report_id, store)
     if name not in sources:
         raise EvidenceError('Source is not part of this archived snapshot')
     return dict(path=name, text=sources[name], sha256=sha(sources[name].encode('utf-8')))
@@ -342,8 +352,11 @@ def layer_text(report_id, layer='full', store=None):
     return '' if layer == 'none' else (root/'bundle'/(layer+'.md')).read_text(encoding='utf-8')
 
 
+RECORD_KINDS = {'notes', 'deliveries', 'measurements', 'measurement_reviews', 'legacy_measurements'}
+
+
 def records(kind, report_id, store=None):
-    if kind not in {'notes', 'deliveries'}:
+    if kind not in RECORD_KINDS:
         raise EvidenceError('Invalid record kind')
     _report_dir(store, report_id)
     result = []
@@ -354,7 +367,7 @@ def records(kind, report_id, store=None):
 
 def append_record(kind, report_id, value, store=None):
     _report_dir(store, report_id)
-    if kind not in {'notes', 'deliveries'}:
+    if kind not in RECORD_KINDS:
         raise EvidenceError('Invalid record kind')
     item = dict(value, record_id=uuid.uuid4().hex, report_id=report_id, created_at=now())
     path = store_path(store)/kind/report_id/(item['created_at'].replace(':', '') + '-' + item['record_id'] + '.json')
@@ -370,6 +383,76 @@ def annotate(report_id, finding_id, decision, note, store=None):
         raise EvidenceError('Invalid research annotation')
     return append_record('notes', report_id, dict(finding_id=finding_id, decision=decision, note=note,
                          actor='human', qualification='Researcher assessment, not an oracle label'), store)
+
+
+def measurement_records(report_id, store=None):
+    """Return append-only measurements with their current independent-review gate."""
+    from .measurement import review_gate
+    items = records('measurements', report_id, store)
+    reviews = records('measurement_reviews', report_id, store)
+    meta = metadata(report_id, store)
+    result = []
+    for item in items:
+        if item.get('measurement', {}).get('measurement_sha256') != sha(canonical(item.get('document')).encode('utf-8')):
+            raise EvidenceError('Stored measurement document checksum mismatch')
+        if item.get('derived_sha256') != sha(canonical(item.get('measurement')).encode('utf-8')):
+            raise EvidenceError('Stored derived measurement checksum mismatch')
+        binding = item['measurement'].get('source_binding', {})
+        if binding != {'report_id': report_id, 'input_sha256': meta['input_sha256']}:
+            raise EvidenceError('Stored measurement source binding mismatch')
+        value = dict(item)
+        attached = [row for row in reviews if row.get('measurement_record_id') == item['record_id']]
+        report = dict(item['measurement'])
+        report['review'] = review_gate(report, [row['review'] for row in attached])
+        value['measurement'] = report
+        value['reviews'] = attached
+        result.append(value)
+    return result
+
+
+def add_measurement(report_id, document, store=None):
+    from .measurement import validate
+    measured = validate(document, report_id, store)
+    return append_record('measurements', report_id,
+                         dict(document=document, measurement=measured,
+                              derived_sha256=sha(canonical(measured).encode('utf-8')),
+                              qualification='Human-authored semantic claims; labels are mechanically derived.'), store)
+
+
+def measurement_record(report_id, record_id, store=None):
+    measurement_records(report_id, store)
+    matches = [row for row in records('measurements', report_id, store) if row['record_id'] == record_id]
+    if len(matches) != 1:
+        raise EvidenceError('Measurement record not found')
+    return matches[0]
+
+
+def add_measurement_review(report_id, record_id, review, store=None):
+    from .measurement import check_review
+    item = measurement_record(report_id, record_id, store)
+    assessment = check_review(item['measurement'], review)
+    existing = records('measurement_reviews', report_id, store)
+    if any(row.get('measurement_record_id') == record_id and
+           row.get('review', {}).get('reviewer_id') == review.get('reviewer_id') for row in existing):
+        raise EvidenceError('This reviewer already has a record for the measurement')
+    return append_record('measurement_reviews', report_id,
+                         dict(measurement_record_id=record_id, review=review, assessment=assessment), store)
+
+
+def add_legacy_measurement(report_id, path, store=None):
+    from .benchmark_v06 import import_report
+    meta = metadata(report_id, store)
+    imported = import_report(path, report_id, meta['input_sha256'])
+    return append_record('legacy_measurements', report_id,
+                         dict(imported=imported, imported_sha256=sha(canonical(imported).encode('utf-8'))), store)
+
+
+def legacy_measurement_records(report_id, store=None):
+    items = records('legacy_measurements', report_id, store)
+    for item in items:
+        if item.get('imported_sha256') != sha(canonical(item.get('imported')).encode('utf-8')):
+            raise EvidenceError('Stored MeasurementBench compatibility view checksum mismatch')
+    return items
 
 
 def compare_reports(before_id, after_id, store=None):

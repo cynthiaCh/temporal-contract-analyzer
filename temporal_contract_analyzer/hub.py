@@ -18,6 +18,15 @@ WEB = Path(__file__).parent/'web'
 _opener = build_opener(ProxyHandler({}))
 
 
+def strict_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise EvidenceError('JSON contains duplicate key: ' + key)
+        value[key] = item
+    return value
+
+
 class ReportServer(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -93,6 +102,13 @@ class Handler(BaseHTTPRequestHandler):
                 data = archive.artifact(report_id, name, store)
                 kind = {'html': 'text/html', 'md': 'text/plain', 'json': 'application/json'}[name.rsplit('.', 1)[-1]]
                 self.send(data, content_type=kind+'; charset=utf-8', report=name.endswith('.html'))
+            elif len(parts) == 4 and parts[3] == 'measurement-template':
+                from .measurement import template
+                self.send(template(report_id, store, query.get('finding_id')))
+            elif len(parts) == 4 and parts[3] == 'measurement-review-template':
+                from .measurement import review_template
+                item = archive.measurement_record(report_id, query['record_id'], store)
+                self.send(review_template(item['measurement'], query['reviewer']))
             else:
                 self.send({'error': 'Not found'}, 404)
         elif url.path in {'/', '/app.js', '/style.css'}:
@@ -108,9 +124,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             size = int(self.headers.get('Content-Length', '0'))
-            if not 0 < size <= 65536:
+            if not 0 < size <= 1048576:
                 raise EvidenceError('Request size invalid')
-            data = json.loads(self.rfile.read(size))
+            data = json.loads(self.rfile.read(size), object_pairs_hook=strict_object)
             if not isinstance(data, dict):
                 raise EvidenceError('Expected an object')
             self.post(data)
@@ -133,6 +149,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(archive.verify(parts[2], store))
             elif parts[3] == 'notes':
                 self.send(archive.annotate(parts[2], data['finding_id'], data['decision'], data.get('note', ''), store), 201)
+            elif parts[3] == 'measurements':
+                self.send(archive.add_measurement(parts[2], data, store), 201)
+            elif parts[3] == 'measurement-reviews':
+                self.send(archive.add_measurement_review(parts[2], data['measurement_record_id'], data['review'], store), 201)
             else:
                 self.send({'error': 'Not found'}, 404)
         elif parts == ['api', 'shutdown']:

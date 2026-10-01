@@ -27,11 +27,13 @@
 配置、范围限制、构建与测试方法见 [插件使用说明](vscode-extension/README.md)。
 插件复用本仓库的 Python 规则，并保留下面的独立 CLI；不是另写一套检测器。
 
-## 统一报告库与 Codex（0.6.0）
+## 统一报告库、义务测量与 Codex
 
 CLI、插件与 Codex MCP 共用同一报告目录和报告 ID。本地网页集中查看历史证据、源码快照、人工核查和 Agent 材料交付记录。
 
 配置和使用方法见 [统一报告库使用说明](docs/REPORT_CENTER.md)。
+
+报告库中的“义务测量”把扫描线索连接到人工确认的 predicate、证据单元、时序关系、所有权、application chain、行为 witness 与独立复核。扫描命中不会自动成为正式义务或 E/T/L/H 标签；工具只对研究者明确声明的结构做机械校验和推导。完整流程、CLI 命令和 Paper 1 v0.6 的只读兼容边界见 [义务测量工作台](docs/MEASUREMENT_WORKBENCH.md)。
 
 ## 环境
 
@@ -137,3 +139,5 @@ python3 -m unittest discover -s tests
 ## 尚未迁移的部分
 
 模型调度、案例条件物化、bench Web 页面、评分器、运行档案和 Paper 1 结果仍属于 `temporal-contract-bench`。`temporal_contract_analyzer.experiment` 中与 benchmark 资源统计相关的适配点暂时保留；独立 CLI 的扫描、冻结和校验路径不依赖这些运行器功能。
+
+Paper 1 的 MeasurementBench v0.6 仍是冻结实现。本仓库只提供其已验证报告的只读兼容视图；不会导入 Oracle、运行器或评分器，也不会反向改写 Paper 1 的实验条件。
