@@ -69,6 +69,33 @@ def publication_patterns(files):
                     name in e.get('write_roots', [e.get('target')]) and
                     possible_owner(e['scope'], name, binding)]
 
+        def post_call_clear(event, entry):
+            # A later clear cannot rewrite a callee value already evaluated.
+            # Admit only one simple, same-frame clear on the straight prefix;
+            # this is not a general reaching-definitions or alias analysis.
+            name = event.get('callee', '').split('.')[0]
+            binding = owner(event['scope'], name)
+            writes = visible_writes(name, binding) if binding is not None else []
+            if len(writes) != 1 or event['scope'] != entry:
+                return None
+            write = writes[0]
+            if (write['scope'] != entry or write.get('target') != name or write.get('operator') != '=' or
+                    event['block'] != functions[entry].get('body_block') or write['block'] != event['block'] or
+                    event.get('conditions') or write.get('conditions') or event.get('conditional_path') or
+                    write.get('conditional_path') or not event.get('linear_block') or not write.get('linear_block')):
+                return None
+            is_null = write.get('rhs_kind') == 'NullLiteral'
+            is_undefined = (write.get('rhs_kind') == 'Identifier' and write.get('rhs_text') == 'undefined' and
+                not any('undefined' in names for names in declarations.values()) and
+                not any('undefined' in f.get('parameters', []) for f in functions.values()) and
+                not any(i['local'] == 'undefined' for i in file['imports']))
+            if not (is_null or is_undefined):
+                return None
+            sequence = [e['id'] for e, _ in prefix(entry)]
+            if event['id'] not in sequence or write['id'] not in sequence or sequence.index(write['id']) <= sequence.index(event['id']):
+                return None
+            return write
+
         def parameter_call(event, entry, allowed_later_clear=None):
             parts = event.get('callee', '').split('.')
             if (event.get('construct') or event.get('optional') or
@@ -83,10 +110,13 @@ def publication_patterns(files):
                 return False
             if binding not in set(ancestry(entry)):
                 return False
-            # Reassigning or writing .call/.apply leaves invocation semantics unknown.
+            # Other reassignments and .call/.apply writes remain unresolved.
             writes = visible_writes(parts[0], binding)
-            return not writes or (allowed_later_clear is not None and
-                                  [e['id'] for e in writes] == [allowed_later_clear['id']])
+            if not writes:
+                return True
+            if allowed_later_clear is not None:
+                return [e['id'] for e in writes] == [allowed_later_clear['id']]
+            return post_call_clear(event, entry) is not None
 
         def local_target(event):
             target = event.get('immediate_target_scope')
@@ -443,6 +473,17 @@ def publication_patterns(files):
                                                       'ambiguous_state_binding' if e in ambiguous else
                                                       'destructured_state_write' for e in uncertain}),
                                 write_value=write.get('rhs_text') if write else None)))
+                        cleanup = post_call_clear(callback, entry)
+                        if cleanup:
+                            finding = findings[-1]
+                            finding['evidence'] = list(dict.fromkeys([*finding['evidence'], cleanup['id']]))
+                            finding['state_publication'].update(
+                                callback_binding_basis='parameter_before_simple_post_call_clear',
+                                callback_cleanup=dict(write=cleanup['id'], value=cleanup.get('rhs_text')))
+                            finding['condition'] += ' The only visible callback binding write is a later simple clear in this entry prefix; clearing itself is not a defect verdict.'
+                            relations.append(dict(kind='external_call_before_callback_clear',
+                                before=callback['id'], after=cleanup['id'],
+                                qualification='The direct parameter invocation is evaluated before its same-frame null/undefined clear; this does not judge the clear as erroneous.'))
                         if write:
                             before, after = (write, callback) if prior else (callback, write)
                             relations.append(dict(kind='state_write_before_external_call' if prior else

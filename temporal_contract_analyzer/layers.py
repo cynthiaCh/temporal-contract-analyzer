@@ -93,6 +93,7 @@ FACT_FIELDS = ('kind', 'callee', 'receiver', 'arguments', 'target', 'operator',
                'condition_identifier', 'condition_truthy', 'null_return_identifier', 'conditional_path', 'object_binding_source', 'object_bindings',
                'reflective_branch_linear')
 RELATIONS = {
+    'external_call_before_callback_clear': 'A direct parameter call precedes its same-frame simple null/undefined clear; the clear itself is not a defect verdict.',
     'receiver_capture_before_reflective_call': 'A this-value capture precedes a candidate Reflect invocation; callable type and native identity remain unresolved.',
     'local_alias_snapshot_before_call': 'A simple local copy of a parameter value precedes its candidate invocation; runtime types and indirect mutation remain unresolved.',
     'state_write_before_external_call': 'Bounded JS evaluation prefix: shared-state write before a candidate external call; value meaning and protection remain unproven.',

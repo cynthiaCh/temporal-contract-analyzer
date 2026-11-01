@@ -12,6 +12,8 @@ def focused_review(report):
     parsed = {f['path'] for f in report['files'] if f['status'] == 'parsed'}
     relations = {(r['before'], r['after']) for r in report['relations']
                  if r['kind'] == 'external_call_before_state_write'}
+    clears = {(r['before'], r['after']) for r in report['relations']
+              if r['kind'] == 'external_call_before_callback_clear'}
     suppressed = Counter()
     grouped = {}
     context = []
@@ -25,9 +27,13 @@ def focused_review(report):
         else:
             ids = [publication.get(k) for k in ('guard', 'callback', 'write')]
             ids += publication.get('execution_path', [])
+            if publication.get('callback_cleanup'):
+                ids.append(publication['callback_cleanup']['write'])
             if (finding['path'] not in parsed or publication.get('uncertainties') or
                     any(eid not in events or events[eid]['path'] != finding['path'] for eid in ids) or
-                    (publication.get('callback'), publication.get('write')) not in relations):
+                    (publication.get('callback'), publication.get('write')) not in relations or
+                    publication.get('callback_cleanup') and
+                    (publication.get('callback'), publication['callback_cleanup'].get('write')) not in clears):
                 reason = 'incomplete_evidence'
         if reason:
             if reason == 'write_before_call':
@@ -46,12 +52,19 @@ def focused_review(report):
                 condition=finding['condition'], review_question=finding['review_question'], evidence=[])
         card = grouped[key]
         card['finding_ids'].append(finding['id'])
+        if publication.get('callback_cleanup'):
+            note = '调用后的清空绑定仅作来源与顺序证据；本卡核查入口状态写入与调用的先后，不判定清理语句本身有错。'
+            if note not in card.setdefault('notes', []):
+                card['notes'].append(note)
         known = {e['id'] for e in card['evidence']}
         for eid in ids:
             if eid not in known:
                 e = events[eid]
                 card['evidence'].append(dict(id=eid, path=e['path'], line=e['line'], kind=e['kind'],
                     text=e['text'][:240], truncated=len(e['text']) > 240))
+                if (publication.get('callback_cleanup', {}).get('write') == eid and
+                        publication.get('write') != eid):
+                    card['evidence'][-1]['role'] = '调用后清空绑定（顺序事实）'
                 known.add(eid)
     cards = list(grouped.values())
     return dict(schema_version='temporal-contract-focused-review-1', policy='state-publication-evidence-v1',
@@ -81,8 +94,9 @@ def focused_markdown(report):
     for card in review['cards']:
         lines += ['', '## ' + card['path'] + ' · 状态 ' + card['state'], card['message'],
             '条件：' + card['condition'], '核查：' + card['review_question']]
+        lines += ['说明：' + note for note in card.get('notes', [])]
         for event in card['evidence']:
-            lines += ['', event['path'] + ':' + str(event['line']) + ' · ' + event['kind'],
+            lines += ['', event['path'] + ':' + str(event['line']) + ' · ' + event['kind'] + (' · ' + event['role'] if event.get('role') else ''),
                 '```text', event['text'].replace('```', '` ` `') + ('… [截短；请查看源码]' if event['truncated'] else ''), '```']
     if not review['cards']:
         lines += ['', '当前筛选未展示候选，不表示没有时序问题。']

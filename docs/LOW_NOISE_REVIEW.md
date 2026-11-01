@@ -50,3 +50,8 @@ python3 -m temporal_contract_analyzer scan /path/to/project --format html --view
 ## 0.6.6 增补
 
 默认门槛保持不变。接收者函数的 Reflect.apply/construct 两条候选按调用分别保存，选定条件臂不混合执行；同一标志的候选在默认视图合并，保留两种调用位置和来源。@ungap/once 原版仅列两条调用前写入事实，人工变体合并为 1 张问题卡。限制见 `STATE_PUBLICATION_REVIEW.md`。
+
+
+## 0.6.7 增补
+
+默认筛选可使用新的调用后清空证据，不降低源码/关系完整性门槛。报告把“入口状态写入顺序”和“回调绑定随后清空”分开：后者附中性说明，不自动作为问题。just-once 原版保留清理且不报警，人工延迟标志变体展示 1 张卡。新的关系字段缺失时保守隐藏。
