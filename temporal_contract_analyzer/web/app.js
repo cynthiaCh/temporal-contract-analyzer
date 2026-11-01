@@ -2,8 +2,10 @@
 const $ = selector => document.querySelector(selector);
 const labels = {parsed:'范围内解析完成', partial:'部分解析', failed:'扫描失败', empty:'没有源码'};
 const origins = {vscode:'VS Code', codex:'Codex', cli:'CLI', web:'浏览页面'};
-const decisions = {confirmed:'核查成立', dismissed:'核查不成立', uncertain:'尚不确定'};
+const decisions = {confirmed:'核查成立', dismissed:'核查不成立', uncertain:'待确认'};
 let items = [], offset = 0, total = 0, selected, current, tab = 'findings', detailRequest = 0, listRequest = 0, measurementDraft;
+const protections = {sufficient:'保护充分', insufficient:'保护不足', uncertain:'待确认'};
+let reviewPaths = null;
 const pageSize = 30;
 
 function element(tag, className, text) {
@@ -63,7 +65,7 @@ async function loadReports() {
 
 async function openReport(id) {
   const ticket = ++detailRequest;
-  if (selected !== id) measurementDraft = undefined;
+  if (selected !== id) { measurementDraft = undefined; reviewPaths = null; }
   selected = id;
   $('#detail').replaceChildren(element('p', 'loading', '正在读取归档并校验内容…'));
   for (const row of document.querySelectorAll('.report-row')) row.classList.toggle('selected', row.hash === '#report='+id);
@@ -115,7 +117,7 @@ function render() {
     detail.append(strip,element('p','scope-notice', '这里展示归档时的源码和结果。提示是审查线索；没有命中不代表安全。'+(report.files.some(f=>f.language==='vue') ? ' Vue 当前仅分析脚本语法，未建模模板与框架调度。' : '')));
   }
   const tabs = element('div','tabs'); tabs.setAttribute('role','tablist');
-  for (const [key, label] of [['findings','证据与核查'],['measurement','义务测量'],['source','源码快照'],['compare','前后对比'],['provenance','归档信息'],['delivery','Agent 交付']]) {
+  for (const [key, label] of [['findings','边界审查卡'],['measurement','高级测量 · E/T/L/H'],['source','源码快照'],['compare','前后对比'],['provenance','归档信息'],['delivery','Agent 交付']]) {
     const node = button(label,()=>{tab=key;render();},'tab'+(tab===key?' active':''));
     node.setAttribute('role','tab'); node.setAttribute('aria-selected',String(tab===key)); tabs.append(node);
   }
@@ -131,7 +133,7 @@ function render() {
 
 function renderMeasurements(content) {
   const {metadata:meta,measurements=[],legacy_measurements=[]}=current;
-  content.append(element('p','scope-notice','扫描提示只负责定位候选证据，不会自动成为正式义务。义务、predicate、证据充分性和行为见证必须由研究者明确填写；标签由声明的结构机械推导。'));
+  content.append(element('p','scope-notice','这是可选的研究分析层。日常使用边界审查卡即可，无需先填写完整 v0.6。需要深入分析时，再明确义务、predicate、证据充分性、行为见证与复核；E/T/L/H 由声明结构机械推导。'));
   for(const item of measurements){
     const measured=item.measurement, review=measured.review;
     const card=element('article','finding measurement-card');
@@ -169,43 +171,123 @@ function renderMeasurements(content) {
   editor.append(help,textarea,actions);content.append(editor);
 }
 
+function reviewScope(report, paths) {
+  if (paths === null) return null;
+  // File-level approximation of only the analyzer's candidate direct links.
+  const events = new Map(report.files.flatMap(file=>file.events.map(event=>[event.id,event])));
+  const functions = new Map(report.files.flatMap(file=>(file.functions || []).map(fn=>[fn.id,file.path])));
+  const related = new Set(paths);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const link of report.call_links) {
+      const caller = events.get(link.call)?.path, target = functions.get(link.target);
+      if (caller && target && (related.has(caller) || related.has(target))) {
+        for (const path of [caller,target]) if (!related.has(path)) { related.add(path); changed=true; }
+      }
+    }
+  }
+  return related;
+}
+
+function boundaryPacket(card, events, meta, note) {
+  const refs = card.evidence_ids.map(id=>events.get(id)).filter(Boolean).map(e=>`${e.path}:${e.line}`).join('、');
+  const review = note?.boundary_review;
+  return [`此候选位置可能跨越执行边界：${card.title}`,
+    `执行边界：${card.boundary.evidence_ids.map(id=>events.get(id)).filter(Boolean).map(e=>`${e.path}:${e.line} · ${e.kind}`).join('、')}`,
+    `可能变化：${card.possible_changes.summary}`,
+    `影响效果：${card.effects.summary}${card.effects.evidence_ids.map(id=>events.get(id)).filter(Boolean).map(e=>`${e.path}:${e.line} · ${e.text.trim()}`).join('、')}`,
+    `请核查：${card.requirement_protection.summary}`,
+    `成立条件：${card.condition}`,
+    `人工关系判断：${note ? decisions[note.decision] : '待确认'}；保护：${review ? protections[review.protection] : '待确认'}。`,
+    ...(review?.requirement_basis ? [`仓库要求与保护依据（人工记录）：${review.requirement_basis}`] : []),
+    ...(note?.note ? [`关系判断依据（人工记录）：${note.note}`] : []),
+    `尚缺证据：${review?.missing_evidence || '请继续核查调用可达性、工作归属与保护范围。'}`,
+    `证据：${refs}。归档报告：${meta.report_id}；finding：${card.finding_id}；输入摘要：${meta.input_sha256}。`,
+    '请先核对当前源码与归档快照。此卡为审查线索，人工确认不等于 oracle 判定。'].join('\n');
+}
+
 function renderFindings(content) {
-  const {report, metadata:meta, notes} = current;
+  const {report, metadata:meta, notes, boundary_cards:cards=[]} = current;
   if (!report) { content.append(element('p','muted','扫描失败，没有可核查的规则提示。')); return; }
   const events = new Map(report.files.flatMap(file=>file.events.map(event=>[event.id,event])));
-  for (const file of report.files.filter(f=>f.status!=='parsed')) content.append(element('p','error-block', `${file.path} · ${file.error?.message || file.status}`));
-  for (const finding of report.findings) {
-    const card = element('article','finding');
-    const head = element('div','finding-head'); head.append(element('code','',finding.rule),element('span','',finding.id));
-    card.append(head, element('h3','',finding.message));
-    for (const [label, value] of [['成立条件',finding.condition],['核查问题',finding.review_question]]) {
-      const text = element('p'); text.append(element('span','',label+'：'),document.createTextNode(value)); card.append(text);
+  content.append(element('p','scope-notice','先定位边界，再判断关系是否成立、保护是否充分、还缺什么证据。仓库要求尚未找到时保持待确认；无需先恢复全部义务或填写 E/T/L/H。'));
+  const scope = element('div','card-scope');
+  const paths = element('input'); paths.value=(reviewPaths || []).join(', '); paths.placeholder='相对文件路径，多个路径用逗号分隔'; paths.setAttribute('aria-label','本次改动文件');
+  const applyPaths = ()=>{reviewPaths=paths.value.trim() ? paths.value.split(',').map(p=>p.trim()).filter(Boolean) : null;render();};
+  paths.addEventListener('keydown',event=>{if(event.key==='Enter')applyPaths();});
+  scope.append(paths,button('查看改动及相关调用候选',applyPaths),button('查看全部卡片',()=>{reviewPaths=null;render();}));
+  if (meta.parent_report_id) scope.append(button('使用基线间变化文件',async()=>{
+    const id=meta.report_id;
+    const compared=await api('/api/compare?'+new URLSearchParams({before:meta.parent_report_id,after:id}));
+    if(current.metadata.report_id!==id)return;
+    reviewPaths=compared.changed_files;render();
+  }));
+  content.append(scope);
+  const related=reviewScope(report,reviewPaths);
+  const shown=cards.filter(card=>!related || card.evidence_ids.some(id=>related.has(events.get(id)?.path)));
+  const captured=new Set(report.files.map(file=>file.path));
+  const missing=(reviewPaths || []).filter(path=>!captured.has(path));
+  content.append(element('p','scope-notice',`显示 ${shown.length}/${cards.length} 张候选卡。${related ? '筛选文件：'+reviewPaths.join('、')+'；关联文件：'+[...related].join('、')+'。仅按文件及候选直接调用关系扩展。' : '当前显示本次扫描的全部候选卡。'}${missing.length ? '指定路径未被当前源码快照捕获：'+missing.join('、')+'。' : ''}动态派发、回调目标、框架调度及扫描范围外的路径未完整覆盖；隐藏卡片和无命中路径仍需核查。`));
+  const coverage=element('details','review-box');coverage.append(element('summary','','查看扫描范围与未覆盖内容'));
+  for(const limitation of report.limitations)coverage.append(element('p','muted',limitation));
+  for(const file of report.files.filter(f=>f.status!=='parsed'))coverage.append(element('p','error-block',`${file.path} · ${file.error?.message || file.status}`));
+  for(const file of report.skipped)coverage.append(element('p','muted',`${file.path} · ${file.reason}`));
+  content.append(coverage);
+  function sourceButton(id) {
+    const event=events.get(id);
+    return button(`${event.path}:${event.line} · ${event.kind}`,()=>{tab='source';render();loadSource(event.path,event.line,event.end_line).catch(showError);},'source-link');
+  }
+  for (const candidate of shown) {
+    const card = element('article','finding boundary-card');
+    const ownNotes=notes.filter(n=>n.finding_id===candidate.finding_id), latest=ownNotes.at(-1);
+    const head=element('div','finding-head');head.append(element('code','',candidate.rule),element('span','',candidate.finding_id),element('span','pill',latest ? decisions[latest.decision] : '待确认'));
+    card.append(head,element('h3','',candidate.title));
+    const questions=element('dl','boundary-questions');
+    for (const [label,value] of [['执行边界在哪里？',candidate.boundary],['什么可能已经变化？',candidate.possible_changes],['影响什么效果？',candidate.effects],['仓库要求与保护是什么？',candidate.requirement_protection]]) {
+      const answer=element('dd');answer.append(element('p','',value.summary));
+      for(const id of value.evidence_ids || [])answer.append(sourceButton(id));
+      if(label==='仓库要求与保护是什么？')answer.append(element('p','muted',latest?.boundary_review?.requirement_basis || '仓库依据待补充；判断或取消调用的存在不代表充分。'));
+      questions.append(element('dt','',label),answer);
     }
-    const evidence = element('div','evidence');
-    for (const id of finding.evidence) {
-      const event = events.get(id); if (!event) continue;
-      evidence.append(button(`${event.path}:${event.line} · ${event.kind}`,()=>{tab='source';render();loadSource(event.path,event.line,event.end_line).catch(showError);},'source-link'),element('pre','',event.text));
+    card.append(questions);
+    const evidence=element('details','evidence');evidence.append(element('summary','','源码引用与成立条件'));
+    evidence.append(element('p','muted',candidate.condition));
+    for(const id of candidate.evidence_ids){evidence.append(sourceButton(id),element('pre','',events.get(id).text));}
+    card.append(evidence);
+    const actions=element('div','detail-actions');
+    actions.append(button('复制给 Agent 的核查材料',async()=>{await navigator.clipboard.writeText(boundaryPacket(candidate,events,meta,latest));}));
+    const advanced=element('details','review-box');advanced.append(element('summary','','可选：深入结构测量'));
+    advanced.append(button('建立候选测量草稿',async()=>{measurementDraft=await api(reportURL(meta.report_id)+'/measurement-template?'+new URLSearchParams({finding_id:candidate.finding_id}));tab='measurement';render();},'quiet'));
+    card.append(actions);
+    const review=element('details','review-box');review.append(element('summary','','人工核查记录'));
+    if(ownNotes.length)review.open=true;
+    for(const note of ownNotes){
+      const structured=note.boundary_review;
+      review.append(element('div','annotation',`${decisions[note.decision]} · ${date(note.created_at)}\n${note.note}`+(structured ? `\n保护：${protections[structured.protection]}\n仓库要求与保护依据：${structured.requirement_basis || '待补充'}\n尚缺证据：${structured.missing_evidence || '未记录'}` : '')));
     }
-    card.append(evidence,button('建立候选测量草稿',async()=>{measurementDraft=await api(reportURL(meta.report_id)+'/measurement-template?'+new URLSearchParams({finding_id:finding.id}));tab='measurement';render();},'quiet'));
-    const review = element('details','review-box'); review.append(element('summary','','人工核查记录'));
-    const ownNotes = notes.filter(n=>n.finding_id===finding.id);
-    if (ownNotes.length) review.open = true;
-    for (const note of ownNotes) review.append(element('div','annotation', `${decisions[note.decision]} · ${date(note.created_at)}\n${note.note}`));
-    const form = element('form','note-form');
-    const decision = element('select'); decision.setAttribute('aria-label','核查判断');
-    for (const [value,label] of Object.entries(decisions)) { const option=element('option','',label);option.value=value;decision.append(option); }
-    decision.value='uncertain';
-    const note = element('textarea');note.placeholder='记录依据、测试或尚缺的信息。原始报告保持不变。';note.maxLength=10000;note.setAttribute('aria-label','核查依据');
-    const save=element('button','quiet','追加核查记录');save.type='submit';
-    form.append(decision,note,save);
+    const form=element('form','note-form');
+    function field(label,node){const wrapper=element('label','review-field');wrapper.append(element('span','',label),node);form.append(wrapper);return node;}
+    const decision=element('select');decision.setAttribute('aria-label','关系是否成立');
+    for(const [value,label] of Object.entries(decisions)){const option=element('option','',label);option.value=value;decision.append(option);}
+    decision.value=latest?.decision || 'uncertain';field('这条关系是否成立？',decision);
+    const note=element('textarea');note.placeholder='记录关系判断的源码或测试依据。';note.maxLength=10000;note.setAttribute('aria-label','关系判断依据');field('判断依据',note);
+    const protection=element('select');protection.setAttribute('aria-label','现有保护是否充分');
+    for(const [value,label] of Object.entries(protections)){const option=element('option','',label);option.value=value;protection.append(option);}
+    protection.value=latest?.boundary_review?.protection || 'uncertain';field('现有保护是否充分？',protection);
+    const basis=element('textarea');basis.maxLength=10000;basis.value=latest?.boundary_review?.requirement_basis || '';basis.placeholder='仓库规范、调用处、测试或设计依据的路径/位置；说明保护约束哪些效果。';basis.setAttribute('aria-label','仓库要求与保护依据');field('仓库要求与保护依据',basis);
+    const missingEvidence=element('textarea');missingEvidence.maxLength=10000;missingEvidence.placeholder='例如：待完成通知与关闭后通知是否都受约束？缺少哪条调用路径或行为轨迹？';missingEvidence.setAttribute('aria-label','尚缺什么证据');field('还缺什么证据？',missingEvidence);
+    const save=element('button','quiet','追加核查记录');save.type='submit';form.append(save);
     form.addEventListener('submit',async event=>{
       event.preventDefault();save.disabled=true;
-      try { const saved=await api(reportURL(meta.report_id)+'/notes',{finding_id:finding.id,decision:decision.value,note:note.value}); if(current.metadata.report_id===meta.report_id){current.notes.push(saved);render();} }
-      catch(error){showError(error);save.disabled=false;}
+      try{
+        const saved=await api(reportURL(meta.report_id)+'/notes',{finding_id:candidate.finding_id,decision:decision.value,note:note.value,boundary_review:{protection:protection.value,requirement_basis:basis.value,missing_evidence:missingEvidence.value}});
+        if(current.metadata.report_id===meta.report_id){current.notes.push(saved);render();}
+      }catch(error){showError(error);save.disabled=false;}
     });
-    review.append(form);card.append(review);content.append(card);
+    review.append(form);card.append(review,advanced);content.append(card);
   }
-  if (!report.findings.length) content.append(element('p','muted', '当前规则没有产生提示。请结合解析覆盖、未建模行为和项目测试继续核查。'));
+  if(!shown.length)content.append(element('p','muted','当前范围没有候选卡。请结合解析覆盖、未建模行为和项目测试继续核查。'));
 }
 
 function renderSource(content) {

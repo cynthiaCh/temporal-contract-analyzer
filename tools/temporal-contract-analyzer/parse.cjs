@@ -72,6 +72,14 @@ function analyze(file) {
     if(n.type==='ArrayPattern')return n.elements.flatMap(boundNames);
     return [];
   }
+  function writeRoots(n){
+    if(n?.type==='ObjectPattern')return n.properties.flatMap(p=>writeRoots(p.type==='RestElement'?p.argument:p.value));
+    if(n?.type==='ArrayPattern')return n.elements.flatMap(writeRoots);
+    if(n?.type==='AssignmentPattern')return writeRoots(n.left);
+    if(n?.type==='RestElement')return writeRoots(n.argument);
+    while(n&&['MemberExpression','OptionalMemberExpression'].includes(n.type))n=n.object;
+    return boundNames(n);
+  }
   // Read only syntax, never identifier-looking strings, noncomputed keys, types,
   // or a function body's references when describing its enclosing expression.
   function references(n){
@@ -96,10 +104,12 @@ function analyze(file) {
     }
     visit(n);return [...found];
   }
-  const objectTargets=new WeakMap();
+  const objectTargets=new WeakMap(), functionScopes=new WeakMap();
   const counts={};
-  function fn(n,parent,label){const key=parent+'/'+label;counts[key]=(counts[key]||0)+1;const id=key+(counts[key]>1?'#'+counts[key]:'');functions.push({id,parent,name:label,parameters:n.params.flatMap(boundNames),async:!!n.async,generator:!!n.generator,...loc(n)});return id;}
-  const root=file.scopeName||'<module>';functions.push({id:root,parent:null,name:root,parameters:[],async:false,generator:false,line:1,column:0,end_line:source.split('\n').length,end_column:0});
+  function fn(n,parent,label){const key=parent+'/'+label;counts[key]=(counts[key]||0)+1;const id=key+(counts[key]>1?'#'+counts[key]:'');functions.push({id,parent,name:label,parameters:n.params.flatMap(boundNames),async:!!n.async,generator:!!n.generator,
+    body_block:n.body.type==='BlockStatement'?id+'/block@'+n.body.start:id+'/body',
+    ...(n.type==='FunctionExpression'&&n.id?{self_name:n.id.name}:{}),...loc(n)});return id;}
+  const root=file.scopeName||'<module>';functions.push({id:root,parent:null,name:root,parameters:[],async:false,generator:false,body_block:root+'/block@0',line:1,column:0,end_line:source.split('\n').length,end_column:0});
   function emit(n,kind,ctx,extra={}){const e={id:'e'+events.length,kind,scope:ctx.scope,block:ctx.block,statement:ctx.statement,conditions:ctx.conditions,...(ctx.loop_bindings?.length?{loop_bindings:ctx.loop_bindings}:{}),...loc(n),text:text(n),...extra};events.push(e);return e;}
   function walk(n,ctx,parent=null,field='') {
     if(!n||typeof n.type!=='string')return;
@@ -109,11 +119,13 @@ function analyze(file) {
       if(!label&&parent?.type==='ObjectProperty')label=name(parent.key);
       if(!label)label='<callback>';
       const scope=fn(n,ctx.scope,label);
+      functionScopes.set(n,scope);
       // A source header anchor, not a claim that this function is invoked.
       const header={...n,end:n.body.start,loc:{start:n.loc.start,end:n.body.loc.start}};
       const definition={...ctx,scope};delete definition.loop_bindings;
       emit(header,'function_definition',definition,{name:label,...(objectTargets.has(n)?{object_target:objectTargets.get(n)}:{})});
-      if(n.type==='FunctionDeclaration'||parent?.type==='VariableDeclarator')bindings.push({scope:ctx.scope,name:label,target:scope});
+      if(n.type==='FunctionDeclaration')bindings.push({scope:ctx.scope,block:ctx.block,name:label,target:scope});
+      else if(parent?.type==='VariableDeclarator'&&parent.id.type==='Identifier')bindings.push({scope:ctx.scope,block:ctx.block,name:parent.id.name,target:scope});
       if(parent?.type==='ReturnStatement'||(parent?.type==='ArrowFunctionExpression'&&field==='body'))emit(header,'returned_callback',ctx,{target_scope:scope});
       if(callTypes.has(parent?.type)&&field==='arguments')emit(header,'callback_argument',ctx,{target_scope:scope,callee:name(parent.callee)||'<dynamic>',argument_index:parent.arguments.indexOf(n)});
       // Defaults execute when invoked; record as a conditional region, not the enclosing function.
@@ -125,6 +137,7 @@ function analyze(file) {
       n.body.forEach((s,i)=>walk(s,{...ctx,block,statement:i},n,'body'));return;
     }
     if(n.type==='ClassDeclaration'||n.type==='ClassExpression'){
+      if(n.type==='ClassDeclaration'&&n.id)emit(n.id,'binding',ctx,{declared_names:[n.id.name],binding_kind:'class'});
       // A lexical namespace only, not an instance dispatch/type model.
       walk(n.superClass,ctx,n,'superClass');
       for(const d of n.decorators||[])walk(d,ctx,n,'decorators');
@@ -155,6 +168,10 @@ function analyze(file) {
     if(n.type==='TryStatement'){
       walk(n.block,ctx,n,'block');walk(n.handler,{...ctx,conditions:[...ctx.conditions,'catch path']},n,'handler');walk(n.finalizer,{...ctx,conditions:[...ctx.conditions,'finally path']},n,'finalizer');return;
     }
+    if(n.type==='CatchClause'){
+      if(n.param)emit(n.param,'binding',ctx,{declared_names:boundNames(n.param),binding_kind:'catch'});
+      walk(n.param,ctx,n,'param');walk(n.body,ctx,n,'body');return;
+    }
     if(['ForStatement','ForOfStatement','ForInStatement','WhileStatement','DoWhileStatement','SwitchStatement'].includes(n.type)){
       const c={...ctx,block:ctx.scope+'/control@'+n.start,conditions:[...ctx.conditions,n.type+' path; execution/repetition not proven']};
       let body=c;
@@ -171,15 +188,19 @@ function analyze(file) {
     if(n.type==='VariableDeclarator'||n.type==='AssignmentExpression'){
       const target=n.id||n.left,rhs=n.init||n.right;walk(rhs,ctx,n,'right');
       let call=rhs?.type==='AwaitExpression'?rhs.argument:rhs;
-      emit(n,'write',ctx,{target:name(target)||text(target),rhs_callee:['CallExpression','OptionalCallExpression'].includes(call?.type)?name(call.callee):'',awaited:rhs?.type==='AwaitExpression',operator:n.operator||'=',references:[...new Set([...references(target),...references(rhs)])],value_references:references(rhs),rhs_kind:rhs?.type||null});return;
+      emit(n,'write',ctx,{target:name(target)||text(target),rhs_callee:['CallExpression','OptionalCallExpression'].includes(call?.type)?name(call.callee):'',awaited:rhs?.type==='AwaitExpression',operator:n.operator||'=',references:[...new Set([...references(target),...references(rhs)])],value_references:references(rhs),rhs_kind:rhs?.type||null,
+        declared_names:n.type==='VariableDeclarator'?boundNames(target):[],assigned_names:boundNames(target),write_roots:writeRoots(target),
+        rhs_text:['Identifier','BooleanLiteral','NumericLiteral','StringLiteral','NullLiteral'].includes(rhs?.type)?text(rhs):null});return;
     }
     if(n.type==='UpdateExpression'){
-      emit(n,'write',ctx,{target:name(n.argument)||text(n.argument),rhs_callee:'',awaited:false,operator:n.operator,references:references(n.argument),value_references:references(n.argument),rhs_kind:null});return;
+      emit(n,'write',ctx,{target:name(n.argument)||text(n.argument),rhs_callee:'',awaited:false,operator:n.operator,references:references(n.argument),value_references:references(n.argument),rhs_kind:null,
+        assigned_names:boundNames(n.argument),write_roots:writeRoots(n.argument)});return;
     }
     if(['CallExpression','OptionalCallExpression','NewExpression'].includes(n.type)){
       // The function body of a callback is visited in its own scope, never inlined.
       walk(n.callee,ctx,n,'callee');n.arguments.forEach(a=>walk(a,ctx,n,'arguments'));
-      emit(n,'call',ctx,{callee:name(n.callee)||'<dynamic>',receiver:name(n.callee.object),arguments:n.arguments.map(a=>text(a)),optional:n.type==='OptionalCallExpression',construct:n.type==='NewExpression',references:references(n),argument_references:n.arguments.map(references)});return;
+      emit(n,'call',ctx,{callee:name(n.callee)||'<dynamic>',receiver:name(n.callee.object),arguments:n.arguments.map(a=>text(a)),optional:n.type==='OptionalCallExpression',construct:n.type==='NewExpression',references:references(n),argument_references:n.arguments.map(references),
+        ...(functionScopes.has(n.callee)&&n.type==='CallExpression'?{immediate_target_scope:functionScopes.get(n.callee)}:{})});return;
     }
     if(n.type==='AwaitExpression'||n.type==='YieldExpression'){
       walk(n.argument,ctx,n,'argument');emit(n,n.type==='AwaitExpression'?'await':'yield',ctx);return;

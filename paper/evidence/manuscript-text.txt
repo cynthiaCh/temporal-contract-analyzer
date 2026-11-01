@@ -1,0 +1,323 @@
+Temporal Contracts: Reviewing Asynchronous and
+Lifecycle Boundaries with Source Evidence
+Author names to be supplied
+Afﬁliations and contact details to be supplied
+Abstract—An asynchronous operation can ﬁnish after its initi-
+ating view closes, and a synchronous notiﬁcation can reenter
+an operation before it returns. Understanding these behav-
+iors requires connecting execution boundaries to the state and
+effects whose validity they change. We present TEMPORAL
+CONTRACTS, an interactive source review tool that organizes
+candidate temporal evidence into four questions: where execution
+crosses a boundary, what could change, which effects matter, and
+what requirements and protections apply. The analyzer extracts
+syntax events and bounded candidate relations from Python,
+JavaScript, TypeScript, and Vue scripts. A review workbench
+links these observations to archived source and records relation
+validity separately from protection sufﬁciency. Command-line,
+editor, and agent-facing interfaces share the same report archive.
+A reproducible synthetic demonstration contrasts an obsolete
+continuation with a reviewer-supplied epoch check under one
+controlled schedule. Both versions retain review hints, illustrating
+why hint disappearance is unsuitable as a repair criterion. The
+current evidence establishes this workﬂow and its implementation
+checks; independent measurements of comprehension beneﬁt
+remain future work.
+Index Terms—program comprehension, asynchronous pro-
+gramming, lifecycle, source evidence, developer tools
+I. INTRODUCTION
+A panel starts a request, closes while the request is pending,
+and receives a result afterward. Whether the continuation
+should publish that result depends on the panel’s requirements
+and on which operation still owns the output. The developer
+reviewing this code must answer a concrete question: which
+work becomes invalid at closure, and where must that invalida-
+tion constrain its continuation? Answering requires connecting
+the suspension point, lifecycle transition, publication, and
+protection.
+Program comprehension during a change involves answer-
+ing questions about relevant code and its relationships [1].
+Temporal behavior adds a speciﬁc difﬁculty: a condition es-
+tablished before a boundary can cease to apply when execution
+resumes. Event-driven race detectors address related order-
+ing problems using execution models [2]. A source review
+workﬂow can instead expose candidate relationships before
+the developer has reproduced an execution or established the
+application’s validity requirements.
+We organize this workﬂow around boundary review cards.
+Each card links source references to four questions about a
+possible temporal relationship. A temporal contract is an ap-
+plication requirement governing when an effect remains valid
+across execution or lifecycle boundaries. The analyzer selects
+TABLE I
+REPRESENTATIVE REVIEW CLUES AND REMAINING SEMANTIC
+QUESTIONS.
+Family
+Extracted clue
+Reviewer checks
+Suspension
+Effect-named call after
+await in one syntax
+block
+Does the effect belong to
+valid work?
+Lifecycle
+Continuation and
+cleanup/close clues in
+a lexical unit
+Do they share an instance
+and lifetime?
+Notiﬁcation
+Member write before a
+direct callback
+candidate
+Can the callback
+synchronously reenter?
+Snapshot
+Bounded local
+captured-value/output
+clues
+Do capture and output
+have different lifetimes?
+candidate evidence; the reviewer establishes the requirement
+from repository documentation, implementations, or tests.
+The tool provides three capabilities: (1) source extrac-
+tion with explicit qualiﬁcations on candidate relations; (2) a
+four-question review interface that separates relation validity
+from protection sufﬁciency; and (3) shared, snapshot-based
+reports for command-line, editor, and agent-assisted review.
+The demonstration follows a pending request across panel
+closure and shows how the same review questions apply to
+an unguarded and a protected version.
+II. TOOL DESIGN AND IMPLEMENTATION
+A. From Source to Candidate Evidence
+The analyzer reads selected source ﬁles without executing
+the target project or calling a language model. Python’s stan-
+dard abstract syntax tree and Babel supply syntax events; the
+Vue single-ﬁle-component parser extracts inline script blocks
+before Babel analysis. Events retain original source positions,
+enclosing scopes, and selected syntax ﬁelds. Vue locations
+map back to the original component, and editor locations use
+UTF-16 columns.
+Rules select candidate boundaries and effects from these
+events. Table I summarizes representative families. Some
+relations use lexical or import bindings; others use names or
+co-occurrence to nominate a review location. For example, a
+continuation and a cleanup method in one lexical namespace
+motivate a lifecycle question without establishing that they
+concern the same object. The report retains this qualiﬁcation
+alongside the evidence.
+
+
+Selected source / editor buffers
+Syntax events + qualiﬁed candidate relations
+Four-question boundary review cards
+Reviewer: relationship / protection / missing evidence
+Source archive: CLI / editor / MCP
+Separate notes: workbench / copied handoff
+Fig. 1.
+Conceptual review workﬂow and shared records in TEMPORAL
+CONTRACTS. The source scan is archived before review; human notes are
+appended separately. Arrows connect review stages rather than program
+execution events.
+The scanner reports its analyzed ﬁles, skipped inputs, parser
+status, and scope limitations. Unsupported or unparsed mate-
+rial remains visible as incomplete coverage. Candidate direct-
+call links can extend a changed-ﬁle review to associated ﬁles;
+this expansion operates at ﬁle granularity.
+B. Four Questions and Two Judgments
+Each ﬁnding becomes a card with four ﬁelds. Boundary
+references candidate waits, callbacks, notiﬁcations, or exits.
+Possible change supplies a rule-speciﬁc question about state,
+identity, or ownership. Affected effects references selected
+writes and effect calls, or requests further tracing when none
+was located. Requirement and protection presents the review
+question and available guard or cancellation references. The
+projection classiﬁes the ﬁnding’s existing evidence; it does not
+recover an additional complete execution path.
+Reviewers open the cited source and record two sepa-
+rate judgments. The ﬁrst marks the candidate relationship
+as conﬁrmed, dismissed, or uncertain. The second marks
+protection as sufﬁcient, insufﬁcient, or uncertain. A conﬁrmed
+relationship can therefore be adequately protected. Reviewers
+can also record repository support and missing evidence. These
+annotations are appended to a report’s notes, preserving the
+original scan.
+C. A Shared Report Archive
+The command-line interface, VS Code extension, and Model
+Context Protocol (MCP) server use one archive. A report ID
+identiﬁes the captured source, analysis, parser metadata, and
+derived materials. The editor supports saved ﬁles and unsaved
+buffers; its scan archives the text actually analyzed. A later
+agent can read that report rather than assuming that a fresh
+disk scan captures the same input.
+The workbench supports historical inspection, source navi-
+gation, annotations, and compatible before/after comparisons.
+Review-hint diagnostics are informational, and stale source
+locations are cleared after edits. Incomplete parsing produces
+a warning. MCP exposes scan, report lookup, paginated re-
+port/source reading, and comparison operations. Its report
+reads return frozen analysis materials; annotated review text is
+handed off using the workbench’s copy action. MCP records
+prepared and transport-written responses, describing delivery
+rather than subsequent agent reasoning.
+III. DEMONSTRATION SCENARIO
+The demonstration uses a synthetic panel with an explic-
+itly speciﬁed requirement: after close, work started in the
+previous epoch must not publish. The example isolates this
+requirement; it is not an independently collected repository
+incident. Listing 1 shows the protected version. Removing the
+capture of started and its comparison yields the unguarded
+version. The epoch protection is supplied by the reviewer.
+1 function createPanel(fetchValue, publish) {
+2
+let epoch = 0;
+3
+async function refresh() {
+4
+const started = epoch;
+5
+const value = await fetchValue();
+6
+if (started !== epoch) return;
+7
+publish(value);
+8
+}
+9
+function close() { epoch += 1; }
+10
+return {refresh, close};
+11 }
+Listing 1.
+Protected synthetic panel; the requirement is supplied with the
+example.
+a) Locate and inspect.: The presenter scans the un-
+guarded version and opens its archived report. Three rules
+identify an effect after a wait, a continuation near a lifecycle
+boundary, and guard-state review. The ﬁrst links the wait to
+the later publish call in source order. The lifecycle cards
+nominate the nearby close operation and state update. Their
+references support investigation; the presenter still checks that
+the returned operations share the panel’s lexical state.
+b) Establish behavior.: A separate replay script starts
+refresh, calls close, resolves the pending request, and
+awaits the continuation. The unguarded version publishes old
+result; the protected version produces no publication. This
+script executes the paper’s synthetic programs independently
+of scanning. The observed behavior witnesses this particular
+schedule and stated requirement.
+c) Review the protection.: The presenter inspects the
+epoch comparison and records relation validity separately from
+protection sufﬁciency. The supplied capture script also saves
+an author-demonstration annotation for the unguarded report;
+this is a walkthrough record, not an independent judgment.
+Both versions retain the same three rule kinds. In the protected
+version, the guard-state card also references the conditional
+guard. The reviewer must determine why that guard connects
+the continuing work to its initiating epoch. A reduction in hint
+count would miss the relevant difference.
+The session ends by comparing the archived versions. The
+comparison reports a changed guard-evidence ﬁnding while
+the rule kinds and total count stay constant. Reading either
+report through MCP retrieves that version’s frozen materials;
+annotation history remains available in the workbench. The
+replay supplies the separate behavioral witness.
+IV. CURRENT EVIDENCE AND LIMITATIONS
+a) Implementation checks.: The current checkout passes
+127 Python unit tests and nine extension runner tests on the
+
+
+Fig. 2.
+Actual review card for the synthetic unguarded panel. The current interface uses Chinese labels; the four ﬁelds correspond to boundary, possible
+change, affected effects, and requirement/protection. Source references open the archived evidence.
+development machine using Python 3.9.6. The suites cover ex-
+traction, scope separation, source positions, incomplete parses,
+archive consistency, and interface behavior. These counts de-
+scribe regression checks, not independently conﬁrmed defects.
+The two synthetic scans and their controlled replay are repro-
+ducible from the accompanying scripts. Editor-host and cross-
+platform installation validation remain outside this run.
+b) Independent evaluation.: The next evaluation will
+compare source navigation, raw ﬁndings, and four-question
+cards on held-out tasks. It will measure the correctness of
+boundary, identity, effect, and protection answers, followed
+by completion time and inspection effort. Task order and
+prior familiarity will be controlled. Dismissed and uncertain
+cards will remain in the analysis. Comprehension improvement
+remains an untested hypothesis.
+c) Analysis scope.: Name clues and lexical order leave
+API identity, aliasing, reachability, and complete callback
+dispatch unresolved. Vue support covers inline scripts; tem-
+plates, reactive dependencies, and watcher scheduling remain
+outside the model. File-level change expansion can include
+unrelated functions and omit dynamic paths. A zero-hint result
+therefore cannot establish complete review coverage. Snapshot
+consistency supports source traceability, while semantic judg-
+ments still require repository evidence and, where appropriate,
+execution witnesses.
+V. RELATED WORK
+Sillito et al. characterize questions developers ask dur-
+ing software evolution [1]. Our four questions specialize a
+question-oriented workﬂow to validity across temporal bound-
+aries. Whyline derives questions about observed behavior from
+code and execution [3]; TEMPORAL CONTRACTS starts from
+source clues, with behavioral witnesses supplied separately.
+Slicito supports interactive exploration by narrowing source
+scope and applying more precise analyses, including data-
+ﬂow analysis and symbolic execution [4]. Our implementation
+organizes bounded temporal clues and reviewer judgments
+around a captured source version. EventRacer computes race
+coverage for event-driven programs [2]. Its execution-based
+ordering analysis addresses race detection; our cards ex-
+pose questions about application-speciﬁc effect validity. The
+distinction concerns the review questions and the evidence
+available to answer them.
+VI. CONCLUSION AND AVAILABILITY
+TEMPORAL CONTRACTS organizes source evidence and
+separate reviewer judgments around effects that cross asyn-
+chronous and lifecycle boundaries. Its controlled demonstra-
+tion illustrates a behavior change with persistent review hints.
+The current internal prototype requires a public source or
+binary release and installation instructions before submission.
+A demonstration video is planned. Independent evaluation will
+test the cards’ comprehension beneﬁt.
+ACKNOWLEDGMENT
+OpenAI
+Codex
+assisted
+implementation
+inspection,
+manuscript
+drafting,
+demonstration
+scripts,
+and
+ﬁgure
+preparation. The authors remain responsible for veriﬁcation.
+
+
+REFERENCES
+[1] J. Sillito, G. C. Murphy, and K. De Volder, “Questions programmers
+ask during software evolution tasks,” in Proceedings of the 14th
+ACM SIGSOFT international symposium on Foundations of software
+engineering, ser. SIGSOFT06/FSE-14.
+ACM, Nov. 2006, pp. 23–34.
+[Online]. Available: http://dx.doi.org/10.1145/1181775.1181779
+[2] V. Raychev, M. Vechev, and M. Sridharan, “Effective race detection
+for event-driven programs,” in Proceedings of the 2013 ACM SIGPLAN
+international conference on Object oriented programming systems
+languages & applications, ser. SPLASH ’13.
+ACM, Oct. 2013, pp.
+151–166. [Online]. Available: http://dx.doi.org/10.1145/2509136.2509538
+[3] A. J. Ko and B. A. Myers, “Debugging reinvented: asking and answering
+why and why not questions about program behavior,” in Proceedings
+of the 30th international conference on Software engineering, ser.
+ICSE ’08.
+ACM, May 2008, pp. 301–310. [Online]. Available:
+http://dx.doi.org/10.1145/1368088.1368130
+[4] R. Husák, J. Kofroˇn, and F. Zavoral, “Combining static analysis
+techniques for program comprehension using slicito,” in 2025 IEEE/ACM
+33rd International Conference on Program Comprehension (ICPC).
+IEEE, Apr. 2025, pp. 1–5. [Online]. Available: http://dx.doi.org/10.1109/
+ICPC66645.2025.00048

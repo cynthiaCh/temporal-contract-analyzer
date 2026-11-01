@@ -108,6 +108,39 @@ class ReportHubTests(unittest.TestCase):
         self.assertEqual(len(detail['measurements']), 1)
         self.assertEqual(detail['measurements'][0]['document']['obligations'], [])
 
+    def test_boundary_cards_reuse_evidence_and_keep_review_separate_from_measurements(self):
+        meta = archive.scan_path(self.project, self.store)['archive']
+        base = '/api/reports/' + meta['report_id']
+        with self.call(base) as response:
+            detail = json.load(response)
+        card = next(row for row in detail['boundary_cards'] if row['rule'] == 'effect-after-await')
+        events = {e['id']: e for f in detail['report']['files'] for e in f['events']}
+        self.assertEqual(events[card['boundary']['evidence_ids'][0]]['kind'], 'await')
+        self.assertIn('store.save()', events[card['effects']['evidence_ids'][0]]['text'])
+        self.assertEqual(card['requirement_protection']['evidence_ids'], [])
+        review = dict(protection='insufficient', requirement_basis='Demo.vue:1; API spec pending',
+                      missing_evidence='Need callback reachability and cancellation trace')
+        with self.call(base + '/notes', dict(finding_id=card['finding_id'], decision='confirmed',
+                                            note='Relation confirmed; behavior still unknown', boundary_review=review)) as response:
+            saved = json.load(response)
+        self.assertEqual(saved['boundary_review'], review)
+        with self.call(base + '/notes', dict(finding_id=card['finding_id'], decision='uncertain', note='Legacy note')):
+            pass
+        with self.call(base) as response:
+            refreshed = json.load(response)
+        self.assertEqual(refreshed['report'], detail['report'])
+        self.assertEqual(refreshed['boundary_cards'], detail['boundary_cards'])
+        self.assertEqual(refreshed['measurements'], [])
+        self.assertEqual(refreshed['notes'][0]['boundary_review'], review)
+        self.assertNotIn('boundary_review', refreshed['notes'][1])
+        for malformed in ({}, dict(review, protection='passed'), dict(review, protection=[]),
+                          dict(review, missing_evidence=42)):
+            with self.subTest(malformed=malformed), self.assertRaises(HTTPError) as error:
+                self.call(base + '/notes', dict(finding_id=card['finding_id'], decision='uncertain',
+                                               note='', boundary_review=malformed))
+            self.assertEqual(error.exception.code, 400)
+        self.assertEqual(len(archive.records('notes', meta['report_id'], self.store)), 2)
+
     def test_background_service_is_reused_and_can_be_stopped(self):
         store = self.root/'background'
         self.addCleanup(lambda: hub.stop_server(store))

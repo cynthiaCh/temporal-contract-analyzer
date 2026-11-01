@@ -12,8 +12,9 @@ import sys
 from .python_adapter import analyze as python_analyze
 from .lifecycle import lifecycle_patterns
 from .reentrancy import reentrancy_patterns
+from .publication import publication_patterns
 
-VERSION='0.6.0'
+VERSION='0.6.1'
 ROOT=Path(__file__).resolve().parents[1]
 JS_EXT={'.js','.mjs','.cjs','.jsx','.ts','.tsx'}
 CODE_EXT=JS_EXT|{'.py','.vue','.go','.java','.rs','.c','.h','.cpp','.cs','.rb'}
@@ -207,6 +208,9 @@ def patterns(files):
     reentrant_findings, reentrant_relations = reentrancy_patterns(files)
     findings.extend(reentrant_findings)
     relations.extend(reentrant_relations)
+    publication_findings, publication_relations = publication_patterns(files)
+    findings.extend(publication_findings)
+    relations.extend(publication_relations)
     for i,f in enumerate(findings):f['id']='hint-'+str(i+1)
     return findings,relations
 
@@ -231,7 +235,7 @@ def analyze_sources(sources,node=None,skipped=None):
     for file in files:file['sha256']=sha(sources[file['path']].encode())
     links=enrich(files);findings,relations=patterns(files)
     inputs=[dict(path=p,sha256=sha(t.encode())) for p,t in sorted(sources.items())]
-    tool_files=['temporal_contract_analyzer/__init__.py','temporal_contract_analyzer/__main__.py','temporal_contract_analyzer/cli.py','temporal_contract_analyzer/review_packet.py','temporal_contract_analyzer/core.py','temporal_contract_analyzer/lifecycle.py','temporal_contract_analyzer/reentrancy.py','temporal_contract_analyzer/python_adapter.py','temporal_contract_analyzer/report.py','tools/temporal-contract-analyzer/parse.cjs','tools/temporal-contract-analyzer/package.json','tools/temporal-contract-analyzer/package-lock.json']
+    tool_files=['temporal_contract_analyzer/__init__.py','temporal_contract_analyzer/__main__.py','temporal_contract_analyzer/cli.py','temporal_contract_analyzer/review_packet.py','temporal_contract_analyzer/core.py','temporal_contract_analyzer/lifecycle.py','temporal_contract_analyzer/reentrancy.py','temporal_contract_analyzer/publication.py','temporal_contract_analyzer/python_adapter.py','temporal_contract_analyzer/report.py','tools/temporal-contract-analyzer/parse.cjs','tools/temporal-contract-analyzer/package.json','tools/temporal-contract-analyzer/package-lock.json']
     tool_hash=sha(canonical({p:sha((ROOT/p).read_bytes()) for p in tool_files if (ROOT/p).is_file()}).encode())
     incomplete=any(f['status']!='parsed' for f in files) or any(s['reason']!='excluded_directory' for s in skipped or [])
     report=dict(schema_version='temporal-contract-analysis-1',tool_version=VERSION,tool_sha256=tool_hash,input_sha256=sha(canonical(inputs).encode()),adapters=adapters,
@@ -252,7 +256,11 @@ def compare(before,after):
         values={};events={e['id']:e for f in report['files'] for e in f['events']}
         def event_key(e):return [e['path'],e['scope'],e['kind'],normalize(e.get('callee') or e.get('target') or e.get('expression') or e['text']),e.get('operator',''),e.get('awaited',False),[normalize(c) for c in e['conditions']]]
         for f in report['findings']:
-            signature=canonical([f['rule'],f['path'],f['scope'],[event_key(events[e]) for e in f['evidence']]])
+            parts=[f['rule'],f['path'],f['scope'],[event_key(events[e]) for e in f['evidence']]]
+            if 'state_publication' in f:
+                publication=f['state_publication']
+                parts.append([publication['status'],publication.get('write_value')])
+            signature=canonical(parts)
             values.setdefault(signature,[]).append(f)
         return values
     left,right=facts(before),facts(after)

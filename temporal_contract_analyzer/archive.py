@@ -309,10 +309,12 @@ def list_reports(store=None, search='', status='', origin='', project='', limit=
 
 
 def read_report(report_id, store=None):
+    from .boundary_cards import cards
     verify(report_id, store)
     root = _report_dir(store, report_id)
+    report = _read(root/'report.json') if (root/'report.json').exists() else None
     return dict(metadata=metadata(report_id, store),
-                report=_read(root/'report.json') if (root/'report.json').exists() else None,
+                report=report, boundary_cards=cards(report),
                 notes=records('notes', report_id, store), deliveries=records('deliveries', report_id, store),
                 measurements=measurement_records(report_id, store),
                 legacy_measurements=legacy_measurement_records(report_id, store))
@@ -375,14 +377,24 @@ def append_record(kind, report_id, value, store=None):
     return item
 
 
-def annotate(report_id, finding_id, decision, note, store=None):
+def annotate(report_id, finding_id, decision, note, store=None, boundary_review=None):
     data = read_report(report_id, store)
     if not data['report'] or finding_id not in {f['id'] for f in data['report']['findings']}:
         raise EvidenceError('Unknown finding')
     if decision not in {'confirmed', 'dismissed', 'uncertain'} or not isinstance(note, str) or len(note) > 10000:
         raise EvidenceError('Invalid research annotation')
-    return append_record('notes', report_id, dict(finding_id=finding_id, decision=decision, note=note,
-                         actor='human', qualification='Researcher assessment, not an oracle label'), store)
+    value = dict(finding_id=finding_id, decision=decision, note=note,
+                 actor='human', qualification='Researcher assessment, not an oracle label')
+    if boundary_review is not None:
+        if (not isinstance(boundary_review, dict)
+                or set(boundary_review) != {'protection', 'requirement_basis', 'missing_evidence'}
+                or not isinstance(boundary_review['protection'], str)
+                or boundary_review['protection'] not in {'sufficient', 'insufficient', 'uncertain'}
+                or any(not isinstance(boundary_review[key], str) or len(boundary_review[key]) > 10000
+                       for key in ('requirement_basis', 'missing_evidence'))):
+            raise EvidenceError('Invalid boundary review')
+        value['boundary_review'] = boundary_review
+    return append_record('notes', report_id, value, store)
 
 
 def measurement_records(report_id, store=None):

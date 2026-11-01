@@ -148,7 +148,8 @@ class Handler(BaseHTTPRequestHandler):
             if parts[3] == 'verify':
                 self.send(archive.verify(parts[2], store))
             elif parts[3] == 'notes':
-                self.send(archive.annotate(parts[2], data['finding_id'], data['decision'], data.get('note', ''), store), 201)
+                self.send(archive.annotate(parts[2], data['finding_id'], data['decision'], data.get('note', ''), store,
+                                           boundary_review=data.get('boundary_review')), 201)
             elif parts[3] == 'measurements':
                 self.send(archive.add_measurement(parts[2], data, store), 201)
             elif parts[3] == 'measurement-reviews':

@@ -86,8 +86,11 @@ FACT_FIELDS = ('kind', 'callee', 'receiver', 'arguments', 'target', 'operator',
                'rhs_callee', 'awaited', 'expression', 'optional', 'construct',
                'asynchronous', 'conditions', 'block', 'statement', 'name',
                'references', 'argument_references', 'value_references', 'rhs_kind',
-               'loop_bindings', 'object_target', 'target_scope', 'argument_index')
+               'loop_bindings', 'object_target', 'target_scope', 'argument_index',
+               'declared_names', 'assigned_names', 'write_roots', 'binding_kind', 'rhs_text', 'immediate_target_scope')
 RELATIONS = {
+    'state_write_before_external_call': 'Bounded JS evaluation prefix: shared-state write before a candidate external call; value meaning and protection remain unproven.',
+    'external_call_before_state_write': 'Bounded JS evaluation prefix: candidate external call before shared-state write; reentry remains a condition to verify.',
     'lexical_before_same_block': 'Source statement order within the same syntax block; execution is not established.',
     'rhs_before_assignment': 'Assignment follows successful RHS evaluation; asynchronous completion is not established.',
     'lexical_write_before_direct_call': 'Source order within one function; execution, callback identity and synchronous reentry are not established.',
@@ -230,7 +233,9 @@ def render_layers(report, layer_schema=LAYER_SCHEMA):
     for finding in report['findings']:
         review += [_json_block(dict(rule=finding['rule'], locations=sorted(set(references[e] for e in finding['evidence'])),
                                     interpretation=finding['message'], condition=finding['condition'],
-                                    review_question=finding['review_question'], classification='heuristic_review_hint')), '']
+                                    review_question=finding['review_question'], classification='heuristic_review_hint',
+                                    **({'state_publication': finding['state_publication']}
+                                       if 'state_publication' in finding else {}))), '']
     layers = {'none': '', 'locations': '\n'.join(common), 'facts': '\n'.join(facts), 'review': '\n'.join(review)}
     if layer_schema in (OPEN_LAYER_SCHEMA, LAYER_SCHEMA):
         layers.update(audit=AUDIT_PROMPT, risk=_risk_prompt(report))
