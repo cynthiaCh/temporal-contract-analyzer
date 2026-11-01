@@ -68,6 +68,15 @@ function analyze(file) {
     return body.length===1&&body[0].type==='ReturnStatement'&&
       (!body[0].argument||['Identifier','BooleanLiteral','NumericLiteral','StringLiteral','NullLiteral'].includes(body[0].argument.type));
   }
+  function nullEarlyReturn(n){
+    if(n?.type!=='IfStatement'||n.alternate||n.test.type!=='BinaryExpression'||n.test.operator!=='===')return '';
+    const {left,right}=n.test;
+    const identifier=left.type==='Identifier'&&right.type==='NullLiteral'?left.name:
+      right.type==='Identifier'&&left.type==='NullLiteral'?right.name:'';
+    const body=n.consequent.type==='BlockStatement'?n.consequent.body:[n.consequent];
+    return identifier&&body.length===1&&body[0].type==='ReturnStatement'&&
+      (!body[0].argument||['Identifier','BooleanLiteral','NumericLiteral','StringLiteral','NullLiteral'].includes(body[0].argument.type))?identifier:'';
+  }
   function straightExpression(n){
     if(!n||typeof n!=='object')return true;
     if(fnTypes.has(n.type)||['AwaitExpression','YieldExpression','ConditionalExpression','LogicalExpression',
@@ -76,7 +85,7 @@ function analyze(file) {
       (Array.isArray(v)?v.every(straightExpression):straightExpression(v)));
   }
   function linearStatement(n){
-    return earlyReturn(n)||(['ExpressionStatement','VariableDeclaration','ReturnStatement','ThrowStatement','EmptyStatement'].includes(n.type)&&straightExpression(n));
+    return earlyReturn(n)||!!nullEarlyReturn(n)||(['ExpressionStatement','VariableDeclaration','ReturnStatement','ThrowStatement','EmptyStatement'].includes(n.type)&&straightExpression(n));
   }
   function supportedCondition(n,root=false){
     if(root&&references(n).length===0)return false;
@@ -187,6 +196,7 @@ function analyze(file) {
           n.test.type==='UnaryExpression'&&n.test.operator==='!'&&n.test.argument.type==='Identifier'?
           {condition_identifier:n.test.argument.name,condition_truthy:false}:{}),
         ...(earlyReturn(n)?{early_return_identifier:n.test.name}:{}),
+        ...(nullEarlyReturn(n)?{null_return_identifier:nullEarlyReturn(n)}:{}),
         ...(n.test.type==='Identifier'?{test_identifier:n.test.name,
           consequent_block:ctx.scope+(n.consequent.type==='BlockStatement'?'/block@'+n.consequent.start:'/then@'+n.start),
           consequent_linear:(n.consequent.type==='BlockStatement'?n.consequent.body:[n.consequent]).every(s=>

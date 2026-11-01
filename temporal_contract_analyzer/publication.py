@@ -132,6 +132,79 @@ def publication_patterns(files):
                 if event['kind'] in {'return', 'raise'}:
                     return
 
+        def alias_snapshot_patterns(entry):
+            # One-hop value snapshots, not a general alias/call graph. In
+            # particular, clearing the source does not rewrite an earlier copy.
+            events = grouped[entry]
+            reachable = {e['id'] for e, _ in prefix(entry)}
+            region = []
+            for event in events[:2000]:
+                if (event['block'] != functions[entry].get('body_block') or
+                        event.get('conditions') or event.get('branch_path')):
+                    continue
+                if event['kind'] in {'return', 'raise', 'await', 'yield'}:
+                    break
+                region.append(event)
+            guards = [e for e in region if e['kind'] == 'guard']
+            if len(guards) != 1:
+                return
+            guard = guards[0]
+            name = guard.get('null_return_identifier')
+            if not name or not guard.get('linear_block') or guard['id'] not in reachable:
+                return
+            binding = owner(entry, name)
+            if (binding is None or binding == entry or
+                    name not in functions.get(binding, {}).get('parameters', [])):
+                return
+            writes = visible_writes(name, binding)
+            if len(writes) != 1:
+                return
+            write = writes[0]
+            if (write not in region or write.get('target') != name or write.get('operator') != '=' or
+                    write.get('rhs_kind') != 'NullLiteral' or owner(write['scope'], name) != binding):
+                return
+            for snapshot in region:
+                alias = snapshot.get('target', '')
+                if (snapshot['kind'] != 'write' or not IDENTIFIER.fullmatch(alias) or alias == name or
+                        snapshot.get('declared_names') != [alias] or snapshot.get('operator') != '=' or
+                        snapshot.get('rhs_kind') != 'Identifier' or snapshot.get('rhs_text') != name or
+                        owner(entry, alias) != entry or
+                        not region.index(guard) < region.index(snapshot) < region.index(write)):
+                    continue
+                # Reassignment, method writes, destructuring and ambiguous
+                # sibling bindings invalidate the saved callable candidate.
+                if [e['id'] for e in visible_writes(alias, entry)] != [snapshot['id']]:
+                    continue
+                for callback in region[region.index(snapshot) + 1:]:
+                    parts = callback.get('callee', '').split('.')
+                    if (callback['kind'] != 'call' or callback.get('optional') or callback.get('construct') or
+                            parts[0] != alias or not (len(parts) == 1 or len(parts) == 2 and parts[1] in {'call', 'apply'})):
+                        continue
+                    prior = region.index(write) < region.index(callback)
+                    status = 'write_before_call' if prior else 'write_after_call'
+                    qualification = (QUALIFICATION + ' One simple local declaration snapshots an outer '
+                        'parameter after a strict null early-return guard and before its only visible null clear. '
+                        'The alias has no other visible writes; runtime callable types and method replacement remain unresolved.')
+                    findings.append(dict(rule=RULE, path=file['path'], scope=entry,
+                        evidence=[guard['id'], snapshot['id'], callback['id'], write['id']],
+                        classification='review_hint_not_bug_verdict',
+                        message=('调用本地回调快照之前，已清空入口读取的原始绑定；快照仍保留清空前的候选函数值。' if prior else
+                                 '先调用本地回调快照，随后才清空入口读取的原始绑定；同步重入可能再次取得同一函数。'),
+                        condition=qualification,
+                        review_question='回调经局部副本调用时，原绑定是否已使重入入口返回？请核对同步重入和异常语义；清空原变量不等于清空先前副本。',
+                        state_publication=dict(state=name, binding_scope=binding, status=status,
+                            guard=guard['id'], callback=callback['id'], write=write['id'],
+                            execution_path=[snapshot['id']], uncertainties=[], write_value=write.get('rhs_text'),
+                            path_conditions=['fallthrough of ' + guard['expression']],
+                            callback_binding_basis='local_snapshot_of_outer_parameter',
+                            callback_alias=dict(name=alias, source=name, copy=snapshot['id'], binding_scope=entry))))
+                    before, after = (write, callback) if prior else (callback, write)
+                    relations.extend([
+                        dict(kind='state_write_before_external_call' if prior else 'external_call_before_state_write',
+                             before=before['id'], after=after['id'], qualification=qualification),
+                        dict(kind='local_alias_snapshot_before_call', before=snapshot['id'], after=callback['id'],
+                             qualification='A simple local value copy before its candidate invocation; later source clearing does not rewrite the copy.')])
+
         def nested_flag_patterns(entry):
             # A linear block on a bounded, explicitly selected if/else path.
             # Do not concatenate sibling branches or infer property identities.
@@ -235,6 +308,7 @@ def publication_patterns(files):
         for entry, definition in functions.items():
             if definition.get('parent') is None or definition.get('generator'):
                 continue
+            alias_snapshot_patterns(entry)
             nested_flag_patterns(entry)
             local_guards = [e for e in grouped[entry] if e['kind'] == 'guard' and not e.get('conditions')]
             if not local_guards:

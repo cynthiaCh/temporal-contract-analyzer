@@ -90,8 +90,9 @@ FACT_FIELDS = ('kind', 'callee', 'receiver', 'arguments', 'target', 'operator',
                'declared_names', 'assigned_names', 'write_roots', 'binding_kind', 'rhs_text', 'immediate_target_scope',
                'branch_path', 'linear_block', 'guard_key', 'early_return_identifier',
                'condition_path_supported', 'then_path_block', 'else_path_block',
-               'condition_identifier', 'condition_truthy')
+               'condition_identifier', 'condition_truthy', 'null_return_identifier')
 RELATIONS = {
+    'local_alias_snapshot_before_call': 'A simple local copy of a parameter value precedes its candidate invocation; runtime types and indirect mutation remain unresolved.',
     'state_write_before_external_call': 'Bounded JS evaluation prefix: shared-state write before a candidate external call; value meaning and protection remain unproven.',
     'external_call_before_state_write': 'Bounded JS evaluation prefix: candidate external call before shared-state write; reentry remains a condition to verify.',
     'lexical_before_same_block': 'Source statement order within the same syntax block; execution is not established.',
