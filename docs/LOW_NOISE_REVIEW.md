@@ -30,3 +30,8 @@ python3 -m temporal_contract_analyzer scan /path/to/project --format html --view
 | 修复后 | 4 | 0 | 10,337 | 848 |
 
 修复后另保留一条顺序事实：`currentPromise` 在 L121 写入，外部调用位于 L129。上述是报告字符数，不是 token、费用、准确率或 LLM 成功率；该案例已参与规则开发，不是独立验证集。
+
+
+## 0.6.3 增补
+
+同一筛选策略现在也能展示受限正分支中的一次性回调清空候选；不用放宽“证据完整且无已记录不确定性”的门槛。onetime 固定源码由 0 张卡变为 1 张，证据指向 L17 guard、L18 调用、L19 清空；详细边界见 `STATE_PUBLICATION_REVIEW.md` 的 0.6.3 小节。原始开发检查和历史报告不覆盖。

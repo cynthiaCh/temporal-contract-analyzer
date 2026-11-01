@@ -67,7 +67,7 @@ def publication_patterns(files):
                     name in e.get('write_roots', [e.get('target')]) and
                     possible_owner(e['scope'], name, binding)]
 
-        def parameter_call(event, entry):
+        def parameter_call(event, entry, allowed_later_clear=None):
             parts = event.get('callee', '').split('.')
             if (event.get('construct') or event.get('optional') or
                     not (len(parts) == 1 or len(parts) == 2 and parts[1] in {'call', 'apply'})):
@@ -82,7 +82,9 @@ def publication_patterns(files):
             if binding not in set(ancestry(entry)):
                 return False
             # Reassigning or writing .call/.apply leaves invocation semantics unknown.
-            return not visible_writes(parts[0], binding)
+            writes = visible_writes(parts[0], binding)
+            return not writes or (allowed_later_clear is not None and
+                                  [e['id'] for e in writes] == [allowed_later_clear['id']])
 
         def local_target(event):
             target = event.get('immediate_target_scope')
@@ -139,6 +141,66 @@ def publication_patterns(files):
             sequence = list(prefix(entry))
             indices = {e['id']: i for i, (e, _) in enumerate(sequence)}
             emitted = set()
+            # A one-shot callable can also be its own entry-state variable.
+            # Keep this separate from the unconditional-prefix analysis: only
+            # the selected positive branch, with one later null/undefined clear,
+            # permits a parameter write without losing its candidate identity.
+            for guard in local_guards:
+                name = guard.get('test_identifier')
+                if (not name or guard['id'] not in indices or
+                        guard['block'] != definition.get('body_block') or
+                        not guard.get('consequent_linear')):
+                    continue
+                binding = owner(entry, name)
+                if (binding is None or binding == entry or
+                        name not in functions.get(binding, {}).get('parameters', [])):
+                    continue
+                conditions = ['if ' + guard['expression']]
+                branch = []
+                for event, _ in sequence:
+                    if (event['scope'] != entry or event['block'] != guard['consequent_block'] or
+                            event.get('conditions') != conditions):
+                        continue
+                    if event['kind'] in {'return', 'raise'}:
+                        break
+                    branch.append(event)
+                writes = visible_writes(name, binding)
+                if len(writes) != 1:
+                    continue
+                write = writes[0]
+                if (write not in branch or write.get('target') != name or
+                        write.get('operator') != '=' or owner(write['scope'], name) != binding):
+                    continue
+                is_null = write.get('rhs_kind') == 'NullLiteral'
+                is_undefined = (write.get('rhs_kind') == 'Identifier' and
+                                write.get('rhs_text') == 'undefined' and
+                                not any(i['local'] == 'undefined' for i in file['imports']) and
+                                not any('undefined' in names for names in declarations.values()) and
+                                not any('undefined' in f.get('parameters', []) for f in functions.values()))
+                if not (is_null or is_undefined):
+                    continue
+                for callback in branch[:branch.index(write)]:
+                    if (callback['kind'] != 'call' or
+                            callback.get('callee', '').split('.')[0] != name or
+                            not parameter_call(callback, entry, allowed_later_clear=write)):
+                        continue
+                    emitted.add((name, callback['id']))
+                    qualification = (QUALIFICATION + ' Selected positive identifier guard branch only; '
+                        'the only visible write to this parameter is a later null/undefined clear. '
+                        'Other branches, indirect mutation and overridden .call/.apply remain unresolved.')
+                    findings.append(dict(rule=RULE, path=file['path'], scope=entry,
+                        evidence=[guard['id'], callback['id'], write['id']],
+                        classification='review_hint_not_bug_verdict',
+                        message='入口条件仍持有用户函数时调用该函数，随后才清空同一闭包绑定；同步重入可能再次进入该分支。',
+                        condition=qualification,
+                        review_question='用户函数若立即重入包装入口，是否会再次执行？请检查同步重入、throw 选项与首次抛错后的重试语义；不能直接提前清空而忽略重试行为。',
+                        state_publication=dict(state=name, binding_scope=binding,
+                            status='write_after_call', guard=guard['id'], callback=callback['id'],
+                            write=write['id'], execution_path=[], uncertainties=[],
+                            write_value=write.get('rhs_text'), path_conditions=conditions,
+                            callback_binding_basis='outer_parameter_with_only_later_clear')))
+                    relations.append(dict(kind='external_call_before_state_write',
+                        before=callback['id'], after=write['id'], qualification=qualification))
             for guard in local_guards:
                 if guard['id'] not in indices:
                     continue

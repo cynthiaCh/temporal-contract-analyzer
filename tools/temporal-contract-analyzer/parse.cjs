@@ -155,7 +155,11 @@ function analyze(file) {
       // Re-exports are deliberately unresolved.
     }
     if(n.type==='IfStatement'){
-      emit(n.test,'guard',ctx,{expression:text(n.test),references:references(n.test)});walk(n.test,ctx,n,'test');
+      emit(n.test,'guard',ctx,{expression:text(n.test),references:references(n.test),
+        ...(n.test.type==='Identifier'?{test_identifier:n.test.name,
+          consequent_block:ctx.scope+(n.consequent.type==='BlockStatement'?'/block@'+n.consequent.start:'/then@'+n.start),
+          consequent_linear:(n.consequent.type==='BlockStatement'?n.consequent.body:[n.consequent]).every(s=>
+            ['ExpressionStatement','VariableDeclaration','ReturnStatement','ThrowStatement','EmptyStatement'].includes(s.type))}: {})});walk(n.test,ctx,n,'test');
       walk(n.consequent,{...ctx,block:ctx.scope+'/then@'+n.start,conditions:[...ctx.conditions,'if '+text(n.test)]},n,'consequent');
       walk(n.alternate,{...ctx,block:ctx.scope+'/else@'+n.start,conditions:[...ctx.conditions,'else of '+text(n.test)]},n,'alternate');return;
     }
