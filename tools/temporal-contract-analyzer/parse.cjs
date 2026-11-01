@@ -62,6 +62,28 @@ function analyze(file) {
   const fnTypes=new Set(['FunctionDeclaration','FunctionExpression','ArrowFunctionExpression','ObjectMethod','ClassMethod','ClassPrivateMethod']);
   const callTypes=new Set(['CallExpression','OptionalCallExpression','NewExpression']);
   const syntaxKeys=new Set(['loc','extra','comments','leadingComments','trailingComments','innerComments','tokens','typeAnnotation','typeParameters','typeArguments','returnType','predicate','implements','superTypeParameters']);
+  function earlyReturn(n){
+    if(n?.type!=='IfStatement'||n.test.type!=='Identifier'||n.alternate)return false;
+    const body=n.consequent.type==='BlockStatement'?n.consequent.body:[n.consequent];
+    return body.length===1&&body[0].type==='ReturnStatement'&&
+      (!body[0].argument||['Identifier','BooleanLiteral','NumericLiteral','StringLiteral','NullLiteral'].includes(body[0].argument.type));
+  }
+  function straightExpression(n){
+    if(!n||typeof n!=='object')return true;
+    if(fnTypes.has(n.type)||['AwaitExpression','YieldExpression','ConditionalExpression','LogicalExpression',
+      'OptionalCallExpression','OptionalMemberExpression','ClassExpression','ClassDeclaration'].includes(n.type))return false;
+    return Object.entries(n).every(([k,v])=>syntaxKeys.has(k)||
+      (Array.isArray(v)?v.every(straightExpression):straightExpression(v)));
+  }
+  function linearStatement(n){
+    return earlyReturn(n)||(['ExpressionStatement','VariableDeclaration','ReturnStatement','ThrowStatement','EmptyStatement'].includes(n.type)&&straightExpression(n));
+  }
+  function supportedCondition(n,root=false){
+    if(root&&references(n).length===0)return false;
+    return ['Identifier','ThisExpression','BooleanLiteral','NumericLiteral','StringLiteral','NullLiteral'].includes(n.type)||
+      (n.type==='UnaryExpression'&&n.operator==='!'&&supportedCondition(n.argument))||
+      (n.type==='BinaryExpression'&&['===','!==','==','!='].includes(n.operator)&&supportedCondition(n.left)&&supportedCondition(n.right));
+  }
   function boundNames(n){
     if(!n)return [];
     if(n.type==='Identifier')return [n.name];
@@ -110,7 +132,7 @@ function analyze(file) {
     body_block:n.body.type==='BlockStatement'?id+'/block@'+n.body.start:id+'/body',
     ...(n.type==='FunctionExpression'&&n.id?{self_name:n.id.name}:{}),...loc(n)});return id;}
   const root=file.scopeName||'<module>';functions.push({id:root,parent:null,name:root,parameters:[],async:false,generator:false,body_block:root+'/block@0',line:1,column:0,end_line:source.split('\n').length,end_column:0});
-  function emit(n,kind,ctx,extra={}){const e={id:'e'+events.length,kind,scope:ctx.scope,block:ctx.block,statement:ctx.statement,conditions:ctx.conditions,...(ctx.loop_bindings?.length?{loop_bindings:ctx.loop_bindings}:{}),...loc(n),text:text(n),...extra};events.push(e);return e;}
+  function emit(n,kind,ctx,extra={}){const e={id:'e'+events.length,kind,scope:ctx.scope,block:ctx.block,statement:ctx.statement,conditions:ctx.conditions,branch_path:ctx.branch_path||[],linear_block:!!ctx.linear_block,...(ctx.loop_bindings?.length?{loop_bindings:ctx.loop_bindings}:{}),...loc(n),text:text(n),...extra};events.push(e);return e;}
   function walk(n,ctx,parent=null,field='') {
     if(!n||typeof n.type!=='string')return;
     if(fnTypes.has(n.type)){
@@ -134,7 +156,8 @@ function analyze(file) {
     }
     if(n.type==='Program'||n.type==='BlockStatement'){
       const block=ctx.scope+'/block@'+n.start;
-      n.body.forEach((s,i)=>walk(s,{...ctx,block,statement:i},n,'body'));return;
+      const linear_block=n.body.every(linearStatement);
+      n.body.forEach((s,i)=>walk(s,{...ctx,block,linear_block,statement:i},n,'body'));return;
     }
     if(n.type==='ClassDeclaration'||n.type==='ClassExpression'){
       if(n.type==='ClassDeclaration'&&n.id)emit(n.id,'binding',ctx,{declared_names:[n.id.name],binding_kind:'class'});
@@ -155,13 +178,21 @@ function analyze(file) {
       // Re-exports are deliberately unresolved.
     }
     if(n.type==='IfStatement'){
-      emit(n.test,'guard',ctx,{expression:text(n.test),references:references(n.test),
+      const guard_key=ctx.scope+'/if@'+n.start;
+      emit(n.test,'guard',ctx,{expression:text(n.test),references:references(n.test),guard_key,
+        then_path_block:ctx.scope+(n.consequent.type==='BlockStatement'?'/block@'+n.consequent.start:'/then@'+n.start),
+        else_path_block:ctx.scope+(n.alternate?.type==='BlockStatement'?'/block@'+n.alternate.start:'/else@'+n.start),
+        condition_path_supported:supportedCondition(n.test,true),
+        ...(n.test.type==='Identifier'?{condition_identifier:n.test.name,condition_truthy:true}:
+          n.test.type==='UnaryExpression'&&n.test.operator==='!'&&n.test.argument.type==='Identifier'?
+          {condition_identifier:n.test.argument.name,condition_truthy:false}:{}),
+        ...(earlyReturn(n)?{early_return_identifier:n.test.name}:{}),
         ...(n.test.type==='Identifier'?{test_identifier:n.test.name,
           consequent_block:ctx.scope+(n.consequent.type==='BlockStatement'?'/block@'+n.consequent.start:'/then@'+n.start),
           consequent_linear:(n.consequent.type==='BlockStatement'?n.consequent.body:[n.consequent]).every(s=>
             ['ExpressionStatement','VariableDeclaration','ReturnStatement','ThrowStatement','EmptyStatement'].includes(s.type))}: {})});walk(n.test,ctx,n,'test');
-      walk(n.consequent,{...ctx,block:ctx.scope+'/then@'+n.start,conditions:[...ctx.conditions,'if '+text(n.test)]},n,'consequent');
-      walk(n.alternate,{...ctx,block:ctx.scope+'/else@'+n.start,conditions:[...ctx.conditions,'else of '+text(n.test)]},n,'alternate');return;
+      walk(n.consequent,{...ctx,block:ctx.scope+'/then@'+n.start,branch_path:[...(ctx.branch_path||[]),{key:guard_key,arm:'then'}],conditions:[...ctx.conditions,'if '+text(n.test)]},n,'consequent');
+      walk(n.alternate,{...ctx,block:ctx.scope+'/else@'+n.start,branch_path:[...(ctx.branch_path||[]),{key:guard_key,arm:'else'}],conditions:[...ctx.conditions,'else of '+text(n.test)]},n,'alternate');return;
     }
     if(n.type==='ConditionalExpression'||n.type==='LogicalExpression'){
       const cond=n.test||n.left;walk(cond,ctx,n,'test');

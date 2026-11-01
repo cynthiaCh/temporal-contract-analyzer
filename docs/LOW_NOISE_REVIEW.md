@@ -35,3 +35,8 @@ python3 -m temporal_contract_analyzer scan /path/to/project --format html --view
 ## 0.6.3 增补
 
 同一筛选策略现在也能展示受限正分支中的一次性回调清空候选；不用放宽“证据完整且无已记录不确定性”的门槛。onetime 固定源码由 0 张卡变为 1 张，证据指向 L17 guard、L18 调用、L19 清空；详细边界见 `STATE_PUBLICATION_REVIEW.md` 的 0.6.3 小节。原始开发检查和历史报告不覆盖。
+
+
+## 0.6.4 增补
+
+默认门槛保持不变；新的有界嵌套路径可提供完整 guard/调用/标志写入关系。component/once 原版识别为写入在前，仅保留顺序事实；人工延迟写标志变体识别为写入在后，展示 1 张卡并带外层接收者条件。不同分支不合并；this[key] 状态仍未覆盖。见 `STATE_PUBLICATION_REVIEW.md` 的边界说明。

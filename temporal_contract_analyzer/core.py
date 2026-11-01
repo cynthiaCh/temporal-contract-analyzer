@@ -14,7 +14,7 @@ from .lifecycle import lifecycle_patterns
 from .reentrancy import reentrancy_patterns
 from .publication import publication_patterns
 
-VERSION='0.6.3'
+VERSION='0.6.4'
 ROOT=Path(__file__).resolve().parents[1]
 JS_EXT={'.js','.mjs','.cjs','.jsx','.ts','.tsx'}
 CODE_EXT=JS_EXT|{'.py','.vue','.go','.java','.rs','.c','.h','.cpp','.cs','.rb'}

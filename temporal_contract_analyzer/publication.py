@@ -132,9 +132,110 @@ def publication_patterns(files):
                 if event['kind'] in {'return', 'raise'}:
                     return
 
+        def nested_flag_patterns(entry):
+            # A linear block on a bounded, explicitly selected if/else path.
+            # Do not concatenate sibling branches or infer property identities.
+            events = grouped[entry]
+            guards = {e['guard_key']: e for e in events if e['kind'] == 'guard' and e.get('guard_key')}
+            reachable = {e['id'] for e, _ in prefix(entry)}
+            for guard in events:
+                name = guard.get('early_return_identifier')
+                path = guard.get('branch_path', [])
+                if (not name or not path or len(path) > 4 or not guard.get('linear_block') or
+                        guard['id'] not in reachable):
+                    continue
+                binding = owner(entry, name)
+                if binding is None or binding == entry:
+                    continue
+                parents = [guards.get(part['key']) for part in path]
+                if any(p is None or not p.get('condition_path_supported') for p in parents):
+                    continue
+                # Reject constant-only predicates above, and contradictory bare
+                # identifier predicates here; this is not a general SAT solver.
+                truth = {name: False}  # fallthrough of `if (flag) return`
+                consistent = True
+                for part, parent in zip(path, parents):
+                    identifier = parent.get('condition_identifier')
+                    if identifier:
+                        value = parent['condition_truthy'] == (part['arm'] == 'then')
+                        if identifier in truth and truth[identifier] != value:
+                            consistent = False
+                            break
+                        truth[identifier] = value
+                if not consistent:
+                    continue
+                expected_block = functions[entry].get('body_block')
+                valid_path = True
+                for part, parent in zip(path, parents):
+                    if parent['block'] != expected_block:
+                        valid_path = False
+                        break
+                    expected_block = parent.get('then_path_block' if part['arm'] == 'then' else 'else_path_block')
+                if not valid_path or guard['block'] != expected_block:
+                    continue
+                # Loops, catch/finally and other conditional regions are not if paths.
+                conditions = [('if ' if part['arm'] == 'then' else 'else of ') + parent['expression']
+                              for part, parent in zip(path, parents)]
+                if guard.get('conditions') != conditions:
+                    continue
+                region = []
+                for event in events[:2000]:
+                    if (event['block'] != guard['block'] or event.get('branch_path') != path or
+                            event.get('conditions') != conditions):
+                        continue
+                    if event['kind'] in {'return', 'raise', 'await', 'yield'}:
+                        break
+                    region.append(event)
+                if guard not in region or any(e['kind'] == 'guard' and e is not guard for e in region):
+                    continue
+                writes = visible_writes(name, binding)
+                changes = [e for e in writes if e not in region]
+                # Only an uninitialized/false closure declaration may precede
+                # the selected block's one true publication. Other writes stay unknown.
+                if any(not (e['scope'] == binding and name in e.get('declared_names', []) and
+                            (e.get('rhs_kind') is None or
+                             e.get('rhs_kind') == 'BooleanLiteral' and e.get('rhs_text') == 'false'))
+                       for e in changes):
+                    continue
+                publications = [e for e in writes if e in region]
+                if len(publications) != 1:
+                    continue
+                write = publications[0]
+                if (write.get('target') != name or write.get('operator') != '=' or
+                        write.get('rhs_kind') != 'BooleanLiteral' or write.get('rhs_text') != 'true' or
+                        owner(write['scope'], name) != binding or region.index(write) <= region.index(guard)):
+                    continue
+                for callback in region[region.index(guard) + 1:]:
+                    if (callback['kind'] != 'call' or callback.get('callee', '').split('.')[0] == name or
+                            not parameter_call(callback, entry)):
+                        continue
+                    prior = region.index(write) < region.index(callback)
+                    status = 'write_before_call' if prior else 'write_after_call'
+                    qualification = (QUALIFICATION + ' Selected nested if/else path and fallthrough of a '
+                        'bare-identifier early-return guard; one true flag publication in this linear block. '
+                        'Receiver property state, indirect mutations and other paths remain unresolved.')
+                    anchors = [p['id'] for p in parents]
+                    findings.append(dict(rule=RULE, path=file['path'], scope=entry,
+                        evidence=[*anchors, guard['id'], callback['id'], write['id']],
+                        classification='review_hint_not_bug_verdict',
+                        message=('选定嵌套分支中，入口防重复标志在外部调用前写入。' if prior else
+                                 '选定嵌套分支中，外部调用发生后才写入入口防重复标志；同步重入可能再次通过检查。'),
+                        condition=qualification,
+                        review_question='在相同接收者和分支条件下，用户函数同步重入是否会重复执行？请核对异常路径与标志含义；调用前写入不等于所有路径安全。',
+                        state_publication=dict(state=name, binding_scope=binding, status=status,
+                            guard=guard['id'], callback=callback['id'], write=write['id'],
+                            execution_path=anchors, uncertainties=[], write_value=write.get('rhs_text'),
+                            path_conditions=[*conditions, 'fallthrough of ' + guard['expression']],
+                            callback_binding_basis='unchanged_parameter_on_nested_flag_path')))
+                    before, after = (write, callback) if prior else (callback, write)
+                    relations.append(dict(kind='state_write_before_external_call' if prior else
+                                          'external_call_before_state_write', before=before['id'],
+                                          after=after['id'], qualification=qualification))
+
         for entry, definition in functions.items():
             if definition.get('parent') is None or definition.get('generator'):
                 continue
+            nested_flag_patterns(entry)
             local_guards = [e for e in grouped[entry] if e['kind'] == 'guard' and not e.get('conditions')]
             if not local_guards:
                 continue
