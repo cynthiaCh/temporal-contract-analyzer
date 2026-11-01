@@ -104,7 +104,7 @@ class TemporalEvidenceTests(unittest.TestCase):
         self.assertEqual(cli.main(['scan',str(base),'--output',str(base/'report.json')]),1)
     def test_html_escapes_source_and_has_no_executable_script(self):
         r=analyze_sources({'a.js':'const x = "<script>alert(1)</script>";'})
-        rendered=html_report(r);self.assertNotIn('<script>',rendered);self.assertIn('&lt;script&gt;',rendered)
+        rendered=html_report(r,view='exploratory');self.assertNotIn('<script>',rendered);self.assertIn('&lt;script&gt;',rendered)
 
 
 if __name__=='__main__':unittest.main()

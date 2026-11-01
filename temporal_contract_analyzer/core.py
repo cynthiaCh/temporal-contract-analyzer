@@ -14,7 +14,7 @@ from .lifecycle import lifecycle_patterns
 from .reentrancy import reentrancy_patterns
 from .publication import publication_patterns
 
-VERSION='0.6.1'
+VERSION='0.6.2'
 ROOT=Path(__file__).resolve().parents[1]
 JS_EXT={'.js','.mjs','.cjs','.jsx','.ts','.tsx'}
 CODE_EXT=JS_EXT|{'.py','.vue','.go','.java','.rs','.c','.h','.cpp','.cs','.rb'}
@@ -235,7 +235,7 @@ def analyze_sources(sources,node=None,skipped=None):
     for file in files:file['sha256']=sha(sources[file['path']].encode())
     links=enrich(files);findings,relations=patterns(files)
     inputs=[dict(path=p,sha256=sha(t.encode())) for p,t in sorted(sources.items())]
-    tool_files=['temporal_contract_analyzer/__init__.py','temporal_contract_analyzer/__main__.py','temporal_contract_analyzer/cli.py','temporal_contract_analyzer/review_packet.py','temporal_contract_analyzer/core.py','temporal_contract_analyzer/lifecycle.py','temporal_contract_analyzer/reentrancy.py','temporal_contract_analyzer/publication.py','temporal_contract_analyzer/python_adapter.py','temporal_contract_analyzer/report.py','tools/temporal-contract-analyzer/parse.cjs','tools/temporal-contract-analyzer/package.json','tools/temporal-contract-analyzer/package-lock.json']
+    tool_files=['temporal_contract_analyzer/__init__.py','temporal_contract_analyzer/__main__.py','temporal_contract_analyzer/cli.py','temporal_contract_analyzer/review_packet.py','temporal_contract_analyzer/core.py','temporal_contract_analyzer/lifecycle.py','temporal_contract_analyzer/reentrancy.py','temporal_contract_analyzer/publication.py','temporal_contract_analyzer/python_adapter.py','temporal_contract_analyzer/report.py','temporal_contract_analyzer/review.py','tools/temporal-contract-analyzer/parse.cjs','tools/temporal-contract-analyzer/package.json','tools/temporal-contract-analyzer/package-lock.json']
     tool_hash=sha(canonical({p:sha((ROOT/p).read_bytes()) for p in tool_files if (ROOT/p).is_file()}).encode())
     incomplete=any(f['status']!='parsed' for f in files) or any(s['reason']!='excluded_directory' for s in skipped or [])
     report=dict(schema_version='temporal-contract-analysis-1',tool_version=VERSION,tool_sha256=tool_hash,input_sha256=sha(canonical(inputs).encode()),adapters=adapters,

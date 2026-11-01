@@ -39,7 +39,9 @@ class ReportArchiveTests(unittest.TestCase):
         self.assertEqual(archive.read_source(meta['report_id'], 'Demo.vue', self.store)['text'], SOURCE)
         self.assertEqual(archive.read_report(meta['report_id'], self.store)['report'], result['report'])
         self.assertTrue(archive.verify(meta['report_id'], self.store)['verified'])
-        self.assertIn('effect-after-await', archive.layer_text(meta['report_id'], 'full', self.store))
+        self.assertIn('展示 0 张卡；隐藏 1 条', archive.layer_text(meta['report_id'], 'full', self.store))
+        raw = archive.read_report(meta['report_id'], self.store)['report']
+        self.assertIn('effect-after-await', {f['rule'] for f in raw['findings']})
         self.assertIn('Heuristic interpretations', archive.layer_text(meta['report_id'], 'review', self.store))
 
     def test_dirty_buffers_are_preserved_without_touching_disk(self):
@@ -162,7 +164,7 @@ class ReportArchiveTests(unittest.TestCase):
         self.file.unlink()
         with redirect_stdout(io.StringIO()) as output:
             self.assertEqual(cli.main(['reports','show',meta['report_id']]), 0)
-        self.assertIn('effect-after-await', output.getvalue())
+        self.assertIn('展示 0 张卡；隐藏 1 条', output.getvalue())
         self.assertEqual(archive.configuration()['store'], str(self.store.resolve()))
 
 

@@ -31,6 +31,7 @@ def main(argv=None):
     pv.add_argument('evidence',type=Path);pv.add_argument('packet',type=Path)
     for cmd in (s,c):
         cmd.add_argument('--node',help='Node executable for JS/TS/Vue')
+        cmd.add_argument('--view',choices=['focused','exploratory'],default='focused',help='Human-readable report view; JSON always retains raw evidence')
         cmd.add_argument('--format',choices=['json','md','html'],default='json')
         cmd.add_argument('--output',type=Path,help='New file only; refuses overwrites')
     args=p.parse_args(argv)
@@ -83,7 +84,7 @@ def main(argv=None):
         roots=[args.candidate] if args.command=='scan' else [args.before,args.after]
         if args.output and any(root.resolve()==args.output.resolve() or root.resolve() in args.output.resolve().parents for root in roots):raise EvidenceError('报告必须写在候选工程外，避免改变或污染候选输入')
         report=scan(args.candidate,args.node) if args.command=='scan' else compare(scan(args.before,args.node),scan(args.after,args.node))
-        content=json.dumps(report,ensure_ascii=False,indent=2)+'\n' if args.format=='json' else markdown(report) if args.format=='md' else html_report(report)
+        content=json.dumps(report,ensure_ascii=False,indent=2)+'\n' if args.format=='json' else markdown(report,view=args.view) if args.format=='md' else html_report(report,view=args.view)
         if args.output:
             args.output.parent.mkdir(parents=True,exist_ok=True)
             with args.output.open('x',encoding='utf-8') as f:f.write(content)
