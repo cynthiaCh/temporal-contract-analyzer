@@ -7,6 +7,8 @@ This describes candidate paths; it does not prove callback behavior or safety.
 from collections import defaultdict
 import re
 
+from .reflective import reflective_patterns
+
 
 RULE = 'reentrant-state-publication'
 IDENTIFIER = re.compile(r'^[A-Za-z_$][\w$]*$')
@@ -304,6 +306,11 @@ def publication_patterns(files):
                     relations.append(dict(kind='state_write_before_external_call' if prior else
                                           'external_call_before_state_write', before=before['id'],
                                           after=after['id'], qualification=qualification))
+
+        reflect_findings, reflect_relations = reflective_patterns(
+            file, functions, grouped, owner, visible_writes, prefix, RULE, QUALIFICATION)
+        findings.extend(reflect_findings)
+        relations.extend(reflect_relations)
 
         for entry, definition in functions.items():
             if definition.get('parent') is None or definition.get('generator'):

@@ -87,6 +87,21 @@ function analyze(file) {
   function linearStatement(n){
     return earlyReturn(n)||!!nullEarlyReturn(n)||(['ExpressionStatement','VariableDeclaration','ReturnStatement','ThrowStatement','EmptyStatement'].includes(n.type)&&straightExpression(n));
   }
+  function reflectiveStraight(n){
+    if(!n||typeof n!=='object')return true;
+    if(fnTypes.has(n.type)||['AwaitExpression','YieldExpression','LogicalExpression',
+      'OptionalCallExpression','OptionalMemberExpression','ClassExpression','ClassDeclaration'].includes(n.type))return false;
+    if(n.type==='ConditionalExpression'&&!(n.test.type==='BinaryExpression'&&n.test.operator==='instanceof'&&
+      n.test.left.type==='ThisExpression'&&n.test.right.type==='Identifier'&&
+      n.consequent.type==='CallExpression'&&n.alternate.type==='CallExpression'))return false;
+    return Object.entries(n).every(([k,v])=>syntaxKeys.has(k)||
+      (Array.isArray(v)?v.every(reflectiveStraight):reflectiveStraight(v)));
+  }
+  function objectBindings(n){
+    if(n?.type!=='ObjectPattern'||!n.properties.every(p=>p.type==='ObjectProperty'&&!p.computed&&
+      p.key.type==='Identifier'&&p.value.type==='Identifier'))return [];
+    return n.properties.map(p=>({local:p.value.name,property:p.key.name}));
+  }
   function supportedCondition(n,root=false){
     if(root&&references(n).length===0)return false;
     return ['Identifier','ThisExpression','BooleanLiteral','NumericLiteral','StringLiteral','NullLiteral'].includes(n.type)||
@@ -141,7 +156,7 @@ function analyze(file) {
     body_block:n.body.type==='BlockStatement'?id+'/block@'+n.body.start:id+'/body',
     ...(n.type==='FunctionExpression'&&n.id?{self_name:n.id.name}:{}),...loc(n)});return id;}
   const root=file.scopeName||'<module>';functions.push({id:root,parent:null,name:root,parameters:[],async:false,generator:false,body_block:root+'/block@0',line:1,column:0,end_line:source.split('\n').length,end_column:0});
-  function emit(n,kind,ctx,extra={}){const e={id:'e'+events.length,kind,scope:ctx.scope,block:ctx.block,statement:ctx.statement,conditions:ctx.conditions,branch_path:ctx.branch_path||[],linear_block:!!ctx.linear_block,...(ctx.loop_bindings?.length?{loop_bindings:ctx.loop_bindings}:{}),...loc(n),text:text(n),...extra};events.push(e);return e;}
+  function emit(n,kind,ctx,extra={}){const e={id:'e'+events.length,kind,scope:ctx.scope,block:ctx.block,statement:ctx.statement,conditions:ctx.conditions,conditional_path:ctx.conditional_path||[],branch_path:ctx.branch_path||[],linear_block:!!ctx.linear_block,...(ctx.loop_bindings?.length?{loop_bindings:ctx.loop_bindings}:{}),...loc(n),text:text(n),...extra};events.push(e);return e;}
   function walk(n,ctx,parent=null,field='') {
     if(!n||typeof n.type!=='string')return;
     if(fnTypes.has(n.type)){
@@ -198,6 +213,8 @@ function analyze(file) {
         ...(earlyReturn(n)?{early_return_identifier:n.test.name}:{}),
         ...(nullEarlyReturn(n)?{null_return_identifier:nullEarlyReturn(n)}:{}),
         ...(n.test.type==='Identifier'?{test_identifier:n.test.name,
+          reflective_branch_linear:(n.consequent.type==='BlockStatement'?n.consequent.body:[n.consequent]).every(s=>
+            ['ExpressionStatement','VariableDeclaration','ReturnStatement','ThrowStatement','EmptyStatement'].includes(s.type)&&reflectiveStraight(s)),
           consequent_block:ctx.scope+(n.consequent.type==='BlockStatement'?'/block@'+n.consequent.start:'/then@'+n.start),
           consequent_linear:(n.consequent.type==='BlockStatement'?n.consequent.body:[n.consequent]).every(s=>
             ['ExpressionStatement','VariableDeclaration','ReturnStatement','ThrowStatement','EmptyStatement'].includes(s.type))}: {})});walk(n.test,ctx,n,'test');
@@ -207,7 +224,12 @@ function analyze(file) {
     if(n.type==='ConditionalExpression'||n.type==='LogicalExpression'){
       const cond=n.test||n.left;walk(cond,ctx,n,'test');
       const branch={...ctx,block:ctx.scope+'/conditional@'+n.start,conditions:[...ctx.conditions,'conditional expression '+text(cond)]};
-      if(n.type==='ConditionalExpression'){walk(n.consequent,branch,n,'consequent');walk(n.alternate,{...branch,block:branch.block+'/else'},n,'alternate');}
+      if(n.type==='ConditionalExpression'){
+        const condition={key:branch.block,parent_block:ctx.block,expression:text(cond),
+          operator:cond.operator||null,left:name(cond.left),right:name(cond.right)};
+        walk(n.consequent,{...branch,conditional_path:[...(ctx.conditional_path||[]),{...condition,arm:'then'}]},n,'consequent');
+        walk(n.alternate,{...branch,block:branch.block+'/else',conditional_path:[...(ctx.conditional_path||[]),{...condition,arm:'else'}]},n,'alternate');
+      }
       else walk(n.right,branch,n,'right');return;
     }
     if(n.type==='TryStatement'){
@@ -234,6 +256,7 @@ function analyze(file) {
       const target=n.id||n.left,rhs=n.init||n.right;walk(rhs,ctx,n,'right');
       let call=rhs?.type==='AwaitExpression'?rhs.argument:rhs;
       emit(n,'write',ctx,{target:name(target)||text(target),rhs_callee:['CallExpression','OptionalCallExpression'].includes(call?.type)?name(call.callee):'',awaited:rhs?.type==='AwaitExpression',operator:n.operator||'=',references:[...new Set([...references(target),...references(rhs)])],value_references:references(rhs),rhs_kind:rhs?.type||null,
+        ...(n.type==='VariableDeclarator'&&rhs?.type==='Identifier'&&objectBindings(target).length?{object_binding_source:rhs.name,object_bindings:objectBindings(target)}:{}),
         declared_names:n.type==='VariableDeclarator'?boundNames(target):[],assigned_names:boundNames(target),write_roots:writeRoots(target),
         rhs_text:['Identifier','BooleanLiteral','NumericLiteral','StringLiteral','NullLiteral'].includes(rhs?.type)?text(rhs):null});return;
     }

@@ -45,3 +45,8 @@ python3 -m temporal_contract_analyzer scan /path/to/project --format html --view
 ## 0.6.5 增补
 
 默认筛选门槛不变；现在支持严格 null 早退后的简单一跳参数副本调用。默认卡保留副本复制位置，区分“原绑定清空”与“副本覆盖”。Async.once 原版仅列清空在前的事实，人工延迟清空变体展示 1 张卡；完整限制见 `STATE_PUBLICATION_REVIEW.md`。
+
+
+## 0.6.6 增补
+
+默认门槛保持不变。接收者函数的 Reflect.apply/construct 两条候选按调用分别保存，选定条件臂不混合执行；同一标志的候选在默认视图合并，保留两种调用位置和来源。@ungap/once 原版仅列两条调用前写入事实，人工变体合并为 1 张问题卡。限制见 `STATE_PUBLICATION_REVIEW.md`。
