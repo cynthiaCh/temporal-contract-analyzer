@@ -102,6 +102,34 @@ function analyze(file) {
       p.key.type==='Identifier'&&p.value.type==='Identifier'))return [];
     return n.properties.map(p=>({local:p.value.name,property:p.key.name}));
   }
+  function countdownGuard(n){
+    if(n?.type!=='IfStatement'||n.alternate||n.test.type!=='BinaryExpression'||n.test.operator!=='>')return null;
+    const {left,right}=n.test;
+    if(right.type!=='NumericLiteral'||!Number.isSafeInteger(right.value)||right.value<0)return null;
+    let counter,form;
+    if(left.type==='UpdateExpression'&&left.operator==='--'&&left.prefix&&left.argument.type==='Identifier'&&right.value<Number.MAX_SAFE_INTEGER){counter=left.argument.name;form='guard_prefix';}
+    else if(left.type==='Identifier'){counter=left.name;form='plain';}
+    else return null;
+    const body=n.consequent.type==='BlockStatement'?n.consequent.body:[n.consequent];
+    if(!body.every(s=>['ExpressionStatement','VariableDeclaration','EmptyStatement'].includes(s.type)&&straightExpression(s)))return null;
+    return {counter,form,threshold:right.value};
+  }
+  function countdownCleanup(n){
+    if(n?.type!=='IfStatement'||n.alternate||n.test.type!=='BinaryExpression'||n.test.operator!=='<='||
+      n.test.left.type!=='Identifier'||n.test.right.type!=='NumericLiteral'||
+      !Number.isSafeInteger(n.test.right.value)||n.test.right.value<0)return null;
+    const body=n.consequent.type==='BlockStatement'?n.consequent.body:[n.consequent];
+    const assignment=body.length===1&&body[0].type==='ExpressionStatement'?body[0].expression:null;
+    if(assignment?.type!=='AssignmentExpression'||assignment.operator!=='='||assignment.left.type!=='Identifier'||assignment.right.type!=='NullLiteral')return null;
+    return {counter:n.test.left.name,threshold:n.test.right.value,target:assignment.left.name};
+  }
+  function countdownBody(n){
+    return n.type==='BlockStatement'&&n.body.every(s=>
+      s.type==='EmptyStatement'||!!countdownGuard(s)||!!countdownCleanup(s)||
+      s.type==='ReturnStatement'&&(!s.argument||['Identifier','BooleanLiteral','NumericLiteral','StringLiteral','NullLiteral'].includes(s.argument.type))||
+      s.type==='VariableDeclaration'&&s.declarations.every(d=>d.id.type==='Identifier'&&(!d.init||['Identifier','BooleanLiteral','NumericLiteral','StringLiteral','NullLiteral'].includes(d.init.type)))||
+      s.type==='ExpressionStatement'&&s.expression.type==='UpdateExpression'&&s.expression.operator==='--'&&s.expression.argument.type==='Identifier');
+  }
   function supportedCondition(n,root=false){
     if(root&&references(n).length===0)return false;
     return ['Identifier','ThisExpression','BooleanLiteral','NumericLiteral','StringLiteral','NullLiteral'].includes(n.type)||
@@ -154,6 +182,7 @@ function analyze(file) {
   const counts={};
   function fn(n,parent,label){const key=parent+'/'+label;counts[key]=(counts[key]||0)+1;const id=key+(counts[key]>1?'#'+counts[key]:'');functions.push({id,parent,name:label,parameters:n.params.flatMap(boundNames),async:!!n.async,generator:!!n.generator,
     body_block:n.body.type==='BlockStatement'?id+'/block@'+n.body.start:id+'/body',
+    countdown_body_supported:countdownBody(n.body),
     ...(n.type==='FunctionExpression'&&n.id?{self_name:n.id.name}:{}),...loc(n)});return id;}
   const root=file.scopeName||'<module>';functions.push({id:root,parent:null,name:root,parameters:[],async:false,generator:false,body_block:root+'/block@0',line:1,column:0,end_line:source.split('\n').length,end_column:0});
   function emit(n,kind,ctx,extra={}){const e={id:'e'+events.length,kind,scope:ctx.scope,block:ctx.block,statement:ctx.statement,conditions:ctx.conditions,conditional_path:ctx.conditional_path||[],branch_path:ctx.branch_path||[],linear_block:!!ctx.linear_block,...(ctx.loop_bindings?.length?{loop_bindings:ctx.loop_bindings}:{}),...loc(n),text:text(n),...extra};events.push(e);return e;}
@@ -212,6 +241,8 @@ function analyze(file) {
           {condition_identifier:n.test.argument.name,condition_truthy:false}:{}),
         ...(earlyReturn(n)?{early_return_identifier:n.test.name}:{}),
         ...(nullEarlyReturn(n)?{null_return_identifier:nullEarlyReturn(n)}:{}),
+        ...(countdownGuard(n)?{countdown_guard:countdownGuard(n)}:{}),
+        ...(countdownCleanup(n)?{countdown_cleanup:countdownCleanup(n)}:{}),
         ...(n.test.type==='Identifier'?{test_identifier:n.test.name,
           reflective_branch_linear:(n.consequent.type==='BlockStatement'?n.consequent.body:[n.consequent]).every(s=>
             ['ExpressionStatement','VariableDeclaration','ReturnStatement','ThrowStatement','EmptyStatement'].includes(s.type)&&reflectiveStraight(s)),
@@ -262,7 +293,8 @@ function analyze(file) {
     }
     if(n.type==='UpdateExpression'){
       emit(n,'write',ctx,{target:name(n.argument)||text(n.argument),rhs_callee:'',awaited:false,operator:n.operator,references:references(n.argument),value_references:references(n.argument),rhs_kind:null,
-        assigned_names:boundNames(n.argument),write_roots:writeRoots(n.argument)});return;
+        assigned_names:boundNames(n.argument),write_roots:writeRoots(n.argument),
+        update_prefix:!!n.prefix,update_standalone:parent?.type==='ExpressionStatement'});return;
     }
     if(['CallExpression','OptionalCallExpression','NewExpression'].includes(n.type)){
       // The function body of a callback is visited in its own scope, never inlined.

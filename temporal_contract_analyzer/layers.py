@@ -91,8 +91,10 @@ FACT_FIELDS = ('kind', 'callee', 'receiver', 'arguments', 'target', 'operator',
                'branch_path', 'linear_block', 'guard_key', 'early_return_identifier',
                'condition_path_supported', 'then_path_block', 'else_path_block',
                'condition_identifier', 'condition_truthy', 'null_return_identifier', 'conditional_path', 'object_binding_source', 'object_bindings',
-               'reflective_branch_linear')
+               'reflective_branch_linear', 'countdown_guard', 'countdown_cleanup', 'update_prefix', 'update_standalone')
 RELATIONS = {
+    'numeric_budget_guard_before_call': 'A candidate callback on the positive numeric countdown branch; budget type and meaning are unproven.',
+    'external_call_before_conditional_callback_clear': 'If its later numeric condition is true, the callback clear follows the call; the clear itself is not a defect verdict.',
     'external_call_before_callback_clear': 'A direct parameter call precedes its same-frame simple null/undefined clear; the clear itself is not a defect verdict.',
     'receiver_capture_before_reflective_call': 'A this-value capture precedes a candidate Reflect invocation; callable type and native identity remain unresolved.',
     'local_alias_snapshot_before_call': 'A simple local copy of a parameter value precedes its candidate invocation; runtime types and indirect mutation remain unresolved.',

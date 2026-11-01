@@ -8,6 +8,7 @@ from collections import defaultdict
 import re
 
 from .reflective import reflective_patterns
+from .countdown import countdown_patterns
 
 
 RULE = 'reentrant-state-publication'
@@ -341,6 +342,11 @@ def publication_patterns(files):
             file, functions, grouped, owner, visible_writes, prefix, RULE, QUALIFICATION)
         findings.extend(reflect_findings)
         relations.extend(reflect_relations)
+
+        budget_findings, budget_relations = countdown_patterns(
+            file, functions, grouped, owner, visible_writes, prefix, parameter_call, RULE, QUALIFICATION)
+        findings.extend(budget_findings)
+        relations.extend(budget_relations)
 
         for entry, definition in functions.items():
             if definition.get('parent') is None or definition.get('generator'):

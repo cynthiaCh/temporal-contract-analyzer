@@ -1,0 +1,95 @@
+{
+  "schema_version": "temporal-contract-focused-review-1",
+  "policy": "state-publication-evidence-v1",
+  "notice": "仅展示证据链完整的状态发布候选；当前筛选只支持 reentrant-state-publication。其他规则默认隐藏，未展示不表示安全，也不证明提示能改善修改结果。",
+  "status": "parsed",
+  "tool_version": "0.6.8",
+  "input_sha256": "1eec54d0872e11862460aeeb461e6388e170f3cd901b376ff5fc685787a9390f",
+  "tool_sha256": "a4c54c40da67fe4dbc8b11b9e7ed88aa9aaf8e40851b017d9144d893bb652e78",
+  "cards": [
+    {
+      "rule": "reentrant-state-publication",
+      "path": "before.js",
+      "scope": "<module>/before/<callback>",
+      "state": "times",
+      "finding_ids": [
+        "hint-1"
+      ],
+      "message": "先调用用户函数，随后才递减本次次数预算；同步重入可能复用尚未消耗的旧预算。",
+      "condition": "Bounded JavaScript evaluation prefix on the selected normal path; direct IIFEs and unique local functions only. Callback reentry, runtime types, state value meaning, exceptions and full control flow are not proven. A single -- update, safe-integer literal comparison, and one callback on the positive budget branch. Assumes a finite safe-integer budget and the documented numeric quota meaning; coercion, exceptions, invocation-method overrides and indirect mutation are not proven.",
+      "review_question": "按有限安全整数的调用预算解释时，若用户函数同步重入，是否会超出允许次数？请核对输入数值范围、异常后的预算与缓存；不据此判定后续清理有错。",
+      "evidence": [
+        {
+          "id": "before.js::e4",
+          "path": "before.js",
+          "line": 6,
+          "kind": "guard",
+          "text": "times > 1",
+          "truncated": false
+        },
+        {
+          "id": "before.js::e5",
+          "path": "before.js",
+          "line": 7,
+          "kind": "call",
+          "text": "func.apply(this, arguments)",
+          "truncated": false
+        },
+        {
+          "id": "before.js::e7",
+          "path": "before.js",
+          "line": 9,
+          "kind": "write",
+          "text": "--times",
+          "truncated": false
+        },
+        {
+          "id": "before.js::e8",
+          "path": "before.js",
+          "line": 10,
+          "kind": "guard",
+          "text": "times <= 1",
+          "truncated": false
+        },
+        {
+          "id": "before.js::e9",
+          "path": "before.js",
+          "line": 10,
+          "kind": "write",
+          "text": "func = null",
+          "truncated": false,
+          "role": "条件成立时在调用后清空绑定（顺序事实）"
+        }
+      ],
+      "notes": [
+        "调用后的清空绑定仅作来源与顺序证据；本卡核查入口状态写入与调用的先后，不判定清理语句本身有错。",
+        "清空仅在条件 times <= 1 成立时发生，不能当作每条路径都会执行的动作。"
+      ]
+    }
+  ],
+  "context": [],
+  "summary": {
+    "raw_findings": 1,
+    "cards": 1,
+    "suppressed_findings": 0,
+    "suppressed_by_reason": {},
+    "merged_findings": 0
+  },
+  "coverage": [
+    {
+      "path": "before.js",
+      "status": "parsed",
+      "analysis_scope": null,
+      "error": null
+    }
+  ],
+  "skipped": [],
+  "limitations": [
+    "结果是语法事实、静态候选调用关系与待核查模式，不是已证明的时序契约、缺陷、严重度或难度分。",
+    "同名 API 只作为线索；不做全程序类型/别名/控制流证明。动态派发、对象工厂、函数参数传递的完整目标保持未知。",
+    "局部先后表示同一语法块中位置先后；条件、异常、循环、短路及调用是否实际执行仍需核查。",
+    "await 是潜在暂停点，并非必然切换；取消请求不等于工作与清理完成；移除监听不保证既有异步工作取消。",
+    "语法中的 if/try/finally 不等于已证明保护充分；无模式命中不等于程序安全。",
+    "未读取隐藏评分器、参考补丁、模型结果或人工 profile；分析根由操作者提供，文件内容的来源仍需核实。"
+  ]
+}

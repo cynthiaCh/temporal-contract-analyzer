@@ -13,7 +13,7 @@ def focused_review(report):
     relations = {(r['before'], r['after']) for r in report['relations']
                  if r['kind'] == 'external_call_before_state_write'}
     clears = {(r['before'], r['after']) for r in report['relations']
-              if r['kind'] == 'external_call_before_callback_clear'}
+              if r['kind'] in {'external_call_before_callback_clear', 'external_call_before_conditional_callback_clear'}}
     suppressed = Counter()
     grouped = {}
     context = []
@@ -29,6 +29,8 @@ def focused_review(report):
             ids += publication.get('execution_path', [])
             if publication.get('callback_cleanup'):
                 ids.append(publication['callback_cleanup']['write'])
+                if publication['callback_cleanup'].get('guard'):
+                    ids.append(publication['callback_cleanup']['guard'])
             if (finding['path'] not in parsed or publication.get('uncertainties') or
                     any(eid not in events or events[eid]['path'] != finding['path'] for eid in ids) or
                     (publication.get('callback'), publication.get('write')) not in relations or
@@ -56,6 +58,11 @@ def focused_review(report):
             note = '调用后的清空绑定仅作来源与顺序证据；本卡核查入口状态写入与调用的先后，不判定清理语句本身有错。'
             if note not in card.setdefault('notes', []):
                 card['notes'].append(note)
+            condition = publication['callback_cleanup'].get('condition')
+            if condition:
+                conditional_note = '清空仅在条件 ' + condition + ' 成立时发生，不能当作每条路径都会执行的动作。'
+                if conditional_note not in card['notes']:
+                    card['notes'].append(conditional_note)
         known = {e['id'] for e in card['evidence']}
         for eid in ids:
             if eid not in known:
@@ -64,7 +71,8 @@ def focused_review(report):
                     text=e['text'][:240], truncated=len(e['text']) > 240))
                 if (publication.get('callback_cleanup', {}).get('write') == eid and
                         publication.get('write') != eid):
-                    card['evidence'][-1]['role'] = '调用后清空绑定（顺序事实）'
+                    card['evidence'][-1]['role'] = ('条件成立时在调用后清空绑定（顺序事实）'
+                        if publication['callback_cleanup'].get('condition') else '调用后清空绑定（顺序事实）')
                 known.add(eid)
     cards = list(grouped.values())
     return dict(schema_version='temporal-contract-focused-review-1', policy='state-publication-evidence-v1',
