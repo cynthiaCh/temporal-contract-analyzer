@@ -60,3 +60,31 @@ The output includes scenario descriptions, callback counts, operation returns/th
 `resolved_for_generated_scene` means a particular before-version failure disappears in the after-version scene, not that the code is completely fixed. `violates_on_both` preserves residual failures. Passing the bounded checks never establishes safety.
 
 The static analyzer neither calls this prototype nor executes candidate programs. Its existing no-execution guarantee is unchanged.
+
+## Narrow automatic wrapper binding
+
+`auto_once.py` proposes the existing wrapper profile from two local source files:
+
+```sh
+python3 tools/temporal-behavior-probe/auto_once.py before/index.js after/index.js \
+  --output proposal.json
+```
+
+This mode reads source text through the repository's already pinned Babel parser and does not import the subject. Supported syntax is deliberately narrow: one direct top-level CommonJS function export, one identifier parameter, and a returned local callable containing a direct call/call/apply of that parameter. It does not prove runtime binding identity or infer once semantics. Reexports, ESM, emitters, unresolved callback aliases, async factories/callables and ambiguous exports are outside this increment. Missing parser setup produces an unsupported result.
+
+After checking the proposed binding and requirement, explicitly confirm execution:
+
+```sh
+python3 tools/temporal-behavior-probe/auto_once.py before/index.js after/index.js \
+  --confirm-at-most-once --output report.json
+```
+
+This checks only **at most one callback entry across one outer invocation and one synchronous reentry**, with numeric argument 0 and the existing runner's call convention. It does not establish liveness, exception-retry, promise behavior or safety outside that scene. A name such as `once` never supplies the obligation automatically. The report retains source evidence, generated `candidate_plan`, paired execution and a fresh-output `replay_command`. Unsupported source remains unexecuted even with the flag; loader failures are inconclusive. Output files are exclusive-create before any execution. `--node` selects the runtime.
+
+The file's parent becomes its module root; its basename becomes the entry. Sibling local files are copied by the existing runner. External dependencies are neither inferred nor installed. The same generated plan is usable by other execution engines, including the independent fast-check baseline. The benefit being attempted is reduced manual binding work, not stronger counterexample generation. Selecting this specialized command already conveys domain knowledge; fewer JSON fields alone do not demonstrate lower cognitive effort.
+
+Execution validity is separate from the count predicate. If the factory calls the supplied callback during construction, the inherited runner's reentry trigger can fire before the returned callable exists; this frontend marks that side and pair inconclusive and clears the in-scope checks. `execution_validity` also records whether a nested attempt actually occurred. Zero callback entries satisfy at-most-once without exercising reentry, so they do not demonstrate delivery or a reentrant path. `observed` means observations are available, including throws or violations. CLI exit 0 means a report was emitted (including confirmation-required or inconclusive); inspect the report for the behavioral verdict. Unsupported inputs exit 2.
+
+The copied runtime excludes node_modules and replaces package.json in the copy with CommonJS metadata. Therefore it can differ from an already configured working repository. The replay command reruns against current source paths, implementation and runtime and needs an unused output file; it is not a bundled immutable reproduction. Keep those inputs unchanged or archive them separately.
+
+The numeric argument 0 in the scope description is the **outer** input. The nested attempt passes the first argument actually received by the callback; if the wrapper transforms or omits that value, the nested input changes accordingly. Same-argument preservation is not assumed.
