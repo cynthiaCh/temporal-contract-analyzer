@@ -1,0 +1,1 @@
+module.exports=fn=>{let used=false,value;return(...a)=>{if(used)return value;value=fn(...a);used=true;return value;}};

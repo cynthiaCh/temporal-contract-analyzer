@@ -1,0 +1,244 @@
+TASK T04
+REQ-1: Two immediate same-argument invocations, made before settling the callback promises, must share one underlying evaluation. No synchronous reentry or falsy rejection case is in scope.
+Permitted scenarios:
+S1: Call the wrapped function twice with argument 0, without awaiting the first. The injected callback returns a deferred promise. Release all deferred results, then await both calls.
+SMOKE: ordinary sequential success calls/dispatches only, with no reentry/failure/overlap. Observed results:
+{
+  "before": {
+    "counts": [
+      1
+    ],
+    "outcomes": [
+      "returned",
+      "returned"
+    ]
+  },
+  "after": {
+    "counts": [
+      1
+    ],
+    "outcomes": [
+      "returned",
+      "returned"
+    ]
+  }
+}
+SOURCE before:
+before:L1: 'use strict';
+before:L2: const mimicFn = require('mimic-fn');
+before:L3: const mapAgeCleaner = require('map-age-cleaner');
+before:L4: 
+before:L5: const cacheStore = new WeakMap();
+before:L6: 
+before:L7: const pMemoize = (fn, {cachePromiseRejection = false, ...options} = {}) => {
+before:L8: 	const {maxAge, cacheKey} = options;
+before:L9: 	const cache = options.cache || new Map();
+before:L10: 
+before:L11: 	if (Number.isSafeInteger(maxAge)) {
+before:L12: 		mapAgeCleaner(cache);
+before:L13: 	} else if (typeof maxAge !== 'undefined') {
+before:L14: 		throw new TypeError('maxAge is not a safe integer.');
+before:L15: 	}
+before:L16: 
+before:L17: 	const memoized = async function (...arguments_) {
+before:L18: 		const key = cacheKey ? cacheKey(arguments_) : arguments_[0];
+before:L19: 
+before:L20: 		const cacheItem = cache.get(key);
+before:L21: 		if (cacheItem) {
+before:L22: 			return cacheItem.data;
+before:L23: 		}
+before:L24: 
+before:L25: 		const promise = fn.apply(this, arguments_);
+before:L26: 		cache.set(key, {
+before:L27: 			data: promise,
+before:L28: 			maxAge: Number.POSITIVE_INFINITY
+before:L29: 		});
+before:L30: 
+before:L31: 		const [{reason}] = await Promise.allSettled([promise]);
+before:L32: 		if (!cachePromiseRejection && reason) {
+before:L33: 			cache.delete(key);
+before:L34: 		} else if (maxAge) {
+before:L35: 			// Promise fulfilled, so start the timer
+before:L36: 			cache.set(key, {
+before:L37: 				data: promise,
+before:L38: 				maxAge: Date.now() + maxAge
+before:L39: 			});
+before:L40: 		}
+before:L41: 
+before:L42: 		return promise;
+before:L43: 	};
+before:L44: 
+before:L45: 	mimicFn(memoized, fn);
+before:L46: 	cacheStore.set(memoized, cache);
+before:L47: 
+before:L48: 	return memoized;
+before:L49: };
+before:L50: 
+before:L51: module.exports = pMemoize;
+before:L52: 
+before:L53: module.exports.clear = memoized => {
+before:L54: 	if (!cacheStore.has(memoized)) {
+before:L55: 		throw new Error('Can\'t clear a function that was not memoized!');
+before:L56: 	}
+before:L57: 
+before:L58: 	const cache = cacheStore.get(memoized);
+before:L59: 
+before:L60: 	if (typeof cache.clear !== 'function') {
+before:L61: 		throw new TypeError('The cache Map can\'t be cleared!');
+before:L62: 	}
+before:L63: 
+before:L64: 	cache.clear();
+before:L65: };
+
+SOURCE after:
+after:L1: 'use strict';
+after:L2: const mimicFn = require('mimic-fn');
+after:L3: const mapAgeCleaner = require('map-age-cleaner');
+after:L4: 
+after:L5: const cacheStore = new WeakMap();
+after:L6: 
+after:L7: const pMemoize = (fn, {cachePromiseRejection = false, ...options} = {}) => {
+after:L8: 	const {maxAge, cacheKey} = options;
+after:L9: 	const cache = options.cache || new Map();
+after:L10: 
+after:L11: 	if (Number.isSafeInteger(maxAge)) {
+after:L12: 		mapAgeCleaner(cache);
+after:L13: 	} else if (typeof maxAge !== 'undefined') {
+after:L14: 		throw new TypeError('maxAge is not a safe integer.');
+after:L15: 	}
+after:L16: 
+after:L17: 	const memoized = async function (...arguments_) {
+after:L18: 		const key = cacheKey ? cacheKey(arguments_) : arguments_[0];
+after:L19: 
+after:L20: 		const cacheItem = cache.get(key);
+after:L21: 		if (cacheItem) {
+after:L22: 			return cacheItem.data;
+after:L23: 		}
+after:L24: 
+after:L25: 		const result = fn.apply(this, arguments_);
+after:L26: 
+after:L27: 		let resultError;
+after:L28: 		try {
+after:L29: 			return await Promise.resolve(result);
+after:L30: 		} catch (error) {
+after:L31: 			resultError = error;
+after:L32: 			throw error;
+after:L33: 		} finally {
+after:L34: 			cache.set(key, {
+after:L35: 				data: result,
+after:L36: 				maxAge: maxAge ? Date.now() + maxAge : Number.POSITIVE_INFINITY
+after:L37: 			});
+after:L38: 
+after:L39: 			if (!cachePromiseRejection && resultError) {
+after:L40: 				cache.delete(key);
+after:L41: 			}
+after:L42: 		}
+after:L43: 	};
+after:L44: 
+after:L45: 	mimicFn(memoized, fn);
+after:L46: 	cacheStore.set(memoized, cache);
+after:L47: 
+after:L48: 	return memoized;
+after:L49: };
+after:L50: 
+after:L51: module.exports = pMemoize;
+after:L52: 
+after:L53: module.exports.clear = memoized => {
+after:L54: 	if (!cacheStore.has(memoized)) {
+after:L55: 		throw new Error('Can\'t clear a function that was not memoized!');
+after:L56: 	}
+after:L57: 
+after:L58: 	const cache = cacheStore.get(memoized);
+after:L59: 
+after:L60: 	if (typeof cache.clear !== 'function') {
+after:L61: 		throw new TypeError('The cache Map can\'t be cleared!');
+after:L62: 	}
+after:L63: 
+after:L64: 	cache.clear();
+after:L65: };
+
+UNIFIED DIFF:
+--- before
++++ after
+@@ -22,24 +22,24 @@
+ 			return cacheItem.data;
+ 		}
+ 
+-		const promise = fn.apply(this, arguments_);
+-		cache.set(key, {
+-			data: promise,
+-			maxAge: Number.POSITIVE_INFINITY
+-		});
++		const result = fn.apply(this, arguments_);
+ 
+-		const [{reason}] = await Promise.allSettled([promise]);
+-		if (!cachePromiseRejection && reason) {
+-			cache.delete(key);
+-		} else if (maxAge) {
+-			// Promise fulfilled, so start the timer
++		let resultError;
++		try {
++			return await Promise.resolve(result);
++		} catch (error) {
++			resultError = error;
++			throw error;
++		} finally {
+ 			cache.set(key, {
+-				data: promise,
+-				maxAge: Date.now() + maxAge
++				data: result,
++				maxAge: maxAge ? Date.now() + maxAge : Number.POSITIVE_INFINITY
+ 			});
++
++			if (!cachePromiseRejection && resultError) {
++				cache.delete(key);
++			}
+ 		}
+-
+-		return promise;
+ 	};
+ 
+ 	mimicFn(memoized, fn);
+
+
+ADDITIONAL EXECUTION MATERIAL
+Native property report (an observed test failure is not an answer about whether the change introduced it):
+{
+  "before": "",
+  "after": "Property failed after 1 tests\n{ seed: 17, path: \"0\", endOnFailure: true }\nCounterexample: [2]\nShrunk 0 time(s)\n\nHint: Enable verbose mode in order to have the list of all failing values encountered during the run\n\nProperty assertion:\nAssertionError [ERR_ASSERTION]: coalesce_pending\n\n2 !== 1\n\n    at execute (file:///Volumes/Extreme/paper+survey/temporal-contract-analyzer/external-tests/fast-check-comparison-v1/baseline.mjs:91:14)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async file:///Volumes/Extreme/paper+survey/temporal-contract-analyzer/external-tests/fast-check-comparison-v1/baseline.mjs:161:76\n    at async AsyncProperty.run (/private/var/folders/gz/lxtvkmb15_91rnszfpcbvm6r0000gn/T/temporal-fc-xvlodlod/node_modules/fast-check/lib/cjs/fast-check.js:1232:19)\n    at async asyncPropertyExecution (/private/var/folders/gz/lxtvkmb15_91rnszfpcbvm6r0000gn/T/temporal-fc-xvlodlod/node_modules/fast-check/lib/cjs/fast-check.js:2579:14)\n    at async asyncRunIt (/private/var/folders/gz/lxtvkmb15_91rnszfpcbvm6r0000gn/T/temporal-fc-xvlodlod/node_modules/fast-check/lib/cjs/fast-check.js:2572:15)\n    at async file:///Volumes/Extreme/paper+survey/temporal-contract-analyzer/external-tests/fast-check-comparison-v1/baseline.mjs:162:21\n"
+}
+Paired raw observations; counts ordered by listener ID or the single callback; event outcome arrays intentionally empty:
+{
+  "S1": {
+    "description": "Call the wrapped function twice with argument 0, without awaiting the first. The injected callback returns a deferred promise. Release all deferred results, then await both calls.",
+    "before": {
+      "counts": [
+        1
+      ],
+      "outcomes": [
+        "returned",
+        "returned"
+      ],
+      "source_frames": [
+        "at callback (<subject>/index.js:25:22)"
+      ]
+    },
+    "after": {
+      "counts": [
+        2
+      ],
+      "outcomes": [
+        "returned",
+        "returned"
+      ],
+      "source_frames": [
+        "at callback (<subject>/index.js:25:21)",
+        "at callback (<subject>/index.js:25:21)"
+      ]
+    }
+  }
+}
+REDUNDANT EVIDENCE INDEX (no additional execution or verdict)
+S1: before counts [1], outcomes ['returned', 'returned']; after counts [2], outcomes ['returned', 'returned']. References OBS-S1-before, OBS-S1-after.
+before:L25: 		const promise = fn.apply(this, arguments_);
+after:L25: 		const result = fn.apply(this, arguments_);

@@ -1,0 +1,417 @@
+TASK T02
+REQ-1: Each registered once listener must run exactly once across the outer and nested dispatch. Evaluate only S1/S2 below; ordinary on listeners are not once listeners.
+Permitted scenarios:
+S1: Register one once listener A. On its first callback, immediately emit the same event once more.
+S2: Register two once listeners A then B. On A's first callback, immediately emit the same event once more.
+SMOKE: ordinary sequential success calls/dispatches only, with no reentry/failure/overlap. Observed results:
+{
+  "before": {
+    "counts": [
+      1
+    ],
+    "outcomes": []
+  },
+  "after": {
+    "counts": [
+      1
+    ],
+    "outcomes": []
+  }
+}
+SOURCE before:
+before:L1: 'use strict';
+before:L2: 
+before:L3: /**
+before:L4:  * Minimal EventEmitter interface that is molded against the Node.js
+before:L5:  * EventEmitter interface.
+before:L6:  *
+before:L7:  * @constructor
+before:L8:  * @api public
+before:L9:  */
+before:L10: function EventEmitter() {
+before:L11:   this._events = {};
+before:L12: }
+before:L13: 
+before:L14: /**
+before:L15:  * Return a list of assigned event listeners.
+before:L16:  *
+before:L17:  * @param {String} event The events that should be listed.
+before:L18:  * @returns {Array}
+before:L19:  * @api public
+before:L20:  */
+before:L21: EventEmitter.prototype.listeners = function listeners(event) {
+before:L22:   return Array.apply(this, this._events[event] || []);
+before:L23: };
+before:L24: 
+before:L25: /**
+before:L26:  * Emit an event to all registered event listeners.
+before:L27:  *
+before:L28:  * @param {String} event The name of the event.
+before:L29:  * @returns {Boolean} Indication if we've emitted an event.
+before:L30:  * @api public
+before:L31:  */
+before:L32: EventEmitter.prototype.emit = function emit(event, a1, a2, a3, a4, a5) {
+before:L33:   if (!this._events || !this._events[event]) return false;
+before:L34: 
+before:L35:   var listeners = this._events[event]
+before:L36:     , length = listeners.length
+before:L37:     , len = arguments.length
+before:L38:     , fn = listeners[0]
+before:L39:     , args
+before:L40:     , i;
+before:L41: 
+before:L42:   if (1 === length) {
+before:L43:     if (fn.__EE3_once) this.removeListener(event, fn);
+before:L44: 
+before:L45:     switch (len) {
+before:L46:       case 1:
+before:L47:         fn.call(fn.__EE3_context || this);
+before:L48:       break;
+before:L49:       case 2:
+before:L50:         fn.call(fn.__EE3_context || this, a1);
+before:L51:       break;
+before:L52:       case 3:
+before:L53:         fn.call(fn.__EE3_context || this, a1, a2);
+before:L54:       break;
+before:L55:       case 4:
+before:L56:         fn.call(fn.__EE3_context || this, a1, a2, a3);
+before:L57:       break;
+before:L58:       case 5:
+before:L59:         fn.call(fn.__EE3_context || this, a1, a2, a3, a4);
+before:L60:       break;
+before:L61:       case 6:
+before:L62:         fn.call(fn.__EE3_context || this, a1, a2, a3, a4, a5);
+before:L63:       break;
+before:L64: 
+before:L65:       default:
+before:L66:         for (i = 1, args = new Array(len -1); i < len; i++) {
+before:L67:           args[i - 1] = arguments[i];
+before:L68:         }
+before:L69: 
+before:L70:         fn.apply(fn.__EE3_context || this, args);
+before:L71:     }
+before:L72:   } else {
+before:L73:     for (i = 1, args = new Array(len -1); i < len; i++) {
+before:L74:       args[i - 1] = arguments[i];
+before:L75:     }
+before:L76: 
+before:L77:     for (i = 0; i < length; fn = listeners[++i]) {
+before:L78:       if (fn.__EE3_once) this.removeListener(event, fn);
+before:L79:       fn.apply(fn.__EE3_context || this, args);
+before:L80:     }
+before:L81:   }
+before:L82: 
+before:L83:   return true;
+before:L84: };
+before:L85: 
+before:L86: /**
+before:L87:  * Register a new EventListener for the given event.
+before:L88:  *
+before:L89:  * @param {String} event Name of the event.
+before:L90:  * @param {Functon} fn Callback function.
+before:L91:  * @param {Mixed} context The context of the function.
+before:L92:  * @api public
+before:L93:  */
+before:L94: EventEmitter.prototype.on = function on(event, fn, context) {
+before:L95:   if (!this._events) this._events = {};
+before:L96:   if (!this._events[event]) this._events[event] = [];
+before:L97: 
+before:L98:   fn.__EE3_context = context;
+before:L99:   this._events[event].push(fn);
+before:L100: 
+before:L101:   return this;
+before:L102: };
+before:L103: 
+before:L104: /**
+before:L105:  * Add an EventListener that's only called once.
+before:L106:  *
+before:L107:  * @param {String} event Name of the event.
+before:L108:  * @param {Function} fn Callback function.
+before:L109:  * @param {Mixed} context The context of the function.
+before:L110:  * @api public
+before:L111:  */
+before:L112: EventEmitter.prototype.once = function once(event, fn, context) {
+before:L113:   fn.__EE3_once = true;
+before:L114:   return this.on(event, fn, context);
+before:L115: };
+before:L116: 
+before:L117: /**
+before:L118:  * Remove event listeners.
+before:L119:  *
+before:L120:  * @param {String} event The event we want to remove.
+before:L121:  * @param {Function} fn The listener that we need to find.
+before:L122:  * @api public
+before:L123:  */
+before:L124: EventEmitter.prototype.removeListener = function removeListener(event, fn) {
+before:L125:   if (!this._events || !this._events[event]) return this;
+before:L126: 
+before:L127:   var listeners = this._events[event]
+before:L128:     , events = [];
+before:L129: 
+before:L130:   for (var i = 0, length = listeners.length; i < length; i++) {
+before:L131:     if (fn && listeners[i] !== fn) {
+before:L132:       events.push(listeners[i]);
+before:L133:     }
+before:L134:   }
+before:L135: 
+before:L136:   //
+before:L137:   // Reset the array, or remove it completely if we have no more listeners.
+before:L138:   //
+before:L139:   if (events.length) this._events[event] = events;
+before:L140:   else this._events[event] = null;
+before:L141: 
+before:L142:   return this;
+before:L143: };
+before:L144: 
+before:L145: /**
+before:L146:  * Remove all listeners or only the listeners for the specified event.
+before:L147:  *
+before:L148:  * @param {String} event The event want to remove all listeners for.
+before:L149:  * @api public
+before:L150:  */
+before:L151: EventEmitter.prototype.removeAllListeners = function removeAllListeners(event) {
+before:L152:   if (!this._events) return this;
+before:L153: 
+before:L154:   if (event) this._events[event] = null;
+before:L155:   else this._events = {};
+before:L156: 
+before:L157:   return this;
+before:L158: };
+before:L159: 
+before:L160: //
+before:L161: // Alias methods names because people roll like that.
+before:L162: //
+before:L163: EventEmitter.prototype.off = EventEmitter.prototype.removeListener;
+before:L164: EventEmitter.prototype.addListener = EventEmitter.prototype.on;
+before:L165: 
+before:L166: //
+before:L167: // This function doesn't apply anymore.
+before:L168: //
+before:L169: EventEmitter.prototype.setMaxListeners = function setMaxListeners() {
+before:L170:   return this;
+before:L171: };
+before:L172: 
+before:L173: //
+before:L174: // Expose the module.
+before:L175: //
+before:L176: EventEmitter.EventEmitter = EventEmitter;
+before:L177: EventEmitter.EventEmitter2 = EventEmitter;
+before:L178: EventEmitter.EventEmitter3 = EventEmitter;
+before:L179: 
+before:L180: try { module.exports = EventEmitter; }
+before:L181: catch (e) {}
+
+SOURCE after:
+after:L1: 'use strict';
+after:L2: 
+after:L3: /**
+after:L4:  * Minimal EventEmitter interface that is molded against the Node.js
+after:L5:  * EventEmitter interface.
+after:L6:  *
+after:L7:  * @constructor
+after:L8:  * @api public
+after:L9:  */
+after:L10: function EventEmitter() {
+after:L11:   this._events = {};
+after:L12: }
+after:L13: 
+after:L14: /**
+after:L15:  * Return a list of assigned event listeners.
+after:L16:  *
+after:L17:  * @param {String} event The events that should be listed.
+after:L18:  * @returns {Array}
+after:L19:  * @api public
+after:L20:  */
+after:L21: EventEmitter.prototype.listeners = function listeners(event) {
+after:L22:   return Array.apply(this, this._events[event] || []);
+after:L23: };
+after:L24: 
+after:L25: /**
+after:L26:  * Emit an event to all registered event listeners.
+after:L27:  *
+after:L28:  * @param {String} event The name of the event.
+after:L29:  * @returns {Boolean} Indication if we've emitted an event.
+after:L30:  * @api public
+after:L31:  */
+after:L32: EventEmitter.prototype.emit = function emit(event, a1, a2, a3, a4, a5) {
+after:L33:   if (!this._events || !this._events[event]) return false;
+after:L34: 
+after:L35:   var listeners = this._events[event]
+after:L36:     , length = listeners.length
+after:L37:     , len = arguments.length
+after:L38:     , fn = listeners[0]
+after:L39:     , args
+after:L40:     , i;
+after:L41: 
+after:L42:   if (1 === length) {
+after:L43:     switch (len) {
+after:L44:       case 1:
+after:L45:         fn.call(fn.__EE3_context || this);
+after:L46:       break;
+after:L47:       case 2:
+after:L48:         fn.call(fn.__EE3_context || this, a1);
+after:L49:       break;
+after:L50:       case 3:
+after:L51:         fn.call(fn.__EE3_context || this, a1, a2);
+after:L52:       break;
+after:L53:       case 4:
+after:L54:         fn.call(fn.__EE3_context || this, a1, a2, a3);
+after:L55:       break;
+after:L56:       case 5:
+after:L57:         fn.call(fn.__EE3_context || this, a1, a2, a3, a4);
+after:L58:       break;
+after:L59:       case 6:
+after:L60:         fn.call(fn.__EE3_context || this, a1, a2, a3, a4, a5);
+after:L61:       break;
+after:L62: 
+after:L63:       default:
+after:L64:         for (i = 1, args = new Array(len -1); i < len; i++) {
+after:L65:           args[i - 1] = arguments[i];
+after:L66:         }
+after:L67: 
+after:L68:         fn.apply(fn.__EE3_context || this, args);
+after:L69:     }
+after:L70: 
+after:L71:     if (fn.__EE3_once) this.removeListener(event, fn);
+after:L72:   } else {
+after:L73:     for (i = 1, args = new Array(len -1); i < len; i++) {
+after:L74:       args[i - 1] = arguments[i];
+after:L75:     }
+after:L76: 
+after:L77:     for (i = 0; i < length; fn = listeners[++i]) {
+after:L78:       fn.apply(fn.__EE3_context || this, args);
+after:L79:       if (fn.__EE3_once) this.removeListener(event, fn);
+after:L80:     }
+after:L81:   }
+after:L82: 
+after:L83:   return true;
+after:L84: };
+after:L85: 
+after:L86: /**
+after:L87:  * Register a new EventListener for the given event.
+after:L88:  *
+after:L89:  * @param {String} event Name of the event.
+after:L90:  * @param {Functon} fn Callback function.
+after:L91:  * @param {Mixed} context The context of the function.
+after:L92:  * @api public
+after:L93:  */
+after:L94: EventEmitter.prototype.on = function on(event, fn, context) {
+after:L95:   if (!this._events) this._events = {};
+after:L96:   if (!this._events[event]) this._events[event] = [];
+after:L97: 
+after:L98:   fn.__EE3_context = context;
+after:L99:   this._events[event].push(fn);
+after:L100: 
+after:L101:   return this;
+after:L102: };
+after:L103: 
+after:L104: /**
+after:L105:  * Add an EventListener that's only called once.
+after:L106:  *
+after:L107:  * @param {String} event Name of the event.
+after:L108:  * @param {Function} fn Callback function.
+after:L109:  * @param {Mixed} context The context of the function.
+after:L110:  * @api public
+after:L111:  */
+after:L112: EventEmitter.prototype.once = function once(event, fn, context) {
+after:L113:   fn.__EE3_once = true;
+after:L114:   return this.on(event, fn, context);
+after:L115: };
+after:L116: 
+after:L117: /**
+after:L118:  * Remove event listeners.
+after:L119:  *
+after:L120:  * @param {String} event The event we want to remove.
+after:L121:  * @param {Function} fn The listener that we need to find.
+after:L122:  * @api public
+after:L123:  */
+after:L124: EventEmitter.prototype.removeListener = function removeListener(event, fn) {
+after:L125:   if (!this._events || !this._events[event]) return this;
+after:L126: 
+after:L127:   var listeners = this._events[event]
+after:L128:     , events = [];
+after:L129: 
+after:L130:   for (var i = 0, length = listeners.length; i < length; i++) {
+after:L131:     if (fn && listeners[i] !== fn) {
+after:L132:       events.push(listeners[i]);
+after:L133:     }
+after:L134:   }
+after:L135: 
+after:L136:   //
+after:L137:   // Reset the array, or remove it completely if we have no more listeners.
+after:L138:   //
+after:L139:   if (events.length) this._events[event] = events;
+after:L140:   else this._events[event] = null;
+after:L141: 
+after:L142:   return this;
+after:L143: };
+after:L144: 
+after:L145: /**
+after:L146:  * Remove all listeners or only the listeners for the specified event.
+after:L147:  *
+after:L148:  * @param {String} event The event want to remove all listeners for.
+after:L149:  * @api public
+after:L150:  */
+after:L151: EventEmitter.prototype.removeAllListeners = function removeAllListeners(event) {
+after:L152:   if (!this._events) return this;
+after:L153: 
+after:L154:   if (event) this._events[event] = null;
+after:L155:   else this._events = {};
+after:L156: 
+after:L157:   return this;
+after:L158: };
+after:L159: 
+after:L160: //
+after:L161: // Alias methods names because people roll like that.
+after:L162: //
+after:L163: EventEmitter.prototype.off = EventEmitter.prototype.removeListener;
+after:L164: EventEmitter.prototype.addListener = EventEmitter.prototype.on;
+after:L165: 
+after:L166: //
+after:L167: // This function doesn't apply anymore.
+after:L168: //
+after:L169: EventEmitter.prototype.setMaxListeners = function setMaxListeners() {
+after:L170:   return this;
+after:L171: };
+after:L172: 
+after:L173: //
+after:L174: // Expose the module.
+after:L175: //
+after:L176: EventEmitter.EventEmitter = EventEmitter;
+after:L177: EventEmitter.EventEmitter2 = EventEmitter;
+after:L178: EventEmitter.EventEmitter3 = EventEmitter;
+after:L179: 
+after:L180: try { module.exports = EventEmitter; }
+after:L181: catch (e) {}
+
+UNIFIED DIFF:
+--- before
++++ after
+@@ -40,8 +40,6 @@
+     , i;
+ 
+   if (1 === length) {
+-    if (fn.__EE3_once) this.removeListener(event, fn);
+-
+     switch (len) {
+       case 1:
+         fn.call(fn.__EE3_context || this);
+@@ -69,14 +67,16 @@
+ 
+         fn.apply(fn.__EE3_context || this, args);
+     }
++
++    if (fn.__EE3_once) this.removeListener(event, fn);
+   } else {
+     for (i = 1, args = new Array(len -1); i < len; i++) {
+       args[i - 1] = arguments[i];
+     }
+ 
+     for (i = 0; i < length; fn = listeners[++i]) {
++      fn.apply(fn.__EE3_context || this, args);
+       if (fn.__EE3_once) this.removeListener(event, fn);
+-      fn.apply(fn.__EE3_context || this, args);
+     }
+   }
+ 
+
