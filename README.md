@@ -39,6 +39,18 @@ CLI、插件与 Codex MCP 共用同一报告目录和报告 ID。本地网页集
 
 “高级测量 · E/T/L/H”保留为可选研究入口，连接人工确认的 predicate、证据单元、时序关系、所有权、application chain、行为 witness 与独立复核。扫描命中和卡片确认不会自动成为正式义务、oracle 结果或 E/T/L/H 标签。日常流程与高级测量命令见 [边界审查与高级测量工作台](docs/MEASUREMENT_WORKBENCH.md)。
 
+## Codex 实验页面
+
+本地报告中心新增 **Codex 实验** 入口。直接从 bench 案例列表选择案例，即可使用本地 Codex 运行无报告／审查报告对照。自动发现已安装的 Codex，并沿用本地模型配置和登录。路径和任务自动读取，报告条件与重复次数位于高级设置；每次使用独立副本。页面保存回答、事件日志、文件改动和用量；任务成功与报告是否被采用仍需独立评估。
+
+macOS 可双击根目录的 [启动Codex实验工作台.command](启动Codex实验工作台.command)，也可从终端打开：
+
+```sh
+/usr/bin/python3 -B -m temporal_contract_analyzer reports open --experiments
+```
+
+如果服务在更新前已经启动，先运行 `reports stop` 再打开。详细流程与范围见 [Codex 实验工作台](docs/CODEX_EXPERIMENTS.md)。
+
 ## 环境
 
 - Python 3.9+

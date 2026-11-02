@@ -44,7 +44,9 @@ def register(sub):
     server.add_argument('--port', type=int, default=0)
     server.add_argument('--node')
     opening = commands.add_parser('open', help='Start/reuse the local browser and open it')
-    opening.add_argument('--report-id')
+    destination = opening.add_mutually_exclusive_group()
+    destination.add_argument('--report-id')
+    destination.add_argument('--experiments', action='store_true', help='Open the local Codex experiment workbench')
     opening.add_argument('--no-browser', action='store_true')
     stop = commands.add_parser('stop', help='Stop the report browser')
     mcp = commands.add_parser('mcp', help='Serve MCP over stdio for Codex')
@@ -115,6 +117,8 @@ def run(args):
         if args.report_id:
             archive.metadata(args.report_id, store)
             value['url'] += '/#report=' + args.report_id
+        elif args.experiments:
+            value['url'] += '/experiments'
         if not args.no_browser:
             webbrowser.open(value['url'])
     elif name == 'stop':

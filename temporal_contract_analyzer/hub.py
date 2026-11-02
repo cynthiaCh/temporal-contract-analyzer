@@ -1,4 +1,4 @@
-"""Loopback-only report browser. Serves archived data, never arbitrary files."""
+"""Loopback report browser with explicit, opt-in local Codex experiments."""
 import json
 import os
 from pathlib import Path
@@ -13,6 +13,7 @@ from urllib.request import build_opener, ProxyHandler, Request
 
 from . import archive
 from .core import EvidenceError, ROOT, VERSION
+from .workbench import Workbench
 
 WEB = Path(__file__).parent/'web'
 _opener = build_opener(ProxyHandler({}))
@@ -34,8 +35,14 @@ class ReportServer(ThreadingHTTPServer):
         self.store = archive.store_path(store)
         self.node = node
         self.instance = secrets.token_hex(24)
+        self.experiments = Workbench(self.store, node)
+        self.experiments.recover()
         super().__init__(('127.0.0.1', port), Handler)
         self.url = 'http://127.0.0.1:' + str(self.server_address[1])
+
+    def server_close(self):
+        self.experiments.close()
+        super().server_close()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -74,7 +81,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             self.get()
-        except (EvidenceError, ValueError, KeyError, TypeError, OSError) as error:
+        except (EvidenceError, ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as error:
             self.send({'error': str(error)}, 400)
 
     def get(self):
@@ -83,7 +90,7 @@ class Handler(BaseHTTPRequestHandler):
         parts = url.path.strip('/').split('/')
         store = self.server.store
         if url.path == '/api/health':
-            self.send(dict(store=str(store), instance=self.server.instance, version=VERSION))
+            self.send(dict(store=str(store), instance=self.server.instance, version=VERSION, experiment_ui='local-codex-v1'))
         elif url.path == '/api/state':
             self.send(dict(store=str(store), version=VERSION, url=self.server.url))
         elif url.path == '/api/reports':
@@ -91,6 +98,17 @@ class Handler(BaseHTTPRequestHandler):
             self.send(archive.list_reports(store, **allowed))
         elif url.path == '/api/compare':
             self.send(archive.compare_reports(query['before'], query['after'], store))
+        elif parts == ['api', 'case-options']:
+            self.send(self.server.experiments.case_options())
+        elif parts == ['api', 'experiments']:
+            self.send(self.server.experiments.list())
+        elif len(parts) >= 3 and parts[:2] == ['api', 'experiments']:
+            if len(parts) == 3:
+                self.send(self.server.experiments.read(parts[2]))
+            elif len(parts) == 4 and parts[3] == 'artifact':
+                self.send(self.server.experiments.artifact(parts[2], query['job'], query['name']))
+            else:
+                self.send({'error': 'Not found'}, 404)
         elif len(parts) >= 3 and parts[:2] == ['api', 'reports']:
             report_id = parts[2]
             if len(parts) == 3:
@@ -111,9 +129,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(review_template(item['measurement'], query['reviewer']))
             else:
                 self.send({'error': 'Not found'}, 404)
-        elif url.path in {'/', '/app.js', '/style.css'}:
-            name = 'index.html' if url.path == '/' else url.path[1:]
-            content_type = {'index.html': 'text/html', 'app.js': 'text/javascript', 'style.css': 'text/css'}[name]
+        elif url.path in {'/', '/app.js', '/style.css', '/experiments', '/experiments.js'}:
+            name = {'/': 'index.html', '/experiments': 'experiments.html'}.get(url.path, url.path[1:])
+            content_type = 'text/html' if name.endswith('.html') else ('text/javascript' if name.endswith('.js') else 'text/css')
             self.send((WEB/name).read_bytes(), content_type=content_type+'; charset=utf-8')
         else:
             self.send({'error': 'Not found'}, 404)
@@ -130,7 +148,7 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(data, dict):
                 raise EvidenceError('Expected an object')
             self.post(data)
-        except (EvidenceError, ValueError, KeyError, TypeError, OSError) as error:
+        except (EvidenceError, ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as error:
             self.send({'error': str(error)}, 400)
 
     def post(self, data):
@@ -144,6 +162,16 @@ class Handler(BaseHTTPRequestHandler):
                 raise EvidenceError('请输入候选工程或源码文件的绝对路径')
             result = archive.scan_path(data['candidate'], store, self.server.node, 'web', **labels)
             self.send(result['archive'], 201)
+        elif parts == ['api', 'experiments']:
+            prepare = self.server.experiments.prepare_case if 'case_id' in data else self.server.experiments.prepare
+            self.send(prepare(data), 201)
+        elif len(parts) == 4 and parts[:2] == ['api', 'experiments']:
+            if parts[3] == 'start':
+                self.send(self.server.experiments.start(parts[2]), 202)
+            elif parts[3] == 'cancel':
+                self.send(self.server.experiments.cancel(parts[2]), 202)
+            else:
+                self.send({'error': 'Not found'}, 404)
         elif len(parts) == 4 and parts[:2] == ['api', 'reports']:
             if parts[3] == 'verify':
                 self.send(archive.verify(parts[2], store))
