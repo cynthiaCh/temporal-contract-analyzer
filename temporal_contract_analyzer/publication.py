@@ -9,6 +9,7 @@ import re
 
 from .reflective import reflective_patterns
 from .countdown import countdown_patterns
+from .protocols import protocol_patterns
 
 
 RULE = 'reentrant-state-publication'
@@ -182,8 +183,13 @@ def publication_patterns(files):
             if len(guards) != 1:
                 return
             guard = guards[0]
-            name = guard.get('null_return_identifier')
+            name = guard.get('null_return_identifier') or guard.get('null_throw_identifier')
             if not name or not guard.get('linear_block') or guard['id'] not in reachable:
+                return
+            throwing = bool(guard.get('null_throw_identifier'))
+            if throwing and (owner(entry, 'Error') is not None or
+                    any(i['local'] == 'Error' for i in file['imports']) or
+                    any(e['kind'] == 'write' and e.get('target', '').split('.')[0] == 'Error' for e in file['events'])):
                 return
             binding = owner(entry, name)
             if (binding is None or binding == entry or
@@ -216,7 +222,8 @@ def publication_patterns(files):
                     prior = region.index(write) < region.index(callback)
                     status = 'write_before_call' if prior else 'write_after_call'
                     qualification = (QUALIFICATION + ' One simple local declaration snapshots an outer '
-                        'parameter after a strict null early-return guard and before its only visible null clear. '
+                        'parameter after a strict null ' + ('early-throw' if throwing else 'early-return') +
+                        ' guard and before its only visible null clear. '
                         'The alias has no other visible writes; runtime callable types and method replacement remain unresolved.')
                     findings.append(dict(rule=RULE, path=file['path'], scope=entry,
                         evidence=[guard['id'], snapshot['id'], callback['id'], write['id']],
@@ -224,12 +231,14 @@ def publication_patterns(files):
                         message=('调用本地回调快照之前，已清空入口读取的原始绑定；快照仍保留清空前的候选函数值。' if prior else
                                  '先调用本地回调快照，随后才清空入口读取的原始绑定；同步重入可能再次取得同一函数。'),
                         condition=qualification,
-                        review_question='回调经局部副本调用时，原绑定是否已使重入入口返回？请核对同步重入和异常语义；清空原变量不等于清空先前副本。',
+                        review_question=('回调经局部副本调用时，原绑定是否已使重入入口拒绝再次调用？请核对同步重入和首次抛错后的行为；清空原变量不等于清空先前副本。' if throwing else
+                            '回调经局部副本调用时，原绑定是否已使重入入口返回？请核对同步重入和异常语义；清空原变量不等于清空先前副本。'),
                         state_publication=dict(state=name, binding_scope=binding, status=status,
                             guard=guard['id'], callback=callback['id'], write=write['id'],
                             execution_path=[snapshot['id']], uncertainties=[], write_value=write.get('rhs_text'),
                             path_conditions=['fallthrough of ' + guard['expression']],
                             callback_binding_basis='local_snapshot_of_outer_parameter',
+                            **(dict(guard_exit='throw') if throwing else {}),
                             callback_alias=dict(name=alias, source=name, copy=snapshot['id'], binding_scope=entry))))
                     before, after = (write, callback) if prior else (callback, write)
                     relations.extend([
@@ -347,6 +356,11 @@ def publication_patterns(files):
             file, functions, grouped, owner, visible_writes, prefix, parameter_call, RULE, QUALIFICATION)
         findings.extend(budget_findings)
         relations.extend(budget_relations)
+
+        protocol_findings, protocol_relations = protocol_patterns(
+            file, functions, grouped, owner, visible_writes, prefix, parameter_call)
+        findings.extend(protocol_findings)
+        relations.extend(protocol_relations)
 
         for entry, definition in functions.items():
             if definition.get('parent') is None or definition.get('generator'):

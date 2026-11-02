@@ -77,6 +77,19 @@ function analyze(file) {
     return identifier&&body.length===1&&body[0].type==='ReturnStatement'&&
       (!body[0].argument||['Identifier','BooleanLiteral','NumericLiteral','StringLiteral','NullLiteral'].includes(body[0].argument.type))?identifier:'';
   }
+  function nullEarlyThrow(n){
+    if(n?.type!=='IfStatement'||n.alternate||n.test.type!=='BinaryExpression'||n.test.operator!=='===')return '';
+    const {left,right}=n.test;
+    const identifier=left.type==='Identifier'&&right.type==='NullLiteral'?left.name:
+      right.type==='Identifier'&&left.type==='NullLiteral'?right.name:'';
+    const body=n.consequent.type==='BlockStatement'?n.consequent.body:[n.consequent];
+    // No user code while constructing the exception: admit an identifier or
+    // new Error with literal arguments, with lexical shadow checks downstream.
+    const arg=body.length===1&&body[0].type==='ThrowStatement'?body[0].argument:null;
+    return identifier&&(arg?.type==='Identifier'||arg?.type==='NewExpression'&&
+      arg.callee.type==='Identifier'&&arg.callee.name==='Error'&&
+      arg.arguments.every(a=>['StringLiteral','NumericLiteral','BooleanLiteral','NullLiteral'].includes(a.type)))?identifier:'';
+  }
   function straightExpression(n){
     if(!n||typeof n!=='object')return true;
     if(fnTypes.has(n.type)||['AwaitExpression','YieldExpression','ConditionalExpression','LogicalExpression',
@@ -85,7 +98,73 @@ function analyze(file) {
       (Array.isArray(v)?v.every(straightExpression):straightExpression(v)));
   }
   function linearStatement(n){
-    return earlyReturn(n)||!!nullEarlyReturn(n)||(['ExpressionStatement','VariableDeclaration','ReturnStatement','ThrowStatement','EmptyStatement'].includes(n.type)&&straightExpression(n));
+    return earlyReturn(n)||!!nullEarlyReturn(n)||!!nullEarlyThrow(n)||(['ExpressionStatement','VariableDeclaration','ReturnStatement','ThrowStatement','EmptyStatement'].includes(n.type)&&straightExpression(n));
+  }
+  function argumentCacheGuard(n){
+    if(n?.type!=='IfStatement'||n.alternate)return null;
+    const flatten=x=>x.type==='LogicalExpression'&&x.operator==='||'?[...flatten(x.left),...flatten(x.right)]:[x];
+    const terms=flatten(n.test);
+    if(terms.length!==3)return null;
+    const missing=terms.find(x=>x.type==='UnaryExpression'&&x.operator==='!'&&x.argument.type==='Identifier');
+    const receiver=terms.find(x=>x.type==='BinaryExpression'&&x.operator==='!=='&&x.left.type==='ThisExpression'&&x.right.type==='Identifier');
+    const different=terms.find(x=>x.type==='UnaryExpression'&&x.operator==='!'&&x.argument.type==='CallExpression'&&
+      x.argument.callee.type==='Identifier'&&x.argument.arguments.length===2&&x.argument.arguments.every(a=>a.type==='Identifier'));
+    const body=n.consequent.type==='BlockStatement'?n.consequent.body:[n.consequent];
+    if(!missing||!receiver||!different||different.argument.arguments[0].name!==missing.argument.name||
+      !body.every(s=>s.type==='ExpressionStatement'&&s.expression.type==='AssignmentExpression'&&
+        s.expression.operator==='='&&s.expression.left.type==='Identifier'&&straightExpression(s)))return null;
+    return {key:missing.argument.name,receiver:receiver.right.name,arguments:different.argument.arguments[1].name,
+      comparator:different.argument.callee.name};
+  }
+  function argumentCacheBody(n){
+    return n.type==='BlockStatement'&&n.body.every(s=>!!argumentCacheGuard(s)||
+      s.type==='VariableDeclaration'&&straightExpression(s)||
+      s.type==='ReturnStatement'&&s.argument?.type==='Identifier');
+  }
+  // Source certificates for one small array-backed listener protocol. Compare
+  // AST structure, not API names or whitespace. Unknown implementations stay unknown.
+  function syntaxShape(n){
+    if(Array.isArray(n))return n.map(syntaxShape);
+    if(!n||typeof n!=='object')return n;
+    return Object.fromEntries(Object.entries(n).filter(([k])=>!syntaxKeys.has(k)&&
+      !['start','end'].includes(k)&&!(n.type==='VariableDeclaration'&&k==='kind')).map(([k,v])=>[k,syntaxShape(v)]));
+  }
+  function matchesBody(n,source){
+    return JSON.stringify(syntaxShape(n.body))===JSON.stringify(syntaxShape(parser.parseExpression('function(){'+source+'}').body));
+  }
+  function listenerRemoval(n){
+    if(n.params?.length!==2||!n.params.every(p=>p.type==='Identifier')||n.async||n.generator)return null;
+    const body=n.body?.body;
+    if(body?.length!==6||!body.slice(0,3).every(s=>s.type==='VariableDeclaration'&&s.declarations.length===1&&s.declarations[0].id.type==='Identifier'))return null;
+    const [event,callback]=n.params.map(p=>p.name),[table,items,live]=body.slice(0,3).map(s=>s.declarations[0].id.name);
+    const property=body[0].declarations[0].init?.left;
+    if(property?.type!=='MemberExpression'||property.computed||property.object.type!=='ThisExpression'||property.property.type!=='Identifier')return null;
+    const loop=body[3].type==='IfStatement'&&body[3].consequent.type==='BlockStatement'?body[3].consequent.body[0]:null;
+    if(loop?.type!=='ForStatement'||loop.init?.type!=='VariableDeclaration'||loop.init.declarations.length!==2||
+      !loop.init.declarations.every(d=>d.id.type==='Identifier'))return null;
+    const [i,len]=loop.init.declarations.map(d=>d.id.name);
+    const filter=loop.body?.body?.[0]?.test;
+    const callbackProperty=filter?.left?.left?.property,aliasProperty=filter?.right?.left?.property;
+    if(callbackProperty?.type!=='Identifier'||aliasProperty?.type!=='Identifier'||
+      new Set([event,callback,table,items,live,i,len]).size!==7)return null;
+    const p=property.property.name,f=callbackProperty.name,a=aliasProperty.name;
+    const source=`var ${table}=this.${p}||(this.${p}={});var ${items}=${table}[${event}];var ${live}=[];
+      if(${items}&&${callback}){for(var ${i}=0,${len}=${items}.length;${i}<${len};${i}++){
+        if(${items}[${i}].${f}!==${callback}&&${items}[${i}].${f}.${a}!==${callback})${live}.push(${items}[${i}]);}}
+      (${live}.length)?${table}[${event}]=${live}:delete ${table}[${event}];return this;`;
+    return matchesBody(n,source)?{table_property:p,callback_property:f,alias_property:a}:null;
+  }
+  function listenerRegistration(n,removal){
+    if(n.params?.length!==3||!n.params.every(p=>p.type==='Identifier')||n.async||n.generator)return false;
+    const body=n.body?.body;
+    if(body?.length!==3||body[0].type!=='VariableDeclaration'||body[0].declarations.length!==1||body[0].declarations[0].id.type!=='Identifier')return false;
+    const [event,callback,context]=n.params.map(p=>p.name),table=body[0].declarations[0].id.name;
+    const record=body[1].expression?.arguments?.[0];
+    const contextProperty=record?.type==='ObjectExpression'&&record.properties.length===2?record.properties[1].key:null;
+    if(contextProperty?.type!=='Identifier'||new Set([event,callback,context,table]).size!==4)return false;
+    const p=removal.table_property,f=removal.callback_property,c=contextProperty.name;
+    return matchesBody(n,`var ${table}=this.${p}||(this.${p}={});
+      (${table}[${event}]||(${table}[${event}]=[])).push({${f}:${callback},${c}:${context}});return this;`);
   }
   function reflectiveStraight(n){
     if(!n||typeof n!=='object')return true;
@@ -178,11 +257,12 @@ function analyze(file) {
     }
     visit(n);return [...found];
   }
-  const objectTargets=new WeakMap(), functionScopes=new WeakMap();
+  const objectTargets=new WeakMap(), functionScopes=new WeakMap(),listenerMethods=new WeakMap();
   const counts={};
   function fn(n,parent,label){const key=parent+'/'+label;counts[key]=(counts[key]||0)+1;const id=key+(counts[key]>1?'#'+counts[key]:'');functions.push({id,parent,name:label,parameters:n.params.flatMap(boundNames),async:!!n.async,generator:!!n.generator,
     body_block:n.body.type==='BlockStatement'?id+'/block@'+n.body.start:id+'/body',
     countdown_body_supported:countdownBody(n.body),
+    ...(argumentCacheBody(n.body)?{argument_cache_body_supported:true}:{}),
     ...(n.type==='FunctionExpression'&&n.id?{self_name:n.id.name}:{}),...loc(n)});return id;}
   const root=file.scopeName||'<module>';functions.push({id:root,parent:null,name:root,parameters:[],async:false,generator:false,body_block:root+'/block@0',line:1,column:0,end_line:source.split('\n').length,end_column:0});
   function emit(n,kind,ctx,extra={}){const e={id:'e'+events.length,kind,scope:ctx.scope,block:ctx.block,statement:ctx.statement,conditions:ctx.conditions,conditional_path:ctx.conditional_path||[],branch_path:ctx.branch_path||[],linear_block:!!ctx.linear_block,...(ctx.loop_bindings?.length?{loop_bindings:ctx.loop_bindings}:{}),...loc(n),text:text(n),...extra};events.push(e);return e;}
@@ -195,10 +275,12 @@ function analyze(file) {
       if(!label)label='<callback>';
       const scope=fn(n,ctx.scope,label);
       functionScopes.set(n,scope);
-      // A source header anchor, not a claim that this function is invoked.
-      const header={...n,end:n.body.start,loc:{start:n.loc.start,end:n.body.loc.start}};
+      // Normally a header anchor. Certified listener methods retain their body
+      // so reports can show the registration/removal implementation as evidence.
+      const header=listenerMethods.has(n)?n:{...n,end:n.body.start,loc:{start:n.loc.start,end:n.body.loc.start}};
       const definition={...ctx,scope};delete definition.loop_bindings;
-      emit(header,'function_definition',definition,{name:label,...(objectTargets.has(n)?{object_target:objectTargets.get(n)}:{})});
+      emit(header,'function_definition',definition,{name:label,...(objectTargets.has(n)?{object_target:objectTargets.get(n)}:{}),
+        ...(listenerMethods.has(n)?{listener_method:listenerMethods.get(n)}:{})});
       if(n.type==='FunctionDeclaration')bindings.push({scope:ctx.scope,block:ctx.block,name:label,target:scope});
       else if(parent?.type==='VariableDeclarator'&&parent.id.type==='Identifier')bindings.push({scope:ctx.scope,block:ctx.block,name:parent.id.name,target:scope});
       if(parent?.type==='ReturnStatement'||(parent?.type==='ArrowFunctionExpression'&&field==='body'))emit(header,'returned_callback',ctx,{target_scope:scope});
@@ -241,6 +323,8 @@ function analyze(file) {
           {condition_identifier:n.test.argument.name,condition_truthy:false}:{}),
         ...(earlyReturn(n)?{early_return_identifier:n.test.name}:{}),
         ...(nullEarlyReturn(n)?{null_return_identifier:nullEarlyReturn(n)}:{}),
+        ...(nullEarlyThrow(n)?{null_throw_identifier:nullEarlyThrow(n)}:{}),
+        ...(argumentCacheGuard(n)?{argument_cache_guard:argumentCacheGuard(n)}:{}),
         ...(countdownGuard(n)?{countdown_guard:countdownGuard(n)}:{}),
         ...(countdownCleanup(n)?{countdown_cleanup:countdownCleanup(n)}:{}),
         ...(n.test.type==='Identifier'?{test_identifier:n.test.name,
@@ -282,6 +366,22 @@ function analyze(file) {
     if(n.type==='ObjectExpression'){
       const target=parent?.type==='VariableDeclarator'?referenceName(parent.id):parent?.type==='AssignmentExpression'?referenceName(parent.left):'';
       if(target)for(const p of n.properties){if(fnTypes.has(p.type))objectTargets.set(p,target);else if(p.type==='ObjectProperty'&&fnTypes.has(p.value?.type))objectTargets.set(p.value,target);}
+      if(target&&n.properties.every(p=>!p.computed&&p.key?.type==='Identifier'&&p.key.name!=='__proto__'&&
+        (p.type==='ObjectProperty'||p.type==='ObjectMethod'&&p.kind==='method'))){
+        const methods=n.properties.filter(p=>!p.computed&&p.key?.type==='Identifier'&&
+          (p.type==='ObjectMethod'||p.type==='ObjectProperty'&&fnTypes.has(p.value?.type)))
+          .map(p=>({name:p.key.name,node:p.type==='ObjectMethod'?p:p.value}));
+        for(const remove of methods){
+          const certificate=listenerRemoval(remove.node);
+          if(!certificate||n.properties.filter(p=>name(p.key)===remove.name).length!==1)continue;
+          for(const register of methods){
+            if(register.name===remove.name||n.properties.filter(p=>name(p.key)===register.name).length!==1||!listenerRegistration(register.node,certificate))continue;
+            const protocol={...certificate,register_method:register.name,remove_method:remove.name};
+            listenerMethods.set(remove.node,{...protocol,role:'remove'});
+            listenerMethods.set(register.node,{...protocol,role:'register'});
+          }
+        }
+      }
     }
     if(n.type==='VariableDeclarator'||n.type==='AssignmentExpression'){
       const target=n.id||n.left,rhs=n.init||n.right;walk(rhs,ctx,n,'right');
@@ -306,7 +406,8 @@ function analyze(file) {
       walk(n.argument,ctx,n,'argument');emit(n,n.type==='AwaitExpression'?'await':'yield',ctx);return;
     }
     if(n.type==='ReturnStatement'||n.type==='ThrowStatement'){
-      walk(n.argument,ctx,n,'argument');emit(n,n.type==='ReturnStatement'?'return':'raise',ctx,{references:references(n.argument)});return;
+      walk(n.argument,ctx,n,'argument');emit(n,n.type==='ReturnStatement'?'return':'raise',ctx,{references:references(n.argument),
+        ...(n.type==='ReturnStatement'&&n.argument?.type==='Identifier'?{return_identifier:n.argument.name}:{})});return;
     }
     for(const [k,v] of Object.entries(n)){
       if(syntaxKeys.has(k))continue;

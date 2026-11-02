@@ -4,6 +4,34 @@ from collections import Counter
 
 NOTICE = ('仅展示证据链完整的状态发布候选；当前筛选只支持 reentrant-state-publication。'
           '其他规则默认隐藏，未展示不表示安全，也不证明提示能改善修改结果。')
+PROTOCOL_NOTICE = ('仅展示证据链完整的状态发布、监听退订顺序及参数缓存候选。'
+                   '其他规则默认隐藏；提示需结合接口约定与运行验证，未展示不表示安全，也不证明修改收益。')
+
+
+def _protocol_projection(finding, events, parsed, relations):
+    """Validate each specialized relation instead of reusing a state-write label."""
+    listener = finding['rule'] == 'reentrant-listener-detach'
+    data = finding.get('listener_detach' if listener else 'cache_publication', {})
+    if listener and data.get('status') == 'detach_before_call':
+        return data, [], 'detach_before_call'
+    if listener:
+        ids = [data.get(k) for k in ('registration', 'receiver_capture', 'wrapper',
+                                    'register_definition', 'remove_definition', 'callback', 'detach')]
+        pairs = [('callback_before_listener_detach', data.get('callback'), data.get('detach'))]
+        status = 'detach_after_call'
+    else:
+        ids = [data.get(k) for k in ('guard', 'callback', 'result_write', 'result_return')]
+        ids += data.get('initializers', []) + data.get('key_writes', [])
+        pairs = [('cache_key_before_compute', key, data.get('callback')) for key in data.get('key_writes', [])]
+        pairs.append(('compute_before_cache_result', data.get('callback'), data.get('result_write')))
+        status = 'key_before_result'
+    if (data.get('status') != status or not data.get('state') or data.get('uncertainties') or
+            finding['path'] not in parsed or not ids or
+            any(eid not in events or events[eid]['path'] != finding['path'] or eid not in finding['evidence'] for eid in ids) or
+            any(pair not in relations for pair in pairs) or
+            not listener and (len(data.get('key_writes', [])) != 2 or len(data.get('initializers', [])) != 3)):
+        return data, ids, 'incomplete_evidence'
+    return data, ids, None
 
 
 def focused_review(report):
@@ -17,7 +45,29 @@ def focused_review(report):
     suppressed = Counter()
     grouped = {}
     context = []
+    has_protocols = any(f['rule'] in {'reentrant-listener-detach', 'argument-cache-publication'} for f in report['findings'])
+    protocol_relations = {(r['kind'], r['before'], r['after']) for r in report['relations']}
     for finding in report['findings']:
+        if finding['rule'] in {'reentrant-listener-detach', 'argument-cache-publication'}:
+            data, ids, reason = _protocol_projection(finding, events, parsed, protocol_relations)
+            if reason:
+                suppressed[reason] += 1
+                continue
+            key = (finding['rule'], finding['path'], finding['scope'], data['state'])
+            if key not in grouped:
+                grouped[key] = dict(rule=finding['rule'], path=finding['path'], scope=finding['scope'],
+                    state=data['state'], finding_ids=[], message=finding['message'], condition=finding['condition'],
+                    review_question=finding['review_question'], evidence=[])
+            card = grouped[key]
+            card['finding_ids'].append(finding['id'])
+            known = {e['id'] for e in card['evidence']}
+            for eid in ids:
+                if eid not in known:
+                    e = events[eid]
+                    card['evidence'].append(dict(id=eid, path=e['path'], line=e['line'], kind=e['kind'],
+                        text=e['text'][:240], truncated=len(e['text']) > 240))
+                    known.add(eid)
+            continue
         publication = finding.get('state_publication', {})
         reason = None
         if finding['rule'] != 'reentrant-state-publication':
@@ -75,8 +125,10 @@ def focused_review(report):
                         if publication['callback_cleanup'].get('condition') else '调用后清空绑定（顺序事实）')
                 known.add(eid)
     cards = list(grouped.values())
-    return dict(schema_version='temporal-contract-focused-review-1', policy='state-publication-evidence-v1',
-        notice=NOTICE, status=report['status'], tool_version=report['tool_version'],
+    return dict(schema_version='temporal-contract-focused-review-1',
+        policy='source-protocol-evidence-v2' if has_protocols else 'state-publication-evidence-v1',
+        notice=PROTOCOL_NOTICE if has_protocols else NOTICE,
+        status=report['status'], tool_version=report['tool_version'],
         input_sha256=report['input_sha256'], tool_sha256=report['tool_sha256'],
         cards=cards, context=context, summary=dict(raw_findings=len(report['findings']), cards=len(cards),
             suppressed_findings=sum(suppressed.values()), suppressed_by_reason=dict(sorted(suppressed.items())),

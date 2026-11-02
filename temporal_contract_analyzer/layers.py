@@ -91,8 +91,13 @@ FACT_FIELDS = ('kind', 'callee', 'receiver', 'arguments', 'target', 'operator',
                'branch_path', 'linear_block', 'guard_key', 'early_return_identifier',
                'condition_path_supported', 'then_path_block', 'else_path_block',
                'condition_identifier', 'condition_truthy', 'null_return_identifier', 'conditional_path', 'object_binding_source', 'object_bindings',
-               'reflective_branch_linear', 'countdown_guard', 'countdown_cleanup', 'update_prefix', 'update_standalone')
+               'reflective_branch_linear', 'countdown_guard', 'countdown_cleanup', 'update_prefix', 'update_standalone',
+               'null_throw_identifier', 'listener_method', 'argument_cache_guard', 'return_identifier')
 RELATIONS = {
+    'callback_before_listener_detach': 'A matching local listener is detached after its user callback on the selected straight wrapper path; runtime dispatch is unproven.',
+    'listener_detach_before_callback': 'A matching local listener is detached before its user callback; this is a bounded order fact, not a safety verdict.',
+    'cache_key_before_compute': 'A closure cache key is assigned before candidate result computation; cache-hit and exception semantics require review.',
+    'compute_before_cache_result': 'The cached-result assignment follows successful RHS evaluation; a thrown RHS skips this write.',
     'numeric_budget_guard_before_call': 'A candidate callback on the positive numeric countdown branch; budget type and meaning are unproven.',
     'external_call_before_conditional_callback_clear': 'If its later numeric condition is true, the callback clear follows the call; the clear itself is not a defect verdict.',
     'external_call_before_callback_clear': 'A direct parameter call precedes its same-frame simple null/undefined clear; the clear itself is not a defect verdict.',
@@ -243,8 +248,8 @@ def render_layers(report, layer_schema=LAYER_SCHEMA):
         review += [_json_block(dict(rule=finding['rule'], locations=sorted(set(references[e] for e in finding['evidence'])),
                                     interpretation=finding['message'], condition=finding['condition'],
                                     review_question=finding['review_question'], classification='heuristic_review_hint',
-                                    **({'state_publication': finding['state_publication']}
-                                       if 'state_publication' in finding else {}))), '']
+                                    **({key: finding[key] for key in ('state_publication', 'listener_detach', 'cache_publication')
+                                        if key in finding}))), '']
     layers = {'none': '', 'locations': '\n'.join(common), 'facts': '\n'.join(facts), 'review': '\n'.join(review)}
     if layer_schema in (OPEN_LAYER_SCHEMA, LAYER_SCHEMA):
         layers.update(audit=AUDIT_PROMPT, risk=_risk_prompt(report))
