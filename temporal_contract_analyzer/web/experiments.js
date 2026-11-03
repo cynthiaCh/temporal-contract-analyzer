@@ -34,6 +34,12 @@ function outcome(job) {
   if(activeExperiment===selected&&job.status==='completed')return ['验证中',''];
   return ['尚未验证',''];
 }
+function scenarioLabel(job) {
+  const progress=job.evaluation?.scenario_progress;
+  if(!progress)return '未提供逐场景结论';
+  if(progress.unknown===progress.total)return `未提供逐场景结论（${progress.total} 个场景）`;
+  return `${progress.passed}/${progress.total} 个场景通过`;
+}
 async function refreshList() {
   let data;
   try{data=await api('/api/experiments');}catch(e){
@@ -135,6 +141,7 @@ async function load() {
 function render() {
   const openDetails=[...$('#experiment-detail').querySelectorAll('details[open][data-section]')].map(n=>n.dataset.section);
   const oldLog=$('.experiment-log'),logScroll=oldLog?.scrollTop||0;
+  const scenariosOpen=$('[data-section=scenarios]')?.open??true;
   const target=$('#experiment-detail');target.replaceChildren();const header=el('div','detail-header');
   const back=el('a','back-link','← 运行档案');back.href='#runs';header.append(back,el('span','eyebrow','RUN / 实验结果'),el('h2','',current.label));
   const model=current.local_codex&&!current.model_override?'本地 Codex 配置':`${current.model} / ${current.effort}`;
@@ -152,23 +159,43 @@ function render() {
   header.append(controls);target.append(header);
   const summary=el('div','summary-strip');
   for(const [label,count] of [['成功',current.jobs.filter(j=>j.evaluation?.status==='passed').length],['失败',current.jobs.filter(j=>j.evaluation?.status==='failed').length],['尚未验证',current.jobs.filter(j=>!['passed','failed'].includes(j.evaluation?.status)).length]]){const metric=el('div','metric');metric.append(el('strong','',String(count)),el('span','',label));summary.append(metric);}target.append(summary);
-  target.append(el('p','scope-notice','修改结果按案例行为测试判定。成功表示通过该案例的指定检查；验证环境异常保留为未验证。'));
+  target.append(el('p','scope-notice','修改结果按案例行为测试判定。场景通过数展示已验证的执行情形，不等于独立任务数；整体失败仍可能通过部分场景，全部场景通过也不能替代整体判定。'));
   if(current.error)target.append(el('p','error-block',current.error));
   const task=el('details','finding');task.dataset.section='task';task.open=openDetails.includes('task');task.append(el('summary','','任务与输入范围'),el('pre','',current.task),el('p','muted',`原始目录：${current.original_candidate}\n冻结 ${Object.keys(current.input_files).length} 个文件；跳过 ${current.skipped.length} 项`),el('pre','',JSON.stringify(current.skipped,null,2)));target.append(task);
-  const table=el('table'),head=el('tr');for(const text of ['条件 / 重复','修改结果','运行状态','改动文件','用量','查看'])head.append(el('th','',text));table.append(head);
+  const table=el('table'),head=el('tr');for(const text of ['条件 / 重复','修改结果','场景通过','运行状态','改动文件','用量','查看'])head.append(el('th','',text));table.append(head);
   for(const job of current.jobs) {
     const row=el('tr'),result=el('td');const [label,style]=outcome(job);result.append(el('span','pill '+style,label));
     if(job.evaluation?.verdict)result.append(el('div','row-subtitle',job.evaluation.verdict));
     if(job.evaluation?.reason)result.append(el('div','row-subtitle',job.evaluation.reason));
-    row.append(el('td','',`${layers[job.condition]} / ${job.repeat}`),result,el('td','',states[job.status]||job.status),el('td','',job.changed_files===undefined?'—':String(job.changed_files)),el('td','',job.usage?`输入 ${job.usage.input_tokens??'—'} / 输出 ${job.usage.output_tokens??'—'} tokens`:'—'));
+    const progress=el('td','scenario-progress',job.evaluation?scenarioLabel(job):'尚未验证');
+    const detail=job.evaluation?.scenario_progress;
+    if(detail){
+      if(detail.failed)progress.append(el('div','row-subtitle',`${detail.failed} 个未通过`));
+      if(detail.unknown||detail.error)progress.append(el('div','row-subtitle',`${detail.unknown} 个结论未知 · ${detail.error} 个运行异常`));
+    }
+    row.append(el('td','',`${layers[job.condition]} / ${job.repeat}`),result,progress,el('td','',states[job.status]||job.status),el('td','',job.changed_files===undefined?'—':String(job.changed_files)),el('td','',job.usage?`输入 ${job.usage.input_tokens??'—'} / 输出 ${job.usage.output_tokens??'—'} tokens`:'—'));
     const cell=el('td');cell.append(action('查看材料',()=>{jobId=job.id;artifactName='oracle.json';renderArtifact();}));row.append(cell);table.append(row);
   }
   const wrap=el('div','table-wrap');wrap.append(table);target.append(wrap);
-  target.append(el('div','experiment-artifacts'));if(!current.jobs.some(j=>j.id===jobId))jobId=current.jobs[0]?.id;renderArtifact(logScroll,openDetails.includes('technical'));
+  target.append(el('div','experiment-artifacts'));if(!current.jobs.some(j=>j.id===jobId))jobId=current.jobs[0]?.id;renderArtifact(logScroll,openDetails.includes('technical'),scenariosOpen);
 }
-async function renderArtifact(logScroll=0,technicalOpen=$('[data-section=technical]')?.open||false) {
+async function renderArtifact(logScroll=0,technicalOpen=$('[data-section=technical]')?.open||false,scenariosOpen=$('[data-section=scenarios]')?.open??true) {
   const target=$('.experiment-artifacts');target.replaceChildren();const job=current.jobs.find(j=>j.id===jobId);if(!job)return;
   target.append(el('h3','',`${layers[job.condition]} · 第 ${job.repeat} 次 · ${job.id}`));
+  const progress=job.evaluation?.scenario_progress;
+  if(progress){
+    const box=el('details','finding');box.dataset.section='scenarios';box.open=scenariosOpen;
+    box.append(el('summary','',scenarioLabel(job)));
+    const states={passed:'通过',failed:'未通过',error:'运行异常',unknown:'结论未知'};
+    for(const item of progress.items){
+      const line=el('p','scenario-outcome');line.append(el('span','pill '+(item.status==='passed'?'parsed':item.status==='failed'?'failed':'partial'),states[item.status]),el('code','',item.name));
+      const a=item.assertions;
+      if(a.total)line.append(el('span','muted',`断言检查 ${a.passed}/${a.total} 通过`));
+      box.append(line);
+      if(item.failed_assertions.length)box.append(el('p','annotation','未通过断言：'+item.failed_assertions.join('、')));
+    }
+    target.append(box);
+  }
   const tabs=el('div','detail-actions');
   const technical=el('details','technical-artifacts');technical.dataset.section='technical';technical.open=technicalOpen;technical.append(el('summary','','提示词、日志与运行记录'));const extra=el('div','detail-actions');technical.append(extra);
   for(const [name,label] of [['oracle.json','行为验证'],['evaluation.json','验证记录'],['oracle-stderr.log','验证日志'],['prompt.md','实际提示词'],['report.md','附加报告'],['answer.md','最终回答'],['events.jsonl','执行轨迹'],['stderr.log','错误日志'],['changes.json','文件改动'],['result.json','运行记录']]) {

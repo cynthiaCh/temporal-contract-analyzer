@@ -32,6 +32,13 @@ TOOLS = [
     tool('read_source', 'Read a page of the archived source snapshot, which may differ from today’s working tree.',
          dict(report_id=STRING, path=STRING, offset={'type': 'integer', 'minimum': 0},
               limit={'type': 'integer', 'minimum': 1, 'maximum': 20000}), ['report_id', 'path'], writes=True),
+    tool('read_context', 'Read a paginated JSON context packet: finding evidence plus candidate lexical/import definitions from the same archived snapshot. Includes reasons and unresolved gaps. Follow next_offset. Not a bug verdict or complete dependency analysis; separate from frozen experiment layers.',
+         dict(report_id=STRING, finding_id=STRING,
+              depth={'type': 'integer', 'minimum': 0, 'maximum': 5},
+              max_chars={'type': 'integer', 'minimum': 1, 'maximum': 100000},
+              aliases={'type': 'object', 'additionalProperties': STRING, 'maxProperties': 100},
+              offset={'type': 'integer', 'minimum': 0},
+              limit={'type': 'integer', 'minimum': 1, 'maximum': 20000}), ['report_id'], writes=True),
     tool('compare_reports', 'Compare two reports from the same project and scope. Changed hints do not establish bug introduction or repair.',
          dict(before_id=STRING, after_id=STRING), ['before_id', 'after_id']),
 ]
@@ -47,6 +54,9 @@ def validate(definition, args):
             raise EvidenceError('Invalid string: ' + key)
         if prop['type'] == 'integer' and (type(value) is not int or value < prop.get('minimum', 0) or value > prop.get('maximum', 10**9)):
             raise EvidenceError('Invalid integer: ' + key)
+        if prop['type'] == 'object' and (not isinstance(value, dict) or len(value)>prop.get('maxProperties',100)
+                or any(not isinstance(k,str) or not isinstance(v,str) or len(k)>4096 or len(v)>4096 for k,v in value.items())):
+            raise EvidenceError('Invalid object: ' + key)
         if 'enum' in prop and value not in prop['enum']:
             raise EvidenceError('Invalid choice: ' + key)
 
@@ -67,6 +77,7 @@ class Session:
         self.session_id = uuid.uuid4().hex
         self.client = {}
         self.pending_delivery = None
+        self.context_cache = {}
 
     def definitions(self):
         if self.report_id:
@@ -109,6 +120,17 @@ class Session:
         if name == 'read_source':
             source = archive.read_source(args['report_id'], args['path'], self.store)
             return self.page(args['report_id'], source['text'], args.get('offset', 0), args.get('limit', 12000), 'source:'+args['path'])
+        if name == 'read_context':
+            from .context import build_context
+            options = {k:v for k,v in args.items() if k not in {'offset','limit'}}
+            key = json.dumps(options, sort_keys=True, ensure_ascii=False)
+            if key not in self.context_cache:
+                packet = build_context(store=self.store, node=self.node, **options)
+                if len(self.context_cache)>=4:
+                    self.context_cache.pop(next(iter(self.context_cache)))
+                self.context_cache[key] = json.dumps(packet, ensure_ascii=False, indent=2)+'\n'
+            return self.page(args['report_id'], self.context_cache[key], args.get('offset',0),
+                             args.get('limit',12000), 'context:'+sha(key.encode('utf-8')))
         if name == 'compare_reports':
             return archive.compare_reports(args['before_id'], args['after_id'], self.store)
         raise EvidenceError('Unknown tool')

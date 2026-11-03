@@ -31,6 +31,8 @@
 
 ## 统一报告库、边界审查卡与 Codex
 
+新增可选的 **源码上下文补全**：从归档分析线索自动选取证据位置，沿可识别的词法定义与本地导入补充相关源码，保留来源、预算限制及未解析项。边界卡点击“补充相关源码”，或使用 `reports context REPORT_ID` / MCP `read_context`。实现复用现有 Babel/Vue 解析基础，不依赖外部 helper 路径；仅使用归档快照，不改变冻结实验层。功能、示例和范围见[上下文补全说明](docs/CONTEXT_ENRICHMENT.md)。
+
 CLI、插件与 Codex MCP 共用同一报告目录和报告 ID。本地网页集中查看历史证据、源码快照、人工核查和 Agent 材料交付记录。
 
 配置和使用方法见 [统一报告库使用说明](docs/REPORT_CENTER.md)。

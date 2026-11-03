@@ -6,6 +6,7 @@ const decisions = {confirmed:'核查成立', dismissed:'核查不成立', uncert
 let items = [], offset = 0, total = 0, selected, current, tab = 'findings', detailRequest = 0, listRequest = 0, measurementDraft;
 const protections = {sufficient:'保护充分', insufficient:'保护不足', uncertain:'待确认'};
 let reviewPaths = null;
+let contextFinding = '';
 const pageSize = 30;
 
 function element(tag, className, text) {
@@ -65,7 +66,7 @@ async function loadReports() {
 
 async function openReport(id) {
   const ticket = ++detailRequest;
-  if (selected !== id) { measurementDraft = undefined; reviewPaths = null; }
+  if (selected !== id) { measurementDraft = undefined; reviewPaths = null; contextFinding = ''; }
   selected = id;
   $('#detail').replaceChildren(element('p', 'loading', '正在读取归档并校验内容…'));
   for (const row of document.querySelectorAll('.report-row')) row.classList.toggle('selected', row.hash === '#report='+id);
@@ -117,18 +118,81 @@ function render() {
     detail.append(strip,element('p','scope-notice', '这里展示归档时的源码和结果。提示是审查线索；没有命中不代表安全。'+(report.files.some(f=>f.language==='vue') ? ' Vue 当前仅分析脚本语法，未建模模板与框架调度。' : '')));
   }
   const tabs = element('div','tabs'); tabs.setAttribute('role','tablist');
-  for (const [key, label] of [['findings','边界审查卡'],['measurement','高级测量 · E/T/L/H'],['source','源码快照'],['compare','前后对比'],['provenance','归档信息'],['delivery','Agent 交付']]) {
+  for (const [key, label] of [['findings','边界审查卡'],['context','源码上下文'],['measurement','高级测量 · E/T/L/H'],['source','源码快照'],['compare','前后对比'],['provenance','归档信息'],['delivery','Agent 交付']]) {
     const node = button(label,()=>{tab=key;render();},'tab'+(tab===key?' active':''));
     node.setAttribute('role','tab'); node.setAttribute('aria-selected',String(tab===key)); tabs.append(node);
   }
   detail.append(tabs);
   const content = element('div','tab-content'); content.id = 'tab-content'; detail.append(content);
   if (tab==='findings') renderFindings(content);
+  if (tab==='context') renderContext(content);
   if (tab==='measurement') renderMeasurements(content);
   if (tab==='source') renderSource(content);
   if (tab==='provenance') renderProvenance(content);
   if (tab==='delivery') renderDeliveries(content);
   if (tab==='compare') renderComparison(content).catch(showError);
+}
+
+function renderContext(content) {
+  const {report, metadata:meta} = current;
+  content.append(element('h3','','分析线索 → 定义补全 → Agent 核查'),
+    element('p','scope-notice','仅补充归档快照中可识别的定义，列出来源与未解析项。不会调用模型，不代表完整依赖或已确认缺陷。'));
+  if (!report) { content.append(element('p','muted','本报告没有可用的分析结果。')); return; }
+  const form=element('form','note-form context-controls');
+  const select=element('select'); select.setAttribute('aria-label','选择分析线索');
+  const all=element('option','','全部线索'); all.value=''; select.append(all);
+  for (const finding of report.findings) {
+    const option=element('option','',`${finding.id} · ${finding.rule}`); option.value=finding.id; select.append(option);
+  }
+  select.value=contextFinding;
+  const depth=element('select'); depth.setAttribute('aria-label','定义展开深度');
+  for(let n=0;n<=5;n++){const option=element('option','',`展开 ${n} 层定义`);option.value=String(n);depth.append(option);} depth.value='1';
+  const budget=element('input');budget.type='number';budget.min='1';budget.max='100000';budget.value='12000';budget.setAttribute('aria-label','代码字符预算');
+  const aliases=element('textarea');aliases.value='{}';aliases.rows=2;aliases.setAttribute('aria-label','路径别名 JSON');
+  for(const [label,field] of [['选择线索',select],['展开深度',depth],['代码字符预算（不含说明文字）',budget]]) {
+    const wrapper=element('label','field');wrapper.append(element('span','',label),field);form.append(wrapper);
+  }
+  const advanced=element('details','context-aliases');advanced.append(element('summary','','路径别名（可选）'));
+  const aliasField=element('label','field');aliasField.append(element('span','','例如 {"@":"src"}'),aliases);advanced.append(aliasField);form.append(advanced);
+  const submit=element('button','primary','生成源码上下文');submit.type='submit';form.append(submit);
+  const result=element('div');content.append(form,result);
+  let request=0;
+  async function load() {
+    const ticket=++request;
+    contextFinding=select.value;
+    const mapping=JSON.parse(aliases.value);
+    const query=new URLSearchParams({depth:depth.value,max_chars:budget.value,aliases:JSON.stringify(mapping)});
+    if(select.value)query.set('finding_id',select.value);
+    submit.disabled=true;result.replaceChildren(element('p','muted','正在从归档源码补充定义…'));
+    try {
+      const data=await api(reportURL(meta.report_id)+'/context?'+query);
+      if(ticket!==request || !content.isConnected)return;
+      const packet=data.context;
+      result.replaceChildren(element('p','muted',`${packet.usage.snippets} 段源码 · ${packet.usage.code_chars} 字符 · ${packet.unresolved.length} 项未解析`),
+        button('复制完整上下文给 Agent',async()=>navigator.clipboard.writeText(data.markdown)));
+      if(!packet.snippets.length)result.append(element('p','muted','没有选中的线索；没有命中不代表安全。'));
+      for(const snippet of packet.snippets) {
+        const card=element('article','finding');
+        card.append(element('h3','',`${snippet.file}:${snippet.start_line}–${snippet.end_line} · ${snippet.kind==='seed'?'原始证据':'补充定义'}`));
+        const descriptions=snippet.reasons.map(reason=>reason.kind==='finding-evidence'
+          ? `分析线索 ${reason.finding_id} 的源码证据`
+          : `${reason.from_file}:${reason.reference_line} 使用 ${reason.local_name || reason.symbol}${reason.module?'，来自 '+reason.module:''}`);
+        for(const description of new Set(descriptions))card.append(element('p','muted',description));
+        card.append(element('pre','',snippet.code),button('查看归档源码',()=>{tab='source';render();loadSource(snippet.file,snippet.start_line,snippet.end_line).catch(showError);},'source-link'));
+        result.append(card);
+      }
+      const gaps=element('article','finding');gaps.append(element('h3','','未解析项'));
+      if(!packet.unresolved.length)gaps.append(element('p','muted','未记录到可识别的解析缺口；结果仍受支持范围限制。'));
+      for(const gap of packet.unresolved)gaps.append(element('p','annotation',`${gap.from_file || ''}${gap.reference_line?':'+gap.reference_line:''} · ${gap.symbol || ''} · ${gap.reason}${gap.target_file?' → '+gap.target_file:''}${gap.detail?' · '+gap.detail:''}`));
+      result.append(gaps);
+      const limits=element('article','finding');limits.append(element('h3','','支持范围'));
+      for(const limitation of packet.limitations)limits.append(element('p','muted',limitation));result.append(limits);
+    } catch(error) {
+      if(ticket===request && content.isConnected)result.replaceChildren(element('div','error-block',error.message));
+    } finally {if(ticket===request)submit.disabled=false;}
+  }
+  form.addEventListener('submit',event=>{event.preventDefault();load().catch(showError);});
+  load().catch(showError);
 }
 
 function renderMeasurements(content) {
@@ -256,6 +320,7 @@ function renderFindings(content) {
     for(const id of candidate.evidence_ids){evidence.append(sourceButton(id),element('pre','',events.get(id).text));}
     card.append(evidence);
     const actions=element('div','detail-actions');
+    actions.append(button('补充相关源码',()=>{contextFinding=candidate.finding_id;tab='context';render();}));
     actions.append(button('复制给 Agent 的核查材料',async()=>{await navigator.clipboard.writeText(boundaryPacket(candidate,events,meta,latest));}));
     const advanced=element('details','review-box');advanced.append(element('summary','','可选：深入结构测量'));
     advanced.append(button('建立候选测量草稿',async()=>{measurementDraft=await api(reportURL(meta.report_id)+'/measurement-template?'+new URLSearchParams({finding_id:candidate.finding_id}));tab='measurement';render();},'quiet'));

@@ -164,7 +164,18 @@ class Workbench:
             manifest['evaluation_id'] = summary['id']
             manifest['evaluated_at'] = summary['completed_at']
             for job in manifest['jobs']:
-                job['evaluation'] = summary['jobs'].get(job['id'], {'status':'not_evaluated'})
+                evaluation = dict(summary['jobs'].get(job['id'], {'status':'not_evaluated'}))
+                # Older evaluations already preserve exact oracle output. Derive
+                # the view without rewriting their manifest, summary or scores.
+                if evaluation.get('status') in {'passed','failed'} and 'scenario_progress' not in evaluation:
+                    from .case_evaluation import scenario_progress
+                    if re.fullmatch(r'j-[0-9]+', str(job['id'])):
+                        result = latest.parent/job['id']/'oracle'/'stdout.json'
+                        try:
+                            evaluation['scenario_progress'] = scenario_progress(json.loads(result.read_text()))
+                        except (OSError, ValueError, TypeError, AttributeError):
+                            evaluation['scenario_progress'] = None
+                job['evaluation'] = evaluation
                 job['recorded_task_success'] = job.get('task_success', 'unscored')
                 job['task_success'] = {'passed':'passed', 'failed':'failed'}.get(job['evaluation']['status'], 'unverified')
         return manifest

@@ -21,7 +21,9 @@ def main():
     service = hub.ensure_server()
     with hub._opener.open(service['url'] + '/api/health', timeout=5) as response:
         health = json.load(response)
-    if health.get('experiment_ui') != 'local-codex-models-v1':
+    if (health.get('experiment_ui') != 'local-codex-models-v1'
+            or health.get('context_enrichment') != 'snapshot-definitions-v1'
+            or health.get('scenario_progress') != 'explicit-schedules-v1'):
         try:
             with hub._opener.open(service['url'] + '/api/experiments', timeout=5) as response:
                 active = json.load(response).get('active')
@@ -46,6 +48,8 @@ def main():
     url = service['url'] + '/experiments'
     print('\nCodex 实验工作台：' + url)
     print('选择案例 → 使用本地 Codex 运行实验。')
+    print('测试源码补全：进入报告库 → 选择报告 → 源码上下文。')
+    print('当前实验对照仍使用冻结报告；源码补全尚未作为新增实验条件。')
     print('打开页面不会调用模型；点击「运行实验」才开始运行。')
     print('已运行的服务会复用，不会中断其中的实验。')
     print('服务在后台运行，关闭此终端不会停止服务。')

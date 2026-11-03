@@ -15,6 +15,42 @@ from .core import EvidenceError, sha
 VERDICTS = {'PASS', 'UNDERREACH', 'OVERREACH', 'UNDERREACH_AND_OVERREACH'}
 
 
+def scenario_progress(outcome):
+    """Describe explicit schedule outcomes, never infer success from missing names.
+
+    A schedule is a tested execution scenario, not an independent task or bug.
+    Whole-task verdicts (including forbidden effects) remain authoritative.
+    """
+    schedules = outcome.get('schedules')
+    if not isinstance(schedules, dict) or not schedules:
+        return None
+    items = []
+    for name, value in schedules.items():
+        row = value if isinstance(value, dict) else {}
+        assertions = row.get('assertions', [])
+        assertions = assertions if isinstance(assertions, list) else []
+        checks = [a for a in assertions if isinstance(a, dict)]
+        passed = sum(a.get('passed') is True for a in checks)
+        failed = sum(a.get('passed') is False for a in checks)
+        unknown = len(assertions)-passed-failed
+        explicit = row.get('passed') if isinstance(value, dict) else value
+        state = 'unknown'
+        if row.get('runtimeError'):
+            state = 'error'
+        elif type(explicit) is bool:
+            # Inconsistent producer fields cannot be counted as a pass.
+            state = 'unknown' if explicit and failed else 'passed' if explicit else 'failed'
+        elif failed:
+            state = 'failed'
+        elif assertions and unknown == 0:
+            state = 'passed'
+        items.append(dict(name=name, status=state,
+                          assertions=dict(total=len(assertions), passed=passed, failed=failed, unknown=unknown),
+                          failed_assertions=[str(a.get('id', 'unnamed')) for a in checks if a.get('passed') is False]))
+    counts = {state: sum(item['status']==state for item in items) for state in ('passed','failed','error','unknown')}
+    return dict(schema_version=1, unit='scenario', total=len(items), items=items, **counts)
+
+
 def runtime(manifest, adapter, node):
     if adapter == 'python':
         minimum = tuple(int(n) for n in manifest.get('runtime', {}).get('minimum_version', '3.9').split('.'))
@@ -132,6 +168,7 @@ def evaluate(manifest, folder, node, stop, terminate):
                                    verdict=outcome['verdict'], missing_required_effects=outcome.get('missing_required_effects', []),
                                    observed_forbidden_effects=outcome.get('observed_forbidden_effects', []),
                                    schedules=len(schedules), candidate_files=inventory(files), excluded=skipped,
+                                   scenario_progress=scenario_progress(outcome),
                                    result_path=str((directory/job_id/'oracle/stdout.json').relative_to(folder)))
             except (OSError, ValueError, KeyError, TypeError, EvidenceError, subprocess.SubprocessError) as error:
                 jobs[job_id] = dict(status='error', reason=str(error))

@@ -99,6 +99,8 @@ finally: server.server_close()
     await page.locator('td .pill').filter({hasText:/^成功$/}).first().waitFor();
     await page.getByRole('button',{name:'查看材料'}).first().waitFor();
     assert.equal(await page.locator('td .pill').filter({hasText:/^成功$/}).count(),2);
+    assert.equal(await page.locator('td.scenario-progress').filter({hasText:'1/1 个场景通过'}).count(),2);
+    await page.getByText('1/1 个场景通过',{exact:true}).last().waitFor();
     assert.equal(await page.locator('.summary-strip .metric').first().innerText(),'2成功');
     await page.getByRole('button',{name:'最终回答',exact:true}).click();
     await page.getByText('SYNTHETIC_UI_CHECK_ONLY: without report',{exact:true}).waitFor();

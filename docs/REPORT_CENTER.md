@@ -69,7 +69,10 @@ Codex CLI 与 IDE 扩展使用同一 MCP 配置。注册后重新加载 Codex �
 | `list_reports` | 搜索历史记录 |
 | `read_report` | 按 ID 分页读取完整报告或冻结层 |
 | `read_source` | 按 ID 分页读取当时源码 |
+| `read_context` | 从归档线索补充候选定义，分页读取带来源和缺口的独立 JSON 材料 |
 | `compare_reports` | 比较同一项目及范围的两次扫描 |
+
+网页新增“源码上下文”标签，边界卡也可直接点击“补充相关源码”。CLI 使用 `reports context REPORT_ID`。详细参数与范围见[上下文补全说明](CONTEXT_ENRICHMENT.md)。受限的冻结层 MCP 会话仍只提供指定层，不暴露此工具。
 
 插件可以保存未保存的编辑器内容；Codex/网页扫描读取磁盘。因此要研究同一份输入，应让 Codex **读取插件给出的报告 ID**，而不是重新扫描并假定内容相同。配置共享 Node 可减少不同入口的解析器运行环境差异。归档和网页本身不调用模型；通过 MCP 返回给 Codex 的材料会进入当前 Codex 会话。
 

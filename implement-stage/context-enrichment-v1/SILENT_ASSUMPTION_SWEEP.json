@@ -1,0 +1,171 @@
+{
+  "review_round": 1,
+  "reviewer_identity": {
+    "agent": "/root/context_assumption_review",
+    "product": "Codex",
+    "model_family": "GPT-6",
+    "exact_model": "Not exposed to this reviewer; no more specific model identity is claimed"
+  },
+  "review_independence": "fresh-context same-family review",
+  "acceptance_status": "provisional; gaps found; no independent acquittal",
+  "scope": "Implementation assumptions and concrete defects only. Reviewed working-tree changes against dc77e779ab9bc96dd28754e71ad30886ba9ee359, primary source files, the spec and ledger. Findings below describe the pre-fix implementation read and reproduced during round 1; the parent began fixes during this review, and those fixes require the requested follow-up review.",
+  "undeclared": [
+    {
+      "site": "temporal_contract_analyzer/context.py:81-96 (resolve_module)",
+      "decision": "Resolve explicit extensions exactly; for extensionless imports use a fixed JS/TS/Vue extension and index-file candidate list, reject multiple matches rather than selecting a precedence winner, and apply the longest matching explicit alias prefix. Do not emulate TS extension substitution or project resolver configuration.",
+      "why_it_matters": "The chosen resolver determines whether an otherwise supported static import expands, is ambiguous, or is reported missing. A-004/A-006 do not specify this semantic policy.",
+      "class": "semantic"
+    },
+    {
+      "site": "tools/temporal-contract-analyzer/context.cjs:32,55; temporal_contract_analyzer/context.py:119-125,183-199,60-62",
+      "decision": "Use complete source lines and whole declaration/function/class ranges; a variable definition includes its entire VariableDeclaration, including sibling declarators. Traverse all modeled references in those excerpts. Merge adjacent ranges and count usage.seeds/definitions as merged snippets with qualifying reasons, not symbols.",
+      "why_it_matters": "This can introduce unrelated same-line or sibling code into traversal and consume budget. The resulting usage fields must not be read as definition counts or retrieval success. A-002/A-007 do not fully declare the excerpt unit and usage interpretation.",
+      "class": "semantic"
+    },
+    {
+      "site": "tools/temporal-contract-analyzer/context.cjs:35-36,95-107",
+      "decision": "Omit type-only references and parameter bindings from enrichment, and silently omit unbound names instead of producing one unresolved entry per name. The unresolved array inventories only recognized unsupported/omitted relationships.",
+      "why_it_matters": "An empty unresolved array cannot establish that all referenced definitions were found. This limitation is described in new documentation but not in the assumption ledger.",
+      "class": "semantic"
+    },
+    {
+      "site": "tools/temporal-contract-analyzer/context.cjs:115-127",
+      "decision": "Treat Vue normal script and script-setup as independent scopes; expose exports only from normal script, always report template/cross-block relationships as unmodeled, and reject enrichment of the entire Vue file when an external template, custom block, external script or unsupported script language is encountered.",
+      "why_it_matters": "These choices narrow the promised inline Vue-script support and affect which definitions survive even when a usable inline script exists. A-004 does not declare this boundary.",
+      "class": "semantic"
+    },
+    {
+      "site": "temporal_contract_analyzer/context.py:44,65-78; temporal_contract_analyzer/archive_cli.py:117-139",
+      "decision": "A missing/failing/timed-out parser returns a successful seed-only context artifact with gaps; the parser subprocess has a 45-second timeout. No findings avoids starting the parser.",
+      "why_it_matters": "Callers must inspect parser status and unresolved entries rather than treating CLI success as successful enrichment. The ledger gives input bounds but not this fallback interface.",
+      "class": "interface"
+    },
+    {
+      "site": "temporal_contract_analyzer/mcp_server.py:123-133",
+      "decision": "Page the serialized full JSON packet; callers must repeat generation options on every page. Cache four option-keyed packets per session with insertion-order eviction.",
+      "why_it_matters": "Options are part of the pagination contract, and changing or omitting them selects another packet. A-008 states pagination/receipts but not these requirements.",
+      "class": "interface"
+    },
+    {
+      "site": "temporal_contract_analyzer/archive_cli.py:122-139",
+      "decision": "Default to JSON on stdout; optional output creates a new file, refuses overwrites and candidate-project destinations. Corrected policy must also exclude immutable report-run directories.",
+      "why_it_matters": "The new output command writes outside the source tree, so its destination and overwrite rules are part of the user-visible contract. These rules are not included in A-006.",
+      "class": "interface"
+    }
+  ],
+  "stale_rows": [
+    {
+      "id": "A-004",
+      "stated": "Lexical definitions and static local named/default ESM imports in JS/TS/Vue; unsupported relationships are gaps.",
+      "observed": "Round-1 code can falsely export an unexported same-line binding, misresolve computed-method and default-parameter scopes, and silently drop runtime TS enum/namespace declarations. These are implementation contradictions to fix, not behavior to bless in the ledger.",
+      "defects": [
+        "D-001",
+        "D-002",
+        "D-003",
+        "D-004"
+      ]
+    },
+    {
+      "id": "A-008",
+      "stated": "Separate opt-in material; no changes to frozen B/C/D rendering.",
+      "observed": "Frozen rendering itself is unchanged, but round-1 CLI accepts output inside an immutable run directory, making the whole archived report fail inventory verification. The archive-preservation invariant needs the output guard.",
+      "defects": [
+        "D-005"
+      ]
+    }
+  ],
+  "defects": [
+    {
+      "id": "D-001",
+      "severity": "medium",
+      "site": "tools/temporal-contract-analyzer/context.cjs:83-84 (round-1 lines)",
+      "problem": "Named-export membership is inferred from overlapping source line numbers, so unrelated declarations on the same line become exports.",
+      "reproduction": {
+        "main.js": "import { secret } from './shared';\nsecret();\n",
+        "shared.js": "const secret = 1; export const publicValue = 2;\n"
+      },
+      "observed": "Parsed shared.js exports contains both secret and publicValue; enriching main.js line 2 includes secret as an import-definition and returns no gaps.",
+      "expected": "secret is not exported. Resolve export membership from the declaration AST bindings; report the requested secret export missing."
+    },
+    {
+      "id": "D-002",
+      "severity": "medium",
+      "site": "tools/temporal-contract-analyzer/context.cjs:41-45,71-74 (round-1 lines)",
+      "problem": "Computed method keys are visited inside the new method-parameter scope, though the key expression belongs to the enclosing scope.",
+      "reproduction": {
+        "main.js": "import { key } from './shared';\nconst object = { [key](key) {} };\n",
+        "shared.js": "export const key = \"hello\";\n"
+      },
+      "observed": "main.js has no modeled references; enriching line 2 returns only its seed and no gaps.",
+      "expected": "The computed key resolves to the imported key; the parameter named key only shadows names used inside the method."
+    },
+    {
+      "id": "D-003",
+      "severity": "medium",
+      "site": "tools/temporal-contract-analyzer/context.cjs:41-53 (round-1 lines)",
+      "problem": "Default-parameter initializers incorrectly share the scope that receives body var declarations.",
+      "reproduction": {
+        "main.js": "import { value } from './shared';\nfunction f(arg = value) {\nvar value = 2;\n}\n",
+        "shared.js": "export const value = 1;\n"
+      },
+      "observed": "The value reference on line 2 is bound to the body var on line 3 and the imported definition is not returned.",
+      "expected": "The parameter initializer resolves value in its outer scope; function-body vars are not visible there."
+    },
+    {
+      "id": "D-004",
+      "severity": "medium",
+      "site": "tools/temporal-contract-analyzer/context.cjs:35-36 (round-1 lines)",
+      "problem": "The TS-prefix filter treats runtime enum and namespace constructs as type-only and emits no unsupported-runtime gap.",
+      "reproduction": {
+        "enum_case": "enum Status { Ready = 1 }\nconsole.log(Status.Ready);\n",
+        "namespace_case": "const item = 1;\nnamespace Thing { export const x = item; }\nconsole.log(Thing.x);\n"
+      },
+      "observed": "Both modules report status parsed with empty references and gaps, so a seed using Status or Thing receives no definition or explanation.",
+      "expected": "Either model those runtime definitions or explicitly register their bindings as unsupported so their uses yield a gap. Do not treat runtime TS statements as type-only."
+    },
+    {
+      "id": "D-005",
+      "severity": "high",
+      "site": "temporal_contract_analyzer/archive_cli.py:123-132 (round-1 lines)",
+      "problem": "The new output command can invalidate the verified archive it just read.",
+      "reproduction": "Scan a temporary project; run reports context REPORT_ID --store STORE --output STORE/runs/REPORT_ID/context.json; then call archive.verify(REPORT_ID, STORE).",
+      "observed": "Context command exits 0 and writes context.json; verify raises EvidenceError: Archive inventory changed.",
+      "expected": "Refuse outputs anywhere inside immutable runs directories, in addition to candidate-project and overwrite restrictions. Keep derived artifacts outside immutable run inventories."
+    },
+    {
+      "id": "D-006",
+      "severity": "medium",
+      "site": "temporal_contract_analyzer/context.py:166-180 (round-1 lines); temporal_contract_analyzer/web/app.js:168",
+      "problem": "Markdown output and the UI copy action discard the source binding and generator identity that SPEC explicitly requires in JSON/Markdown artifacts.",
+      "reproduction": "Build a normal context packet and render markdown(packet); test whether packet.input_sha256 and packet.generator.implementation_sha256 appear in the result.",
+      "observed": "Both checks are false. Markdown also omits schema, parser, aliases and full limits/usage metadata.",
+      "expected": "Render the existing packet metadata, including source binding and generator identity, in Markdown. This needs no new hashes or binding scheme."
+    }
+  ],
+  "semantic_undeclared": 4,
+  "verdict": "gaps",
+  "checks": [
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -B -m unittest discover -s tests -p test_context_enrichment.py",
+      "result": "15 tests passed in 4.031 seconds on the pre-fix implementation"
+    },
+    {
+      "command": "Read-only parse_sources/expand probes using temporary source dictionaries",
+      "result": "Reproduced D-001 through D-004"
+    },
+    {
+      "command": "Temporary archive/CLI export and Markdown probes",
+      "result": "Reproduced D-005 and D-006; temporary directories were cleaned"
+    }
+  ],
+  "correct_observations": [
+    "Context source reads go through verified archive access rather than candidate working-tree reads.",
+    "No frozen scanner or frozen layer renderer changed in the inspected diff.",
+    "Restricted MCP sessions still expose only their assigned read_report tool, and the existing context isolation test passes.",
+    "Normal MCP context pages use the existing delivery receipt mechanism; the round-1 pagination test passes."
+  ],
+  "limitations": [
+    "This is a same-family provisional review, not independent research-effectiveness validation.",
+    "Parent fixes started after findings were reported; a later round must inspect and verify those changes. No fixed defect is declared resolved by this round."
+  ]
+}

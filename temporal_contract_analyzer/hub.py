@@ -90,7 +90,9 @@ class Handler(BaseHTTPRequestHandler):
         parts = url.path.strip('/').split('/')
         store = self.server.store
         if url.path == '/api/health':
-            self.send(dict(store=str(store), instance=self.server.instance, version=VERSION, experiment_ui='local-codex-models-v1'))
+            self.send(dict(store=str(store), instance=self.server.instance, version=VERSION,
+                           experiment_ui='local-codex-models-v1', context_enrichment='snapshot-definitions-v1',
+                           scenario_progress='explicit-schedules-v1'))
         elif url.path == '/api/state':
             self.send(dict(store=str(store), version=VERSION, url=self.server.url))
         elif url.path == '/api/reports':
@@ -115,6 +117,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(archive.read_report(report_id, store))
             elif len(parts) == 4 and parts[3] == 'source':
                 self.send(archive.read_source(report_id, query['path'], store))
+            elif len(parts) == 4 and parts[3] == 'context':
+                from .context import build_context, markdown
+                aliases = json.loads(query.get('aliases','{}'), object_pairs_hook=strict_object)
+                packet = build_context(report_id, store, query.get('finding_id'),
+                                       int(query.get('depth',1)), int(query.get('max_chars',12000)),
+                                       aliases, self.server.node)
+                self.send(dict(context=packet, markdown=markdown(packet)))
             elif len(parts) == 4 and parts[3] == 'artifact':
                 name = query['name']
                 data = archive.artifact(report_id, name, store)

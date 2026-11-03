@@ -68,7 +68,25 @@ class ReportHubTests(unittest.TestCase):
                 self.call(path, body, headers)
             self.assertEqual(error.exception.code, 403)
 
+    def test_context_api_uses_snapshot_and_accepts_one_finding(self):
+        (self.project/'shared.js').write_text('export function publish() { return 17; }\n')
+        (self.project/'Demo.vue').write_text('<script setup>\nimport { publish } from "./shared";\nasync function load(){await fetch(); publish();}\n</script>')
+        meta=archive.scan_path(self.project,self.store)['archive']
+        data=archive.read_report(meta['report_id'],self.store)
+        finding=data['report']['findings'][0]['id']
+        (self.project/'shared.js').write_text('CHANGED WORKING TREE')
+        with self.call('/api/reports/'+meta['report_id']+'/context?finding_id='+finding) as response:
+            result=json.load(response)
+        self.assertEqual(result['context']['finding_ids'],[finding])
+        self.assertIn('return 17',result['markdown'])
+        self.assertNotIn('CHANGED',result['markdown'])
+        with self.assertRaises(HTTPError) as error:
+            self.call('/api/reports/'+meta['report_id']+'/context?depth=99')
+        self.assertEqual(error.exception.code,400)
+
     def test_serves_only_known_assets_and_artifacts_with_csp(self):
+        with self.call('/api/health') as response:
+            self.assertEqual(json.load(response)['context_enrichment'],'snapshot-definitions-v1')
         with self.call('/') as response:
             self.assertIn("script-src 'self'", response.headers['Content-Security-Policy'])
             self.assertIn('报告库', response.read().decode())

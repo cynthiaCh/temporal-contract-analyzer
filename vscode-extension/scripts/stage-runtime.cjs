@@ -18,7 +18,7 @@ for (const name of fs.readdirSync(path.join(root, 'temporal_contract_analyzer'))
 fs.cpSync(path.join(root, 'temporal_contract_analyzer/web'), path.join(dest, 'temporal_contract_analyzer/web'), {recursive: true});
 const target = path.join(dest, 'tools/temporal-contract-analyzer');
 fs.mkdirSync(target, {recursive: true});
-for (const name of ['parse.cjs', 'package.json', 'package-lock.json']) fs.copyFileSync(path.join(parser, name), path.join(target, name));
+for (const name of ['parse.cjs', 'context.cjs', 'package.json', 'package-lock.json']) fs.copyFileSync(path.join(parser, name), path.join(target, name));
 fs.cpSync(path.join(parser, 'node_modules'), path.join(target, 'node_modules'), {
   recursive: true,
   filter: source => !source.split(path.sep).includes('.bin'),

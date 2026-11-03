@@ -37,6 +37,15 @@ def register(sub):
     show.add_argument('--format', choices=['json', 'md'], default='md')
     check = commands.add_parser('verify', help='Verify archived bytes and snapshot binding')
     check.add_argument('report_id')
+    context = commands.add_parser('context', help='Enrich finding evidence with definitions from the archived source snapshot')
+    context.add_argument('report_id')
+    context.add_argument('--finding-id')
+    context.add_argument('--depth', type=int, default=1)
+    context.add_argument('--max-chars', type=int, default=12000)
+    context.add_argument('--aliases', default='{}', help='Explicit JSON mapping of import prefixes to snapshot-relative directories')
+    context.add_argument('--node')
+    context.add_argument('--format', choices=['json', 'md'], default='json')
+    context.add_argument('--output', help='Write a new file; refuses overwrites')
     compare = commands.add_parser('compare', help='Compare two archived reports')
     compare.add_argument('before_id')
     compare.add_argument('after_id')
@@ -63,7 +72,7 @@ def register(sub):
     mra.add_argument('report_id'); mra.add_argument('measurement_record_id'); mra.add_argument('review')
     mi = commands.add_parser('measurement-import-v06', help='Append a read-only MeasurementBench 0.6 compatibility view')
     mi.add_argument('report_id'); mi.add_argument('measurement_report')
-    for command in (init, scan, listing, show, check, compare, server, opening, stop, mcp, mt, ma, mrt, mra, mi):
+    for command in (init, scan, listing, show, check, context, compare, server, opening, stop, mcp, mt, ma, mrt, mra, mi):
         command.add_argument('--store', help='Shared report directory (default: configured store)')
 
 
@@ -105,6 +114,29 @@ def run(args):
         value = archive.read_report(args.report_id, store)
     elif name == 'verify':
         value = archive.verify(args.report_id, store)
+    elif name == 'context':
+        from .context import build_context, markdown
+        aliases = json.loads(args.aliases, object_pairs_hook=_json_object)
+        value = build_context(args.report_id, store, args.finding_id, args.depth,
+                              args.max_chars, aliases, args.node)
+        content = markdown(value) if args.format=='md' else json.dumps(value, ensure_ascii=False, indent=2)+'\n'
+        if args.output:
+            target = Path(args.output).expanduser().resolve()
+            candidate = Path(archive.metadata(args.report_id, store)['candidate_root']).resolve()
+            immutable = archive.store_path(store)/'runs'
+            if target==immutable or immutable in target.parents:
+                raise EvidenceError('上下文输出不能写入不可变报告归档目录')
+            if target==candidate or candidate in target.parents:
+                raise EvidenceError('上下文输出必须位于候选工程外')
+            if target.exists():
+                raise EvidenceError('输出已存在，请使用新路径，保留旧记录')
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with target.open('x', encoding='utf-8') as handle:
+                handle.write(content)
+            value = dict(output=str(Path(args.output)), schema_version=value['schema_version'], usage=value['usage'])
+        else:
+            print(content, end='')
+            return 0
     elif name == 'compare':
         value = archive.compare_reports(args.before_id, args.after_id, store)
     elif name == 'serve':
