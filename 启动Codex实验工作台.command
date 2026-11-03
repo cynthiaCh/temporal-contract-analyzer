@@ -21,7 +21,7 @@ def main():
     service = hub.ensure_server()
     with hub._opener.open(service['url'] + '/api/health', timeout=5) as response:
         health = json.load(response)
-    if health.get('experiment_ui') != 'local-codex-v1':
+    if health.get('experiment_ui') != 'local-codex-models-v1':
         try:
             with hub._opener.open(service['url'] + '/api/experiments', timeout=5) as response:
                 active = json.load(response).get('active')

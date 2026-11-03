@@ -36,6 +36,24 @@ User encountered missing CLI when launching outside the shell PATH and requested
 
 Current focused suite 11/11 and synthetic browser flow passed. A real local discovery check with PATH=/usr/bin:/bin found the VS Code Codex 0.164.0-alpha.11.1; local login status returned available without printing credentials. No model call was made. Launcher health marker advanced to local-codex-v1 so old idle services upgrade while active jobs remain protected.
 
+## Post-run modification results
+
+User requested actual success/failure rather than process completion and asked about cached-detail-activation-vanilla. Added existing bench oracle execution after Codex, separate appended evaluations and API/UI results, and manual retrospective evaluation. Original manifests, prompts, answers and result.json remain unchanged. Task outcome is derived from the latest saved evaluation; unexpected runtime/probe errors remain unverified. Reference calibration combines base with the sparse bounded-reference overlay, preserving package/module metadata. Historical grading uses the current oracle and records that limitation explicitly.
+
+Existing run e-057af0ed8c4c45ce: both none/review jobs passed the trusted Node v16.20.2 oracle across 13 schedules each, no missing required or forbidden effects. Appended evaluation v-2c64a536bfe04b9c. First calibration attempt lacked base package metadata and failed; v-064888749f4a4beb remains intact as an unsuccessful calibration, superseded by the corrected record. This is a single author-exposed case, not evidence of report benefit. No model invocation was repeated.
+
+Current focused suite 13/13 and report-hub suite 7/7 passed. Tests cover automatic scoring with successful CLI/failed task, retrospective pass/fail, calibration failure, nested runtime errors, verdict/exit mismatch and preservation of original records. Temporary known bench mutant drop-network-refresh was correctly failed/UNDERREACH; temporary validation only, not added to research results. Browser check verifies success badges appear without reloading, with oracle details accessible. CSP remains unchanged; browser polling uses locators rather than evaluating strings.
+
+Fresh reviewer /root/oracle_review configured gpt-6-astra/xhigh completed two rounds, same-family provisional. First identified nested schedule errors being misclassified and a final-result polling race; both fixed with regression coverage. ORACLE_SWEEP.json records the second review, which did not rerun tests. Startup health marker advanced to local-codex-score-v1.
+
+## Earlier local Codex models
+
+User requested supported older models for experiments. Model selector now reads visible entries from CODEX_HOME/models_cache.json (default ~/.codex), with earlier GPT-5 versions first and local default retained. Current local cache lists gpt-5.6-luna, gpt-5.6-sol and gpt-5.6-terra. Retired/historical hardcoded bench presets no longer determine choices. Cache enumeration is not a live call/access check.
+
+Selected-model web runs retain local Codex config/login/provider and explicitly override model plus a supported reasoning level (medium by default when available). Original local-default no-override behavior and legacy explicit-model API behavior remain covered. Frozen manifest records selected model, effort, model_override and cache source/time. Hidden/review-only models and unsupported effort selections are rejected/omitted. No real model call was issued.
+
+Focused suite 14/14 and browser integration passed: synthetic model cache selects gpt-5.6-luna, generated fake-CLI command keeps local config and exact model/medium overrides, both report conditions run/score, and results display automatically. Local actual cache enumeration verified older choices. Official model docs fetched via https://developers.openai.com/codex/models/ (redirects to https://learn.chatgpt.com/docs/models). Prior semantic sweeps predate this small extension; no new independent effectiveness claims.
+
 ## Deferred
 
 Formal isolation/blinding/randomization; benchmark-specific oracle integration; MCP delivery comparison; behavior-probe timeline. These are outside this exploratory execution page.

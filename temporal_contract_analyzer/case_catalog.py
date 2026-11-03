@@ -23,6 +23,36 @@ def read(path):
     return json.loads(path.read_text(encoding='utf-8'))
 
 
+def local_models():
+    home = Path(os.environ.get('CODEX_HOME', str(Path.home()/'.codex'))).expanduser()
+    cache = home/'models_cache.json'
+    try:
+        data = read(cache)
+        rows = data.get('models', [])
+        if not isinstance(rows, list):
+            rows = []
+    except (OSError, ValueError, AttributeError):
+        data, rows = {}, []
+    choices, seen = [], set()
+    for row in rows:
+        if not isinstance(row, dict) or row.get('visibility') != 'list':
+            continue
+        name = row.get('slug')
+        if not isinstance(name, str) or not name.strip() or len(name) > 200 or name in seen:
+            continue
+        seen.add(name)
+        efforts = [r['effort'] for r in row.get('supported_reasoning_levels', [])
+                   if isinstance(r, dict) and r.get('effort') in ('low','medium','high','xhigh','max','ultra')]
+        default = row.get('default_reasoning_level')
+        if default not in efforts:
+            default = efforts[0] if efforts else None
+        choices.append(dict(id=name, label=row.get('display_name') or name, efforts=efforts,
+                            default_effort=default, earlier=name.startswith('gpt-5.')))
+    choices.sort(key=lambda r:(not r['earlier'], r['id']))
+    return dict(models=[r['id'] for r in choices], model_choices=choices, default_model='',
+                model_source='local_codex_cache', models_fetched_at=data.get('fetched_at'))
+
+
 def catalog():
     root = bench_root()
     index = root/'experiments/temporal-diagnostics-v1/corpus.json'
@@ -52,16 +82,7 @@ def catalog():
             reason = '缺少 base 代码'
         cases.append(dict(id=case_id, title=manifest.get('title',case_id), language=row.get('language',''),
                           mechanism=row.get('mechanism',''), supported=not reason, unavailable_reason=reason))
-    config = read(root/'.bench.local.json') if (root/'.bench.local.json').is_file() else {}
-    # Same requested choices as bench, not a capability probe or availability claim.
-    models = {'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-6-astra'}
-    default_model = config.get('model')
-    if isinstance(default_model,str) and default_model:
-        models.add(default_model)
-    else:
-        default_model = 'gpt-6-astra'
-    return dict(cases=cases, models=sorted(models), default_model=default_model,
-                source=str(root), task_condition='latent-maintenance')
+    return dict(cases=cases, source=str(root), task_condition='latent-maintenance', **local_models())
 
 
 def case_input(case_id):

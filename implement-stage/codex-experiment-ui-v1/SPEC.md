@@ -8,3 +8,5 @@ Outputs: sibling `<report-store-name>-experiments/<experiment-id>/` with manifes
 Success: `python3 -B -m unittest discover -s tests -p 'test_experiment_workbench.py'` and browser integration check.
 Base commit: d9d5ea9cad0aa758326c085db96dce2a168a2ec0; initial working tree clean.
 Scope: local exploratory experiments; existing bench and Paper 1 remain unchanged. No automatic defect scoring or claimed agent comprehension. Live model calls only follow an explicit Start action. Initial verification uses a clearly labeled fake process, never a research result.
+
+User-requested extension: run trusted existing bench oracles after agent completion and show modification success/failure independently of process completion; append retrospective evaluations without modifying old run artifacts.

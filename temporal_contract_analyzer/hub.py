@@ -90,7 +90,7 @@ class Handler(BaseHTTPRequestHandler):
         parts = url.path.strip('/').split('/')
         store = self.server.store
         if url.path == '/api/health':
-            self.send(dict(store=str(store), instance=self.server.instance, version=VERSION, experiment_ui='local-codex-v1'))
+            self.send(dict(store=str(store), instance=self.server.instance, version=VERSION, experiment_ui='local-codex-models-v1'))
         elif url.path == '/api/state':
             self.send(dict(store=str(store), version=VERSION, url=self.server.url))
         elif url.path == '/api/reports':
@@ -170,6 +170,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(self.server.experiments.start(parts[2]), 202)
             elif parts[3] == 'cancel':
                 self.send(self.server.experiments.cancel(parts[2]), 202)
+            elif parts[3] == 'evaluate':
+                self.send(self.server.experiments.evaluate(parts[2]))
             else:
                 self.send({'error': 'Not found'}, 404)
         elif len(parts) == 4 and parts[:2] == ['api', 'reports']:

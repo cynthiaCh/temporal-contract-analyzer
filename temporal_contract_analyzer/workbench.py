@@ -18,6 +18,7 @@ from .layers import CONDITIONS
 EXCLUDED = {'node_modules', '__pycache__', 'dist', 'build', 'coverage', 'vendor'}
 TERMINAL = {'completed', 'failed', 'cancelled', 'timed_out', 'interrupted'}
 ARTIFACTS = {'prompt.md', 'report.md', 'events.jsonl', 'stderr.log', 'answer.md', 'result.json', 'changes.json'}
+EVALUATION_ARTIFACTS = {'evaluation.json', 'oracle.json', 'oracle-stderr.log', 'calibration.json'}
 LIMIT = 25 * 1024 * 1024
 
 
@@ -156,7 +157,21 @@ class Workbench:
         return path
 
     def read(self, experiment_id):
-        return json.loads((self.folder(experiment_id)/'manifest.json').read_text())
+        manifest = json.loads((self.folder(experiment_id)/'manifest.json').read_text())
+        latest = self.latest_evaluation(experiment_id)
+        if latest:
+            summary = json.loads(latest.read_text())
+            manifest['evaluation_id'] = summary['id']
+            manifest['evaluated_at'] = summary['completed_at']
+            for job in manifest['jobs']:
+                job['evaluation'] = summary['jobs'].get(job['id'], {'status':'not_evaluated'})
+                job['recorded_task_success'] = job.get('task_success', 'unscored')
+                job['task_success'] = {'passed':'passed', 'failed':'failed'}.get(job['evaluation']['status'], 'unverified')
+        return manifest
+
+    def latest_evaluation(self, experiment_id):
+        paths = list((self.folder(experiment_id)/'evaluations').glob('v-*/summary.json'))
+        return max(paths, key=lambda p:p.stat().st_mtime_ns) if paths else None
 
     def list(self):
         if not executable(self.codex):
@@ -173,9 +188,7 @@ class Workbench:
 
     def case_options(self):
         from .case_catalog import catalog
-        options = catalog()
-        options['models'] = sorted(set(options['models']) | {r['model'] for r in self.list()['items']})
-        return options
+        return catalog()
 
     def prepare_case(self, data):
         from .case_catalog import case_input
@@ -185,11 +198,29 @@ class Workbench:
         record = inputs.pop('case_record')
         config = {k:data[k] for k in ('model','effort','timeout','repeats','conditions') if k in data}
         local = not data.get('model')
+        inherit = data.get('use_local_config', False)
+        if type(inherit) is not bool:
+            raise EvidenceError('Invalid local configuration option')
+        model_metadata = None
+        if inherit and not local:
+            from .case_catalog import local_models
+            model_metadata = local_models()
+            choice = next((r for r in model_metadata['model_choices'] if r['id']==data['model']), None)
+            if not choice:
+                raise EvidenceError('该模型未列在本地 Codex 模型目录中，请刷新后选择')
+            effort = config.get('effort') or ('medium' if 'medium' in choice['efforts'] else choice['default_effort'])
+            if not effort or effort not in choice['efforts']:
+                raise EvidenceError('所选模型不支持该推理强度')
+            config['effort'] = effort
         if local:
             config['model'] = 'local-default'
         manifest = self.prepare(dict(inputs, **config, mode='workspace-write'))
         if local:
             manifest.update(local_codex=True, config_source='local_codex_config', effort='local-default')
+        elif inherit:
+            manifest.update(local_codex=True, model_override=data['model'],
+                            config_source='local_codex_config_with_model_override',
+                            model_catalog=dict(source=model_metadata['model_source'], fetched_at=model_metadata['models_fetched_at']))
         manifest['case'] = record
         archive.atomic_json(self.folder(manifest['id'])/'manifest.json',manifest)
         return manifest
@@ -218,7 +249,7 @@ class Workbench:
         if type(repeats) is not int or not 1 <= repeats <= 3 or type(timeout) is not int or not 10 <= timeout <= 3600:
             raise EvidenceError('重复次数为 1–3；超时为 10–3600 秒')
         effort, mode = data.get('effort', 'medium'), data.get('mode', 'read-only')
-        if effort not in ('low', 'medium', 'high', 'xhigh') or mode not in ('read-only', 'workspace-write'):
+        if effort not in ('low', 'medium', 'high', 'xhigh', 'max', 'ultra') or mode not in ('read-only', 'workspace-write'):
             raise EvidenceError('Invalid effort or sandbox mode')
         label = data.get('label', '')
         if not isinstance(label, str) or len(label) > 200:
@@ -270,9 +301,17 @@ class Workbench:
 
     def artifact(self, experiment_id, job_id, name):
         manifest = self.read(experiment_id)
-        if job_id not in {j['id'] for j in manifest['jobs']} or name not in ARTIFACTS:
+        if job_id not in {j['id'] for j in manifest['jobs']} or name not in ARTIFACTS | EVALUATION_ARTIFACTS:
             raise EvidenceError('Unknown experiment artifact')
-        path = self.folder(experiment_id)/'jobs'/job_id/name
+        if name in EVALUATION_ARTIFACTS:
+            latest = self.latest_evaluation(experiment_id)
+            if not latest:
+                return dict(text='', exists=False, truncated=False)
+            path = {'evaluation.json':latest, 'oracle.json':latest.parent/job_id/'oracle/stdout.json',
+                    'oracle-stderr.log':latest.parent/job_id/'oracle/stderr.log',
+                    'calibration.json':latest.parent/'calibration/stdout.json'}[name]
+        else:
+            path = self.folder(experiment_id)/'jobs'/job_id/name
         if not path.is_file():
             return dict(text='', exists=False, truncated=False)
         with path.open('rb') as handle:
@@ -280,6 +319,29 @@ class Workbench:
             handle.seek(max(0, size - 100000))
             text = handle.read(100000).decode('utf-8', errors='replace')
         return dict(text=text, exists=True, truncated=size > 100000)
+
+    def evaluate(self, experiment_id):
+        with self.lock:
+            if self.active:
+                raise EvidenceError('已有运行或验证正在进行，请稍后重试')
+            manifest = json.loads((self.folder(experiment_id)/'manifest.json').read_text())
+            if manifest['status'] not in TERMINAL:
+                raise EvidenceError('请等待 Codex 运行结束后验证')
+            handle = self.execution_lock()
+            self.active = experiment_id
+            self.stop.clear()
+            self.thread = threading.current_thread()
+        try:
+            self.evaluate_manifest(manifest)
+            return self.read(experiment_id)
+        finally:
+            with self.lock:
+                self.active = None
+                handle.close()
+
+    def evaluate_manifest(self, manifest):
+        from .case_evaluation import evaluate
+        return evaluate(manifest, self.folder(manifest['id']), self.node, self.stop, self.terminate)
 
     def start(self, experiment_id):
         with self.lock:
@@ -330,7 +392,7 @@ class Workbench:
 
     def close(self):
         self.stop.set()
-        if self.thread:
+        if self.thread and self.thread is not threading.current_thread():
             self.thread.join(8)
 
     def command(self, manifest, workspace, answer):
@@ -340,6 +402,8 @@ class Workbench:
         if not manifest.get('local_codex'):
             command += ['--ignore-user-config', '-c', 'model_reasoning_effort=' + json.dumps(manifest['effort']),
                         '-m', manifest['model']]
+        elif manifest.get('model_override'):
+            command += ['-m', manifest['model_override'], '-c', 'model_reasoning_effort=' + json.dumps(manifest['effort'])]
         return command + ['-C', str(workspace), '-o', str(answer), '-']
 
     @staticmethod
@@ -439,6 +503,10 @@ class Workbench:
         finally:
             manifest['completed_at'] = archive.now()
             archive.atomic_json(folder/'manifest.json', manifest)
-            with self.lock:
-                self.active = None
-                handle.close()
+            try:
+                if manifest.get('case') and not self.stop.is_set():
+                    self.evaluate_manifest(manifest)
+            finally:
+                with self.lock:
+                    self.active = None
+                    handle.close()

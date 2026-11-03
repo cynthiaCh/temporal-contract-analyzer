@@ -14,11 +14,22 @@ async function main(){
   const project=path.join(bench,'cases/synthetic-panel/base');await fs.mkdir(project,{recursive:true});
   const caseRoot=path.dirname(project);await fs.mkdir(path.join(caseRoot,'prompts'));
   await fs.writeFile(path.join(caseRoot,'prompts/maintenance.md'),'Review whether this async refresh can publish stale results.');
-  await fs.writeFile(path.join(caseRoot,'case.json'),JSON.stringify({id:'synthetic-panel',title:'Synthetic panel',prompt:'prompts/maintenance.md'}));
+  await fs.writeFile(path.join(caseRoot,'case.json'),JSON.stringify({id:'synthetic-panel',title:'Synthetic panel',prompt:'prompts/maintenance.md',reference:'reference/bounded',oracle:{probe:'oracle/probe.py'},runtime:{minimum_version:'3.9'}}));
   await fs.mkdir(path.join(bench,'experiments/temporal-diagnostics-v1'),{recursive:true});
   await fs.writeFile(path.join(bench,'experiments/temporal-diagnostics-v1/corpus.json'),JSON.stringify({cases:[{id:'synthetic-panel',manifest:'cases/synthetic-panel/case.json',adapter:'python',language:'python',conditions:['latent-maintenance']}]}));
   await fs.writeFile(path.join(bench,'.bench.local.json'),JSON.stringify({model:'SYNTHETIC_UI_CHECK_ONLY'}));
   await fs.writeFile(path.join(project,'panel.py'),'async def refresh():\n    await fetch()\n    publish()\n');
+  await fs.mkdir(path.join(caseRoot,'reference/bounded'),{recursive:true});
+  await fs.copyFile(path.join(project,'panel.py'),path.join(caseRoot,'reference/bounded/panel.py'));
+  await fs.mkdir(path.join(caseRoot,'oracle'));
+  await fs.writeFile(path.join(caseRoot,'oracle/probe.py'),`import json,sys,pathlib
+passed='async def refresh' in pathlib.Path(sys.argv[1],'panel.py').read_text()
+print(json.dumps({'case_id':'synthetic-panel','verdict':'PASS' if passed else 'UNDERREACH','schedules':{'synthetic-check':{'passed':passed}}}))
+sys.exit(0 if passed else 1)
+`);
+
+  const codexHome=path.join(temporary,'codex-home');await fs.mkdir(codexHome);
+  await fs.writeFile(path.join(codexHome,'models_cache.json'),JSON.stringify({fetched_at:'synthetic-cache',models:[{slug:'gpt-5.6-luna',visibility:'list',default_reasoning_level:'medium',supported_reasoning_levels:[{effort:'low'},{effort:'medium'}]}]}));
   const fake=path.join(temporary,'fake-codex');
   await fs.writeFile(fake,`#!/usr/bin/python3
 import json, pathlib, sys
@@ -36,7 +47,7 @@ print(json.dumps({'url':server.url}),flush=True)
 try: server.serve_forever()
 finally: server.server_close()
 `;
-  const server=spawn('/usr/bin/python3',['-I','-S','-B','-c',script,repository,path.join(temporary,'reports'),fake],{env:{...process.env,TCA_CONFIG:path.join(temporary,'config.json'),TCA_BENCH_ROOT:bench},stdio:['ignore','pipe','pipe']});
+  const server=spawn('/usr/bin/python3',['-I','-S','-B','-c',script,repository,path.join(temporary,'reports'),fake],{env:{...process.env,TCA_CONFIG:path.join(temporary,'config.json'),TCA_BENCH_ROOT:bench,CODEX_HOME:codexHome},stdio:['ignore','pipe','pipe']});
   const exit=new Promise(resolve=>server.once('exit',resolve));let browser,page;
   try{
     const address=await new Promise((resolve,reject)=>{let output='';const timer=setTimeout(()=>reject(new Error('Server startup timeout')),10000);server.stdout.on('data',chunk=>{output+=chunk.toString();if(output.includes('\n')){clearTimeout(timer);resolve(JSON.parse(output.split('\n')[0]));}});server.once('error',reject);server.stderr.on('data',data=>process.stderr.write(data));});
@@ -45,25 +56,34 @@ finally: server.server_close()
     await page.goto(address.url);await page.getByRole('link',{name:'Codex 实验'}).click();
     await page.getByRole('heading',{name:'选案例，用本地 Codex 运行。'}).waitFor();
     await page.locator('[name=case][value=synthetic-panel]').check();
-    assert.equal(await page.locator('[name=candidate], [name=task], #experiment-dialog, #model').count(),0);
+    assert.equal(await page.locator('[name=candidate], [name=task], #experiment-dialog').count(),0);
+    await page.getByLabel('模型',{exact:true}).selectOption('gpt-5.6-luna');
     assert.equal(await page.locator('.experiment-advanced').getAttribute('open'),null);
     await page.screenshot({path:'/tmp/tca-case-selection.png',fullPage:true});
     await page.getByRole('button',{name:'运行实验',exact:true}).click();
     await page.waitForURL(/#experiment=e-/);
     const id=new URL(page.url()).hash.split('=')[1];
     let finished;const deadline=Date.now()+10000;
-    do {finished=await(await page.request.get(address.url+'/api/experiments/'+id)).json();if(finished.status==='completed'||finished.status==='failed')break;await new Promise(resolve=>setTimeout(resolve,100));}while(Date.now()<deadline);
+    do {finished=await(await page.request.get(address.url+'/api/experiments/'+id)).json();if(finished.status==='failed'||finished.jobs.every(j=>j.evaluation?.status==='passed'))break;await new Promise(resolve=>setTimeout(resolve,100));}while(Date.now()<deadline);
     assert.equal(finished.status,'completed',JSON.stringify(finished));
-    await page.reload();await page.getByRole('button',{name:'查看材料'}).first().waitFor();
+    assert(finished.jobs.every(j=>j.task_success==='passed'),JSON.stringify(finished));
+    assert.equal(finished.model_override,'gpt-5.6-luna');
+    assert.equal(finished.effort,'medium');
+    assert(!finished.jobs[0].command.includes('--ignore-user-config'));
+    assert.equal(finished.jobs[0].command[finished.jobs[0].command.indexOf('-m')+1],'gpt-5.6-luna');
+    // Results must appear through polling, without a manual page reload.
+    await page.getByText('成功',{exact:true}).first().waitFor();
+    await page.getByRole('button',{name:'查看材料'}).first().waitFor();
+    assert.equal(await page.getByText('成功',{exact:true}).count(),2);
     await page.getByRole('button',{name:'最终回答',exact:true}).click();
     await page.getByText('SYNTHETIC_UI_CHECK_ONLY: without report',{exact:true}).waitFor();
     await page.getByRole('button',{name:'查看材料'}).nth(1).click();
     await page.getByRole('button',{name:'最终回答',exact:true}).click();
     await page.getByText('SYNTHETIC_UI_CHECK_ONLY: with report',{exact:true}).waitFor();
     await page.getByRole('button',{name:'执行轨迹',exact:true}).click();
-    await page.waitForFunction(()=>document.querySelector('.experiment-log')?.textContent.includes('turn.completed'));
+    await page.locator('.experiment-log').filter({hasText:'turn.completed'}).waitFor();
     const original=await fs.readFile(path.join(project,'panel.py'),'utf8');assert.match(original,/async def refresh/);
-    console.log('PASS: choose case then use local Codex; no model/path/task fields; both fake CLI jobs and outputs are inspectable');
+    console.log('PASS: choose cached earlier model with local Codex/config; no manual path/task fields; both fake CLI jobs and outputs are inspectable; oracle success is shown separately');
     await page.screenshot({path:'/tmp/tca-experiment-workbench.png',fullPage:true});
     await page.setViewportSize({width:390,height:844});
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
