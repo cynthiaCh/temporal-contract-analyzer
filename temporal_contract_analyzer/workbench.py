@@ -13,7 +13,7 @@ import uuid
 
 from . import archive
 from .core import EvidenceError, sha
-from .layers import CONDITIONS
+from .layers import CONDITIONS, coverage_summary
 
 EXCLUDED = {'node_modules', '__pycache__', 'dist', 'build', 'coverage', 'vendor'}
 TERMINAL = {'completed', 'failed', 'cancelled', 'timed_out', 'interrupted'}
@@ -267,6 +267,7 @@ class Workbench:
                                      label='实验输入 · ' + (label or experiment_id), task_id=experiment_id)['archive']
             if meta['status'] != 'parsed':
                 raise EvidenceError('实验输入未完整解析；请先检查报告 ' + meta['report_id'])
+            self.require_report_content(meta['report_id'], conditions)
             jobs = []
             for repeat in range(1, repeats + 1):
                 for condition in conditions:
@@ -298,6 +299,16 @@ class Workbench:
         except Exception:
             shutil.rmtree(folder)
             raise
+
+    def require_report_content(self, report_id, conditions):
+        source_conditions = {'locations', 'facts', 'review', 'audit_review'}
+        if not source_conditions.intersection(conditions):
+            return
+        report = json.loads(archive.artifact(report_id, 'report.json', self.store))
+        if not coverage_summary(report)['has_substantive_report']:
+            raise EvidenceError('所选源码报告为空：没有命中具体源码位置，只有范围说明或通用文字。'
+                                '本次实验未启动，未调用模型。请取消 B/C/D/G 报告条件后单独运行 A（无报告），'
+                                '或选择有具体发现的案例。扫描报告：' + report_id)
 
     def artifact(self, experiment_id, job_id, name):
         manifest = self.read(experiment_id)
@@ -350,6 +361,7 @@ class Workbench:
             manifest = self.read(experiment_id)
             if manifest['status'] != 'prepared':
                 raise EvidenceError('实验只能启动一次；请准备新的重复实验')
+            self.require_report_content(manifest['report_id'], manifest['conditions'])
             if not executable(self.codex):
                 self.codex = discover_codex()
             if not self.codex:

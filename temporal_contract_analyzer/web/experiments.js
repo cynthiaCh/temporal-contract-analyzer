@@ -2,7 +2,7 @@
 const $ = selector => document.querySelector(selector);
 const states = {prepared:'待启动', running:'运行中', completed:'进程完成', failed:'运行失败', cancelled:'已取消', timed_out:'超时', interrupted:'服务中断'};
 const layers = {none:'A · 无报告',locations:'B · 位置',facts:'C · 事实',review:'D · 审查',audit:'E · 通用提示',risk:'F · 提示＋信号',audit_review:'G · 提示＋报告'};
-let selected, current, jobId, artifactName = 'prompt.md', busy = false, generation = 0;
+let selected, current, jobId, artifactName = 'oracle.json', busy = false, generation = 0;
 let catalog, selectedCase, activeExperiment;
 function el(tag, cls, text) { const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n; }
 function error(e) { $('#notice').textContent=e.message;$('#notice').classList.remove('hidden'); }
@@ -13,6 +13,19 @@ async function api(path, body) {
 function action(text, callback, cls='quiet') {const n=el('button',cls,text);n.type='button';n.addEventListener('click',()=>Promise.resolve().then(callback).catch(error));return n;}
 function endpoint(id=selected) { return '/api/experiments/'+encodeURIComponent(id); }
 function date(value) {return new Date(value).toLocaleString('zh-CN',{hour12:false});}
+function progress(jobs) {
+  const done=jobs.filter(j=>!['prepared','running'].includes(j.status)).length;
+  return `${done} / ${jobs.length} 次结束`;
+}
+function experimentRow(row) {
+  const link=el('a','report-row'+(selected===row.id?' selected':''));link.href='#experiment='+row.id;
+  link.addEventListener('click',()=>$('#experiments-dialog').close());
+  const title=el('div','section-heading');title.append(el('strong','row-title',row.label),el('span','pill',states[row.status]||row.status));
+  link.append(title,el('div','row-subtitle',`${row.model==='local-default'?'本地 Codex':row.model} · ${progress(row.jobs)} · ${date(row.created_at)}`));
+  const results=row.jobs.filter(j=>j.evaluation?.status==='passed'||j.evaluation?.status==='failed');
+  if(results.length)link.append(el('div','row-subtitle',`行为验证：${results.filter(j=>j.evaluation.status==='passed').length} 成功 · ${results.filter(j=>j.evaluation.status==='failed').length} 失败 · ${row.jobs.length-results.length} 尚未验证`));
+  return link;
+}
 function outcome(job) {
   const status=job.evaluation?.status;
   if(status==='passed')return ['成功','parsed'];
@@ -22,35 +35,54 @@ function outcome(job) {
   return ['尚未验证',''];
 }
 async function refreshList() {
-  const data=await api('/api/experiments');
+  let data;
+  try{data=await api('/api/experiments');}catch(e){
+    $('#activity-title').textContent='无法连接本机运行服务';
+    $('#activity-detail').textContent='已有进度可能过期；连接恢复后自动更新。';
+    $('#activity-progress').replaceChildren();throw e;
+  }
   activeExperiment=data.active;updateRun();
   $('#codex-path').textContent=data.codex||'暂未发现本地 Codex';$('#experiment-store').textContent=data.root;
-  $('#experiment-count').textContent=data.items.length+' 次';const list=$('#experiment-list');list.replaceChildren();
-  for(const row of data.items) {
-    const link=el('a','report-row'+(selected===row.id?' selected':''));link.href='#experiment='+row.id;
-    link.append(el('div','row-title',row.label),el('div','row-subtitle',`${row.model==='local-default'?'本地 Codex':row.model} · ${row.jobs.length} 次运行`),el('span','pill',states[row.status]||row.status),el('div','row-subtitle',date(row.created_at)));list.append(link);
-  }
+  $('#experiment-count').textContent=data.items.length;const list=$('#experiment-list');list.replaceChildren();
+  for(const row of data.items)list.append(experimentRow(row));
   if(!data.items.length)list.append(el('p','muted','还没有实验记录。'));
+  const active=data.items.filter(r=>r.status==='running'||r.id===data.active);
+  for(const [id,rows,empty] of [['#active-experiments',active,'当前没有正在运行的网页实验。'],['#recent-experiments',data.items.filter(r=>!active.includes(r)).slice(0,10),'暂无已结束的实验记录。']]) {
+    const target=$(id);target.replaceChildren();for(const row of rows)target.append(experimentRow(row));
+    if(!rows.length)target.append(el('p','muted',empty));
+  }
+  const running=active[0];
+  $('#activity-title').textContent=running?`${states[running.status]} · ${running.label}`:data.active?'服务忙碌 · 正在核对实验状态':'当前没有正在运行的网页实验';
+  $('#activity-detail').textContent=running?`${progress(running.jobs)} · ${running.jobs.filter(j=>j.status==='running').length} 运行中 · ${running.jobs.filter(j=>j.status==='prepared').length} 待开始`:'本机服务已连接 · 关闭页面不会停止后台实验';
+  const bar=$('#activity-progress');bar.replaceChildren();
+  if(running){const meter=el('progress');meter.max=running.jobs.length;meter.value=running.jobs.filter(j=>!['prepared','running'].includes(j.status)).length;meter.setAttribute('aria-label','已结束的实验尝试');bar.append(meter);}
 }
 function renderCases() {
   const list=$('#case-list');list.replaceChildren();
   const query=$('#case-search').value.trim().toLowerCase();
   const rows=catalog.cases.filter(c=>`${c.id} ${c.title} ${c.language}`.toLowerCase().includes(query));
-  $('#case-count').textContent=`${catalog.cases.filter(c=>c.supported).length} 可选`;
+  $('#case-count').textContent=catalog.cases.length;
+  $('#catalog-summary').textContent=`${rows.length} 个案例 · ${catalog.cases.filter(c=>c.supported).length} 个可运行`;
+  const table=el('table'),head=el('tr');for(const title of ['案例 / 维护任务','语言','运行状态','操作'])head.append(el('th','',title));
+  const thead=el('thead');thead.append(head);table.append(thead);const body=el('tbody');table.append(body);
   for(const item of rows) {
-    const label=el('label','case-choice'+(item.id===selectedCase?' selected':'')+(!item.supported?' unavailable':''));
-    const radio=el('input');radio.type='radio';radio.name='case';radio.value=item.id;radio.checked=item.id===selectedCase;radio.disabled=!item.supported;
-    radio.addEventListener('change',()=>{selectedCase=item.id;renderCases();updateRun();});
-    const text=el('span');text.append(el('strong','',item.id),el('small','',item.supported?item.title:item.unavailable_reason));label.append(radio,text);list.append(label);
+    const row=el('tr'),name=el('td');name.append(el('strong','row-title',item.title),el('div','row-subtitle',item.id));
+    const status=el('td');status.append(el('span','pill'+(item.supported?' parsed':''),item.supported?'可运行':'未接入'));
+    if(!item.supported)status.append(el('div','row-subtitle',item.unavailable_reason));
+    const cell=el('td');const button=action('运行这个案例',()=>{
+      selectedCase=item.id;$('#case-title').textContent=item.title;$('#case-description').textContent=item.id;
+      $('#run-error').classList.add('hidden');updateRun();$('#case-dialog').showModal();
+    });button.disabled=!item.supported;button.setAttribute('aria-label',`运行案例 ${item.id}`);cell.append(button);
+    row.append(name,el('td','',item.language||'—'),status,cell);body.append(row);
   }
-  if(!rows.length)list.append(el('p','muted','没有匹配的案例。'));
+  if(rows.length){const wrap=el('div','table-wrap');wrap.append(table);list.append(wrap);}else list.append(el('p','muted','没有匹配的案例。'));
 }
 function updateRun() {
   const count=document.querySelectorAll('[name=condition]:checked').length;
   $('#run-selected').disabled=busy||!!activeExperiment||!selectedCase||!count;
-  $('#run-selected').textContent=busy?'正在准备并启动…':activeExperiment?'实验运行中':'运行实验';
+  $('#run-selected').textContent=busy?'正在准备并启动…':activeExperiment?'等待当前实验结束':'开始运行';
   const model=$('#model').value||'本地默认';
-  $('#run-summary').textContent=selectedCase?`${selectedCase} · ${model} · ${count} 个报告条件 × ${$('#repeats').value} 次`:'选择案例后运行。';
+  $('#run-summary').textContent=selectedCase?`${model} · ${count} 个报告条件 × ${$('#repeats').value} 次 = ${count*Number($('#repeats').value)} 次运行${activeExperiment?'；当前实验结束后可手动开始。':''}`:'选择案例后运行。';
 }
 async function loadCatalog() {
   catalog=await api('/api/case-options');
@@ -85,19 +117,26 @@ async function runSelected() {
     const result=await api('/api/experiments',data);
     location.hash='experiment='+result.id;
     await api(endpoint(result.id)+'/start',{});
+    $('#case-dialog').close();
     await load();
-  }catch(e){error(e);}finally{busy=false;await refreshList();updateRun();}
+  }catch(e){$('#run-error').textContent=e.message;$('#run-error').classList.remove('hidden');error(e);}finally{busy=false;await refreshList();updateRun();}
 }
 async function load() {
-  const id=new URLSearchParams(location.hash.slice(1)).get('experiment');if(!id)return;
   const ticket=++generation;
+  const id=new URLSearchParams(location.hash.slice(1)).get('experiment');
+  const history=location.hash==='#runs';
+  $('#case-browser').hidden=!!id||history;$('#history-view').hidden=!history;$('#experiment-detail').hidden=!id;
+  document.querySelectorAll('[data-view]').forEach(n=>{const active=n.dataset.view===(id||history?'runs':'cases');n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');});
+  if(!id)return;
   const data=await api(endpoint(id));if(ticket!==generation)return;
-  if(selected!==id){jobId=undefined;artifactName='prompt.md';}
+  if(selected!==id){jobId=undefined;artifactName='oracle.json';}
   selected=id;current=data;render();await refreshList();
 }
 function render() {
+  const openDetails=[...$('#experiment-detail').querySelectorAll('details[open][data-section]')].map(n=>n.dataset.section);
+  const oldLog=$('.experiment-log'),logScroll=oldLog?.scrollTop||0;
   const target=$('#experiment-detail');target.replaceChildren();const header=el('div','detail-header');
-  header.append(el('span','eyebrow','FROZEN INPUT → CODEX → ARTIFACTS'),el('h2','',current.label));
+  const back=el('a','back-link','← 运行档案');back.href='#runs';header.append(back,el('span','eyebrow','RUN / 实验结果'),el('h2','',current.label));
   const model=current.local_codex&&!current.model_override?'本地 Codex 配置':`${current.model} / ${current.effort}`;
   header.append(el('p','detail-path',`${states[current.status]} · ${model} · ${current.jobs.length} 次运行`));
   const controls=el('div','detail-actions');
@@ -111,41 +150,49 @@ function render() {
     try{await api(endpoint()+'/evaluate',{});await load();}finally{busy=false;await refreshList();}
   }));
   header.append(controls);target.append(header);
+  const summary=el('div','summary-strip');
+  for(const [label,count] of [['成功',current.jobs.filter(j=>j.evaluation?.status==='passed').length],['失败',current.jobs.filter(j=>j.evaluation?.status==='failed').length],['尚未验证',current.jobs.filter(j=>!['passed','failed'].includes(j.evaluation?.status)).length]]){const metric=el('div','metric');metric.append(el('strong','',String(count)),el('span','',label));summary.append(metric);}target.append(summary);
   target.append(el('p','scope-notice','修改结果按 bench 行为测试判定。成功表示通过该案例的指定检查；验证环境异常保留为未验证。'));
   if(current.error)target.append(el('p','error-block',current.error));
-  const task=el('details','finding');task.append(el('summary','','任务与输入范围'),el('pre','',current.task),el('p','muted',`原始目录：${current.original_candidate}\n冻结 ${Object.keys(current.input_files).length} 个文件；跳过 ${current.skipped.length} 项`),el('pre','',JSON.stringify(current.skipped,null,2)));target.append(task);
+  const task=el('details','finding');task.dataset.section='task';task.open=openDetails.includes('task');task.append(el('summary','','任务与输入范围'),el('pre','',current.task),el('p','muted',`原始目录：${current.original_candidate}\n冻结 ${Object.keys(current.input_files).length} 个文件；跳过 ${current.skipped.length} 项`),el('pre','',JSON.stringify(current.skipped,null,2)));target.append(task);
   const table=el('table'),head=el('tr');for(const text of ['条件 / 重复','修改结果','运行状态','改动文件','用量','查看'])head.append(el('th','',text));table.append(head);
   for(const job of current.jobs) {
     const row=el('tr'),result=el('td');const [label,style]=outcome(job);result.append(el('span','pill '+style,label));
     if(job.evaluation?.verdict)result.append(el('div','row-subtitle',job.evaluation.verdict));
     if(job.evaluation?.reason)result.append(el('div','row-subtitle',job.evaluation.reason));
-    row.append(el('td','',`${layers[job.condition]} / ${job.repeat}`),result,el('td','',states[job.status]||job.status),el('td','',job.changed_files===undefined?'—':String(job.changed_files)),el('td','',job.usage?JSON.stringify(job.usage):'—'));
-    const cell=el('td');cell.append(action('查看材料',()=>{jobId=job.id;artifactName='prompt.md';renderArtifact();}));row.append(cell);table.append(row);
+    row.append(el('td','',`${layers[job.condition]} / ${job.repeat}`),result,el('td','',states[job.status]||job.status),el('td','',job.changed_files===undefined?'—':String(job.changed_files)),el('td','',job.usage?`输入 ${job.usage.input_tokens??'—'} / 输出 ${job.usage.output_tokens??'—'} tokens`:'—'));
+    const cell=el('td');cell.append(action('查看材料',()=>{jobId=job.id;artifactName='oracle.json';renderArtifact();}));row.append(cell);table.append(row);
   }
   const wrap=el('div','table-wrap');wrap.append(table);target.append(wrap);
-  target.append(el('div','experiment-artifacts'));if(!current.jobs.some(j=>j.id===jobId))jobId=current.jobs[0].id;renderArtifact();
+  target.append(el('div','experiment-artifacts'));if(!current.jobs.some(j=>j.id===jobId))jobId=current.jobs[0]?.id;renderArtifact(logScroll,openDetails.includes('technical'));
 }
-async function renderArtifact() {
+async function renderArtifact(logScroll=0,technicalOpen=$('[data-section=technical]')?.open||false) {
   const target=$('.experiment-artifacts');target.replaceChildren();const job=current.jobs.find(j=>j.id===jobId);if(!job)return;
   target.append(el('h3','',`${layers[job.condition]} · 第 ${job.repeat} 次 · ${job.id}`));
   const tabs=el('div','detail-actions');
+  const technical=el('details','technical-artifacts');technical.dataset.section='technical';technical.open=technicalOpen;technical.append(el('summary','','提示词、日志与运行记录'));const extra=el('div','detail-actions');technical.append(extra);
   for(const [name,label] of [['oracle.json','行为验证'],['evaluation.json','验证记录'],['oracle-stderr.log','验证日志'],['prompt.md','实际提示词'],['report.md','附加报告'],['answer.md','最终回答'],['events.jsonl','执行轨迹'],['stderr.log','错误日志'],['changes.json','文件改动'],['result.json','运行记录']]) {
-    tabs.append(action(label,()=>{artifactName=name;renderArtifact();},artifactName===name?'primary':'quiet'));
+    const button=action(label,()=>{artifactName=name;renderArtifact();},artifactName===name?'primary':'quiet');button.setAttribute('aria-pressed',String(artifactName===name));
+    (['oracle.json','answer.md','changes.json'].includes(name)?tabs:extra).append(button);
   }
-  target.append(tabs);const pre=el('pre','experiment-log','正在读取…');target.append(pre);
+  target.append(tabs,technical);const pre=el('pre','experiment-log','正在读取…');target.append(pre);
   const experiment=selected,jobKey=jobId,name=artifactName;
   try {
     const data=await api(endpoint(experiment)+'/artifact?'+new URLSearchParams({job:jobKey,name}));
     if(experiment!==selected||jobKey!==jobId||name!==artifactName||!pre.isConnected)return;
     pre.textContent=(data.truncated?'显示末尾 100000 字节；完整文件保存在实验目录。\n\n':'')+(data.exists?(data.text||'此条件没有附加报告。'):'尚未生成该材料。');
+    pre.scrollTop=logScroll;
   }catch(e){error(e);}
 }
-$('#new-experiment').addEventListener('click',()=>{$('#case-search').focus();$('#case-search').scrollIntoView({block:'center'});});
+$('#experiments-button').addEventListener('click',()=>$('#experiments-dialog').showModal());
+$('#open-activity').addEventListener('click',()=>$('#experiments-dialog').showModal());
+$('#close-experiments').addEventListener('click',()=>$('#experiments-dialog').close());
+$('#close-case').addEventListener('click',()=>$('#case-dialog').close());
 $('#case-search').addEventListener('input',()=>{if(catalog)renderCases();});
 $('#repeats').addEventListener('input',updateRun);
 $('#model').addEventListener('change',()=>{updateEffort();updateRun();});
 document.querySelectorAll('[name=condition]').forEach(n=>n.addEventListener('change',updateRun));
-$('#run-selected').addEventListener('click',()=>runSelected().catch(error));
+$('#experiment-form').addEventListener('submit',e=>{e.preventDefault();runSelected().catch(error);});
 window.addEventListener('hashchange',()=>load().catch(error));
 refreshList().then(load).catch(error);
 loadCatalog().catch(e=>{$('#case-list').replaceChildren(el('p','error-block',e.message));error(e);});

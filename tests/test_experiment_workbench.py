@@ -100,6 +100,34 @@ print(json.dumps({'type':'turn.completed','usage':{'input_tokens':11,'output_tok
         (self.code/'panel.py').write_text('def invalid(')
         with self.assertRaisesRegex(EvidenceError,'未完整解析'): self.prepare()
 
+    def test_empty_source_reports_block_entire_experiment_before_launch(self):
+        (self.code/'panel.py').write_text('async def refresh():\n    return 1\n')
+        for condition in ('locations', 'facts', 'review', 'audit_review'):
+            with self.subTest(condition=condition), patch('temporal_contract_analyzer.workbench.subprocess.run') as launch:
+                with self.assertRaisesRegex(EvidenceError, '源码报告为空.*未调用模型'):
+                    self.prepare(conditions=['none', condition])
+                launch.assert_not_called()
+                self.assertEqual(list(self.workbench.root.glob('e-*')), [])
+                self.assertIsNone(self.workbench.active)
+        # Empty findings do not invalidate the baseline or the generic controls.
+        run = self.prepare(conditions=['none', 'audit', 'risk'])
+        self.workbench.start(run['id'])
+        finished = self.wait(run['id'])
+        self.assertEqual(finished['status'], 'completed')
+
+    def test_old_prepared_empty_report_is_rejected_at_start(self):
+        (self.code/'panel.py').write_text('async def refresh():\n    return 1\n')
+        # Reproduce a record prepared before the content guard existed.
+        with patch.object(self.workbench, 'require_report_content'):
+            run = self.prepare()
+        with patch('temporal_contract_analyzer.workbench.subprocess.run') as launch:
+            with self.assertRaisesRegex(EvidenceError, '源码报告为空'):
+                self.workbench.start(run['id'])
+            launch.assert_not_called()
+        self.assertEqual(self.workbench.read(run['id'])['status'], 'prepared')
+        self.assertIsNone(self.workbench.active)
+        self.assertFalse((self.workbench.folder(run['id'])/'jobs/j-001/workspace').exists())
+
     def test_preserves_executable_files_in_each_workspace(self):
         script=self.code/'run.sh'
         script.write_text('#!/bin/sh\nexit 0\n');script.chmod(0o755)
