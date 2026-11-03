@@ -9,7 +9,7 @@ import time
 import uuid
 
 from . import archive
-from .case_catalog import bench_root, inside, read
+from .case_catalog import bench_root, case_root, inside, read
 from .core import EvidenceError, sha
 
 VERDICTS = {'PASS', 'UNDERREACH', 'OVERREACH', 'UNDERREACH_AND_OVERREACH'}
@@ -79,7 +79,9 @@ def evaluate(manifest, folder, node, stop, terminate):
     evaluation_id = 'v-' + uuid.uuid4().hex[:16]
     directory = folder/'evaluations'/evaluation_id
     directory.mkdir(parents=True)
-    summary = dict(id=evaluation_id, created_at=archive.now(), provenance='current trusted bench oracle; post-run evaluation', jobs={})
+    local = (manifest.get('case') or {}).get('source') == 'local'
+    provenance = 'current trusted analyzer-local oracle; post-run evaluation' if local else 'current trusted bench oracle; post-run evaluation'
+    summary = dict(id=evaluation_id, created_at=archive.now(), provenance=provenance, jobs={})
     jobs = summary['jobs']
     for job in manifest['jobs']:
         jobs[job['id']] = dict(status='not_evaluated', reason='Codex 未正常完成')
@@ -88,7 +90,7 @@ def evaluate(manifest, folder, node, stop, terminate):
         record = manifest.get('case')
         if not record or record['adapter'] not in ('legacy-js', 'python'):
             raise EvidenceError('该记录没有可用的 bench 行为验证器')
-        case_path = inside(bench_root(), record['manifest'])
+        case_path = inside(case_root(record), record['manifest'])
         case = read(case_path)
         if case['id'] != record['id'] or record.get('authorization') != 'ungranted':
             raise EvidenceError('案例或授权条件与运行记录不匹配')

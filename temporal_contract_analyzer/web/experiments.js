@@ -152,7 +152,7 @@ function render() {
   header.append(controls);target.append(header);
   const summary=el('div','summary-strip');
   for(const [label,count] of [['成功',current.jobs.filter(j=>j.evaluation?.status==='passed').length],['失败',current.jobs.filter(j=>j.evaluation?.status==='failed').length],['尚未验证',current.jobs.filter(j=>!['passed','failed'].includes(j.evaluation?.status)).length]]){const metric=el('div','metric');metric.append(el('strong','',String(count)),el('span','',label));summary.append(metric);}target.append(summary);
-  target.append(el('p','scope-notice','修改结果按 bench 行为测试判定。成功表示通过该案例的指定检查；验证环境异常保留为未验证。'));
+  target.append(el('p','scope-notice','修改结果按案例行为测试判定。成功表示通过该案例的指定检查；验证环境异常保留为未验证。'));
   if(current.error)target.append(el('p','error-block',current.error));
   const task=el('details','finding');task.dataset.section='task';task.open=openDetails.includes('task');task.append(el('summary','','任务与输入范围'),el('pre','',current.task),el('p','muted',`原始目录：${current.original_candidate}\n冻结 ${Object.keys(current.input_files).length} 个文件；跳过 ${current.skipped.length} 项`),el('pre','',JSON.stringify(current.skipped,null,2)));target.append(task);
   const table=el('table'),head=el('tr');for(const text of ['条件 / 重复','修改结果','运行状态','改动文件','用量','查看'])head.append(el('th','',text));table.append(head);

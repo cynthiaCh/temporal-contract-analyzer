@@ -31,6 +31,8 @@ macOS 可双击仓库根目录的 [启动Codex实验工作台.command](../启动
 
 可以通过环境变量 `TCA_BENCH_ROOT` 指向另一份本地 bench 检出。选择本地默认时不传模型或推理强度覆盖；选择具体模型时传入模型 ID 和支持的强度，仍继承本地配置。记录包含 model、effort、model_override 及模型缓存来源/时间。显式模型的旧 API 继续保留原有对照方式。
 
+本仓库的 `experiments/local-cases.json` 另外登记两道 listener 拆分开发题，直接在案例目录搜索“拆分题”即可选择。`listener-bootstrap-reentrancy-vanilla` 仅保留初始消息与同步重入；`listener-decode-retirement-vanilla` 预先修好同步边界，仅留下退订后的异步交付问题。它们与原题共享来源单元，不是独立事件或留出集。候选可见 `README.md` 给出行为要求，两组收到相同材料；参考修复和评分器不进入模型工作目录。离线通过参考修复仅验证评分流程，不构成 A/D 模型收益。新记录以 `case.source=local` 定位本仓库评分器；旧记录没有此字段时仍按 bench 处理。
+
 本版本采用 **报告全文附加到初始提示词**，不是 MCP 按需拉取。已有 MCP 继续用于日常报告读取。底层离线准备 API 保留，网页采用直接运行流程。
 
 ## 保存的材料
