@@ -37,6 +37,10 @@ def register(sub):
     show.add_argument('--format', choices=['json', 'md'], default='md')
     check = commands.add_parser('verify', help='Verify archived bytes and snapshot binding')
     check.add_argument('report_id')
+    learn = commands.add_parser('learn', help='Extract candidate lessons from a calibrated failed experiment; never calls a model')
+    learn.add_argument('experiment_id')
+    lessons = commands.add_parser('lessons', help='List candidate failure-feedback lessons')
+    lessons.add_argument('--case-id')
     context = commands.add_parser('context', help='Enrich finding evidence with definitions from the archived source snapshot')
     context.add_argument('report_id')
     context.add_argument('--finding-id')
@@ -72,7 +76,7 @@ def register(sub):
     mra.add_argument('report_id'); mra.add_argument('measurement_record_id'); mra.add_argument('review')
     mi = commands.add_parser('measurement-import-v06', help='Append a read-only MeasurementBench 0.6 compatibility view')
     mi.add_argument('report_id'); mi.add_argument('measurement_report')
-    for command in (init, scan, listing, show, check, context, compare, server, opening, stop, mcp, mt, ma, mrt, mra, mi):
+    for command in (init, scan, listing, show, check, learn, lessons, context, compare, server, opening, stop, mcp, mt, ma, mrt, mra, mi):
         command.add_argument('--store', help='Shared report directory (default: configured store)')
 
 
@@ -114,6 +118,13 @@ def run(args):
         value = archive.read_report(args.report_id, store)
     elif name == 'verify':
         value = archive.verify(args.report_id, store)
+    elif name == 'learn':
+        from .learning import learn
+        from .workbench import Workbench
+        value = learn(Workbench(store), args.experiment_id)
+    elif name == 'lessons':
+        from .learning import list_lessons
+        value = dict(items=list_lessons(store, args.case_id))
     elif name == 'context':
         from .context import build_context, markdown
         aliases = json.loads(args.aliases, object_pairs_hook=_json_object)

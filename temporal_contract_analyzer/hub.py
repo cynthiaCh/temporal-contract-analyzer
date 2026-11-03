@@ -92,7 +92,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/api/health':
             self.send(dict(store=str(store), instance=self.server.instance, version=VERSION,
                            experiment_ui='local-codex-models-v1', context_enrichment='snapshot-definitions-v1',
-                           scenario_progress='explicit-schedules-v1'))
+                           scenario_progress='explicit-schedules-v1', failure_learning='candidate-memory-v1'))
         elif url.path == '/api/state':
             self.send(dict(store=str(store), version=VERSION, url=self.server.url))
         elif url.path == '/api/reports':
@@ -181,6 +181,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(self.server.experiments.cancel(parts[2]), 202)
             elif parts[3] == 'evaluate':
                 self.send(self.server.experiments.evaluate(parts[2]))
+            elif parts[3] == 'learn':
+                from .learning import learn
+                self.send(learn(self.server.experiments, parts[2]))
             else:
                 self.send({'error': 'Not found'}, 404)
         elif len(parts) == 4 and parts[:2] == ['api', 'reports']:

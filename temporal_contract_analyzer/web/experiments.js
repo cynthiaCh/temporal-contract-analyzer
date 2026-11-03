@@ -1,7 +1,7 @@
 'use strict';
 const $ = selector => document.querySelector(selector);
 const states = {prepared:'待启动', running:'运行中', completed:'进程完成', failed:'运行失败', cancelled:'已取消', timed_out:'超时', interrupted:'服务中断'};
-const layers = {none:'A · 无报告',locations:'B · 位置',facts:'C · 事实',review:'D · 审查',audit:'E · 通用提示',risk:'F · 提示＋信号',audit_review:'G · 提示＋报告'};
+const layers = {none:'A · 无报告',locations:'B · 位置',facts:'C · 事实',review:'D · 审查',audit:'E · 通用提示',risk:'F · 提示＋信号',audit_review:'G · 提示＋报告',learned_review:'失败经验辅助（开发）'};
 let selected, current, jobId, artifactName = 'oracle.json', busy = false, generation = 0;
 let catalog, selectedCase, activeExperiment;
 function el(tag, cls, text) { const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n; }
@@ -156,10 +156,26 @@ function render() {
     if(busy)return;busy=true;updateRun();
     try{await api(endpoint()+'/evaluate',{});await load();}finally{busy=false;await refreshList();}
   }));
+  if(current.evaluation_id&&current.status!=='running'&&current.jobs.some(j=>j.evaluation?.status==='failed'))controls.append(action('从失败提炼经验',async()=>{
+    if(busy)return;busy=true;
+    try{await api(endpoint()+'/learn',{});await load();}finally{busy=false;}
+  }));
   header.append(controls);target.append(header);
   const summary=el('div','summary-strip');
   for(const [label,count] of [['成功',current.jobs.filter(j=>j.evaluation?.status==='passed').length],['失败',current.jobs.filter(j=>j.evaluation?.status==='failed').length],['尚未验证',current.jobs.filter(j=>!['passed','failed'].includes(j.evaluation?.status)).length]]){const metric=el('div','metric');metric.append(el('strong','',String(count)),el('span','',label));summary.append(metric);}target.append(summary);
   target.append(el('p','scope-notice','修改结果按案例行为测试判定。场景通过数展示已验证的执行情形，不等于独立任务数；整体失败仍可能通过部分场景，全部场景通过也不能替代整体判定。'));
+  if(current.learning)target.append(el('p','scope-notice','本次含失败经验辅助条件：'+current.learning.qualification+'。冻结经验：'+current.learning.lesson_ids.join('、')));
+  if(current.learning_warning)target.append(el('p','error-block','失败经验暂不可用；原实验结果保留。'+current.learning_warning));
+  if(current.failure_lessons?.length){
+    const lessons=el('section','finding');lessons.append(el('h3','','失败经验 · 候选记忆'),
+      el('p','muted','失败已沉淀为候选核查策略；不会自动改写扫描规则。下次在“其他报告条件”勾选“失败经验辅助（开发）”可显式使用。'));
+    const names={'effect-separation':'分别核查历史记录与当前显示的有效性条件','boundary-coverage':'补查暂停、重入、清理与后续访问的组合'};
+    for(const lesson of current.failure_lessons.slice(0,3)){
+      lessons.append(el('p','',lesson.recipes.map(r=>names[r]||r).join('；')),
+        el('p','muted',`${lesson.id} · 来源 ${lesson.source.experiment_id} / ${lesson.source.evaluation_id}`),el('p','muted',lesson.qualification));
+    }
+    target.append(lessons);
+  }
   if(current.error)target.append(el('p','error-block',current.error));
   const task=el('details','finding');task.dataset.section='task';task.open=openDetails.includes('task');task.append(el('summary','','任务与输入范围'),el('pre','',current.task),el('p','muted',`原始目录：${current.original_candidate}\n冻结 ${Object.keys(current.input_files).length} 个文件；跳过 ${current.skipped.length} 项`),el('pre','',JSON.stringify(current.skipped,null,2)));target.append(task);
   const table=el('table'),head=el('tr');for(const text of ['条件 / 重复','修改结果','场景通过','运行状态','改动文件','用量','查看'])head.append(el('th','',text));table.append(head);

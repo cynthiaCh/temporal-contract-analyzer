@@ -20,6 +20,7 @@ TERMINAL = {'completed', 'failed', 'cancelled', 'timed_out', 'interrupted'}
 ARTIFACTS = {'prompt.md', 'report.md', 'events.jsonl', 'stderr.log', 'answer.md', 'result.json', 'changes.json'}
 EVALUATION_ARTIFACTS = {'evaluation.json', 'oracle.json', 'oracle-stderr.log', 'calibration.json'}
 LIMIT = 25 * 1024 * 1024
+EXPERIMENT_CONDITIONS = (*CONDITIONS, 'learned_review')
 
 
 def executable(value):
@@ -158,6 +159,7 @@ class Workbench:
 
     def read(self, experiment_id):
         manifest = json.loads((self.folder(experiment_id)/'manifest.json').read_text())
+        manifest.pop('learning_warning', None)
         latest = self.latest_evaluation(experiment_id)
         if latest:
             summary = json.loads(latest.read_text())
@@ -178,6 +180,15 @@ class Workbench:
                 job['evaluation'] = evaluation
                 job['recorded_task_success'] = job.get('task_success', 'unscored')
                 job['task_success'] = {'passed':'passed', 'failed':'failed'}.get(job['evaluation']['status'], 'unverified')
+        if manifest.get('case'):
+            from .learning import inventory_key, list_lessons
+            try:
+                manifest['failure_lessons'] = list_lessons(self.store, manifest['case']['id'],inventory_key(manifest['input_files']),sha(manifest['task'].encode('utf-8')))
+            except Exception as error:
+                # Optional memory must not hide existing A/D records or turn a
+                # completed evaluation into a failed request.
+                manifest['failure_lessons'] = []
+                manifest['learning_warning'] = str(error)
         return manifest
 
     def latest_evaluation(self, experiment_id):
@@ -195,7 +206,7 @@ class Workbench:
             except (OSError, ValueError, EvidenceError):
                 continue
         return dict(items=sorted(rows, key=lambda r: r['created_at'], reverse=True), codex=self.codex,
-                    root=str(self.root), active=self.active, conditions=list(CONDITIONS))
+                    root=str(self.root), active=self.active, conditions=list(EXPERIMENT_CONDITIONS))
 
     def case_options(self):
         from .case_catalog import catalog
@@ -225,7 +236,7 @@ class Workbench:
             config['effort'] = effort
         if local:
             config['model'] = 'local-default'
-        manifest = self.prepare(dict(inputs, **config, mode='workspace-write'))
+        manifest = self.prepare(dict(inputs, **config, mode='workspace-write', learning_case_id=record['id']))
         if local:
             manifest.update(local_codex=True, config_source='local_codex_config', effort='local-default')
         elif inherit:
@@ -253,7 +264,7 @@ class Workbench:
             raise EvidenceError('请明确填写 Codex 模型')
         conditions = data.get('conditions', ['none', 'review'])
         if (not isinstance(conditions, list) or not conditions or
-                any(not isinstance(c, str) or c not in CONDITIONS for c in conditions) or len(set(conditions)) != len(conditions)):
+                any(not isinstance(c, str) or c not in EXPERIMENT_CONDITIONS for c in conditions) or len(set(conditions)) != len(conditions)):
             raise EvidenceError('Invalid report conditions')
         repeats = data.get('repeats', 1)
         timeout = data.get('timeout', 600)
@@ -269,6 +280,20 @@ class Workbench:
         modes = file_modes(source, files)
         if not files:
             raise EvidenceError('候选目录没有可复制的文件')
+        learning = None
+        lessons = []
+        if 'learned_review' in conditions:
+            from .learning import inventory_key, list_lessons
+            case_id = data.get('learning_case_id')
+            if not isinstance(case_id,str) or not case_id:
+                raise EvidenceError('失败经验条件需要从已登记的同一案例启动')
+            lessons = list_lessons(self.store,case_id,inventory_key(inventory(files)),sha(task.encode('utf-8')))[:3]
+            if not lessons:
+                raise EvidenceError('该案例当前输入没有匹配的失败经验；先从已评分失败生成经验')
+            learning = dict(condition='learned_review', lesson_ids=[lesson['id'] for lesson in lessons],
+                            status='feedback-informed-development', case_id=case_id,
+                            input_inventory_sha256=inventory_key(inventory(files)),
+                            qualification='同任务失败反馈已暴露；不作为独立或盲测结果')
         experiment_id = 'e-' + uuid.uuid4().hex[:16]
         folder = self.root/experiment_id
         folder.mkdir(parents=True)
@@ -279,13 +304,21 @@ class Workbench:
             if meta['status'] != 'parsed':
                 raise EvidenceError('实验输入未完整解析；请先检查报告 ' + meta['report_id'])
             self.require_report_content(meta['report_id'], conditions)
+            learned_text = ''
+            if learning:
+                from .learning import review_material
+                learned_packet, learned_text = review_material(meta['report_id'], lessons, self.store)
+                archive.atomic_json(folder/'learned-context.json',learned_packet)
+                learning['context_sha256'] = sha((folder/'learned-context.json').read_bytes())
             jobs = []
             for repeat in range(1, repeats + 1):
                 for condition in conditions:
                     job_id = 'j-' + str(len(jobs) + 1).zfill(3)
                     job = folder/'jobs'/job_id
                     job.mkdir(parents=True)
-                    report = archive.layer_text(meta['report_id'], condition, self.store)
+                    report = archive.layer_text(meta['report_id'], 'review' if condition=='learned_review' else condition, self.store)
+                    if condition=='learned_review':
+                        report += '\n'+learned_text
                     common = ('Work only on the candidate-visible files in this workspace. '
                               'Do not inspect sibling experiment jobs, original repositories or report stores.\n\n'
                               + task.strip() + '\n')
@@ -305,6 +338,8 @@ class Workbench:
                                          'Sequential configured order; no blinding or randomization.',
                                          'User chooses visible code and requirements; no hidden oracle is loaded.',
                                          'A completed turn is not task success or evidence that the report was used.'])
+            if learning:
+                manifest['learning'] = learning
             archive.atomic_json(folder/'manifest.json', manifest)
             return manifest
         except Exception:
@@ -312,13 +347,13 @@ class Workbench:
             raise
 
     def require_report_content(self, report_id, conditions):
-        source_conditions = {'locations', 'facts', 'review', 'audit_review'}
+        source_conditions = {'locations', 'facts', 'review', 'audit_review', 'learned_review'}
         if not source_conditions.intersection(conditions):
             return
         report = json.loads(archive.artifact(report_id, 'report.json', self.store))
         if not coverage_summary(report)['has_substantive_report']:
             raise EvidenceError('所选源码报告为空：没有命中具体源码位置，只有范围说明或通用文字。'
-                                '本次实验未启动，未调用模型。请取消 B/C/D/G 报告条件后单独运行 A（无报告），'
+                                '本次实验未启动，未调用模型。请取消 B/C/D/G 及失败经验辅助条件后单独运行 A（无报告），'
                                 '或选择有具体发现的案例。扫描报告：' + report_id)
 
     def artifact(self, experiment_id, job_id, name):
@@ -363,7 +398,19 @@ class Workbench:
 
     def evaluate_manifest(self, manifest):
         from .case_evaluation import evaluate
-        return evaluate(manifest, self.folder(manifest['id']), self.node, self.stop, self.terminate)
+        summary = evaluate(manifest, self.folder(manifest['id']), self.node, self.stop, self.terminate)
+        # Failure learning is a separate sidecar; it must not change an outcome
+        # or make an otherwise completed evaluation fail.
+        if summary.get('calibration_verdict')=='PASS' and any(j.get('status')=='failed' for j in summary['jobs'].values()):
+            from .learning import learn
+            try:
+                learn(self,manifest['id'])
+            except Exception as error:
+                try:
+                    archive.atomic_json(self.folder(manifest['id'])/'learning-error.json',dict(error=type(error).__name__+': '+str(error)))
+                except OSError:
+                    pass
+        return summary
 
     def start(self, experiment_id):
         with self.lock:
@@ -386,6 +433,14 @@ class Workbench:
                 if file_modes(folder/'input', files) != manifest['file_modes']:
                     raise EvidenceError('冻结输入的可执行权限已改变')
                 archive.verify(manifest['report_id'], self.store)
+                if 'learned_review' in manifest['conditions']:
+                    learning = manifest.get('learning') or {}
+                    context_path = folder/'learned-context.json'
+                    if not context_path.is_file() or sha(context_path.read_bytes())!=learning.get('context_sha256'):
+                        raise EvidenceError('冻结失败经验上下文已改变或缺失')
+                    packet = json.loads(context_path.read_text())
+                    if packet.get('lesson_ids')!=learning.get('lesson_ids'):
+                        raise EvidenceError('冻结失败经验 ID 与上下文不一致')
                 for job in manifest['jobs']:
                     directory = folder/'jobs'/job['id']
                     for name in ('prompt', 'report'):
