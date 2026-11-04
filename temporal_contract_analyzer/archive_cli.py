@@ -41,6 +41,17 @@ def register(sub):
     learn.add_argument('experiment_id')
     lessons = commands.add_parser('lessons', help='List candidate failure-feedback lessons')
     lessons.add_argument('--case-id')
+    repair = commands.add_parser('repair', help='Prepare a same-patch D versus failure-hypothesis repair pair')
+    repair.add_argument('experiment_id'); repair.add_argument('--job', required=True)
+    repair.add_argument('--node')
+    repair.add_argument('--run', action='store_true', help='Run both arms and wait for evaluation; otherwise only prepare')
+    route = commands.add_parser('route', help='Candidate A/D decision from task and optional frozen source report; no model call')
+    route.add_argument('--task-file',required=True);route.add_argument('--report-id');route.add_argument('--node')
+    selective = commands.add_parser('selective', help='Prepare one case with opt-in candidate A/D routing')
+    selective.add_argument('--case-id',required=True);selective.add_argument('--model')
+    selective.add_argument('--effort',default='medium',choices=['low','medium','high','xhigh','max','ultra'])
+    selective.add_argument('--timeout',type=int,default=600);selective.add_argument('--node')
+    selective.add_argument('--run',action='store_true',help='Call the model once with the selected A or D prompt')
     context = commands.add_parser('context', help='Enrich finding evidence with definitions from the archived source snapshot')
     context.add_argument('report_id')
     context.add_argument('--finding-id')
@@ -76,7 +87,7 @@ def register(sub):
     mra.add_argument('report_id'); mra.add_argument('measurement_record_id'); mra.add_argument('review')
     mi = commands.add_parser('measurement-import-v06', help='Append a read-only MeasurementBench 0.6 compatibility view')
     mi.add_argument('report_id'); mi.add_argument('measurement_report')
-    for command in (init, scan, listing, show, check, learn, lessons, context, compare, server, opening, stop, mcp, mt, ma, mrt, mra, mi):
+    for command in (init, scan, listing, show, check, learn, lessons, repair, route, selective, context, compare, server, opening, stop, mcp, mt, ma, mrt, mra, mi):
         command.add_argument('--store', help='Shared report directory (default: configured store)')
 
 
@@ -125,6 +136,32 @@ def run(args):
     elif name == 'lessons':
         from .learning import list_lessons
         value = dict(items=list_lessons(store, args.case_id))
+    elif name == 'repair':
+        from .workbench import Workbench
+        workbench = Workbench(store,node=args.node)
+        value = workbench.prepare_repair(args.experiment_id,args.job)
+        if args.run:
+            workbench.start(value['id']); workbench.thread.join()
+            value=workbench.read(value['id'])
+            status=0 if all(j.get('evaluation',{}).get('status') in {'passed','failed'} for j in value['jobs']) else 2
+    elif name == 'route':
+        from .routing import decide, prefilter
+        task=Path(args.task_file).read_text(encoding='utf-8')
+        report=sources=None
+        if args.report_id and prefilter(task)[1]:
+            archive.verify(args.report_id,store)
+            report=json.loads(archive.artifact(args.report_id,'report.json',store))
+            sources=archive.read_sources(args.report_id,store)
+        value=decide(task,report,sources,args.node)
+    elif name == 'selective':
+        from .workbench import Workbench
+        wb=Workbench(store,node=args.node)
+        data=dict(case_id=args.case_id,timeout=args.timeout)
+        if args.model:data.update(model=args.model,effort=args.effort,use_local_config=True)
+        value=wb.prepare_selective_case(data)
+        if args.run:
+            wb.start(value['id']);wb.thread.join();value=wb.read(value['id'])
+            status=0 if value['jobs'][0].get('evaluation',{}).get('status') in {'passed','failed'} else 2
     elif name == 'context':
         from .context import build_context, markdown
         aliases = json.loads(args.aliases, object_pairs_hook=_json_object)

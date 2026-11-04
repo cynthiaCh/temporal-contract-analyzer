@@ -14,7 +14,7 @@ async function main(){
   const project=path.join(bench,'cases/synthetic-panel/base');await fs.mkdir(project,{recursive:true});
   const caseRoot=path.dirname(project);await fs.mkdir(path.join(caseRoot,'prompts'));
   await fs.writeFile(path.join(caseRoot,'prompts/maintenance.md'),'Review whether this async refresh can publish stale results.');
-  await fs.writeFile(path.join(caseRoot,'case.json'),JSON.stringify({id:'synthetic-panel',title:'Synthetic panel',prompt:'prompts/maintenance.md',reference:'reference/bounded',oracle:{probe:'oracle/probe.py'},runtime:{minimum_version:'3.9'}}));
+  await fs.writeFile(path.join(caseRoot,'case.json'),JSON.stringify({id:'synthetic-panel',title:'Synthetic panel',prompt:'prompts/maintenance.md',reference:'reference/bounded',oracle:{probe:'oracle/probe.py',effects:'oracle/effects.json'},runtime:{minimum_version:'3.9'}}));
   await fs.mkdir(path.join(bench,'experiments/temporal-diagnostics-v1'),{recursive:true});
   await fs.writeFile(path.join(bench,'experiments/temporal-diagnostics-v1/corpus.json'),JSON.stringify({cases:[{id:'synthetic-panel',manifest:'cases/synthetic-panel/case.json',adapter:'python',language:'python',conditions:['latent-maintenance']}]}));
   await fs.writeFile(path.join(bench,'.bench.local.json'),JSON.stringify({model:'SYNTHETIC_UI_CHECK_ONLY'}));
@@ -22,9 +22,10 @@ async function main(){
   await fs.mkdir(path.join(caseRoot,'reference/bounded'),{recursive:true});
   await fs.copyFile(path.join(project,'panel.py'),path.join(caseRoot,'reference/bounded/panel.py'));
   await fs.mkdir(path.join(caseRoot,'oracle'));
+  await fs.writeFile(path.join(caseRoot,'oracle/effects.json'),JSON.stringify({variants:{ungranted:{required:['synthetic-preserved'],forbidden:[]}}}));
   await fs.writeFile(path.join(caseRoot,'oracle/probe.py'),`import json,sys,pathlib
 passed='async def refresh' in pathlib.Path(sys.argv[1],'panel.py').read_text()
-print(json.dumps({'case_id':'synthetic-panel','verdict':'PASS' if passed else 'UNDERREACH','schedules':{'synthetic-check':{'passed':passed}}}))
+print(json.dumps({'case_id':'synthetic-panel','verdict':'PASS' if passed else 'UNDERREACH','observed_effects':{'synthetic-preserved':passed},'missing_required_effects':[] if passed else ['synthetic-preserved'],'observed_forbidden_effects':[],'schedules':{'synthetic-check':{'passed':passed}}}))
 sys.exit(0 if passed else 1)
 `);
 
@@ -133,7 +134,18 @@ finally: server.server_close()
     assert.equal(await page.locator('#repeats').evaluate(n=>n.validity.valid),false);
     assert.equal(await page.locator('#case-dialog').evaluate(n=>n.open),true);
     await page.getByRole('button',{name:'关闭运行配置'}).click();
-    assert.deepEqual(errors,[]);console.log('PASS: no browser exceptions or mobile horizontal overflow');
+    // Prepare and run the new matched repair through the real browser/API.
+    await fs.writeFile(path.join(temporary,'reports-experiments',id,'jobs/j-001/workspace/panel.py'),'# SYNTHETIC_FAILED_PATCH\n');
+    await page.goto(address.url+'/experiments#experiment='+id);
+    await page.getByRole('button',{name:'重新验证修改结果',exact:true}).click();
+    await page.getByRole('button',{name:'准备修复对照',exact:true}).waitFor();
+    await page.getByRole('button',{name:'准备修复对照',exact:true}).click();
+    await page.waitForURL(url=>url.hash.startsWith('#experiment=')&&!url.hash.endsWith(id));
+    await page.getByText(/同补丁修复对照：/).waitFor();
+    await page.getByRole('button',{name:'启动 Codex 实验',exact:true}).click();
+    await page.getByText(/新增 0 · 丢失 0 · 无退步，可供复核/).first().waitFor();
+    assert.equal(await page.getByText(/新增 0 · 丢失 0 · 无退步，可供复核/).count(),2);
+    assert.deepEqual(errors,[]);console.log('PASS: matched repair prepares/runs via UI and shows regression results; no browser exceptions or mobile horizontal overflow');
   }catch(error){if(page){await page.screenshot({path:'/tmp/tca-experiment-browser-failure.png',fullPage:true});console.error(page.url(),await page.locator('#notice').innerText(),await page.locator('#experiment-detail').innerText());}throw error;}
   finally{if(browser)await browser.close();server.kill('SIGTERM');await exit;await fs.rm(temporary,{recursive:true,force:true});}
 }

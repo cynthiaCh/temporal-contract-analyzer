@@ -123,7 +123,8 @@ function script(file, source, ext, rootName) {
     let owner=scope;
     while(owner && !owner.names.has(n.name)) owner=owner.parent;
     const binding=owner?.names.get(n.name);
-    if(binding?.kind==='local-definition' || binding?.kind==='import-definition') references.push({...loc(n),name:n.name,binding});
+    if(binding?.kind==='local-definition' || binding?.kind==='import-definition') references.push({...loc(n),name:n.name,binding,
+      usage:['CallExpression','OptionalCallExpression','NewExpression'].includes(p.type) && key==='callee'?'call':'reference'});
     else if(binding?.kind==='unsupported-definition') gaps.push({...loc(n),symbol:n.name,reason:binding.reason});
     else if(binding?.ambiguous) gaps.push({...loc(n),symbol:n.name,reason:'ambiguous-binding'});
   }

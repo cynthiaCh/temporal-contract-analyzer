@@ -1,7 +1,7 @@
 'use strict';
 const $ = selector => document.querySelector(selector);
 const states = {prepared:'待启动', running:'运行中', completed:'进程完成', failed:'运行失败', cancelled:'已取消', timed_out:'超时', interrupted:'服务中断'};
-const layers = {none:'A · 无报告',locations:'B · 位置',facts:'C · 事实',review:'D · 审查',audit:'E · 通用提示',risk:'F · 提示＋信号',audit_review:'G · 提示＋报告',learned_review:'失败经验辅助（开发）'};
+const layers = {none:'A · 无报告',locations:'B · 位置',facts:'C · 事实',review:'D · 审查',audit:'E · 通用提示',risk:'F · 提示＋信号',audit_review:'G · 提示＋报告',learned_review:'失败经验辅助（开发）',hypothesis_review:'失败假设＋证据（开发）',rag_only:'RAG · 任务检索源码'};
 let selected, current, jobId, artifactName = 'oracle.json', busy = false, generation = 0;
 let catalog, selectedCase, activeExperiment;
 function el(tag, cls, text) { const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n; }
@@ -166,6 +166,8 @@ function render() {
   target.append(el('p','scope-notice','修改结果按案例行为测试判定。场景通过数展示已验证的执行情形，不等于独立任务数；整体失败仍可能通过部分场景，全部场景通过也不能替代整体判定。'));
   if(current.learning)target.append(el('p','scope-notice','本次含失败经验辅助条件：'+current.learning.qualification+'。冻结经验：'+current.learning.lesson_ids.join('、')));
   if(current.learning_warning)target.append(el('p','error-block','失败经验暂不可用；原实验结果保留。'+current.learning_warning));
+  if(current.routing)target.append(el('p','scope-notice',`候选门控选择 ${current.routing.action} · ${current.routing.reason}。${current.routing.qualification}`));
+  if(current.retry)target.append(el('p','scope-notice',current.retry.treatment==='rag_only'?'单独 RAG：从已评分补丁继续，只提供原任务与检索到的候选源码、文档，不提供 D 解释或失败反馈；对照可能为历史记录。结果仍检查原通过项是否退步。':'同补丁修复对照：两个条件均从父实验已评分补丁继续，使用相同模型、推理强度和超时；只有假设组接收失败反馈。结果检查原通过项是否退步。'));
   if(current.failure_lessons?.length){
     const lessons=el('section','finding');lessons.append(el('h3','','失败经验 · 候选记忆'),
       el('p','muted','失败已沉淀为候选核查策略；不会自动改写扫描规则。下次在“其他报告条件”勾选“失败经验辅助（开发）”可显式使用。'));
@@ -183,6 +185,8 @@ function render() {
     const row=el('tr'),result=el('td');const [label,style]=outcome(job);result.append(el('span','pill '+style,label));
     if(job.evaluation?.verdict)result.append(el('div','row-subtitle',job.evaluation.verdict));
     if(job.evaluation?.reason)result.append(el('div','row-subtitle',job.evaluation.reason));
+    const regression=job.evaluation?.regression;
+    if(regression)result.append(el('div','row-subtitle',regression.status==='unverified'?'退步尚未验证':`新增 ${regression.gained.length} · 丢失 ${regression.lost.length} · ${regression.eligible?'无退步，可供复核':'拒绝接纳：存在退步'}`));
     const progress=el('td','scenario-progress',job.evaluation?scenarioLabel(job):'尚未验证');
     const detail=job.evaluation?.scenario_progress;
     if(detail){
@@ -190,7 +194,12 @@ function render() {
       if(detail.unknown||detail.error)progress.append(el('div','row-subtitle',`${detail.unknown} 个结论未知 · ${detail.error} 个运行异常`));
     }
     row.append(el('td','',`${layers[job.condition]} / ${job.repeat}`),result,progress,el('td','',states[job.status]||job.status),el('td','',job.changed_files===undefined?'—':String(job.changed_files)),el('td','',job.usage?`输入 ${job.usage.input_tokens??'—'} / 输出 ${job.usage.output_tokens??'—'} tokens`:'—'));
-    const cell=el('td');cell.append(action('查看材料',()=>{jobId=job.id;artifactName='oracle.json';renderArtifact();}));row.append(cell);table.append(row);
+    const cell=el('td');cell.append(action('查看材料',()=>{jobId=job.id;artifactName='oracle.json';renderArtifact();}));
+    if(current.status!=='running'&&job.status==='completed'&&job.evaluation?.status==='failed')cell.append(action('准备修复对照',async()=>{
+      if(busy)return;busy=true;
+      try{const prepared=await api(endpoint()+'/repair',{job:job.id});location.hash='experiment='+prepared.id;await load();}finally{busy=false;}
+    }));
+    row.append(cell);table.append(row);
   }
   const wrap=el('div','table-wrap');wrap.append(table);target.append(wrap);
   target.append(el('div','experiment-artifacts'));if(!current.jobs.some(j=>j.id===jobId))jobId=current.jobs[0]?.id;renderArtifact(logScroll,openDetails.includes('technical'),scenariosOpen);

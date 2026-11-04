@@ -212,6 +212,27 @@ class Workbench:
         from .case_catalog import catalog
         return catalog()
 
+    def prepare_repair(self, experiment_id, job_id):
+        from .repair import prepare_pair
+        with self.lock:
+            if self.active:
+                raise EvidenceError('已有运行或验证正在进行，请稍后准备修复对照')
+            return prepare_pair(self, experiment_id, job_id)
+
+    def prepare_rag(self, experiment_id, job_id):
+        from .repair import prepare_pair
+        with self.lock:
+            if self.active:
+                raise EvidenceError('已有运行或验证正在进行，请稍后准备 RAG 实验')
+            return prepare_pair(self,experiment_id,job_id,treatment='rag_only',paired=False)
+
+    def prepare_selective_case(self, data):
+        from .routing import prepare_selective
+        with self.lock:
+            if self.active:
+                raise EvidenceError('已有运行或验证正在进行，请稍后准备门控实验')
+            return prepare_selective(self,data)
+
     def prepare_case(self, data):
         from .case_catalog import case_input
         if not isinstance(data.get('case_id'),str):
@@ -399,6 +420,9 @@ class Workbench:
     def evaluate_manifest(self, manifest):
         from .case_evaluation import evaluate
         summary = evaluate(manifest, self.folder(manifest['id']), self.node, self.stop, self.terminate)
+        if manifest.get('retry'):
+            from .repair import regression_summary
+            summary = regression_summary(manifest, self.folder(manifest['id']), summary)
         # Failure learning is a separate sidecar; it must not change an outcome
         # or make an otherwise completed evaluation fail.
         if summary.get('calibration_verdict')=='PASS' and any(j.get('status')=='failed' for j in summary['jobs'].values()):
@@ -419,7 +443,16 @@ class Workbench:
             manifest = self.read(experiment_id)
             if manifest['status'] != 'prepared':
                 raise EvidenceError('实验只能启动一次；请准备新的重复实验')
-            self.require_report_content(manifest['report_id'], manifest['conditions'])
+            if manifest.get('routing'):
+                from .routing import validate_routing
+                validate_routing(self,manifest)
+            # A repaired snapshot may no longer trigger the original scan. Both
+            # retry arms deliberately receive the same current D, even if empty.
+            if manifest.get('retry'):
+                from .repair import validate_pair
+                validate_pair(self, manifest)
+            else:
+                self.require_report_content(manifest['report_id'], manifest['conditions'])
             if not executable(self.codex):
                 self.codex = discover_codex()
             if not self.codex:

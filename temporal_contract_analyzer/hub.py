@@ -92,7 +92,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/api/health':
             self.send(dict(store=str(store), instance=self.server.instance, version=VERSION,
                            experiment_ui='local-codex-models-v1', context_enrichment='snapshot-definitions-v1',
-                           scenario_progress='explicit-schedules-v1', failure_learning='candidate-memory-v1'))
+                           scenario_progress='explicit-schedules-v1', failure_learning='candidate-memory-v1',
+                           hypothesis_repair='matched-patch-v2'))
         elif url.path == '/api/state':
             self.send(dict(store=str(store), version=VERSION, url=self.server.url))
         elif url.path == '/api/reports':
@@ -171,6 +172,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise EvidenceError('请输入候选工程或源码文件的绝对路径')
             result = archive.scan_path(data['candidate'], store, self.server.node, 'web', **labels)
             self.send(result['archive'], 201)
+        elif parts == ['api', 'experiments', 'selective']:
+            self.send(self.server.experiments.prepare_selective_case(data), 201)
         elif parts == ['api', 'experiments']:
             prepare = self.server.experiments.prepare_case if 'case_id' in data else self.server.experiments.prepare
             self.send(prepare(data), 201)
@@ -184,6 +187,8 @@ class Handler(BaseHTTPRequestHandler):
             elif parts[3] == 'learn':
                 from .learning import learn
                 self.send(learn(self.server.experiments, parts[2]))
+            elif parts[3] == 'repair':
+                self.send(self.server.experiments.prepare_repair(parts[2], data.get('job')), 201)
             else:
                 self.send({'error': 'Not found'}, 404)
         elif len(parts) == 4 and parts[:2] == ['api', 'reports']:
