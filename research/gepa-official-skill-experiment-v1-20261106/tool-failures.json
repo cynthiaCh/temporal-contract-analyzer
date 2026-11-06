@@ -1,0 +1,317 @@
+[
+  {
+    "task_id": "e-6eb27eb9536640d6",
+    "case": "document-submit-snapshot-vanilla",
+    "command": "/usr/bin/bash -lc \"node --input-type=module <<'EOF'\nimport assert from 'node:assert/strict';\nimport { createWorkspace } from './src/workspace.js';\nimport { createDraftStore } from './src/draft-store.js';\nimport { createReceiptArchive } from './src/receipt-archive.js';\nconst jobs = new Map(); let next = 0;\nconst timers = { schedule(fn, delay) { assert.equal(delay, 120); const id = ++next; jobs.set(id, fn); return id; }, cancel(id) { jobs.delete(id); } };\nconst store = createDraftStore(); const archive = createReceiptArchive(); const statuses = []; const notices = [];\nlet workspace = createWorkspace({store, archive, timers, renderDocument() {}, renderStatus: x => statuses.push(x), renderSubmission: x => notices.push(x)});\nworkspace.open('a'); workspace.edit('a'); workspace.edit('ab'); assert.equal(store.read('a'), ''); assert.equal(jobs.size, 1);\n[...jobs.values()][0](); assert.equal(store.read('a'), 'ab'); workspace.edit('abc'); assert.equal(jobs.size, 1);\nworkspace.close(); assert.equal(store.read('a'), 'abc'); assert.equal(statuses.length, 1); assert.equal(jobs.size, 0);\nworkspace.open('a'); workspace.edit('submitted'); const receipt = workspace.submit(); assert.deepEqual(receipt, {id:'a',text:'submitted'}); assert.equal(store.read('a'), 'submitted'); assert.equal(jobs.size, 0);\nworkspace.edit('later'); workspace.open('b'); assert.equal(store.read('a'), 'later'); assert.equal(jobs.size, 0);\nworkspace.dispose();\nconst store2 = createDraftStore(); const archive2 = createReceiptArchive(); let nav; let fired = false; const seen = [];\nnav = createWorkspace({store:store2,archive:archive2,timers,renderDocument: x => seen.push(x),renderStatus() {},renderSubmission() {},onSaved(event, api) { if (\"'!fired && event.id === '\"'a') { fired = true; api.open('b'); } }});\nnav.open('a'); nav.edit('x'); nav.open('c'); assert.equal(store2.read('a'), 'x'); assert.equal(nav.submit(), null); nav.edit('b'); assert.equal(store2.read('b'), ''); nav.close(); assert.equal(store2.read('b'), 'b');\nconsole.log('workspace save checks passed');\nEOF\"",
+    "exit_code": 1,
+    "line": 14
+  },
+  {
+    "task_id": "e-6eb27eb9536640d6",
+    "case": "document-submit-snapshot-vanilla",
+    "command": "/usr/bin/bash -lc 'git diff --check && git diff -- src/editor.js src/workspace.js'",
+    "exit_code": 129,
+    "line": 21
+  },
+  {
+    "task_id": "e-78758db7491741ba",
+    "case": "feature-flag-readiness-vue3",
+    "command": "/usr/bin/bash -lc \"cat package.json src/TargetView.vue src/AdjacentView.vue src/temporal-flow.js && rg --files -g 'AGENTS.md' -g '*test*' -g '*spec*'\"",
+    "exit_code": 1,
+    "line": 9
+  },
+  {
+    "task_id": "e-78758db7491741ba",
+    "case": "feature-flag-readiness-vue3",
+    "command": "/usr/bin/bash -lc \"node - <<'NODE'\nconst assert = require('node:assert/strict');\nconst { runTarget, runAdjacent } = require('./src/temporal-flow.js');\n(async () => {\n  for (const clickBeforeReady of [true, false]) {\n    for (const loadedFlag of [true, false]) {\n      const expected = loadedFlag ? 'premium-action' : 'none';\n      assert.deepEqual(await runTarget({ clickBeforeReady, loadedFlag }), { value: expected, events: [expected] });\n    }\n  }\n  assert.deepEqual(await runAdjacent({ clickBeforeReady: true }), { value: 'emergency-action', events: ['emergency-action'] });\n  assert.deepEqual(await runAdjacent({ clickBeforeReady: false }), { value: 'none', events: ['none'] });\n  console.log('6 temporal-flow cases passed');\n})().catch(error => { console.error(error); process.exitCode = 1; });\nNODE\n git diff --check && git diff -- src/temporal-flow.js\"",
+    "exit_code": 129,
+    "line": 14
+  },
+  {
+    "task_id": "e-16d1d294a6934738",
+    "case": "download-polling-restoration-low-cue-react18",
+    "command": "/usr/bin/bash -lc 'git diff --check && git diff -- src/usePreparation.js'",
+    "exit_code": 129,
+    "line": 16
+  },
+  {
+    "task_id": "e-154720bb7bb64f25",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc \"rg --files -g 'AGENTS.md' -g '*test*' /workspace\"",
+    "exit_code": 1,
+    "line": 13
+  },
+  {
+    "task_id": "e-154720bb7bb64f25",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc \"node --input-type=module <<'EOF'\nimport assert from 'node:assert/strict';\nimport { createTransferWorkspace, createProgressFeed, collectProgressTelemetry } from './src/workspace.js';\nconst deferred = () => { let resolve; const promise = new Promise(r => resolve = r); return { promise, resolve }; };\nconst records = [], shown = [], queue = [], deltas = [];\nconst older = deferred();\nconst feed = createProgressFeed({initialPacket: 'initial', decode: p => p === 'older' ? older.promise : p});\nconst stopTelemetry = collectProgressTelemetry(feed, x => deltas.push(x));\nconst workspace = createTransferWorkspace({transport(){}, onCancel(){}, record:x=>queue.push(x), showQueued(){}, recordProgress:x=>records.push(x), showProgress:x=>shown.push(x)});\nconst file = {id:'a', progressFeed:feed};\nworkspace.select(file);\nassert.deepEqual(shown.map(x=>x.frame), ['initial']);\nassert.deepEqual(deltas, []);\nfeed.emit('older'); feed.emit('newer'); older.resolve('older'); await Promise.resolve();\nassert.deepEqual(records.map(x=>x.frame), ['initial','newer','older']);\nassert.deepEqual(shown.map(x=>x.frame), ['initial','newer']);\nassert.deepEqual(deltas, ['newer','older']);\nworkspace.hide();\nworkspace.select(file);\nassert.deepEqual(shown.map(x=>x.frame), ['initial','newer','initial']);\nworkspace.dispose(); stopTelemetry();\nconsole.log('progress smoke checks passed');\nEOF\"",
+    "exit_code": 1,
+    "line": 18
+  },
+  {
+    "task_id": "e-154720bb7bb64f25",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc 'git status --short'",
+    "exit_code": 128,
+    "line": 23
+  },
+  {
+    "task_id": "e-154720bb7bb64f25",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc 'git diff --check'",
+    "exit_code": 129,
+    "line": 25
+  },
+  {
+    "task_id": "e-154720bb7bb64f25",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc 'git diff -- src/progress.js'",
+    "exit_code": 129,
+    "line": 27
+  },
+  {
+    "task_id": "e-4b4b2eeb8b53486b",
+    "case": "download-polling-restoration-low-cue-react18",
+    "command": "/usr/bin/bash -lc \"node --check src/usePreparation.js && node -e \\\"for (const p of ['react','react-dom']) try { console.log(p,require.resolve(p)) } catch(e) { console.log(p,'unavailable') }\\\" && git diff --check && git diff -- src/usePreparation.js\"",
+    "exit_code": 129,
+    "line": 14
+  },
+  {
+    "task_id": "e-3df2db08080046ff",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc 'git diff --check && git diff -- src/progress.js && git status --short'",
+    "exit_code": 129,
+    "line": 26
+  },
+  {
+    "task_id": "e-5b07bf1156dc48d0",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc 'git status --short'",
+    "exit_code": 128,
+    "line": 9
+  },
+  {
+    "task_id": "e-40f9f726ea5d449a",
+    "case": "download-polling-restoration-low-cue-react18",
+    "command": "/usr/bin/bash -lc 'git diff --check'",
+    "exit_code": 129,
+    "line": 14
+  },
+  {
+    "task_id": "e-40f9f726ea5d449a",
+    "case": "download-polling-restoration-low-cue-react18",
+    "command": "/usr/bin/bash -lc 'ls -d node_modules/react node_modules/react-dom 2>/dev/null'",
+    "exit_code": 2,
+    "line": 16
+  },
+  {
+    "task_id": "e-51563b1aff074e6e",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc \"rg --files -g AGENTS.md -g '*test*'\"",
+    "exit_code": 1,
+    "line": 13
+  },
+  {
+    "task_id": "e-51563b1aff074e6e",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc 'git diff -- src/progress.js && git status --short'",
+    "exit_code": 129,
+    "line": 22
+  },
+  {
+    "task_id": "e-0f86af18a30343df",
+    "case": "download-polling-restoration-low-cue-react18",
+    "command": "/usr/bin/bash -lc 'git diff -- src/usePreparation.js'",
+    "exit_code": 129,
+    "line": 14
+  },
+  {
+    "task_id": "e-ce9529dfebca4bde",
+    "case": "download-polling-restoration-low-cue-react18",
+    "command": "/usr/bin/bash -lc \"node --check src/usePreparation.js && node -e \\\"try { console.log(require.resolve('react')); console.log(require.resolve('react-dom')) } catch (error) { console.error(error.message); process.exitCode = 1 }\\\"\"",
+    "exit_code": 1,
+    "line": 16
+  },
+  {
+    "task_id": "e-c8fc6b8f8c044a32",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc 'git diff --check && git diff -- src/progress.js && git status --short'",
+    "exit_code": 129,
+    "line": 16
+  },
+  {
+    "task_id": "e-891ab1df6fc94ecf",
+    "case": "download-polling-restoration-low-cue-react18",
+    "command": "/usr/bin/bash -lc 'git status --short'",
+    "exit_code": 128,
+    "line": 16
+  },
+  {
+    "task_id": "e-891ab1df6fc94ecf",
+    "case": "download-polling-restoration-low-cue-react18",
+    "command": "/usr/bin/bash -lc 'git diff -- src/usePreparation.js'",
+    "exit_code": 129,
+    "line": 18
+  },
+  {
+    "task_id": "e-b12b0d2631224d8c",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc 'git diff --check && git diff -- src/progress.js && git status --short'",
+    "exit_code": 129,
+    "line": 18
+  },
+  {
+    "task_id": "e-f1bc838cc4dc4c86",
+    "case": "download-polling-restoration-low-cue-react18",
+    "command": "/usr/bin/bash -lc 'git diff --check && git diff -- src/usePreparation.js'",
+    "exit_code": 129,
+    "line": 14
+  },
+  {
+    "task_id": "e-f1bc838cc4dc4c86",
+    "case": "download-polling-restoration-low-cue-react18",
+    "command": "/usr/bin/bash -lc 'node --check src/usePreparation.js && node --check src/DownloadDialog.jsx'",
+    "exit_code": 1,
+    "line": 18
+  },
+  {
+    "task_id": "e-f59f2ecba8764c5e",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc \"rg --files -g '\"'!node_modules'\"' && rg -n \\\"watchTransferProgress|createTransfer|progress|cancel\\\" src test* package.json\"",
+    "exit_code": 2,
+    "line": 7
+  },
+  {
+    "task_id": "e-f59f2ecba8764c5e",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc \"node --input-type=module <<'EOF'\nimport assert from 'node:assert/strict';\nimport { createTransferWorkspace, createProgressFeed, collectProgressTelemetry } from './src/workspace.js';\nconst pending = new Map();\nconst history = [], shown = [], queued = [], records = [], cancels = [], deltas = [];\nconst feed = createProgressFeed({initialPacket: 'initial', decode: packet => pending.get(packet)?.promise ?? packet});\nconst workspace = createTransferWorkspace({transport() {}, onCancel: x => cancels.push(x.attemptId), record: x => records.push(x), showQueued: x => queued.push(x), recordProgress: x => history.push(x), showProgress: x => shown.push(x)});\nconst file = {id: 'a', progressFeed: feed};\nworkspace.select(file);\nassert.deepEqual(shown.map(x => x.frame), ['initial']);\nconst stopTelemetry = collectProgressTelemetry(feed, x => deltas.push(x));\nassert.deepEqual(deltas, []);\nfor (const name of ['old', 'new']) {\n  let resolve;\n  const promise = new Promise(r => { resolve = r; });\n  pending.set(name, {promise, resolve});\n  feed.emit(name);\n}\npending.get('new').resolve('new');\nawait Promise.resolve();\npending.get('old').resolve('old');\nawait Promise.resolve();\nassert.deepEqual(shown.map(x => x.frame), ['initial', 'new']);\nassert.deepEqual(history.map(x => x.frame), ['initial', 'new', 'old']);\nworkspace.retry();\nassert.equal(shown.at(-1).attemptId, 2);\nassert.equal(records.length, 2);\nworkspace.hide();\nfeed.emit('after-hide');\nassert.equal(shown.at(-1).frame, 'initial');\nassert.equal(deltas.at(-1), 'after-hide');\nstopTelemetry();\nworkspace.select(file);\nassert.equal(shown.at(-1).attemptId, 3);\nworkspace.dispose();\nassert.deepEqual(cancels, [1, 2, 3]);\nconsole.log('progress checks passed');\nEOF\"",
+    "exit_code": 1,
+    "line": 14
+  },
+  {
+    "task_id": "e-f59f2ecba8764c5e",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc 'git diff --check && git diff -- src/progress.js src/queue.js'",
+    "exit_code": 129,
+    "line": 18
+  },
+  {
+    "task_id": "e-7f6b3b2db5074286",
+    "case": "download-polling-restoration-low-cue-react18",
+    "command": "/usr/bin/bash -lc \"node --check src/usePreparation.js && node -e \\\"try { console.log(require.resolve('react')) } catch (error) { console.log('react unavailable') }\\\" && git diff -- src/usePreparation.js\"",
+    "exit_code": 129,
+    "line": 14
+  },
+  {
+    "task_id": "e-7bafa6c497b04619",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc \"pwd && rg --files -g '\"'!node_modules'\"' && rg -n \\\"watchTransferProgress|createTransfer|progress|test\\\" src test* package.json 2>/dev/null\"",
+    "exit_code": 2,
+    "line": 7
+  },
+  {
+    "task_id": "e-7bafa6c497b04619",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc \"node --input-type=module <<'EOF'\nimport assert from 'node:assert/strict';\nimport { createTransferWorkspace, createProgressFeed, collectProgressTelemetry } from './src/workspace.js';\nconst records=[], history=[], shown=[], deltas=[], cancels=[];\nconst pending=new Map();\nconst feed=createProgressFeed({initialPacket:'initial',decode:p=>p.startsWith('async')?new Promise(resolve=>pending.set(p,resolve)):p});\nconst stopTelemetry=collectProgressTelemetry(feed,f=>deltas.push(f));\nconst ws=createTransferWorkspace({transport(){},onCancel:x=>cancels.push(x.attemptId),record:x=>records.push(x),showQueued(){},recordProgress:x=>history.push(x),showProgress:x=>shown.push(x)});\nconst file={id:'f',progressFeed:feed};\nws.select(file);\nassert.deepEqual(shown.map(x=>x.frame),['initial']);\nassert.deepEqual(deltas,[]);\nfeed.emit('async-old'); feed.emit('async-new');\npending.get('async-new')('new'); await Promise.resolve();\npending.get('async-old')('old'); await Promise.resolve();\nassert.deepEqual(shown.map(x=>x.frame),['initial','new']);\nassert.deepEqual(history.map(x=>x.frame),['initial','new','old']);\nws.retry();\nassert.deepEqual(shown.map(x=>x.frame),['initial','new','initial']);\nws.hide(); ws.select(file);\nassert.equal(shown.at(-1).frame,'initial');\nws.dispose(); stopTelemetry();\nassert.equal(cancels.length,3);\nassert.deepEqual(records.map(x=>x.kind),['select','retry','select']);\nconsole.log('progress lifecycle checks passed');\nEOF\"",
+    "exit_code": 1,
+    "line": 14
+  },
+  {
+    "task_id": "e-7bafa6c497b04619",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc \"node --input-type=module <<'EOF'\nimport assert from 'node:assert/strict';\nimport {createTransferWorkspace,createProgressFeed} from './src/workspace.js';\nlet ws, detached=0, calls=0;\nconst feed=createProgressFeed({initialPacket:'cached',onDetach(){detached++;}});\nws=createTransferWorkspace({transport(){},onCancel(){},record(){},showQueued(){},recordProgress(){},showProgress(){calls++; ws.hide();}});\nws.select({id:'f',progressFeed:feed});\nassert.equal(calls,1);\nassert.equal(detached,1);\nassert.equal(ws.snapshot().visitId,null);\nfeed.emit('later');\nassert.equal(calls,1);\nconsole.log('synchronous hide check passed');\nEOF\nnode --check src/progress.js\ngit diff -- src/progress.js\"",
+    "exit_code": 129,
+    "line": 19
+  },
+  {
+    "task_id": "e-a76ba9e91d3441dd",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc \"node --input-type=module <<'EOF'\nimport assert from 'node:assert/strict';\nimport { createTransferWorkspace, createProgressFeed, collectProgressTelemetry } from './src/workspace.js';\nconst queue = [], history = [], shown = [], deltas = [], cancels = [];\nconst pending = new Map();\nconst feed = createProgressFeed({ initialPacket: 'warm', decode(packet) { if (packet === 'slow' || packet === 'fast') return new Promise(resolve => pending.set(packet, resolve)); return packet; } });\nconst stopTelemetry = collectProgressTelemetry(feed, frame => deltas.push(frame));\nconst workspace = createTransferWorkspace({ transport() {}, onCancel: x => cancels.push(x.attemptId), record: x => queue.push(x), showQueued() {}, recordProgress: x => history.push(x), showProgress: x => shown.push(x) });\nconst file = { id: 'a', progressFeed: feed };\nworkspace.select(file);\nassert.deepEqual(shown.map(x => x.frame), ['warm']);\nassert.deepEqual(deltas, []);\nfeed.emit('stream');\nfeed.emit('slow');\nfeed.emit('fast');\npending.get('fast')('new');\nawait Promise.resolve();\npending.get('slow')('old');\nawait Promise.resolve();\nassert.deepEqual(shown.map(x => x.frame), ['warm', 'stream', 'new']);\nassert.deepEqual(history.map(x => x.frame), ['warm', 'stream', 'new', 'old']);\nassert.deepEqual(deltas, ['stream', 'new', 'old']);\nworkspace.retry();\nassert.equal(shown.at(-1).frame, 'warm');\nworkspace.hide();\nworkspace.select(file);\nassert.equal(shown.at(-1).frame, 'warm');\nassert.deepEqual(queue.map(x => x.kind), ['select', 'retry', 'select']);\nworkspace.dispose();\nstopTelemetry();\nassert.deepEqual(cancels, [1, 2, 3]);\nconsole.log('progress smoke checks passed');\nEOF\"",
+    "exit_code": 1,
+    "line": 14
+  },
+  {
+    "task_id": "e-a76ba9e91d3441dd",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc 'git diff --check && git diff -- src/progress.js && git status --short'",
+    "exit_code": 129,
+    "line": 18
+  },
+  {
+    "task_id": "e-0994ccd227684be0",
+    "case": "download-polling-restoration-low-cue-react18",
+    "command": "/usr/bin/bash -lc \"ls node_modules/react-dom >/dev/null && node -e \\\"require('./src/usePreparation.js'); console.log('module loads')\\\"\"",
+    "exit_code": 2,
+    "line": 14
+  },
+  {
+    "task_id": "e-0994ccd227684be0",
+    "case": "download-polling-restoration-low-cue-react18",
+    "command": "/usr/bin/bash -lc 'node --check src/usePreparation.js && node --check src/DownloadDialog.jsx'",
+    "exit_code": 1,
+    "line": 16
+  },
+  {
+    "task_id": "e-0994ccd227684be0",
+    "case": "download-polling-restoration-low-cue-react18",
+    "command": "/usr/bin/bash -lc 'git diff --check && git diff -- src/usePreparation.js && node --check src/usePreparation.js'",
+    "exit_code": 129,
+    "line": 18
+  },
+  {
+    "task_id": "e-591a6553e0bc4b52",
+    "case": "transfer-progress-composition-v4-vanilla",
+    "command": "/usr/bin/bash -lc 'git diff -- src/progress.js && git status --short'",
+    "exit_code": 129,
+    "line": 20
+  },
+  {
+    "task_id": "e-4d07b39dc8f147cc",
+    "case": "download-polling-restoration-low-cue-react18",
+    "command": "/usr/bin/bash -lc \"node -e \\\"for (const p of ['react','react-dom','react-dom/client','react-dom/test-utils']) { try { console.log(p,require.resolve(p)) } catch(e) { console.log(p,'unavailable') } }\\\" && node --check src/usePreparation.js && git status --short\"",
+    "exit_code": 128,
+    "line": 16
+  },
+  {
+    "task_id": "e-ca6163930b824076",
+    "case": "local-config-readiness-low-cue-vue2",
+    "command": "/usr/bin/bash -lc 'git diff --check && git diff -- src/editors/PersonnelEditor.vue'",
+    "exit_code": 129,
+    "line": 14
+  },
+  {
+    "task_id": "e-76911b3bf19540d2",
+    "case": "listener-registration-order-vanilla",
+    "command": "/usr/bin/bash -lc 'cat package.json && cat src/presence-panel.js && cat src/subscription.js && cat src/channel.js && cat src/workspace-navigation.js && git status --short'",
+    "exit_code": 128,
+    "line": 9
+  },
+  {
+    "task_id": "e-c8eb5d07e7324931",
+    "case": "local-config-readiness-low-cue-vue2",
+    "command": "/usr/bin/bash -lc \"pwd && rg --files -g '\"'!node_modules'\"' -g '\"'!*.lock'\"' | sort && rg -n \\\"getPageConfig|personnel-form|getStaticConfig|PersonnelEditor\\\" src test tests 2>/dev/null\"",
+    "exit_code": 2,
+    "line": 7
+  },
+  {
+    "task_id": "e-c8eb5d07e7324931",
+    "case": "local-config-readiness-low-cue-vue2",
+    "command": "/usr/bin/bash -lc 'git diff --check && git diff -- src/editors/PersonnelEditor.vue && git status --short'",
+    "exit_code": 129,
+    "line": 14
+  },
+  {
+    "task_id": "e-b912db92f4324938",
+    "case": "listener-registration-order-vanilla",
+    "command": "/usr/bin/bash -lc \"cat package.json src/*.js && rg --files -g '*test*' -g 'AGENTS.md'\"",
+    "exit_code": 1,
+    "line": 9
+  },
+  {
+    "task_id": "e-b912db92f4324938",
+    "case": "listener-registration-order-vanilla",
+    "command": "/usr/bin/bash -lc 'git diff --check && git diff -- src/subscription.js src/presence-panel.js && git status --short'",
+    "exit_code": 129,
+    "line": 16
+  }
+]

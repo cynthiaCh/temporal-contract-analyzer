@@ -1,0 +1,3 @@
+The draft editor now saves the latest text after a 120 ms quiet interval, and later edit bursts save normally. Close, open, and submit flush pending edits so their synchronous persistence guarantees still hold. I also guarded against a save callback navigating during a flush. The search preview was unchanged.
+
+Controlled timer checks passed for edit bursts, navigation, submit, reentry, and the search preview. `git diff --check` could not run because `/workspace` is not a Git repository.

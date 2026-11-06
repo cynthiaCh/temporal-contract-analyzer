@@ -1,0 +1,3 @@
+Updated [usePreparation.js](/workspace/src/usePreparation.js:4) so the download dialog schedules another check while preparation is pending and records the file as completed only when it is ready. Closing or reopening the dialog cancels a scheduled retry and prevents an earlier check from completing the new visit.
+
+Syntax checking and a controlled hook harness passed for pending-to-ready, close, reopen, and retry cancellation. React integration was not run because React is not installed in this workspace.

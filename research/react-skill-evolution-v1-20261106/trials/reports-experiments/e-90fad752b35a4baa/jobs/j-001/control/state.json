@@ -1,0 +1,68 @@
+{
+  "state": "repair_validate",
+  "steps": 17,
+  "source_observations": 8,
+  "seen_paths": [
+    "README.md",
+    "package.json",
+    "src/draft-store.js",
+    "src/editor.js",
+    "src/receipt-archive.js",
+    "src/save-status.js",
+    "src/search-preview.js",
+    "src/timers.js",
+    "src/trailing-task.js",
+    "src/workspace.js"
+  ],
+  "validations": [
+    {
+      "step": 11,
+      "tool_use_id": "exec-97d20fd5-bd38-4432-a1cb-cc3de7e7bb3b",
+      "command": "node --input-type=module <<'EOF'\nimport assert from 'node:assert/strict';\nimport { createWorkspace } from './src/workspace.js';\nimport { createDraftStore } from './src/draft-store.js';\nimport { createReceiptArchive } from './src/receipt-archive.js';\nimport { createSearchPreview } from './src/search-preview.js';\nlet now=0, next=0; const jobs=new Map();\nconst timers={schedule(fn,delay){const id=++next;jobs.set(id,{fn,at:now+delay});return id},cancel(id){jobs.delete(id)}};\nfunction advance(ms){now+=ms;for(;;){const due=[...jobs].filter(([,j])=>j.at<=now).sort((a,b)=>a[1].at-b[1].at)[0];if(!due)break;jobs.delete(due[0]);due[1].fn()}}\nconst store=createDraftStore(), archive=createReceiptArchive(), statuses=[], documents=[], notices=[];\nlet api=createWorkspace({store,archive,timers,renderDocument:x=>documents.push(x),renderStatus:x=>statuses.push(x),renderSubmission:x=>notices.push(x)});\napi.open('a');api.edit('one');advance(80);api.edit('two');advance(119);assert.equal(store.read('a'),'');advance(1);assert.equal(store.read('a'),'two');assert.equal(statuses.length,1);\napi.edit('three');advance(120);assert.equal(store.read('a'),'three');assert.equal(statuses.length,2);\napi.edit('four');api.close();assert.equal(store.read('a'),'four');assert.equal(statuses.length,2);advance(120);assert.equal(statuses.length,2);\napi.open('a');assert.equal(documents.at(-1).text,'four');api.edit('five');const receipt=api.submit();assert.deepEqual(receipt,{id:'a',text:'five'});assert.equal(store.read('a'),'five');assert.deepEqual(notices.at(-1),receipt);\napi.edit('six');api.open('b');assert.equal(store.read('a'),'six');api.edit('bee');api.dispose();assert.equal(store.read('b'),'bee');\nconst preview=[];const search=createSearchPreview({timers,publish:x=>preview.push(x)});search.query('old');search.hide();advance(40);assert.equal(preview.length,0);search.query('new');advance(40);assert.deepEqual(preview,[{query:'new'}]);\nconsole.log('basic lifecycle, bursts, submit, and search preview passed');\nEOF",
+      "exit_code": null,
+      "after_last_change": true
+    },
+    {
+      "step": 12,
+      "tool_use_id": "exec-edffa87b-61cf-4c2b-8c58-35ebe205650f",
+      "command": "node --input-type=module <<'EOF'\nimport assert from 'node:assert/strict';\nimport { createWorkspace } from './src/workspace.js';\nimport { createDraftStore } from './src/draft-store.js';\nimport { createReceiptArchive } from './src/receipt-archive.js';\nfunction fixture(onSaved){let clock=0,n=0;const pending=new Map(), docs=[], statuses=[], notices=[];const timers={schedule(fn,d){const id=++n;pending.set(id,{fn,at:clock+d});return id},cancel(id){pending.delete(id)}};const tick=d=>{clock+=d;for(const [id,job] of [...pending])if(job.at<=clock){pending.delete(id);job.fn()}};const store=createDraftStore(),archive=createReceiptArchive();const api=createWorkspace({store,archive,timers,renderDocument:x=>docs.push(x),renderStatus:x=>statuses.push(x),renderSubmission:x=>notices.push(x),onSaved});return{api,store,archive,docs,statuses,notices,tick}}\nlet once=false;const f=fixture((event,api)=>{if(event.id==='a'&&!once){once=true;api.open('b')}});f.api.open('a');f.api.edit('A');f.api.open('c');assert.equal(f.store.read('a'),'A');assert.equal(f.docs.at(-1).id,'b');assert.equal(f.statuses.length,0);f.api.edit('B');f.tick(120);assert.equal(f.store.read('b'),'B');\nonce=false;const g=fixture((event,api)=>{if(event.id==='a'&&!once){once=true;api.open('a')}});g.api.open('a');g.api.edit('A');const receipt=g.api.submit();assert.deepEqual(receipt,{id:'a',text:'A'});assert.deepEqual(g.archive.list(),[{id:'a',text:'A'}]);assert.equal(g.notices.at(-1),null);assert.equal(g.docs.at(-1).text,'A');\nonce=false;const h=fixture((event,api)=>{if(event.id==='a'&&!once){once=true;api.edit('new')}});h.api.open('a');h.api.edit('old');const old=h.api.submit();assert.equal(old.text,'old');assert.equal(h.store.read('a'),'old');h.tick(120);assert.equal(h.store.read('a'),'new');\nconsole.log('reentrant navigation, same-document reopen, and follow-up edit passed');\nEOF",
+      "exit_code": null,
+      "after_last_change": true
+    },
+    {
+      "step": 16,
+      "tool_use_id": "exec-30baf897-6d7b-4466-bbef-768c576ed747",
+      "command": "node --input-type=module <<'EOF'\nimport assert from 'node:assert/strict';\nimport {createWorkspace} from './src/workspace.js';\nimport {createDraftStore} from './src/draft-store.js';\nimport {createReceiptArchive} from './src/receipt-archive.js';\nlet t=0,n=0;const q=new Map();const timers={schedule(f,d){let i=++n;q.set(i,{f,at:t+d});return i},cancel(i){q.delete(i)}};const tick=d=>{t+=d;for(const [i,j] of [...q])if(j.at<=t){q.delete(i);j.f()}};let jump=false;const store=createDraftStore(),archive=createReceiptArchive(),doc=[],status=[],notice=[];const api=createWorkspace({store,archive,timers,renderDocument:x=>doc.push(x),renderStatus:x=>status.push(x),renderSubmission:x=>notice.push(x),onSaved:(e,a)=>{if(e.id==='a'&&e.text==='first'&&!jump){jump=true;a.open('b')}}});api.open('a');api.edit('first');tick(120);assert.equal(store.read('a'),'first');assert.equal(doc.at(-1).id,'b');api.edit('x');api.edit('y');tick(119);assert.equal(store.read('b'),'');tick(1);assert.equal(store.read('b'),'y');api.edit('z');const r=api.submit();assert.equal(r.text,'z');assert.equal(store.read('b'),'z');api.edit('last');api.close();assert.equal(store.read('b'),'last');api.open('b');assert.equal(doc.at(-1).text,'last');console.log('post-change lifecycle and reentry passed');\nEOF",
+      "exit_code": null,
+      "after_last_change": true
+    }
+  ],
+  "snapshot": {
+    "README.md": "49ae5dc19a1fde09b6dc65f83037a0de8776a79251ee9093d708430d8baffb25",
+    "package.json": "7968474458dcf456cbb060ca9e73eb116b34cd99db4ab07f78638ff78a2f6265",
+    "src/trailing-task.js": "b86f488d3e25868c588eb852a5f719332b85a419bba82b4d5cc932ff9a108baf",
+    "src/search-preview.js": "77e627d23e7e43be54bbfc11ceea10225318a7adabcb9aac8c27466dabefc164",
+    "src/timers.js": "db6d40d6bdf9c27a74d012dbafe7bce3230ab168e57061d33f73574349d2acc7",
+    "src/receipt-archive.js": "abe968afc42d53b678cd3fbd46becf89eadd416c7ba84885e355b5017ef8efca",
+    "src/draft-store.js": "09006335ff67882ae7089c32e3943e3fd945c8357cca0cfd94052d4e36c7aea1",
+    "src/editor.js": "3df530da577d1159bbc5a7097e0d7277e072e42a21a4cee3a4a64665c40c8392",
+    "src/save-status.js": "7fd761f43345e21438f6791b737eab479207e60fdd65db11ff6e415cf8fc8d3d",
+    "src/workspace.js": "1a2d846b53e626bccab5d5711f9fef25dd135a82b32572e9167923e57001144c"
+  },
+  "last_change_step": 13,
+  "injections": 4,
+  "edit_blocks": 0,
+  "stop_blocks": 0,
+  "backtracks": 0,
+  "completion_check": {
+    "changed_paths": [
+      "src/editor.js",
+      "src/workspace.js"
+    ],
+    "declared_status": "completed",
+    "actual_validation_after_change": true,
+    "cited_reason": true,
+    "mechanical_pass": true,
+    "semantic_correctness": "not established by controller"
+  }
+}

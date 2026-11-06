@@ -1,0 +1,3 @@
+Restored the initial progress update by attaching the listener before the feed starts. The panel now ignores older frames that finish decoding out of order, including frames from an attempt replaced by retry. Progress history still records those decoded frames.
+
+Candidate-visible Node checks passed for initial and streaming progress, reordered decoding, retry, navigation, cleanup, telemetry, and subsequent use.

@@ -1,0 +1,3 @@
+Updated the [download dialog’s preparation hook](/workspace/src/usePreparation.js:27) to keep checking while preparation is pending and add the file to `completed` only after a ready response. It cancels scheduled retries when a request is replaced or the dialog unmounts, and ignores stale responses.
+
+Syntax and a local hook check passed for pending-to-ready completion and replacement. A mounted React test could not run because React is not installed in the workspace.

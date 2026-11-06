@@ -1,0 +1,3 @@
+Fixed the presence panel so it receives the initial online-user state in both synchronous and deferred modes. Closing or switching rooms during bootstrap now cleans up the correct subscription, and a late decode from an earlier visit cannot update the panel.
+
+Verified bootstrap and later updates, workspace navigation, same-channel reopening, and that the metrics consumer still receives updates only.

@@ -1,0 +1,211 @@
+job_id,sequence,case,event_line,source,exit_code,category,command
+e-6eb27eb9536640d6,1,document-submit-snapshot-vanilla,14,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-6eb27eb9536640d6/jobs/j-001/events.jsonl:14,1,candidate_assertion_failed,"/usr/bin/bash -lc ""node --input-type=module <<'EOF'
+import assert from 'node:assert/strict';
+import { createWorkspace } from './src/workspace.js';
+import { createDraftStore } from './src/draft-store.js';
+import { createReceiptArchive } from './src/receipt-archive.js';
+const jobs = new Map(); let next = 0;
+const timers = { schedule(fn, delay) { assert.equal(delay, 120); const id = ++next; jobs.set(id, fn); return id; }, cancel(id) { jobs.delete(id); } };
+const store = createDraftStore(); const archive = createReceiptArchive(); const statuses = []; const notices = [];
+let workspace = createWorkspace({store, archive, timers, renderDocument() {}, renderStatus: x => statuses.push(x), renderSubmission: x => notices.push(x)});
+workspace.open('a'); workspace.edit('a'); workspace.edit('ab'); assert.equal(store.read('a'), ''); assert.equal(jobs.size, 1);
+[...jobs.values()][0](); assert.equal(store.read('a'), 'ab'); workspace.edit('abc'); assert.equal(jobs.size, 1);
+workspace.close(); assert.equal(store.read('a'), 'abc'); assert.equal(statuses.length, 1); assert.equal(jobs.size, 0);
+workspace.open('a'); workspace.edit('submitted'); const receipt = workspace.submit(); assert.deepEqual(receipt, {id:'a',text:'submitted'}); assert.equal(store.read('a'), 'submitted'); assert.equal(jobs.size, 0);
+workspace.edit('later'); workspace.open('b'); assert.equal(store.read('a'), 'later'); assert.equal(jobs.size, 0);
+workspace.dispose();
+const store2 = createDraftStore(); const archive2 = createReceiptArchive(); let nav; let fired = false; const seen = [];
+nav = createWorkspace({store:store2,archive:archive2,timers,renderDocument: x => seen.push(x),renderStatus() {},renderSubmission() {},onSaved(event, api) { if (""'!fired && event.id === '""'a') { fired = true; api.open('b'); } }});
+nav.open('a'); nav.edit('x'); nav.open('c'); assert.equal(store2.read('a'), 'x'); assert.equal(nav.submit(), null); nav.edit('b'); assert.equal(store2.read('b'), ''); nav.close(); assert.equal(store2.read('b'), 'b');
+console.log('workspace save checks passed');
+EOF"""
+e-6eb27eb9536640d6,1,document-submit-snapshot-vanilla,21,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-6eb27eb9536640d6/jobs/j-001/events.jsonl:21,129,environment_git_absent,/usr/bin/bash -lc 'git diff --check && git diff -- src/editor.js src/workspace.js'
+e-78758db7491741ba,2,feature-flag-readiness-vue3,9,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-78758db7491741ba/jobs/j-001/events.jsonl:9,1,normal_search_no_match,"/usr/bin/bash -lc ""cat package.json src/TargetView.vue src/AdjacentView.vue src/temporal-flow.js && rg --files -g 'AGENTS.md' -g '*test*' -g '*spec*'"""
+e-78758db7491741ba,2,feature-flag-readiness-vue3,14,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-78758db7491741ba/jobs/j-001/events.jsonl:14,129,environment_git_absent,"/usr/bin/bash -lc ""node - <<'NODE'
+const assert = require('node:assert/strict');
+const { runTarget, runAdjacent } = require('./src/temporal-flow.js');
+(async () => {
+  for (const clickBeforeReady of [true, false]) {
+    for (const loadedFlag of [true, false]) {
+      const expected = loadedFlag ? 'premium-action' : 'none';
+      assert.deepEqual(await runTarget({ clickBeforeReady, loadedFlag }), { value: expected, events: [expected] });
+    }
+  }
+  assert.deepEqual(await runAdjacent({ clickBeforeReady: true }), { value: 'emergency-action', events: ['emergency-action'] });
+  assert.deepEqual(await runAdjacent({ clickBeforeReady: false }), { value: 'none', events: ['none'] });
+  console.log('6 temporal-flow cases passed');
+})().catch(error => { console.error(error); process.exitCode = 1; });
+NODE
+ git diff --check && git diff -- src/temporal-flow.js"""
+e-16d1d294a6934738,3,download-polling-restoration-low-cue-react18,16,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-16d1d294a6934738/jobs/j-001/events.jsonl:16,129,environment_git_absent,/usr/bin/bash -lc 'git diff --check && git diff -- src/usePreparation.js'
+e-154720bb7bb64f25,4,transfer-progress-composition-v4-vanilla,13,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-154720bb7bb64f25/jobs/j-001/events.jsonl:13,1,normal_search_no_match,"/usr/bin/bash -lc ""rg --files -g 'AGENTS.md' -g '*test*' /workspace"""
+e-154720bb7bb64f25,4,transfer-progress-composition-v4-vanilla,18,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-154720bb7bb64f25/jobs/j-001/events.jsonl:18,1,candidate_assertion_failed,"/usr/bin/bash -lc ""node --input-type=module <<'EOF'
+import assert from 'node:assert/strict';
+import { createTransferWorkspace, createProgressFeed, collectProgressTelemetry } from './src/workspace.js';
+const deferred = () => { let resolve; const promise = new Promise(r => resolve = r); return { promise, resolve }; };
+const records = [], shown = [], queue = [], deltas = [];
+const older = deferred();
+const feed = createProgressFeed({initialPacket: 'initial', decode: p => p === 'older' ? older.promise : p});
+const stopTelemetry = collectProgressTelemetry(feed, x => deltas.push(x));
+const workspace = createTransferWorkspace({transport(){}, onCancel(){}, record:x=>queue.push(x), showQueued(){}, recordProgress:x=>records.push(x), showProgress:x=>shown.push(x)});
+const file = {id:'a', progressFeed:feed};
+workspace.select(file);
+assert.deepEqual(shown.map(x=>x.frame), ['initial']);
+assert.deepEqual(deltas, []);
+feed.emit('older'); feed.emit('newer'); older.resolve('older'); await Promise.resolve();
+assert.deepEqual(records.map(x=>x.frame), ['initial','newer','older']);
+assert.deepEqual(shown.map(x=>x.frame), ['initial','newer']);
+assert.deepEqual(deltas, ['newer','older']);
+workspace.hide();
+workspace.select(file);
+assert.deepEqual(shown.map(x=>x.frame), ['initial','newer','initial']);
+workspace.dispose(); stopTelemetry();
+console.log('progress smoke checks passed');
+EOF"""
+e-154720bb7bb64f25,4,transfer-progress-composition-v4-vanilla,23,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-154720bb7bb64f25/jobs/j-001/events.jsonl:23,128,environment_git_absent,/usr/bin/bash -lc 'git status --short'
+e-154720bb7bb64f25,4,transfer-progress-composition-v4-vanilla,25,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-154720bb7bb64f25/jobs/j-001/events.jsonl:25,129,environment_git_absent,/usr/bin/bash -lc 'git diff --check'
+e-154720bb7bb64f25,4,transfer-progress-composition-v4-vanilla,27,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-154720bb7bb64f25/jobs/j-001/events.jsonl:27,129,environment_git_absent,/usr/bin/bash -lc 'git diff -- src/progress.js'
+e-4b4b2eeb8b53486b,5,download-polling-restoration-low-cue-react18,14,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-4b4b2eeb8b53486b/jobs/j-001/events.jsonl:14,129,environment_git_absent,"/usr/bin/bash -lc ""node --check src/usePreparation.js && node -e \""for (const p of ['react','react-dom']) try { console.log(p,require.resolve(p)) } catch(e) { console.log(p,'unavailable') }\"" && git diff --check && git diff -- src/usePreparation.js"""
+e-3df2db08080046ff,6,transfer-progress-composition-v4-vanilla,26,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-3df2db08080046ff/jobs/j-001/events.jsonl:26,129,environment_git_absent,/usr/bin/bash -lc 'git diff --check && git diff -- src/progress.js && git status --short'
+e-5b07bf1156dc48d0,7,transfer-progress-composition-v4-vanilla,9,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-5b07bf1156dc48d0/jobs/j-001/events.jsonl:9,128,environment_git_absent,/usr/bin/bash -lc 'git status --short'
+e-40f9f726ea5d449a,8,download-polling-restoration-low-cue-react18,14,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-40f9f726ea5d449a/jobs/j-001/events.jsonl:14,129,environment_git_absent,/usr/bin/bash -lc 'git diff --check'
+e-40f9f726ea5d449a,8,download-polling-restoration-low-cue-react18,16,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-40f9f726ea5d449a/jobs/j-001/events.jsonl:16,2,environment_dependency_missing,/usr/bin/bash -lc 'ls -d node_modules/react node_modules/react-dom 2>/dev/null'
+e-51563b1aff074e6e,9,transfer-progress-composition-v4-vanilla,13,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-51563b1aff074e6e/jobs/j-001/events.jsonl:13,1,normal_search_no_match,"/usr/bin/bash -lc ""rg --files -g AGENTS.md -g '*test*'"""
+e-51563b1aff074e6e,9,transfer-progress-composition-v4-vanilla,22,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-51563b1aff074e6e/jobs/j-001/events.jsonl:22,129,environment_git_absent,/usr/bin/bash -lc 'git diff -- src/progress.js && git status --short'
+e-0f86af18a30343df,10,download-polling-restoration-low-cue-react18,14,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-0f86af18a30343df/jobs/j-001/events.jsonl:14,129,environment_git_absent,/usr/bin/bash -lc 'git diff -- src/usePreparation.js'
+e-ce9529dfebca4bde,11,download-polling-restoration-low-cue-react18,16,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-ce9529dfebca4bde/jobs/j-001/events.jsonl:16,1,environment_dependency_missing,"/usr/bin/bash -lc ""node --check src/usePreparation.js && node -e \""try { console.log(require.resolve('react')); console.log(require.resolve('react-dom')) } catch (error) { console.error(error.message); process.exitCode = 1 }\"""""
+e-c8fc6b8f8c044a32,12,transfer-progress-composition-v4-vanilla,16,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-c8fc6b8f8c044a32/jobs/j-001/events.jsonl:16,129,environment_git_absent,/usr/bin/bash -lc 'git diff --check && git diff -- src/progress.js && git status --short'
+e-891ab1df6fc94ecf,13,download-polling-restoration-low-cue-react18,16,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-891ab1df6fc94ecf/jobs/j-001/events.jsonl:16,128,environment_git_absent,/usr/bin/bash -lc 'git status --short'
+e-891ab1df6fc94ecf,13,download-polling-restoration-low-cue-react18,18,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-891ab1df6fc94ecf/jobs/j-001/events.jsonl:18,129,environment_git_absent,/usr/bin/bash -lc 'git diff -- src/usePreparation.js'
+e-b12b0d2631224d8c,14,transfer-progress-composition-v4-vanilla,18,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-b12b0d2631224d8c/jobs/j-001/events.jsonl:18,129,environment_git_absent,/usr/bin/bash -lc 'git diff --check && git diff -- src/progress.js && git status --short'
+e-f1bc838cc4dc4c86,15,download-polling-restoration-low-cue-react18,14,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-f1bc838cc4dc4c86/jobs/j-001/events.jsonl:14,129,environment_git_absent,/usr/bin/bash -lc 'git diff --check && git diff -- src/usePreparation.js'
+e-f1bc838cc4dc4c86,15,download-polling-restoration-low-cue-react18,18,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-f1bc838cc4dc4c86/jobs/j-001/events.jsonl:18,1,other_jsx_check_invocation,/usr/bin/bash -lc 'node --check src/usePreparation.js && node --check src/DownloadDialog.jsx'
+e-f59f2ecba8764c5e,16,transfer-progress-composition-v4-vanilla,7,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-f59f2ecba8764c5e/jobs/j-001/events.jsonl:7,2,other_search_missing_path_or_glob,"/usr/bin/bash -lc ""rg --files -g '""'!node_modules'""' && rg -n \""watchTransferProgress|createTransfer|progress|cancel\"" src test* package.json"""
+e-f59f2ecba8764c5e,16,transfer-progress-composition-v4-vanilla,14,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-f59f2ecba8764c5e/jobs/j-001/events.jsonl:14,1,candidate_assertion_failed,"/usr/bin/bash -lc ""node --input-type=module <<'EOF'
+import assert from 'node:assert/strict';
+import { createTransferWorkspace, createProgressFeed, collectProgressTelemetry } from './src/workspace.js';
+const pending = new Map();
+const history = [], shown = [], queued = [], records = [], cancels = [], deltas = [];
+const feed = createProgressFeed({initialPacket: 'initial', decode: packet => pending.get(packet)?.promise ?? packet});
+const workspace = createTransferWorkspace({transport() {}, onCancel: x => cancels.push(x.attemptId), record: x => records.push(x), showQueued: x => queued.push(x), recordProgress: x => history.push(x), showProgress: x => shown.push(x)});
+const file = {id: 'a', progressFeed: feed};
+workspace.select(file);
+assert.deepEqual(shown.map(x => x.frame), ['initial']);
+const stopTelemetry = collectProgressTelemetry(feed, x => deltas.push(x));
+assert.deepEqual(deltas, []);
+for (const name of ['old', 'new']) {
+  let resolve;
+  const promise = new Promise(r => { resolve = r; });
+  pending.set(name, {promise, resolve});
+  feed.emit(name);
+}
+pending.get('new').resolve('new');
+await Promise.resolve();
+pending.get('old').resolve('old');
+await Promise.resolve();
+assert.deepEqual(shown.map(x => x.frame), ['initial', 'new']);
+assert.deepEqual(history.map(x => x.frame), ['initial', 'new', 'old']);
+workspace.retry();
+assert.equal(shown.at(-1).attemptId, 2);
+assert.equal(records.length, 2);
+workspace.hide();
+feed.emit('after-hide');
+assert.equal(shown.at(-1).frame, 'initial');
+assert.equal(deltas.at(-1), 'after-hide');
+stopTelemetry();
+workspace.select(file);
+assert.equal(shown.at(-1).attemptId, 3);
+workspace.dispose();
+assert.deepEqual(cancels, [1, 2, 3]);
+console.log('progress checks passed');
+EOF"""
+e-f59f2ecba8764c5e,16,transfer-progress-composition-v4-vanilla,18,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-f59f2ecba8764c5e/jobs/j-001/events.jsonl:18,129,environment_git_absent,/usr/bin/bash -lc 'git diff --check && git diff -- src/progress.js src/queue.js'
+e-7f6b3b2db5074286,17,download-polling-restoration-low-cue-react18,14,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-7f6b3b2db5074286/jobs/j-001/events.jsonl:14,129,environment_git_absent,"/usr/bin/bash -lc ""node --check src/usePreparation.js && node -e \""try { console.log(require.resolve('react')) } catch (error) { console.log('react unavailable') }\"" && git diff -- src/usePreparation.js"""
+e-7bafa6c497b04619,18,transfer-progress-composition-v4-vanilla,7,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-7bafa6c497b04619/jobs/j-001/events.jsonl:7,2,other_search_missing_path_or_glob,"/usr/bin/bash -lc ""pwd && rg --files -g '""'!node_modules'""' && rg -n \""watchTransferProgress|createTransfer|progress|test\"" src test* package.json 2>/dev/null"""
+e-7bafa6c497b04619,18,transfer-progress-composition-v4-vanilla,14,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-7bafa6c497b04619/jobs/j-001/events.jsonl:14,1,candidate_assertion_failed,"/usr/bin/bash -lc ""node --input-type=module <<'EOF'
+import assert from 'node:assert/strict';
+import { createTransferWorkspace, createProgressFeed, collectProgressTelemetry } from './src/workspace.js';
+const records=[], history=[], shown=[], deltas=[], cancels=[];
+const pending=new Map();
+const feed=createProgressFeed({initialPacket:'initial',decode:p=>p.startsWith('async')?new Promise(resolve=>pending.set(p,resolve)):p});
+const stopTelemetry=collectProgressTelemetry(feed,f=>deltas.push(f));
+const ws=createTransferWorkspace({transport(){},onCancel:x=>cancels.push(x.attemptId),record:x=>records.push(x),showQueued(){},recordProgress:x=>history.push(x),showProgress:x=>shown.push(x)});
+const file={id:'f',progressFeed:feed};
+ws.select(file);
+assert.deepEqual(shown.map(x=>x.frame),['initial']);
+assert.deepEqual(deltas,[]);
+feed.emit('async-old'); feed.emit('async-new');
+pending.get('async-new')('new'); await Promise.resolve();
+pending.get('async-old')('old'); await Promise.resolve();
+assert.deepEqual(shown.map(x=>x.frame),['initial','new']);
+assert.deepEqual(history.map(x=>x.frame),['initial','new','old']);
+ws.retry();
+assert.deepEqual(shown.map(x=>x.frame),['initial','new','initial']);
+ws.hide(); ws.select(file);
+assert.equal(shown.at(-1).frame,'initial');
+ws.dispose(); stopTelemetry();
+assert.equal(cancels.length,3);
+assert.deepEqual(records.map(x=>x.kind),['select','retry','select']);
+console.log('progress lifecycle checks passed');
+EOF"""
+e-7bafa6c497b04619,18,transfer-progress-composition-v4-vanilla,19,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-7bafa6c497b04619/jobs/j-001/events.jsonl:19,129,environment_git_absent,"/usr/bin/bash -lc ""node --input-type=module <<'EOF'
+import assert from 'node:assert/strict';
+import {createTransferWorkspace,createProgressFeed} from './src/workspace.js';
+let ws, detached=0, calls=0;
+const feed=createProgressFeed({initialPacket:'cached',onDetach(){detached++;}});
+ws=createTransferWorkspace({transport(){},onCancel(){},record(){},showQueued(){},recordProgress(){},showProgress(){calls++; ws.hide();}});
+ws.select({id:'f',progressFeed:feed});
+assert.equal(calls,1);
+assert.equal(detached,1);
+assert.equal(ws.snapshot().visitId,null);
+feed.emit('later');
+assert.equal(calls,1);
+console.log('synchronous hide check passed');
+EOF
+node --check src/progress.js
+git diff -- src/progress.js"""
+e-a76ba9e91d3441dd,19,transfer-progress-composition-v4-vanilla,14,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-a76ba9e91d3441dd/jobs/j-001/events.jsonl:14,1,candidate_assertion_failed,"/usr/bin/bash -lc ""node --input-type=module <<'EOF'
+import assert from 'node:assert/strict';
+import { createTransferWorkspace, createProgressFeed, collectProgressTelemetry } from './src/workspace.js';
+const queue = [], history = [], shown = [], deltas = [], cancels = [];
+const pending = new Map();
+const feed = createProgressFeed({ initialPacket: 'warm', decode(packet) { if (packet === 'slow' || packet === 'fast') return new Promise(resolve => pending.set(packet, resolve)); return packet; } });
+const stopTelemetry = collectProgressTelemetry(feed, frame => deltas.push(frame));
+const workspace = createTransferWorkspace({ transport() {}, onCancel: x => cancels.push(x.attemptId), record: x => queue.push(x), showQueued() {}, recordProgress: x => history.push(x), showProgress: x => shown.push(x) });
+const file = { id: 'a', progressFeed: feed };
+workspace.select(file);
+assert.deepEqual(shown.map(x => x.frame), ['warm']);
+assert.deepEqual(deltas, []);
+feed.emit('stream');
+feed.emit('slow');
+feed.emit('fast');
+pending.get('fast')('new');
+await Promise.resolve();
+pending.get('slow')('old');
+await Promise.resolve();
+assert.deepEqual(shown.map(x => x.frame), ['warm', 'stream', 'new']);
+assert.deepEqual(history.map(x => x.frame), ['warm', 'stream', 'new', 'old']);
+assert.deepEqual(deltas, ['stream', 'new', 'old']);
+workspace.retry();
+assert.equal(shown.at(-1).frame, 'warm');
+workspace.hide();
+workspace.select(file);
+assert.equal(shown.at(-1).frame, 'warm');
+assert.deepEqual(queue.map(x => x.kind), ['select', 'retry', 'select']);
+workspace.dispose();
+stopTelemetry();
+assert.deepEqual(cancels, [1, 2, 3]);
+console.log('progress smoke checks passed');
+EOF"""
+e-a76ba9e91d3441dd,19,transfer-progress-composition-v4-vanilla,18,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-a76ba9e91d3441dd/jobs/j-001/events.jsonl:18,129,environment_git_absent,/usr/bin/bash -lc 'git diff --check && git diff -- src/progress.js && git status --short'
+e-0994ccd227684be0,20,download-polling-restoration-low-cue-react18,14,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-0994ccd227684be0/jobs/j-001/events.jsonl:14,2,environment_dependency_missing,"/usr/bin/bash -lc ""ls node_modules/react-dom >/dev/null && node -e \""require('./src/usePreparation.js'); console.log('module loads')\"""""
+e-0994ccd227684be0,20,download-polling-restoration-low-cue-react18,16,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-0994ccd227684be0/jobs/j-001/events.jsonl:16,1,other_jsx_check_invocation,/usr/bin/bash -lc 'node --check src/usePreparation.js && node --check src/DownloadDialog.jsx'
+e-0994ccd227684be0,20,download-polling-restoration-low-cue-react18,18,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-0994ccd227684be0/jobs/j-001/events.jsonl:18,129,environment_git_absent,/usr/bin/bash -lc 'git diff --check && git diff -- src/usePreparation.js && node --check src/usePreparation.js'
+e-591a6553e0bc4b52,21,transfer-progress-composition-v4-vanilla,20,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-591a6553e0bc4b52/jobs/j-001/events.jsonl:20,129,environment_git_absent,/usr/bin/bash -lc 'git diff -- src/progress.js && git status --short'
+e-4d07b39dc8f147cc,22,download-polling-restoration-low-cue-react18,16,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-4d07b39dc8f147cc/jobs/j-001/events.jsonl:16,128,environment_git_absent,"/usr/bin/bash -lc ""node -e \""for (const p of ['react','react-dom','react-dom/client','react-dom/test-utils']) { try { console.log(p,require.resolve(p)) } catch(e) { console.log(p,'unavailable') } }\"" && node --check src/usePreparation.js && git status --short"""
+e-ca6163930b824076,24,local-config-readiness-low-cue-vue2,14,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-ca6163930b824076/jobs/j-001/events.jsonl:14,129,environment_git_absent,/usr/bin/bash -lc 'git diff --check && git diff -- src/editors/PersonnelEditor.vue'
+e-76911b3bf19540d2,25,listener-registration-order-vanilla,9,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-76911b3bf19540d2/jobs/j-001/events.jsonl:9,128,environment_git_absent,/usr/bin/bash -lc 'cat package.json && cat src/presence-panel.js && cat src/subscription.js && cat src/channel.js && cat src/workspace-navigation.js && git status --short'
+e-c8eb5d07e7324931,26,local-config-readiness-low-cue-vue2,7,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-c8eb5d07e7324931/jobs/j-001/events.jsonl:7,2,other_search_missing_path_or_glob,"/usr/bin/bash -lc ""pwd && rg --files -g '""'!node_modules'""' -g '""'!*.lock'""' | sort && rg -n \""getPageConfig|personnel-form|getStaticConfig|PersonnelEditor\"" src test tests 2>/dev/null"""
+e-c8eb5d07e7324931,26,local-config-readiness-low-cue-vue2,14,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-c8eb5d07e7324931/jobs/j-001/events.jsonl:14,129,environment_git_absent,/usr/bin/bash -lc 'git diff --check && git diff -- src/editors/PersonnelEditor.vue && git status --short'
+e-b912db92f4324938,27,listener-registration-order-vanilla,9,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-b912db92f4324938/jobs/j-001/events.jsonl:9,1,normal_search_no_match,"/usr/bin/bash -lc ""cat package.json src/*.js && rg --files -g '*test*' -g 'AGENTS.md'"""
+e-b912db92f4324938,27,listener-registration-order-vanilla,16,research/gepa-official-skill-experiment-v1-20261106/trials/reports-experiments/e-b912db92f4324938/jobs/j-001/events.jsonl:16,129,environment_git_absent,/usr/bin/bash -lc 'git diff --check && git diff -- src/subscription.js src/presence-panel.js && git status --short'

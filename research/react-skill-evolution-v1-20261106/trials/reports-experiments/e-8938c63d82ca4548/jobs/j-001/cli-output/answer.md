@@ -1,0 +1,3 @@
+Updated [src/progress.js](/workspace/src/progress.js:2) so the panel listener receives a warm source’s synchronous initial packet. It now uses packet arrival order to prevent an older decoded frame from moving the display backward, while still recording every decoded frame.
+
+Node integration checks passed for initial progress, out-of-order decoding, retry, cleanup, same-file reuse, late completion, and diagnostic telemetry. There is no visible repository test suite.

@@ -1,0 +1,11 @@
+# F0忠实复现与唯一反馈变量
+
+feedback_f0_legacy.py中的DESCRIPTIONS和feedback函数从原gepa_adapter.py按AST边界逐字截取，函数正文未改；preflight.py逐字比较。只注入本轮独立上下文、标准库和只读reader，不import原运行器或触发模型。
+
+原task-results.json使用排序JSON归档，丢失了运行时`score.checks`字典的插入顺序。旧函数按该顺序生成失败描述列表；直接读排序归档会交换启动与重试描述顺序。因此F0 wrapper根据原冻结effects required/forbidden列表恢复原normalizer顺序，而不是更改投影或把描述重新排序成任意顺序。
+
+复现结果：五份原反思数据集的10条记录结构相同；使用固定版本官方InstructionProposalSignature.prompt_renderer和原K0/模板，五份完整F0反思prompt与归档逐字节相同。未调用gepa.optimize或反思模型。
+
+F0/F1的Inputs、actual_reads、modified_locations、tool_observations及delivery保持相同。F1仅在诊断投影中增加事件顺序与差异方向、明确保留事实和比较对象，并把visible_validation重复正文换成同一tool_observation的引用与检查类型。原工具输出仍在，不新增或改变验证工具。这个差别是信息选择/结构的改变，不能解释为纯措辞变化或预先假定有效。
+
+所有例子是原20个train job的离线重投影；child-only单记录样例使用该job实际执行的候选技能，不将K0与别的候选轨迹错配。五个双记录重放批次仅使用原来实际参与反思的父记录，均为K0。显式父子得失只放研究侧对照文件，不把后续被拒子历史偷偷塞回反思输入。

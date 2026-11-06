@@ -1,0 +1,3 @@
+Personnel now loads [its local JSON configuration](/workspace/src/editors/PersonnelEditor.vue) without calling the retired endpoint. Config application waits until the form API is ready, preserving the parent value write and picker setup. Structure remains unchanged.
+
+The visible source and JSON checks passed. There is no runnable test suite in this workspace, so editor behavior was not verified in a browser.

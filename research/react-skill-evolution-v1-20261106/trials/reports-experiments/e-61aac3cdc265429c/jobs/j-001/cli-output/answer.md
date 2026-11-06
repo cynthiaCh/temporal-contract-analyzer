@@ -1,0 +1,3 @@
+The draft editor now uses the existing trailing task to save only the latest text after 120 ms of quiet. Later editing bursts still save. Pending edits are flushed before close, open, or submit completes, so the store and submission receipts retain the required synchronous behavior. Save callbacks that navigate cannot let an older open request replace the newer visit.
+
+A focused check with controllable timers passed for burst coalescing, later bursts, close, reopen, submit, and navigation during a save. The search preview was unchanged.

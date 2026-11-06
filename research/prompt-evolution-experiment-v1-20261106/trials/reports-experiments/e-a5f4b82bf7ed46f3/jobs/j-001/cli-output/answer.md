@@ -1,0 +1,3 @@
+Draft edits now save the latest text after 120 ms of inactivity, and later editing bursts continue to save. Closing, switching documents, or submitting flushes pending text so the existing synchronous store and receipt guarantees still hold. Submission notices remain tied to the visit that submitted; the search preview is unchanged.
+
+Targeted checks and syntax checks passed. The workspace has no visible test script and is not a Git repository, so `git diff --check` was unavailable.

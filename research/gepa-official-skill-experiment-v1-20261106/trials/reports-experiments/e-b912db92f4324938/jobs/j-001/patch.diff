@@ -1,0 +1,45 @@
+--- before/src/presence-panel.js
++++ after/src/presence-panel.js
+@@ -3,12 +3,20 @@
+ 
+ export function createPresencePanel(publish) {
+   let release = () => {};
++  let visit = 0;
+   return {
+     show(channel, bootstrapMode = "synchronous") {
++      const current = ++visit;
+       release();
+-      release = subscribeChannel(channel, bootstrapMode, publish);
++      release = () => {};
++      subscribeChannel(channel, bootstrapMode, (value) => {
++        if (visit === current) publish(value);
++      }, (unsubscribe) => {
++        release = unsubscribe;
++      });
+     },
+     close() {
++      ++visit;
+       release();
+       release = () => {};
+     },
+
+--- before/src/subscription.js
++++ after/src/subscription.js
+@@ -1,12 +1,14 @@
+ // The decoder may return a value or a Promise (compressed network frames).
+ // EventTarget removal detaches reception; an already started decode still settles.
+-export function subscribeChannel(channel, bootstrapMode, receive) {
++export function subscribeChannel(channel, bootstrapMode, receive, onSubscribed = () => {}) {
+   const listener = (event) => {
+     const decoded = channel.decode(event.detail);
+     if (decoded && typeof decoded.then === "function") decoded.then(receive);
+     else receive(decoded);
+   };
++  channel.target.addEventListener("presence", listener);
++  const release = () => channel.target.removeEventListener("presence", listener);
++  onSubscribed(release);
+   channel.connect(bootstrapMode);
+-  channel.target.addEventListener("presence", listener);
+-  return () => channel.target.removeEventListener("presence", listener);
++  return release;
+ }

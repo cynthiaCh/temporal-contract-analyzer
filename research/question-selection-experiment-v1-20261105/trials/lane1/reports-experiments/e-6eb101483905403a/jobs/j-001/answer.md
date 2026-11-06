@@ -1,0 +1,3 @@
+The draft editor now uses the existing trailing task to save the latest text after a 120 ms quiet interval. Later editing bursts continue to save. Closing or switching documents flushes pending text, and submitting persists the selected text before capturing its receipt. The search preview and public interfaces are unchanged.
+
+I verified burst coalescing, later saves, close flushing, and submit persistence with a local smoke test.

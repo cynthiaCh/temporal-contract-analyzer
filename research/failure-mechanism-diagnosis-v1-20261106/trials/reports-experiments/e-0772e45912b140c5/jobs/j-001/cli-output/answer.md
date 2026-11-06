@@ -1,0 +1,3 @@
+Restored the warm source’s initial panel update by registering the progress listener before starting the feed. [progress.js](/workspace/src/progress.js) now records every decoded frame but prevents an older frame that finishes later from repainting the display. [queue.js](/workspace/src/queue.js) also prevents a prior attempt’s delayed frame from repainting a retry.
+
+Candidate-visible Node checks passed for the initial update, out-of-order decoding, ordinary streaming, retry, navigation, reentry, and startup cleanup. Telemetry and queue record fields remain unchanged.

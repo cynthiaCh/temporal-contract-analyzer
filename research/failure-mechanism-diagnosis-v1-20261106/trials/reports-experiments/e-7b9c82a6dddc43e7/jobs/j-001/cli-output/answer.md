@@ -1,0 +1,3 @@
+Updated [src/progress.js](/workspace/src/progress.js) so the panel subscribes before the feed emits its cached initial packet. Decoded frames still enter progress history, while an older frame that finishes decoding late can no longer move the display backward.
+
+Node checks passed for the initial update, out-of-order decoding, telemetry, retry, reselect, cancellation, and hiding the panel during the initial callback. The workspace provides no test script; these checks ran on Node 22, while the README specifies Node 16.20.2.

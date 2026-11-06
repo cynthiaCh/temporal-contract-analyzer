@@ -1,0 +1,3 @@
+Draft edits now save the latest text after 120 ms of quiet, and later editing bursts save too. Close and navigation flush pending edits before returning; submit flushes before capturing its receipt. The save badge and submission notice still follow the editor visit. The search preview is unchanged.
+
+Focused checks passed for editing bursts, close and reopen, submit, and navigation triggered by a save callback.

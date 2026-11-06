@@ -1,0 +1,3 @@
+Updated [usePreparation.js](/workspace/src/usePreparation.js) so the download dialog retries pending preparation and marks the file complete only after a ready response. Closing, reopening, or unmounting cancels scheduled retries and prevents older results from completing the current visit.
+
+A local hook harness passed checks for pending-to-ready polling, late results, same-token reopening, and retry cancellation. `node --check` passed. React packages were unavailable, so I could not run a rendered component test.

@@ -1,0 +1,3 @@
+Updated [usePreparation.js](/workspace/src/usePreparation.js) so the download dialog schedules another check while preparation is pending and records the file as completed only when a check reports ready. Closing, reopening, or unmounting cancels scheduled retries and prevents older results from completing a later visit.
+
+`node --check src/usePreparation.js` passed. I could not run a React behavior check because dependencies are not installed in the workspace.

@@ -1,0 +1,1 @@
+Fixed the premium action so a first click made before entitlement finishes loading is honored when the user is entitled. The emergency control is unchanged. Checks passed for early and later clicks with entitlement on and off, plus the emergency path.

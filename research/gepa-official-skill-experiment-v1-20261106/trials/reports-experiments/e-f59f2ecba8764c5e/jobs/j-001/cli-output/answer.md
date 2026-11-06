@@ -1,0 +1,3 @@
+Restored the initial panel update by registering its progress listener before starting the feed. Decoded frames still enter progress history, while the panel displays only the newest received frame for the current attempt.
+
+A Node smoke check passed for the initial update, out-of-order decoding, retry, hide, reuse, and telemetry. No repository test suite was present. `git diff --check` could not run because this workspace is not a Git repository.

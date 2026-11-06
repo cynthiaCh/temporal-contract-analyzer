@@ -1,0 +1,3 @@
+Updated [src/progress.js](/workspace/src/progress.js) to subscribe before `start()`, so the panel receives a synchronously emitted cached frame. The watcher now uses packet arrival order to prevent an older decoded frame from rolling the display backward; progress history still records every decoded frame.
+
+Focused Node checks passed for cached progress, out of order decoding, later updates, telemetry, retry, and synchronous hide and navigation during the initial callback. Git checks could not run because `/workspace` is not a Git repository.

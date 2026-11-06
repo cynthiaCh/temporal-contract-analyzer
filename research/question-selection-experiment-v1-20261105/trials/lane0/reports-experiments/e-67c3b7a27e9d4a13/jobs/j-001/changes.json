@@ -1,0 +1,14 @@
+{
+  "excluded": [],
+  "files": [
+    {
+      "after_mode": 420,
+      "after_sha256": "11907129315159a9b0d8e9f6aef6104edd852d0e89faf7d1a4af899c5b1f4304",
+      "before_mode": 420,
+      "before_sha256": "c349d97040889ef6d14ab0121e0dda2b2d1e951b898a0a1f33ccc9785288c000",
+      "diff": "--- before/src/presence-panel.js\n+++ after/src/presence-panel.js\n@@ -1,16 +1,30 @@\n import { createPresenceChannel } from \"./channel.js\";\n-import { subscribeChannel } from \"./subscription.js\";\n \n export function createPresencePanel(publish) {\n-  let release = () => {};\n+  let active = null;\n+  const detach = () => {\n+    const previous = active;\n+    active = null;\n+    if (previous) previous.channel.target.removeEventListener(\"presence\", previous.listener);\n+  };\n   return {\n     show(channel, bootstrapMode = \"synchronous\") {\n-      release();\n-      release = subscribeChannel(channel, bootstrapMode, publish);\n+      detach();\n+      const visit = { channel, listener: null };\n+      visit.listener = (event) => {\n+        const decoded = channel.decode(event.detail);\n+        const deliver = (value) => {\n+          if (active === visit) publish(value);\n+        };\n+        if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n+        else deliver(decoded);\n+      };\n+      active = visit;\n+      channel.target.addEventListener(\"presence\", visit.listener);\n+      channel.connect(bootstrapMode);\n     },\n     close() {\n-      release();\n-      release = () => {};\n+      detach();\n     },\n   };\n }\n",
+      "path": "src/presence-panel.js",
+      "truncated": false
+    }
+  ]
+}

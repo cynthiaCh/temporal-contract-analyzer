@@ -1,0 +1,23 @@
+{
+  "excluded": [],
+  "files": [
+    {
+      "after_mode": 420,
+      "after_sha256": "1bfbe302eb4954f669d714cbf95d64ce43d3123acf93ffa9cda75aaf44ef8944",
+      "before_mode": 420,
+      "before_sha256": "c349d97040889ef6d14ab0121e0dda2b2d1e951b898a0a1f33ccc9785288c000",
+      "diff": "--- before/src/presence-panel.js\n+++ after/src/presence-panel.js\n@@ -3,12 +3,20 @@\n \n export function createPresencePanel(publish) {\n   let release = () => {};\n+  let visit = 0;\n   return {\n     show(channel, bootstrapMode = \"synchronous\") {\n+      const current = ++visit;\n       release();\n-      release = subscribeChannel(channel, bootstrapMode, publish);\n+      release = () => {};\n+      subscribeChannel(channel, bootstrapMode, (value) => {\n+        if (visit === current) publish(value);\n+      }, (unsubscribe) => {\n+        release = unsubscribe;\n+      });\n     },\n     close() {\n+      ++visit;\n       release();\n       release = () => {};\n     },\n",
+      "path": "src/presence-panel.js",
+      "truncated": false
+    },
+    {
+      "after_mode": 420,
+      "after_sha256": "18fda0dc2d9b43bcea900fcdc90ed0ba85d4edc4aca6c1ec90625652d2f7ecc7",
+      "before_mode": 420,
+      "before_sha256": "ce862f1f8a3fe75044e4068261ae1753278562ac72c839e44a14d3976662a3a2",
+      "diff": "--- before/src/subscription.js\n+++ after/src/subscription.js\n@@ -1,12 +1,14 @@\n // The decoder may return a value or a Promise (compressed network frames).\n // EventTarget removal detaches reception; an already started decode still settles.\n-export function subscribeChannel(channel, bootstrapMode, receive) {\n+export function subscribeChannel(channel, bootstrapMode, receive, onSubscribed = () => {}) {\n   const listener = (event) => {\n     const decoded = channel.decode(event.detail);\n     if (decoded && typeof decoded.then === \"function\") decoded.then(receive);\n     else receive(decoded);\n   };\n+  channel.target.addEventListener(\"presence\", listener);\n+  const release = () => channel.target.removeEventListener(\"presence\", listener);\n+  onSubscribed(release);\n   channel.connect(bootstrapMode);\n-  channel.target.addEventListener(\"presence\", listener);\n-  return () => channel.target.removeEventListener(\"presence\", listener);\n+  return release;\n }\n",
+      "path": "src/subscription.js",
+      "truncated": false
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+```
+# Temporal contract skill: ownership, completion, and effects
+
+Purpose: Help complete the original maintenance task. Apply this skill only where the task and visible project evidence support it. It does not add product requirements or replace implementation with a contract discussion.
+
+## 1. Decide whether it applies
+
+Look for work that may complete after its initiating access, operation, or consumer changes; callbacks that may change ownership while a call is running; or one result that produces multiple effects. If none is present, briefly record the source basis for non-applicability and continue the maintenance task.
+
+## 2. Establish the contract from evidence
+
+Inspect the entry point, producer or decoder, dependency behavior, completion path, ownership transitions, cancellation or cleanup path, and every affected consumer. Follow calls across modules when a callback or shared helper can reenter the workflow. Cite relevant file and line locations in working notes.
+
+Keep four categories distinct: explicit task requirements, observed source behavior, hypotheses to test, and evidence that is unavailable. Do not infer a guarantee from a function name, an apparent convention, or a passing smoke check. Do not introduce data formats or behavior without support from the task or project.
+
+Identify the identities the code actually distinguishes: resource, access or visit, physical operation or attempt, and accepted result or unit of work. Trace where each identity is created, captured, replaced, retired, and checked. Determine whether cancellation prevents future input, stops work already started, suppresses delivery, or merely hides a consumer.
+
+## 3. Write the effect contract before changing code
+
+For each affected effect, state its owner and validity condition separately. Stored history, audit or queue records, current display, notices, and diagnostic consumers may have different lifetimes. A result can remain valid for one effect after it becomes stale for another. Check whether an earlier result may still be recorded after a listener is removed, and whether a later attempt or visit may display it.
+
+Treat removal and cancellation callbacks as possible ownership transitions when the source permits reentry. Account for work triggered synchronously during subscription, startup, cancellation, or publication. Preserve the existing public interface and behavior of other consumers of shared helpers.
+
+For ordered full results, distinguish event arrival order from completion order. Derive ordering from the visible producer contract; do not assume that completion order is display order or invent a field in the result.
+
+## 4. Compare concrete event orders
+
+Use controllable project APIs or focused checks to compare applicable orders:
+
+- Ordinary start and completion, including an initial synchronous emission if supported.
+- Completion after close, switch, retry, cancellation, or disposal.
+- Reuse of the same resource under a new access or operation.
+- Replacement of an operation within the same access.
+- Synchronous callback reentry during startup, subscription, release, or effect publication.
+- Two full results completing in arrival order and in reverse order.
+
+Observe each effect separately, including stored records and current presentation. Where a transition occurs during a call, check both the effect produced before the transition and the state and effects after control returns. Compare results against the established contract, not against an expected patch shape.
+
+## 5. Repair within the supported scope
+
+Implement the smallest change that satisfies the original task and the evidenced effect contracts. Preserve ordinary streaming or polling, retry, navigation, cleanup, diagnostics, records, and subsequent uses where they are part of the project. Avoid making one broad freshness guard govern effects with different owners.
+
+Background obligations, rollback, permission withdrawal, or a dependency that truly suppresses completion may change the contract. Seek visible evidence before applying a general rule. If evidence is insufficient, keep the point unresolved and avoid expanding behavior on speculation.
+
+## 6. Verify the maintenance result
+
+Run relevant project checks and focused behavioral checks available to the candidate. Inspect actual output, revise when a check exposes a mismatch, and rerun the affected checks. A check that cannot run because of repository layout, tooling, or environment is unrun; choose a suitable alternative when possible and report the limit accurately.
+
+Drive the important event orders and assert each affected effect independently. Include a transition that occurs synchronously inside an applicable producer or cleanup call when the source allows it; a later explicit transition does not cover that path. Check normal use and adjacent behavior after the transition, including reuse. Do not weaken a failing assertion merely to make a harness pass: first determine whether the expectation or implementation conflicts with the source-backed contract.
+
+A successful local harness establishes only the paths it exercised. A syntax check establishes syntax only. Failed or unrun checks remain explicit. Finish the original repair, or explain with evidence why no change is needed or why completion remains blocked.
+```

@@ -1,0 +1,565 @@
+### whole_behavior_score
+0.0
+
+### directional_observations
+#### Item 1
+##### evidence
+###### Item 1
+evidence-b8999f0801be70f0
+
+###### Item 2
+evidence-d012fa646b7efacc
+
+###### Item 3
+evidence-3516175a68b6a992
+
+###### Item 4
+evidence-a5fbc8b0fbdfa6fa
+
+###### Item 5
+evidence-eabd85ba0fc43544
+
+###### Item 6
+evidence-4b5ebe6f1c98d67e
+
+##### observed_events
+###### Item 1
+The earlier source started and produced progress before the observed navigation.
+
+###### Item 2
+A different resource was selected after that initial progress.
+
+###### Item 3
+The earlier source emitted a new input after that selection.
+
+###### Item 4
+That new input was appended to the earlier operation history.
+
+##### confirmed_order
+###### Item 1
+###### Item 1
+0
+
+###### Item 2
+1
+
+###### Item 2
+###### Item 1
+1
+
+###### Item 2
+2
+
+###### Item 3
+###### Item 1
+2
+
+###### Item 2
+3
+
+##### actual_difference
+There is an extra history entry from a newly emitted input of the earlier source; this is not merely completion of work accepted before navigation.
+
+##### direction
+###### Item 1
+extra
+
+##### requirement
+###### task_explicit
+Restore the initial progress and prevent display rollback while preserving navigation, cleanup and audit behavior.
+
+###### source_fact
+The source can emit synchronously, release removes reception, and recording and current presentation are distinct consumers.
+
+###### scored_comparison
+The trusted behavior record flags the additional history entry after navigation.
+
+###### scope
+Do not generalize to suppress history for already accepted work that completes later.
+
+##### source_binding_ids
+###### Item 1
+0
+
+###### Item 2
+1
+
+###### Item 3
+2
+
+###### Item 4
+3
+
+###### Item 5
+4
+
+###### Item 6
+5
+
+##### cause_hypotheses
+###### Item 1
+###### hypothesis
+An input-admission or lifecycle-handoff window may be involved.
+
+###### support
+cited event evidence and source bindings; not a unique cause
+
+##### unknowns
+###### Item 1
+The trace has no call-return markers and does not independently establish the exact candidate call stack, a guard placement or a patch.
+
+### preserved_current_behaviors
+#### Item 1
+##### behavior
+The public queue record shape remains within the task authorization.
+
+##### observation
+Passed in this current execution on the assessed path; not a universal proof.
+
+##### comparison_object
+current execution; no paired parent supplied
+
+##### evidence
+evidence-e52f078a8f83f75c
+
+##### source_binding_ids
+###### Item 1
+0
+
+###### Item 2
+1
+
+###### Item 3
+2
+
+###### Item 4
+3
+
+###### Item 5
+4
+
+###### Item 6
+5
+
+#### Item 2
+##### behavior
+Already accepted work can complete across hiding with history and presentation assessed separately.
+
+##### observation
+Passed in this current execution on the assessed path; not a universal proof.
+
+##### comparison_object
+current execution; no paired parent supplied
+
+##### evidence
+evidence-28da07f8ba54188d
+
+##### source_binding_ids
+###### Item 1
+0
+
+###### Item 2
+1
+
+###### Item 3
+2
+
+###### Item 4
+3
+
+###### Item 5
+4
+
+###### Item 6
+5
+
+#### Item 3
+##### behavior
+Hiding triggered during cleanup retains lifecycle handoff behavior.
+
+##### observation
+Passed in this current execution on the assessed path; not a universal proof.
+
+##### comparison_object
+current execution; no paired parent supplied
+
+##### evidence
+evidence-1dc7100dba49dc3f
+
+##### source_binding_ids
+###### Item 1
+0
+
+###### Item 2
+1
+
+###### Item 3
+2
+
+###### Item 4
+3
+
+###### Item 5
+4
+
+###### Item 6
+5
+
+#### Item 4
+##### behavior
+Navigation triggered during cleanup retains lifecycle handoff behavior.
+
+##### observation
+Passed in this current execution on the assessed path; not a universal proof.
+
+##### comparison_object
+current execution; no paired parent supplied
+
+##### evidence
+evidence-57af767b099ea8fd
+
+##### source_binding_ids
+###### Item 1
+0
+
+###### Item 2
+1
+
+###### Item 3
+2
+
+###### Item 4
+3
+
+###### Item 5
+4
+
+###### Item 6
+5
+
+#### Item 5
+##### behavior
+Delayed decoding and cleanup navigation retain their separate effects when combined.
+
+##### observation
+Passed in this current execution on the assessed path; not a universal proof.
+
+##### comparison_object
+current execution; no paired parent supplied
+
+##### evidence
+evidence-e2b1557b4c14736e
+
+##### source_binding_ids
+###### Item 1
+0
+
+###### Item 2
+1
+
+###### Item 3
+2
+
+###### Item 4
+3
+
+###### Item 5
+4
+
+###### Item 6
+5
+
+#### Item 6
+##### behavior
+Ordinary full-result completion retains streaming history and presentation.
+
+##### observation
+Passed in this current execution on the assessed path; not a universal proof.
+
+##### comparison_object
+current execution; no paired parent supplied
+
+##### evidence
+evidence-8aff07f137a78932
+
+##### source_binding_ids
+###### Item 1
+0
+
+###### Item 2
+1
+
+###### Item 3
+2
+
+###### Item 4
+3
+
+###### Item 5
+4
+
+###### Item 6
+5
+
+#### Item 7
+##### behavior
+Reversed decode completion retains history without current-display rollback.
+
+##### observation
+Passed in this current execution on the assessed path; not a universal proof.
+
+##### comparison_object
+current execution; no paired parent supplied
+
+##### evidence
+evidence-04a429dc4238cbef
+
+##### source_binding_ids
+###### Item 1
+0
+
+###### Item 2
+1
+
+###### Item 3
+2
+
+###### Item 4
+3
+
+###### Item 5
+4
+
+###### Item 6
+5
+
+#### Item 8
+##### behavior
+Replacement within one visit retains record/notice behavior and current-result ownership.
+
+##### observation
+Passed in this current execution on the assessed path; not a universal proof.
+
+##### comparison_object
+current execution; no paired parent supplied
+
+##### evidence
+evidence-987ff65725f8091f
+
+##### source_binding_ids
+###### Item 1
+0
+
+###### Item 2
+1
+
+###### Item 3
+2
+
+###### Item 4
+3
+
+###### Item 5
+4
+
+###### Item 6
+5
+
+#### Item 9
+##### behavior
+The diagnostic consumer retains its distinct reception behavior.
+
+##### observation
+Passed in this current execution on the assessed path; not a universal proof.
+
+##### comparison_object
+current execution; no paired parent supplied
+
+##### evidence
+evidence-927c89bcc4c23705
+
+##### source_binding_ids
+###### Item 1
+0
+
+###### Item 2
+1
+
+###### Item 3
+2
+
+###### Item 4
+3
+
+###### Item 5
+4
+
+###### Item 6
+5
+
+#### Item 10
+##### behavior
+Ordinary startup receives the initial input in history and current presentation.
+
+##### observation
+Passed in this current execution on the assessed path; not a universal proof.
+
+##### comparison_object
+current execution; no paired parent supplied
+
+##### evidence
+evidence-4a0a05dee4aa6af4
+
+##### source_binding_ids
+###### Item 1
+0
+
+###### Item 2
+1
+
+###### Item 3
+2
+
+###### Item 4
+3
+
+###### Item 5
+4
+
+###### Item 6
+5
+
+### comparison_objects
+#### against_unchanged_start
+##### passed_check_losses
+0
+
+##### passed_assertion_failures
+0
+
+##### meaning
+These counts compare with the unchanged candidate source, not a parent skill execution.
+
+#### against_parent_execution
+##### available
+False
+
+##### gained
+None
+
+##### lost
+None
+
+##### reason
+No paired parent execution was supplied. Do not interpret unavailable as zero.
+
+### visible_source_bindings
+#### Item 1
+##### path
+original task
+
+##### start_line
+1
+
+##### end_line
+6
+
+##### visible_file_sha256
+d26e3704aa3310cfd4df9ae7393cbbb806dd3d5435d8005bf1509ef34863bc78
+
+##### snapshot
+frozen candidate start; inspect the supplied actual diff for changes
+
+#### Item 2
+##### path
+README.md
+
+##### start_line
+8
+
+##### end_line
+26
+
+##### visible_file_sha256
+dd7e418532233021f6bce86d712b6a6dd1f1f5a4796812eb8d2069444c9ab26c
+
+##### snapshot
+frozen candidate start; inspect the supplied actual diff for changes
+
+#### Item 3
+##### path
+src/progress-source.js
+
+##### start_line
+8
+
+##### end_line
+30
+
+##### visible_file_sha256
+fa6b9877c3fec8b95e1b5190fcf4514372e75b3b427c658435250e8ee52abe7a
+
+##### snapshot
+frozen candidate start; inspect the supplied actual diff for changes
+
+#### Item 4
+##### path
+src/queue.js
+
+##### start_line
+8
+
+##### end_line
+19
+
+##### visible_file_sha256
+7018d36249fb316c093c8fd992e8eabb1dc9a5ea82c054107120e007293bce4d
+
+##### snapshot
+frozen candidate start; inspect the supplied actual diff for changes
+
+#### Item 5
+##### path
+src/transfer.js
+
+##### start_line
+3
+
+##### end_line
+17
+
+##### visible_file_sha256
+fd27be4d41174cd20fea6d50e5b6be08da089f46779823c699709b64846fc4f8
+
+##### snapshot
+frozen candidate start; inspect the supplied actual diff for changes
+
+#### Item 6
+##### path
+src/panel.js
+
+##### start_line
+10
+
+##### end_line
+25
+
+##### visible_file_sha256
+9c0ac97b224ade688d62bde60f1b3327e7b565a22ec4bf16450ae1269190269e
+
+##### snapshot
+frozen candidate start; inspect the supplied actual diff for changes
+
+### unknowns
+#### Item 1
+Observed events, scored comparator differences, visible requirements and causal hypotheses are distinct.
+
+#### Item 2
+Passing a selected path does not establish all combinations.
+
+#### Item 3
+No patch or root cause follows uniquely from these observations.
+
+#### Item 4
+Only the current train record is projected; rejected-child history is not automatically added.
+

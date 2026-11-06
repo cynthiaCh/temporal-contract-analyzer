@@ -1,0 +1,104 @@
+{
+  "ast_expansion": false,
+  "code_characters": 4069,
+  "corpus_files": [
+    "package.json",
+    "src/BackgroundExportPanel.jsx",
+    "src/DownloadDialog.jsx",
+    "src/preparation-api.js",
+    "src/usePreparation.js"
+  ],
+  "elapsed_seconds": 0.0006962055340409279,
+  "omitted": [],
+  "query": "# Task\n\nThe preparation service can now report that a file is still pending before it becomes ready. Update the file download dialog so it keeps checking pending preparation and delivers the file only after a ready status.\n\n",
+  "query_terms": [
+    "after",
+    "becomes",
+    "before",
+    "can",
+    "checking",
+    "delivers",
+    "dialog",
+    "download",
+    "file",
+    "keeps",
+    "now",
+    "only",
+    "pending",
+    "preparation",
+    "ready",
+    "report",
+    "service",
+    "so",
+    "status",
+    "still",
+    "task",
+    "update"
+  ],
+  "retriever": "Pure BM25 k1=1.5,b=.75, path tokens + raw text,48lines/stride40,top8,max12000raw characters",
+  "selected": [
+    {
+      "end_line": 18,
+      "file": "src/DownloadDialog.jsx",
+      "score": 5.96881967878524,
+      "start_line": 1
+    },
+    {
+      "end_line": 48,
+      "file": "src/usePreparation.js",
+      "score": 2.6709577884092974,
+      "start_line": 1
+    },
+    {
+      "end_line": 10,
+      "file": "package.json",
+      "score": 1.5850878320938853,
+      "start_line": 1
+    },
+    {
+      "end_line": 27,
+      "file": "src/preparation-api.js",
+      "score": 0.9947112874191746,
+      "start_line": 1
+    },
+    {
+      "end_line": 48,
+      "file": "src/BackgroundExportPanel.jsx",
+      "score": 0.676890786526439,
+      "start_line": 1
+    }
+  ],
+  "snippets": [
+    {
+      "code": "{\n  \"name\": \"download-polling-restoration-low-cue-react18-fixture\",\n  \"version\": \"0.0.0\",\n  \"private\": true,\n  \"dependencies\": {\n    \"react\": \"18.3.1\",\n    \"react-dom\": \"18.3.1\"\n  }\n}\n\n",
+      "end_line": 10,
+      "file": "package.json",
+      "start_line": 1
+    },
+    {
+      "code": "\"use strict\";\n\nconst React = require(\"react\");\nconst api = require(\"./preparation-api.js\");\n\nclass BackgroundExportPanel extends React.Component {\n  constructor(props) {\n    super(props);\n    this.state = { visible: true, loading: false, retryScheduled: false, checkCount: 0, completed: [], token: props.token };\n    this.retry = null;\n    this.active = true;\n  }\n\n  componentWillUnmount() {\n    this.active = false;\n    if (this.retry !== null) api.cancelPreparationRetry(this.retry);\n  }\n\n  start = () => {\n    const token = this.state.token;\n    this.setState((state) => ({ loading: true, checkCount: state.checkCount + 1 }));\n    api.checkPreparation(token).then((done) => {\n      if (!this.active) return;\n      if (done) {\n        this.retry = null;\n        this.setState((state) => ({\n          loading: false,\n          retryScheduled: false,\n          completed: state.completed.includes(token) ? state.completed : [...state.completed, token],\n        }));\n      } else {\n        this.retry = api.schedulePreparationRetry(this.start);\n        this.setState({ retryScheduled: true });\n      }\n    });\n  };\n\n  close = () => this.setState({ visible: false });\n\n  snapshot = () => ({ ...this.state, completed: [...this.state.completed] });\n\n  render() {\n    return React.createElement(\"section\", {\n      \"data-surface\": \"background-export\",\n      \"data-visible\": String(this.state.visible),\n      \"data-loading\": String(this.state.loading),\n    });\n  }\n",
+      "end_line": 48,
+      "file": "src/BackgroundExportPanel.jsx",
+      "start_line": 1
+    },
+    {
+      "code": "\"use strict\";\n\nconst React = require(\"react\");\nconst { usePreparation } = require(\"./usePreparation.js\");\n\nconst DownloadDialog = React.forwardRef(function DownloadDialog({ token }, ref) {\n  const preparation = usePreparation(token);\n  React.useImperativeHandle(ref, () => preparation);\n  const snapshot = preparation.snapshot();\n  return React.createElement(\"section\", {\n    \"data-surface\": \"download-dialog\",\n    \"data-visible\": String(snapshot.visible),\n    \"data-loading\": String(snapshot.loading),\n  });\n});\n\nmodule.exports = { DownloadDialog };\n\n",
+      "end_line": 18,
+      "file": "src/DownloadDialog.jsx",
+      "start_line": 1
+    },
+    {
+      "code": "\"use strict\";\n\nfunction checkPreparation(token) {\n  if (typeof globalThis.__preparationTransport !== \"function\") {\n    throw new Error(\"preparation transport is not installed\");\n  }\n  return globalThis.__preparationTransport(token);\n}\n\nfunction schedulePreparationRetry(callback) {\n  if (typeof globalThis.__schedulePreparationRetry !== \"function\") {\n    throw new Error(\"retry scheduler is not installed\");\n  }\n  return globalThis.__schedulePreparationRetry(callback);\n}\n\nfunction cancelPreparationRetry(handle) {\n  if (typeof globalThis.__cancelPreparationRetry === \"function\") {\n    globalThis.__cancelPreparationRetry(handle);\n  }\n}\n\nmodule.exports = {\n  checkPreparation,\n  schedulePreparationRetry,\n  cancelPreparationRetry,\n};\n",
+      "end_line": 27,
+      "file": "src/preparation-api.js",
+      "start_line": 1
+    },
+    {
+      "code": "\"use strict\";\n\nconst React = require(\"react\");\nconst { checkPreparation } = require(\"./preparation-api.js\");\n\nfunction usePreparation(initialToken) {\n  const state = React.useRef({\n    visible: true,\n    loading: false,\n    retryScheduled: false,\n    checkCount: 0,\n    completed: [],\n    token: initialToken,\n  });\n  const [, render] = React.useReducer((value) => value + 1, 0);\n\n  const publish = () => render();\n  const check = () => {\n    const requestToken = state.current.token;\n    state.current.loading = true;\n    state.current.checkCount += 1;\n    publish();\n    checkPreparation(requestToken).then((status) => {\n      state.current.loading = false;\n      if (status) state.current.completed.push(requestToken);\n      publish();\n    });\n  };\n\n  return {\n    start: check,\n    close() {\n      state.current.visible = false;\n      publish();\n    },\n    reopen(nextToken) {\n      state.current.token = nextToken;\n      state.current.visible = true;\n      publish();\n      check();\n    },\n    snapshot() {\n      return { ...state.current, completed: [...state.current.completed] };\n    },\n  };\n}\n\nmodule.exports = { usePreparation };\n",
+      "end_line": 48,
+      "file": "src/usePreparation.js",
+      "start_line": 1
+    }
+  ],
+  "static_findings_used": false
+}

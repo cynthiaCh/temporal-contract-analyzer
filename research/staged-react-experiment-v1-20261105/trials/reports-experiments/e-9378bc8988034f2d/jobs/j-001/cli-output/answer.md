@@ -1,0 +1,3 @@
+Updated [src/progress.js](/workspace/src/progress.js) so the panel subscribes before the feed starts. The cached first frame now appears immediately. Packet arrival order prevents an older asynchronous decode from moving the display backward; progress history still records every decoded frame.
+
+Smoke checks passed for the initial frame, out-of-order decoding, and telemetry’s existing live-delta behavior.

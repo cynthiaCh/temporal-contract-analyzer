@@ -1,0 +1,3 @@
+Updated [src/progress.js](/workspace/src/progress.js) to subscribe before starting the feed, so the panel receives a synchronous warm progress packet. It now uses packet order to prevent an older, slower decoded frame from moving the display backward, while still recording every decoded frame.
+
+Focused Node checks passed for warm progress, reversed decode completion, retry, hide and reuse, pending completion after hide, reentrant hide, and unchanged diagnostic telemetry. `git diff --check` could not run because this workspace is not a Git repository.

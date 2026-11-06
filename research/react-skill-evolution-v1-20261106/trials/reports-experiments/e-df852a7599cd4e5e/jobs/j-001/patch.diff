@@ -1,0 +1,68 @@
+--- before/src/editor.js
++++ after/src/editor.js
+@@ -1,27 +1,44 @@
+ import { attachSaveStatus } from "./save-status.js";
++import { createTrailingTask } from "./trailing-task.js";
+ 
+ export function createDraftEditor({ store, timers, renderDocument, renderStatus }) {
+   let current = null;
+-  function close() {
++  let request = 0;
++  function leave() {
+     const leaving = current;
+     current = null;
+-    if (leaving) leaving.stop();
+-    renderDocument(null);
++    if (leaving) {
++      leaving.stop();
++      leaving.save.flush();
++    }
++  }
++  function close() {
++    const started = ++request;
++    leave();
++    if (request === started) renderDocument(null);
+   }
+   return {
+     open(id) {
+-      close();
+-      current = { id, text: store.read(id), visit: {}, stop: attachSaveStatus(store, id, renderStatus) };
+-      renderDocument({ id, text: current.text });
++      const started = ++request;
++      leave();
++      if (request !== started) return;
++      renderDocument(null);
++      const text = store.read(id);
++      const visit = { id, text, visit: {}, save: createTrailingTask(value => store.write(id, value), 120, timers) };
++      current = visit;
++      visit.stop = attachSaveStatus(store, id, renderStatus);
++      renderDocument({ id, text });
+     },
+     edit(text) {
+       if (!current) return;
+       current.text = text;
+-      store.write(current.id, text);
++      current.save.push(text);
+     },
+     selection() {
+       return current && { id: current.id, text: current.text, visit: current.visit };
+     },
++    flush() { if (current) current.save.flush(); },
++    isVisit(visit) { return current?.visit === visit; },
+     close,
+   };
+ }
+
+--- before/src/workspace.js
++++ after/src/workspace.js
+@@ -11,8 +11,9 @@
+     submit() {
+       const origin = editor.selection();
+       if (!origin) return null;
++      editor.flush();
+       const receipt = archive.capture({ id: origin.id, text: origin.text });
+-      renderSubmission(receipt);
++      if (editor.isVisit(origin.visit)) renderSubmission(receipt);
+       return receipt;
+     },
+   };

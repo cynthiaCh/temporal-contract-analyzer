@@ -1,0 +1,3 @@
+Updated [src/progress.js](/workspace/src/progress.js) to attach the panel listener before the feed starts, so a synchronous cached packet produces the initial progress update. It now tracks packet arrival order: every decoded frame is recorded in history, but an older frame that finishes decoding late cannot repaint the display.
+
+Node checks passed for the initial update, reversed decode completion, history, telemetry, reuse after hiding, and synchronous close and cleanup. No repository test suite was present.

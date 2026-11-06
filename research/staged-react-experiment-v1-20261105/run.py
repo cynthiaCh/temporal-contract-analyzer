@@ -1,0 +1,316 @@
+"""Study-local prompt experiment. No production changes or model retries."""
+import argparse
+import csv
+import hashlib
+import json
+import os
+from pathlib import Path
+import random
+import shutil
+import subprocess
+import sys
+import threading
+import time
+
+OUT = Path(__file__).resolve().parent
+REPO = OUT.parents[1]
+sys.path[:0] = [str(OUT), str(REPO)]
+os.environ['TCA_BENCH_ROOT'] = str(REPO.parent/'temporal-contract-bench-git')
+os.environ['TCA_PYTHON_BIN'] = '/home/sribd/anaconda3/bin/python3.11'
+from temporal_contract_analyzer import archive
+from temporal_contract_analyzer.workbench import Workbench, capture, file_modes, write_files
+from temporal_contract_analyzer.case_catalog import case_input, case_root
+from temporal_contract_analyzer.case_evaluation import invoke, runtime
+from source_retrieval import retrieve
+from retriever import load, render
+
+BANK = REPO/'research/temporal-contract-question-bank-v1/questions.jsonl'
+PRIOR = REPO/'research/question-selection-experiment-v1-20261105'
+NODE = REPO/'results/ad-model-effort-20261104/runtime/node-v16.20.2-linux-x64/bin/node'
+CASES = ['local-config-readiness-low-cue-vue2', 'download-polling-restoration-low-cue-react18',
+         'transfer-progress-composition-v4-vanilla', 'feature-flag-readiness-vue3']
+SEED = 2026110503
+MODEL = 'gpt-6-sol'
+EFFORT = 'low'
+TIMEOUT = 600
+read = lambda p: json.loads(Path(p).read_text())
+sha = lambda b: hashlib.sha256(b if isinstance(b, bytes) else b.encode()).hexdigest()
+save = archive.atomic_json
+
+
+def isolation(workspace, output, stages, profile, binary):
+    cmd = ['bwrap', '--die-with-parent', '--new-session', '--unshare-user', '--unshare-pid',
+           '--unshare-ipc', '--unshare-uts', '--cap-drop', 'ALL',
+           '--ro-bind', '/usr', '/usr', '--ro-bind', '/lib', '/lib',
+           '--ro-bind', '/lib64', '/lib64', '--symlink', 'usr/bin', '/bin',
+           '--symlink', 'usr/sbin', '/sbin', '--proc', '/proc', '--dev', '/dev',
+           '--tmpfs', '/tmp', '--dir', '/home/agent', '--dir', '/etc',
+           '--ro-bind', '/etc/resolv.conf', '/etc/resolv.conf',
+           '--ro-bind', '/etc/ssl', '/etc/ssl',
+           '--ro-bind', str(Path(binary).parent), '/opt',
+           '--ro-bind', str(NODE), '/runtime/node16',
+           '--bind', str(profile), '/home/agent/.codex',
+           '--bind', str(workspace), '/workspace', '--bind', str(output), '/output',
+           '--bind', str(stages), '/stage', '--chdir', '/workspace',
+           '--setenv', 'HOME', '/home/agent', '--setenv', 'CODEX_HOME', '/home/agent/.codex',
+           '--setenv', 'PATH', '/usr/bin:/bin:/runtime:/opt', '--setenv', 'LANG', 'C.UTF-8']
+    # Installed bwrap predates --clearenv. Explicitly clear inherited keys.
+    for key in sorted(os.environ):
+        if key not in ['HOME','CODEX_HOME','PATH','LANG']:
+            cmd += ['--unsetenv', key]
+    for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy']:
+        if key in os.environ:
+            cmd += ['--setenv', key, os.environ[key]]
+    return cmd + ['--']
+
+
+class IsolatedWorkbench(Workbench):
+    def command(self, manifest, workspace, answer):
+        directory = answer.parent
+        output = directory/'cli-output'
+        stages = directory/'stages'
+        profile = OUT/'.runtime'/manifest['id']
+        for path in [output, stages, profile]:
+            path.mkdir(parents=True, exist_ok=True)
+        profile.chmod(0o700)
+        for name in ['auth.json', 'config.toml', 'models_cache.json']:
+            source = Path.home()/'.codex'/name
+            if source.is_file():
+                shutil.copyfile(source, profile/name)
+                (profile/name).chmod(0o600)
+        inner = super().command(manifest, Path('/workspace'), Path('/output/answer.md'))
+        inner[0] = '/opt/codex'
+        inner[1:1] = []
+        inner += ['--add-dir', '/stage']
+        return isolation(workspace, output, stages, profile, self.codex) + inner
+
+
+def checksums(paths):
+    return {str(p): sha(p.read_bytes()) for p in sorted(set(paths)) if p.is_file()}
+
+
+def frozen():
+    p = read(OUT/'protocol.json')
+    assert sha((OUT/'protocol.json').read_bytes()) == (OUT/'protocol.sha256').read_text().strip()
+    for name, h in p['frozen_files'].items():
+        assert sha(Path(name).read_bytes()) == h, name
+    return p
+
+
+def histories():
+    records = []
+    for path in [REPO/'results/ad-model-effort-20261104/results.csv',
+                 REPO/'results/assistance-applicability-v1-20261105/pilot/results.csv']:
+        for row in csv.DictReader(path.open()):
+            if row.get('case') not in CASES:
+                continue
+            if 'model' in row:
+                if (row['model'], row['effort'], row['condition']) != (MODEL, EFFORT, 'none'):
+                    continue
+            elif row.get('arm') not in ['A', 'R']:
+                continue
+            records.append(dict(source=str(path), row=row))
+    for root in [PRIOR, REPO/'results/question-bank-rag-pilot-v1-20261105']:
+        for r in read(root/'results.json'):
+            if r['case'] in CASES:
+                records.append(dict(source=str(root/'results.json'), row=r))
+    return records
+
+
+def prepare():
+    assert not (OUT/'protocol.json').exists(), 'refuse overwrite'
+    assert (OUT/'source_retrieval.py').read_bytes() == (PRIOR/'source_retrieval.py').read_bytes()
+    assert (OUT/'retriever.py').read_bytes() == (PRIOR/'retriever.py').read_bytes()
+    save(OUT/'historical-selection.json', dict(selected_at=archive.now(), cases=CASES,
+         records=histories(), policy='3 history-failure selected + 1 stable control; zero certified independent generalization cases'))
+    save(OUT/'initial-git.json', dict(status=subprocess.check_output(['git','status','--porcelain=v1'],cwd=REPO,text=True),
+         diff=subprocess.check_output(['git','diff'],cwd=REPO,text=True),head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()))
+    wb = IsolatedWorkbench(OUT/'trials/reports', node=str(NODE))
+    runs = []
+    meta = {}
+    exposure = read(REPO/'research/temporal-contract-question-bank-v1/provenance.json')['split_policy']
+    save(OUT/'split-policy.json', exposure)
+    rng = random.Random(SEED)
+    first_orders = {}
+    for rep in [1, 2]:
+        order = list(CASES)
+        rng.shuffle(order)
+        for case in order:
+            if rep == 1:
+                first_orders[case] = ['A','B'] if rng.randrange(2) == 0 else ['B','A']
+            arms = first_orders[case] if rep == 1 else list(reversed(first_orders[case]))
+            for arm in arms:
+                m = wb.prepare_case(dict(case_id=case, model=MODEL, effort=EFFORT, timeout=TIMEOUT,
+                                        repeats=1, conditions=['none'], use_local_config=True))
+                folder = wb.folder(m['id'])
+                d = folder/'jobs/j-001'
+                files, _ = capture(folder/'input')
+                packet, source = retrieve(m['task'], files)
+                questions = render([q['id'] for q in load(BANK)], BANK)
+                common = (d/'prompt.md').read_text() + '\n<candidate-assistance>\n' + source + '\n' + questions + '\n</candidate-assistance>\n'
+                public = OUT/'materials'/case
+                public.mkdir(parents=True, exist_ok=True)
+                for name, text in [('common.md', common), ('source.md', source), ('questions.md', questions)]:
+                    p = public/name
+                    if p.exists():
+                        assert p.read_text() == text
+                    else:
+                        p.write_text(text)
+                save(public/'source-retrieval.json', packet)
+                prompt = common + ('\n<execution-workflow>\n'+(OUT/'B.md').read_text()+'\n</execution-workflow>\n' if arm=='B' else '')
+                (d/'prompt.md').write_text(prompt)
+                (d/'report.md').write_text(source+'\n'+questions)
+                j = m['jobs'][0]
+                j.update(prompt_sha256=sha(prompt), report_sha256=sha(source+'\n'+questions), report_characters=len(source+'\n'+questions))
+                m['workflow_study'] = dict(arm=arm, replicate=rep, stage_control='prompt-only', feedback=False)
+                save(folder/'manifest.json', m)
+                runs.append(dict(sequence=len(runs)+1, id=m['id'], case=case, arm=arm, replicate=rep,
+                                 path=str(folder), input_files=m['input_files'], common_sha256=sha(common),
+                                 prompt_sha256=sha(prompt), config=dict(model=MODEL,effort=EFFORT,timeout=TIMEOUT,mode=m['mode'])))
+                if case not in meta:
+                    cp = case_root(m['case'])/m['case']['manifest']
+                    cm = read(cp)
+                    meta[case] = dict(manifest=str(cp), manifest_sha256=sha(cp.read_bytes()),
+                         provenance=cm.get('provenance'), independent_unit_id=cm.get('independent_unit_id'),
+                         validation=cm.get('validation'), source_classification='development-source / author-exposed',
+                         certified_independent=False, oracle_files=checksums(list((cp.parent/'oracle').rglob('*'))))
+    save(OUT/'runs.json', runs)
+    # Freeze prompts/workflow BEFORE any calibration outcomes. Calibration never tunes B.
+    material_hashes = {case:dict(candidate=runs[next(i for i,r in enumerate(runs) if r['case']==case)]['input_files'],
+                          common=sha((OUT/'materials'/case/'common.md').read_bytes()),
+                          source=sha((OUT/'materials'/case/'source.md').read_bytes()),
+                          questions=sha((OUT/'materials'/case/'questions.md').read_bytes()), ast='disabled-both') for case in CASES}
+    save(OUT/'common-digests.json', material_hashes)
+    protected = list((REPO/'temporal_contract_analyzer').glob('*.py'))+list((REPO/'tools/temporal-contract-analyzer').rglob('*.cjs'))+[BANK]
+    protected += list(PRIOR.rglob('*'))
+    protected += list((REPO/'results/question-bank-rag-pilot-v1-20261105').rglob('*'))
+    protected += [Path(m['manifest']) for m in meta.values()]+[Path(f) for m in meta.values() for f in m['oracle_files']]
+    protected += [Path(r['path'])/'jobs/j-001/prompt.md' for r in runs]
+    protected += [f for r in runs for f in (Path(r['path'])/'input').rglob('*')]
+    protected += list(OUT.glob('*.py'))+list(OUT.glob('*.md'))+list((OUT/'materials').rglob('*.md'))
+    protected += [OUT/n for n in ['runs.json','historical-selection.json','split-policy.json','common-digests.json','initial-git.json']]
+    p = dict(schema='staged-react-v1',created_at=archive.now(),model=MODEL,effort=EFFORT,timeout=TIMEOUT,
+             max_invocations=16,extra_controller_calls=0,random_seed=SEED,model_sampling_seed=None,
+             output_limit='inherited CLI limits, no explicit output-token cap as in latest trusted round',
+             cases=meta, schedule=[{k:r[k] for k in ['sequence','case','arm','replicate','id']} for r in runs],
+             stage_control='prompt-only, no enforced state machine', ast_delivery=False,
+             source_rag='verbatim latest implementation',questions='fixed five, verbatim latest F rendering',
+             frozen_files=checksums(protected))
+    save(OUT/'protocol.json', p)
+    (OUT/'protocol.sha256').write_text(sha((OUT/'protocol.json').read_bytes())+'\n')
+    print('FROZEN_16', flush=True)
+
+
+def preflight():
+    p = frozen()
+    runs = read(OUT/'runs.json')
+    assert len(runs)==16
+    assert len({r['id'] for r in runs})==16
+    checks = []
+    wb = IsolatedWorkbench(OUT/'trials/reports', node=str(NODE))
+    synthetic = OUT/'offline-synthetic'
+    for name in ['workspace','output','stage','profile']:
+        (synthetic/name).mkdir(parents=True, exist_ok=True)
+    script = """set -eu
+test ! -e /home/sribd
+test ! -e /workspace/../materials
+test ! -e /proc/1/root/home/sribd
+test ! -e /research-side-secret
+echo source > /workspace/example.js
+node --check /workspace/example.js
+echo '{"stage":1,"event":"complete","evidence":"synthetic-only"}' > /stage/records.jsonl
+test ! -e /workspace/records.jsonl
+test ! -e /output/records.jsonl
+/opt/codex --version
+test -x /opt/codex-code-mode-host
+/opt/codex-code-mode-host --help
+echo ISOLATION_PASS
+"""
+    cmd = isolation(synthetic/'workspace',synthetic/'output',synthetic/'stage',synthetic/'profile',wb.codex)
+    proc = subprocess.run(cmd+['/bin/bash','-c',script],capture_output=True,text=True,timeout=30)
+    save(OUT/'offline-isolation.json',dict(exit_code=proc.returncode,stdout=proc.stdout,stderr=proc.stderr,
+         boundary='minimal mount namespace, new PID namespace; network shared for model transport'))
+    assert proc.returncode==0, proc.stderr
+    assert 'ISOLATION_PASS' in proc.stdout
+    for r in runs:
+        folder=Path(r['path']);m=read(folder/'manifest.json');d=folder/'jobs/j-001'
+        assert m['model']==MODEL and m['effort']==EFFORT and m['timeout']==600 and m['mode']=='workspace-write'
+        assert sha((d/'prompt.md').read_bytes())==r['prompt_sha256']
+        common=(OUT/'materials'/r['case']/'common.md').read_text()
+        assert sha(common)==r['common_sha256']
+        expected=common+ ('\n<execution-workflow>\n'+(OUT/'B.md').read_text()+'\n</execution-workflow>\n' if r['arm']=='B' else '')
+        assert (d/'prompt.md').read_text()==expected
+        assert m['input_files']==r['input_files']
+        for n,h in r['input_files'].items(): assert sha((folder/'input'/n).read_bytes())==h
+        inner=Workbench.command(wb,m,Path('/workspace'),Path('/output/answer.md'))+['--add-dir','/stage']
+        assert inner[inner.index('-m')+1]==MODEL and 'model_reasoning_effort="low"' in inner
+        checks.append(dict(id=r['id'],arm=r['arm'],common_sha256=r['common_sha256'],inner_command=inner))
+    # Original trusted calibration; researcher-only, never mounted in agent namespace.
+    calibrations=[]
+    for c,meta in p['cases'].items():
+        cp=Path(meta['manifest']);cm=read(cp);rt=runtime(cm,'legacy-js',str(NODE))
+        for label in ['unchanged','reference']:
+            files,_=capture(cp.parent/'base');modes=file_modes(cp.parent/'base',files)
+            if label=='reference':
+                ref=cp.parent/cm['references']['bounded'];overlay,_=capture(ref);files.update(overlay);modes.update(file_modes(ref,overlay))
+            dest=OUT/'calibration'/c/label/'candidate'
+            if dest.exists():
+                raw=read(dest.parent/'oracle/stdout.json')
+                assert raw['verdict']==('PASS' if label=='reference' else 'UNDERREACH')
+                calibrations.append(dict(case=c,label=label,verdict=raw['verdict'],runtime=rt,reused=True))
+                continue
+            write_files(dest,files,modes)
+            raw=invoke([rt['path'],str(cp.parent/cm['oracle']['probe']),str(dest),'ungranted'],dest.parent/'oracle',threading.Event(),Workbench.terminate,c)
+            assert raw['verdict']==('PASS' if label=='reference' else 'UNDERREACH'),(c,label,raw['verdict'])
+            calibrations.append(dict(case=c,label=label,verdict=raw['verdict'],runtime=rt))
+    save(OUT/'calibration.json',calibrations)
+    save(OUT/'preflight.json',dict(status='PASS',at=archive.now(),checks=checks,calibrations=calibrations,
+         isolated_synthetic_mutation=True,stage_score_boundary=True,common_byte_equality=True,
+         no_formal_model_calls=True,prompts_frozen_before_calibration=True))
+    print('PREFLIGHT_PASS',flush=True)
+
+
+def execute(remaining=False):
+    frozen()
+    assert read(OUT/'preflight.json')['status']=='PASS'
+    if remaining:
+        assert read(OUT/'runtime-correction.json')['no_retries'] is True
+        ledger=read(OUT/'invocations.json');results=read(OUT/'results.json')
+        assert {r['id'] for r in ledger}=={r['id'] for r in results}
+    else:
+        assert not (OUT/'invocations.json').exists(), 'never resume/retry formal calls silently'
+        ledger=[];results=[]
+    wb=IsolatedWorkbench(OUT/'trials/reports',node=str(NODE))
+    save(OUT/'invocations.json',ledger)
+    for r in read(OUT/'runs.json'):
+        if r['id'] in {x['id'] for x in ledger}:
+            assert remaining
+            continue
+        frozen()
+        assert len(ledger)<16
+        ledger.append(dict(id=r['id'],sequence=r['sequence'],launched_at=archive.now()))
+        save(OUT/'invocations.json',ledger)
+        start=time.monotonic()
+        try:
+            wb.start(r['id']);wb.thread.join()
+            m=wb.read(r['id']);j=m['jobs'][0];ep=wb.latest_evaluation(r['id']);ev=read(ep) if ep else {};row=ev.get('jobs',{}).get('j-001',{})
+            category='execution-failure' if j['status']!='completed' else ('behavior-'+('pass' if row['status']=='passed' else 'failure') if ev.get('calibration_verdict')=='PASS' and row.get('status') in ['passed','failed'] else 'validation-unverified')
+            out=dict(r,process=j['status'],category=category,evaluation=str(ep) if ep else None,
+                     usage=j.get('usage'),started_at=j.get('started_at'),completed_at=j.get('completed_at'),
+                     job_result=str(Path(r['path'])/'jobs/j-001/result.json'))
+        except Exception as e:
+            out=dict(r,category='execution-error',error=type(e).__name__+': '+str(e))
+        finally:
+            shutil.rmtree(OUT/'.runtime'/r['id'],ignore_errors=True)
+        out['run_including_scoring_seconds']=time.monotonic()-start
+        results.append(out);save(OUT/'results.json',results)
+        print(json.dumps(dict(event='done',n=len(results),case=r['case'],arm=r['arm'],replicate=r['replicate'],category=out['category'])),flush=True)
+    save(OUT/'completion.json',dict(status='COMPLETE',invocations=len(ledger),results=len(results),at=archive.now()))
+
+
+if __name__=='__main__':
+    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['prepare','preflight','execute','remaining']);args=parser.parse_args()
+    if args.action=='remaining':
+        execute(remaining=True)
+    else:
+        globals()[args.action]()

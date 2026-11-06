@@ -1,0 +1,1 @@
+Fixed the premium action so an early first click waits for entitlement to load before deciding what to do. Verified both click timings for entitled and non-entitled users. The emergency control was not changed.

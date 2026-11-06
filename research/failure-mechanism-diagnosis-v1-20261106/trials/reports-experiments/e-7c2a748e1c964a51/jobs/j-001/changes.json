@@ -1,0 +1,32 @@
+{
+  "excluded": [],
+  "files": [
+    {
+      "after_mode": 420,
+      "after_sha256": "8b77025d312cee23ba50beab750f69a6fc7a7331aead6315cbaf31ba3f0b45c2",
+      "before_mode": 420,
+      "before_sha256": "69812c6d3f111528ec61c6807c25d727ba291e93c1b19f2d9e6e978d08f35061",
+      "diff": "--- before/src/progress.js\n+++ after/src/progress.js\n@@ -1,12 +1,27 @@\n // The source is shared by visits of the same file. Decoding may settle later.\n-export function watchTransferProgress(feed, receive, record) {\n+export function watchTransferProgress(feed, receive, record, accept = () => true) {\n+  let nextFrame = 0;\n+  let lastShown = 0;\n   const listener = event => {\n-    const deliver = frame => { record(frame); receive(frame); };\n+    if (!accept()) return;\n+    const order = ++nextFrame;\n+    const deliver = frame => {\n+      record(frame);\n+      if (order > lastShown) {\n+        lastShown = order;\n+        receive(frame);\n+      }\n+    };\n     const decoded = feed.decode(event.detail);\n     if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n     else deliver(decoded);\n   };\n-  feed.start();\n   feed.target.addEventListener(\"progress\", listener);\n+  try {\n+    feed.start();\n+  } catch (error) {\n+    feed.target.removeEventListener(\"progress\", listener);\n+    throw error;\n+  }\n   return () => feed.target.removeEventListener(\"progress\", listener);\n }\n",
+      "path": "src/progress.js",
+      "truncated": false
+    },
+    {
+      "after_mode": 420,
+      "after_sha256": "47a1150532b467560ebb2612d65063786b4a23e6b02508600d891cd3b4926b4c",
+      "before_mode": 420,
+      "before_sha256": "7018d36249fb316c093c8fd992e8eabb1dc9a5ea82c054107120e007293bce4d",
+      "diff": "--- before/src/queue.js\n+++ after/src/queue.js\n@@ -9,9 +9,11 @@\n   const attemptId = ++state.nextAttempt;\n   state.record(makeQueueRecord(visit.file, attemptId, visit.id, kind));\n   const progress = {\n+    accept() { return state.current === visit && state.nextAttempt === attemptId; },\n     record(frame) { state.recordProgress({ fileId: visit.file.id, attemptId, frame }); },\n     receive(frame) {\n-      if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });\n+      if (state.current === visit && state.nextAttempt === attemptId)\n+        state.showProgress({ fileId: visit.file.id, attemptId, frame });\n     },\n   };\n   const handle = createTransfer(visit.file, attemptId, state.transport, state.onCancel, progress);\n",
+      "path": "src/queue.js",
+      "truncated": false
+    },
+    {
+      "after_mode": 420,
+      "after_sha256": "cb16033952231b3bf77168d49f625e5d5215027dabd3cbbce143367dc6a6c4cd",
+      "before_mode": 420,
+      "before_sha256": "fd27be4d41174cd20fea6d50e5b6be08da089f46779823c699709b64846fc4f8",
+      "diff": "--- before/src/transfer.js\n+++ after/src/transfer.js\n@@ -9,7 +9,7 @@\n   }, { once: true });\n   transport({ file, attemptId, signal: controller.signal });\n   if (file.progressFeed) {\n-    stopProgress = watchTransferProgress(file.progressFeed, progress.receive, progress.record);\n+    stopProgress = watchTransferProgress(file.progressFeed, progress.receive, progress.record, progress.accept);\n     if (controller.signal.aborted) stopProgress();\n   }\n   return { file, attemptId, signal: controller.signal,\n",
+      "path": "src/transfer.js",
+      "truncated": false
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+Fixed the premium action so an entitled user’s first click is handled after the entitlement flag loads. The emergency control is unchanged. Verified early and later clicks with entitlement on and off, plus the emergency cases.

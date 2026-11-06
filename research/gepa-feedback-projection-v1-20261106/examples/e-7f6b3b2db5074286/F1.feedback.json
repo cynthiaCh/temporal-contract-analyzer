@@ -1,0 +1,244 @@
+{
+  "Inputs": {
+    "original_maintenance_task": "# Task\n\nThe preparation service can now report that a file is still pending before it becomes ready. Update the file download dialog so it keeps checking pending preparation and delivers the file only after a ready status.\n\n",
+    "visible_context": "# Retrieved candidate context\n\nRaw source, configuration and documentation excerpts selected using the original task only. Retrieval is incomplete; inspect other candidate files when needed.\n\n## package.json:1-10\n```\n{\n  \"name\": \"download-polling-restoration-low-cue-react18-fixture\",\n  \"version\": \"0.0.0\",\n  \"private\": true,\n  \"dependencies\": {\n    \"react\": \"18.3.1\",\n    \"react-dom\": \"18.3.1\"\n  }\n}\n```\n\n## src/BackgroundExportPanel.jsx:1-48\n```\n\"use strict\";\n\nconst React = require(\"react\");\nconst api = require(\"./preparation-api.js\");\n\nclass BackgroundExportPanel extends React.Component {\n  constructor(props) {\n    super(props);\n    this.state = { visible: true, loading: false, retryScheduled: false, checkCount: 0, completed: [], token: props.token };\n    this.retry = null;\n    this.active = true;\n  }\n\n  componentWillUnmount() {\n    this.active = false;\n    if (this.retry !== null) api.cancelPreparationRetry(this.retry);\n  }\n\n  start = () => {\n    const token = this.state.token;\n    this.setState((state) => ({ loading: true, checkCount: state.checkCount + 1 }));\n    api.checkPreparation(token).then((done) => {\n      if (!this.active) return;\n      if (done) {\n        this.retry = null;\n        this.setState((state) => ({\n          loading: false,\n          retryScheduled: false,\n          completed: state.completed.includes(token) ? state.completed : [...state.completed, token],\n        }));\n      } else {\n        this.retry = api.schedulePreparationRetry(this.start);\n        this.setState({ retryScheduled: true });\n      }\n    });\n  };\n\n  close = () => this.setState({ visible: false });\n\n  snapshot = () => ({ ...this.state, completed: [...this.state.completed] });\n\n  render() {\n    return React.createElement(\"section\", {\n      \"data-surface\": \"background-export\",\n      \"data-visible\": String(this.state.visible),\n      \"data-loading\": String(this.state.loading),\n    });\n  }\n```\n\n## src/DownloadDialog.jsx:1-18\n```\n\"use strict\";\n\nconst React = require(\"react\");\nconst { usePreparation } = require(\"./usePreparation.js\");\n\nconst DownloadDialog = React.forwardRef(function DownloadDialog({ token }, ref) {\n  const preparation = usePreparation(token);\n  React.useImperativeHandle(ref, () => preparation);\n  const snapshot = preparation.snapshot();\n  return React.createElement(\"section\", {\n    \"data-surface\": \"download-dialog\",\n    \"data-visible\": String(snapshot.visible),\n    \"data-loading\": String(snapshot.loading),\n  });\n});\n\nmodule.exports = { DownloadDialog };\n```\n\n## src/preparation-api.js:1-27\n```\n\"use strict\";\n\nfunction checkPreparation(token) {\n  if (typeof globalThis.__preparationTransport !== \"function\") {\n    throw new Error(\"preparation transport is not installed\");\n  }\n  return globalThis.__preparationTransport(token);\n}\n\nfunction schedulePreparationRetry(callback) {\n  if (typeof globalThis.__schedulePreparationRetry !== \"function\") {\n    throw new Error(\"retry scheduler is not installed\");\n  }\n  return globalThis.__schedulePreparationRetry(callback);\n}\n\nfunction cancelPreparationRetry(handle) {\n  if (typeof globalThis.__cancelPreparationRetry === \"function\") {\n    globalThis.__cancelPreparationRetry(handle);\n  }\n}\n\nmodule.exports = {\n  checkPreparation,\n  schedulePreparationRetry,\n  cancelPreparationRetry,\n};\n```\n\n## src/usePreparation.js:1-48\n```\n\"use strict\";\n\nconst React = require(\"react\");\nconst { checkPreparation } = require(\"./preparation-api.js\");\n\nfunction usePreparation(initialToken) {\n  const state = React.useRef({\n    visible: true,\n    loading: false,\n    retryScheduled: false,\n    checkCount: 0,\n    completed: [],\n    token: initialToken,\n  });\n  const [, render] = React.useReducer((value) => value + 1, 0);\n\n  const publish = () => render();\n  const check = () => {\n    const requestToken = state.current.token;\n    state.current.loading = true;\n    state.current.checkCount += 1;\n    publish();\n    checkPreparation(requestToken).then((status) => {\n      state.current.loading = false;\n      if (status) state.current.completed.push(requestToken);\n      publish();\n    });\n  };\n\n  return {\n    start: check,\n    close() {\n      state.current.visible = false;\n      publish();\n    },\n    reopen(nextToken) {\n      state.current.token = nextToken;\n      state.current.visible = true;\n      publish();\n      check();\n    },\n    snapshot() {\n      return { ...state.current, completed: [...state.current.completed] };\n    },\n  };\n}\n\nmodule.exports = { usePreparation };\n```\n\n"
+  },
+  "Generated_Outputs": {
+    "actual_reads": [
+      {
+        "event_line": 9,
+        "command": "/usr/bin/bash -lc 'cat src/usePreparation.js && cat src/BackgroundExportPanel.jsx && cat package.json && ls -la'",
+        "candidate_paths": [
+          "package.json",
+          "src/BackgroundExportPanel.jsx",
+          "src/usePreparation.js"
+        ]
+      }
+    ],
+    "modified_locations": [
+      {
+        "path": "src/usePreparation.js",
+        "diff": "--- before/src/usePreparation.js\n+++ after/src/usePreparation.js\n@@ -1,7 +1,7 @@\n \"use strict\";\n \n const React = require(\"react\");\n-const { checkPreparation } = require(\"./preparation-api.js\");\n+const { checkPreparation, schedulePreparationRetry, cancelPreparationRetry } = require(\"./preparation-api.js\");\n \n function usePreparation(initialToken) {\n   const state = React.useRef({\n@@ -13,27 +13,69 @@\n     token: initialToken,\n   });\n   const [, render] = React.useReducer((value) => value + 1, 0);\n+  const visit = React.useRef(0);\n+  const retry = React.useRef(null);\n+  const mounted = React.useRef(true);\n \n   const publish = () => render();\n+  const cancelRetry = () => {\n+    if (retry.current !== null) {\n+      cancelPreparationRetry(retry.current);\n+      retry.current = null;\n+    }\n+    state.current.retryScheduled = false;\n+  };\n   const check = () => {\n+    if (!mounted.current || !state.current.visible) return;\n+    cancelRetry();\n+    const currentVisit = ++visit.current;\n     const requestToken = state.current.token;\n     state.current.loading = true;\n     state.current.checkCount += 1;\n     publish();\n     checkPreparation(requestToken).then((status) => {\n+      if (!mounted.current || currentVisit !== visit.current || !state.current.visible) return;\n+      if (!status) {\n+        state.current.retryScheduled = true;\n+        publish();\n+        // A scheduler may invoke its callback before returning its handle.\n+        const handle = schedulePreparationRetry(() => {\n+          if (currentVisit !== visit.current || !mounted.current || !state.current.visible) return;\n+          retry.current = null;\n+          check();\n+        });\n+        if (currentVisit === visit.current && mounted.current && state.current.visible) retry.current = handle;\n+        else cancelPreparationRetry(handle);\n+        return;\n+      }\n       state.current.loading = false;\n-      if (status) state.current.completed.push(requestToken);\n+      state.current.retryScheduled = false;\n+      if (!state.current.completed.includes(requestToken)) state.current.completed.push(requestToken);\n       publish();\n     });\n   };\n \n+  React.useEffect(() => {\n+    mounted.current = true;\n+    return () => {\n+      mounted.current = false;\n+      visit.current += 1;\n+      cancelRetry();\n+    };\n+  }, []);\n+\n   return {\n     start: check,\n     close() {\n+      visit.current += 1;\n+      cancelRetry();\n       state.current.visible = false;\n+      state.current.loading = false;\n       publish();\n     },\n     reopen(nextToken) {\n+      visit.current += 1;\n+      cancelRetry();\n       state.current.token = nextToken;\n       state.current.visible = true;\n       publish();\n",
+        "truncated": false
+      }
+    ],
+    "tool_observations": [
+      {
+        "event_line": 7,
+        "command": "/usr/bin/bash -lc \"rg --files -g '\"'!node_modules'\"' -g '\"'!package-lock.json'\"' && rg -n \\\"usePreparation|DownloadDialog|pending|ready|schedulePreparationRetry|checkPreparation\\\" . -g '\"'!node_modules'\"'\"",
+        "exit_code": 0,
+        "actual_output": "package.json\nsrc/preparation-api.js\nsrc/DownloadDialog.jsx\nsrc/usePreparation.js\nsrc/BackgroundExportPanel.jsx\n./src/preparation-api.js:3:function checkPreparation(token) {\n./src/preparation-api.js:10:function schedulePreparationRetry(callback) {\n./src/preparation-api.js:11:  if (typeof globalThis.__schedulePreparationRetry !== \"function\") {\n./src/preparation-api.js:14:  return globalThis.__schedulePreparationRetry(callback);\n./src/preparation-api.js:24:  checkPreparation,\n./src/preparation-api.js:25:  schedulePreparationRetry,\n./src/DownloadDialog.jsx:4:const { usePreparation } = require(\"./usePreparation.js\");\n./src/DownloadDialog.jsx:6:const DownloadDialog = React.forwardRef(function DownloadDialog({ token }, ref) {\n./src/DownloadDialog.jsx:7:  const preparation = usePreparation(token);\n./src/DownloadDialog.jsx:17:module.exports = { DownloadDialog };\n./src/BackgroundExportPanel.jsx:22:    api.checkPreparation(token).then((done) => {\n./src/BackgroundExportPanel.jsx:32:        this.retry = api.schedulePreparationRetry(this.start);\n./src/usePreparation.js:4:const { checkPreparation } = require(\"./preparation-api.js\");\n./src/usePreparation.js:6:function usePreparation(initialToken) {\n./src/usePreparation.js:23:    checkPreparation(requestToken).then((status) => {\n./src/usePreparation.js:48:module.exports = { usePreparation };\n",
+        "output_truncated": false,
+        "command_truncated": false
+      },
+      {
+        "event_line": 9,
+        "command": "/usr/bin/bash -lc 'cat src/usePreparation.js && cat src/BackgroundExportPanel.jsx && cat package.json && ls -la'",
+        "exit_code": 0,
+        "actual_output": "\"use strict\";\n\nconst React = require(\"react\");\nconst { checkPreparation } = require(\"./preparation-api.js\");\n\nfunction usePreparation(initialToken) {\n  const state = React.useRef({\n    visible: true,\n    loading: false,\n    retryScheduled: false,\n    checkCount: 0,\n    completed: [],\n    token: initialToken,\n  });\n  const [, render] = React.useReducer((value) => value + 1, 0);\n\n  const publish = () => render();\n  const check = () => {\n    const requestToken = state.current.token;\n    state.current.loading = true;\n    state.current.checkCount += 1;\n    publish();\n    checkPreparation(requestToken).then((status) => {\n      state.current.loading = false;\n      if (status) state.current.completed.push(requestToken);\n      publish();\n    });\n  };\n\n  return {\n    start: check,\n    close() {\n      state.current.visible = false;\n      publish();\n    },\n    reopen(nextToken) {\n      state.current.token = nextToken;\n      state.current.visible = true;\n      publish();\n      check();\n    },\n    snapshot() {\n      return { ...state.current, completed: [...state.current.completed] };\n    },\n  };\n}\n\nmodule.exports = { usePreparation };\n\"use strict\";\n\nconst React = require(\"react\");\nconst api = require(\"./preparation-api.js\");\n\nclass BackgroundExportPanel extends React.Component {\n  constructor(props) {\n    super(props);\n    this.state = { visible: true, loading: false, retryScheduled: false, checkCount: 0, completed: [], token: props.token };\n    this.retry = null;\n    this.active = true;\n  }\n\n  componentWillUnmount() {\n    this.active = false;\n    if (this.retry !== null) api.cancelPreparationRetry(this.retry);\n  }\n\n  start = () => {\n    const token = this.state.token;\n    this.setState((state) => ({ loading: true, checkCount: state.checkCount + 1 }));\n    api.checkPreparation(token).then((done) => {\n      if (!this.active) return;\n      if (done) {\n        this.retry = null;\n        this.setState((state) => ({\n          loading: false,\n          retryScheduled: false,\n          completed: state.completed.includes(token) ? state.completed : [...state.completed, token],\n        }));\n      } else {\n        this.retry = api.schedulePreparationRetry(this.start);\n        this.setState({ retryScheduled: true });\n      }\n    });\n  };\n\n  close = () => this.setState({ visible: false });\n\n  snapshot = () => ({ ...this.state, completed: [...this.state.completed] });\n\n  render() {\n    return React.createElement(\"section\", {\n      \"data-surface\": \"background-export\",\n      \"data-visible\": String(this.state.visible),\n      \"data-loading\": String(this.state.loading),\n    });\n  }\n}\n\nmodule.exports = { BackgroundExportPanel };\n{\n  \"name\": \"download-polling-restoration-low-cue-react18-fixture\",\n  \"version\": \"0.0.0\",\n  \"private\": true,\n  \"dependencies\": {\n    \"react\": \"18.3.1\",\n    \"react-dom\": \"18.3.1\"\n  }\n}\n\ntotal 12\ndrwxrwxr-x  7 1000 1000 4096 Nov  6 08:30 .\ndrwxr-xr-x 16 1000 1000  380 Nov  6 08:30 ..\ndr-xr-xr-x  2 1000 1000   40 Nov  6 08:30 .agents\ndr-xr-xr-x  2 1000 1000   40 Nov  6 08:30 .aws\ndr-xr-xr-x  2 1000 1000   40 Nov  6 08:30 .codex\ndr-xr-xr-x  2 1000 1000   40 Nov  6 08:30 .git\n-rw-r--r--  1 1000 1000  185 Nov  6 08:30 package.json\ndrwxrwxr-x  2 1000 1000 4096 Nov  6 08:30 src\n",
+        "output_truncated": false,
+        "command_truncated": false
+      },
+      {
+        "event_line": 14,
+        "command": "/usr/bin/bash -lc \"node --check src/usePreparation.js && node -e \\\"try { console.log(require.resolve('react')) } catch (error) { console.log('react unavailable') }\\\" && git diff -- src/usePreparation.js\"",
+        "exit_code": 129,
+        "actual_output": "react unavailable\nwarning: Not a git repository. Use --no-index to compare two paths outside a working tree\nusage: git diff --no-index [<options>] <path> <path>\n\nDiff output format options\n    -p, --patch           generate patch\n    -s, --no-patch        suppress diff output\n    -u                    generate patch\n    -U, --unified[=<n>]   generate diffs with <n> lines context\n    -W, --function-context\n                          generate diffs with <n> lines context\n    --raw                 generate the diff in raw format\n    --patch-with-raw      synonym for '-p --raw'\n    --patch-with-stat     synonym for '-p --stat'\n    --numstat             machine friendly --stat\n    --shortstat           output only the last line of --stat\n    -X, --dirstat[=<param1,param2>...]\n                          output the distribution of relative amount of changes for each sub-directory\n    --cumulative          synonym for --dirstat=cumulative\n    --dirstat-by-file[=<param1,param2>...]\n                          synonym for --dirstat=files,param1,param2...\n    --check               warn if changes introduce conflict markers or whitespace errors\n    --summary             condensed summary such as creations, renames and mode changes\n    --name-only           show only names of changed files\n    --name-status         show only names and status of changed files\n    --stat[=<width>[,<name-width>[,<count>]]]\n                          generate diffstat\n    --stat-width <width>  generate diffstat with a given width\n    --stat-name-width <width>\n                          generate diffstat with a given name width\n    --stat-graph-width <width>\n                          generate diffstat with a given graph width\n    --stat-count <count>  generate diffstat with limited lines\n    --compact-summary     generate compact summary in diffstat\n    --binary              output a binary diff that can be applied\n    --full-index          show full pre- and post-image object names on the \"index\" lines\n    --color[=<when>]      show colored diff\n    --ws-error-highlight <kind>\n                          highlight whitespace errors in the 'context', 'old' or 'new' lines in the diff\n    -z                    do not munge pathnames and use NULs as output field terminators in --raw or --numstat\n    --abbrev[=<n>]        use <n> digits to display SHA-1s\n    --src-prefix <prefix>\n                          show the given source prefix instead of \"a/\"\n    --dst-prefix <prefix>\n                          show the given destination prefix instead of \"b/\"\n    --line-prefix <prefix>\n                          prepend an additional prefix to every line of output\n    --no-prefix           do not show any source or destination prefix\n    --inter-hunk-context <n>\n                          show context between diff hunks up to the specified number of lines\n    --output-indicator-new <char>\n                          specify the character to indicate a new line instead of '+'\n    --output-indicator-old <char>\n                          specify the character to indicate an old line instead of '-'\n    --output-indicator-context <char>\n                          specify the character to indicate a context instead of ' '\n\nDiff rename options\n    -B, --break-rewrites[=<n>[/<m>]]\n                          break complete rewrite changes into pairs of delete and create\n    -M, --find-renames[=<n>]\n                          detect renames\n    -D, --irreversible-delete\n                          omit the preimage for deletes\n    -C, --find-copies[=<n>]\n                          detect copies\n    --find-copies-harder  use unmodified files as source to find copies\n    --no-renames          disable rename detection\n    --rename-empty        use empty blobs as rename source\n    --follow              continue listing the history of a file beyond renames\n    -l <n>                prevent rename/copy detection if the number of rename/copy targets exceeds given limit\n\nDiff algorithm options\n    --minimal             produce the smallest possible diff\n    -w, --ignore-all-space\n                          ignore whitespace when comparing lines\n    -b, --ignore-space-change\n                          ignore changes in amount of whitespace\n    --ignore-space-at-eol\n                          ignore changes in whitespace at EOL\n    --ignore-cr-at-eol    ignore carrier-return at the end of line\n    --ignore-blank-lines  ignore changes whose lines are all blank\n    --indent-heuristic    heuristic to shift diff hunk boundaries for easy reading\n    --patience            generate diff using the \"patience diff\" algorithm\n    --histogram           generate diff using the \"histogram diff\" algorithm\n    --diff-algorithm <algorithm>\n                          choose a diff algorithm\n    --anchored <text>     generate diff using the \"anchored diff\" algorithm\n    --word-diff[=<mode>]  show word diff, using <mode> to delimit changed words\n    --word-diff-regex <regex>\n                          use <regex> to d",
+        "output_truncated": true,
+        "command_truncated": false
+      },
+      {
+        "event_line": 19,
+        "command": "/usr/bin/bash -lc \"node <<'NODE'\nconst assert = require('node:assert/strict');\nconst Module = require('node:module');\nconst oldLoad = Module._load;\nconst refs = [];\nlet index = 0;\nlet cleanup;\nconst React = {\n  useRef(value) { return refs[index++] ?? (refs[index - 1] = { current: value }); },\n  useReducer() { return [0, () => {}]; },\n  useEffect(effect) { cleanup = effect(); },\n};\nModule._load = function(name, parent, main) { return name === 'react' ? React : oldLoad.call(this, name, parent, main); };\nconst { usePreparation } = require('./src/usePreparation.js');\nconst checks = [];\nconst retries = [];\nconst cancelled = [];\nglobalThis.__preparationTransport = token => new Promise(resolve => checks.push({ token, resolve }));\nglobalThis.__schedulePreparationRetry = callback => { const handle = { callback }; retries.push(handle); return handle; };\nglobalThis.__cancelPreparationRetry = handle => cancelled.push(handle);\nconst hook = usePreparation('a');\nconst flush = () => new Promise(resolve => setImmediate(resolve));\n(async () => {\n  hook.start();\n  checks[0].resolve(false); await flush();\n  assert.equal(hook.snapshot().retryScheduled, true);\n  assert.deepEqual(hook.snapshot().completed, []);\n  retries[0].callback();\n  checks[1].resolve(true); await flush();\n  assert.deepEqual(hook.snapshot().completed, ['a']);\n  assert.equal(hook.snapshot().loading, false);\n  hook.reopen('a');\n  hook.close();\n  checks[2].resolve(true); await flush();\n  assert.deepEqual(hook.snapshot().completed, ['a']);\n  hook.reopen('b');\n  checks[3].resolve(false); await flush();\n  hook.close();\n  assert.ok(cancelled.includes(retries[1]));\n  retries[1].callback();\n  assert.equal(checks.length, 4);\n  cleanup();\n  console.log('focused hook checks passed');\n})().catch(error => { console.error(error); process.exitCode = 1; });\nNODE\nnode --check src/usePreparation.js\"",
+        "exit_code": 0,
+        "actual_output": "focused hook checks passed\n",
+        "output_truncated": false,
+        "command_truncated": false
+      }
+    ],
+    "visible_validation": [
+      {
+        "event_line": 14,
+        "tool_observation_reference": "same event_line in tool_observations",
+        "classification": "syntax or compound command; inspect original output",
+        "whole_shell_exit_code": 129,
+        "per_subcommand_exit_codes": "not separately captured; do not infer all subcommands failed or passed"
+      },
+      {
+        "event_line": 19,
+        "tool_observation_reference": "same event_line in tool_observations",
+        "classification": "syntax or compound command; inspect original output",
+        "whole_shell_exit_code": 0,
+        "per_subcommand_exit_codes": "not separately captured; do not infer all subcommands failed or passed"
+      }
+    ],
+    "delivery": {
+      "candidate_patch_present": true,
+      "trustworthy_whole_task_pass": true,
+      "execution_category": "behavior"
+    }
+  },
+  "Feedback": {
+    "whole_behavior_score": 1.0,
+    "directional_observations": [],
+    "preserved_current_behaviors": [
+      {
+        "behavior": "The adjacent background lifecycle policy is preserved.",
+        "observation": "Passed in this current execution on the assessed path; not a universal proof.",
+        "comparison_object": "current execution; no paired parent supplied",
+        "evidence": "evidence-9c98b6bce1d7d7b7",
+        "source_binding_ids": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "behavior": "The adjacent active background consumer retains its preparation behavior.",
+        "observation": "Passed in this current execution on the assessed path; not a universal proof.",
+        "comparison_object": "current execution; no paired parent supplied",
+        "evidence": "evidence-59756ef635f13eb7",
+        "source_binding_ids": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "behavior": "Closing clears the foreground waiting state.",
+        "observation": "Passed in this current execution on the assessed path; not a universal proof.",
+        "comparison_object": "current execution; no paired parent supplied",
+        "evidence": "evidence-73bdf6aaeb9c8932",
+        "source_binding_ids": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "behavior": "A late pending response does not restart work for a closed foreground access.",
+        "observation": "Passed in this current execution on the assessed path; not a universal proof.",
+        "comparison_object": "current execution; no paired parent supplied",
+        "evidence": "evidence-7bd8d0c500f5890d",
+        "source_binding_ids": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "behavior": "Late readiness does not complete a closed foreground access.",
+        "observation": "Passed in this current execution on the assessed path; not a universal proof.",
+        "comparison_object": "current execution; no paired parent supplied",
+        "evidence": "evidence-073a073cdbbbcf3a",
+        "source_binding_ids": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "behavior": "The current reopened access can still complete.",
+        "observation": "Passed in this current execution on the assessed path; not a universal proof.",
+        "comparison_object": "current execution; no paired parent supplied",
+        "evidence": "evidence-680395ddb7434510",
+        "source_binding_ids": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "behavior": "An earlier access cannot complete a reopened foreground access.",
+        "observation": "Passed in this current execution on the assessed path; not a universal proof.",
+        "comparison_object": "current execution; no paired parent supplied",
+        "evidence": "evidence-b28ba6d9dbefb433",
+        "source_binding_ids": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "behavior": "Active foreground preparation retries pending responses and delivers after readiness.",
+        "observation": "Passed in this current execution on the assessed path; not a universal proof.",
+        "comparison_object": "current execution; no paired parent supplied",
+        "evidence": "evidence-47c09393dd4eaeae",
+        "source_binding_ids": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "behavior": "The foreground waiting state remains consistent with ongoing pending preparation.",
+        "observation": "Passed in this current execution on the assessed path; not a universal proof.",
+        "comparison_object": "current execution; no paired parent supplied",
+        "evidence": "evidence-3201e42a575092fd",
+        "source_binding_ids": [
+          0,
+          1,
+          2,
+          3
+        ]
+      }
+    ],
+    "comparison_objects": {
+      "against_unchanged_start": {
+        "passed_check_losses": 0,
+        "passed_assertion_failures": 0,
+        "meaning": "These counts compare with the unchanged candidate source, not a parent skill execution."
+      },
+      "against_parent_execution": {
+        "available": false,
+        "gained": null,
+        "lost": null,
+        "reason": "No paired parent execution was supplied. Do not interpret unavailable as zero."
+      }
+    },
+    "visible_source_bindings": [
+      {
+        "path": "original task",
+        "start_line": 1,
+        "end_line": 4,
+        "visible_file_sha256": "81b31db6c783749b308c3e07e056b3281080d7f055676fd9479602d350a2e7d2",
+        "snapshot": "frozen candidate start; inspect the supplied actual diff for changes"
+      },
+      {
+        "path": "src/usePreparation.js",
+        "start_line": 1,
+        "end_line": 48,
+        "visible_file_sha256": "bae5584ddef2bbf12e8fc2d55744a0cb620f0ab75229ec3ccb8a86e613820259",
+        "snapshot": "frozen candidate start; inspect the supplied actual diff for changes"
+      },
+      {
+        "path": "src/DownloadDialog.jsx",
+        "start_line": 1,
+        "end_line": 18,
+        "visible_file_sha256": "11af74d8a0eb772f303752bc472cdc01deb13f28b98494b5120f3cbd8e2fc528",
+        "snapshot": "frozen candidate start; inspect the supplied actual diff for changes"
+      },
+      {
+        "path": "src/BackgroundExportPanel.jsx",
+        "start_line": 1,
+        "end_line": 51,
+        "visible_file_sha256": "5a0df9c1a86008aed73c76c08ba8f5713d7ac4cd4a7e8f10d83b9473e2aceff8",
+        "snapshot": "frozen candidate start; inspect the supplied actual diff for changes"
+      }
+    ],
+    "unknowns": [
+      "Observed events, scored comparator differences, visible requirements and causal hypotheses are distinct.",
+      "Passing a selected path does not establish all combinations.",
+      "No patch or root cause follows uniquely from these observations.",
+      "Only the current train record is projected; rejected-child history is not automatically added."
+    ]
+  }
+}

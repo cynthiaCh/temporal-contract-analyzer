@@ -1,0 +1,23 @@
+{
+  "excluded": [],
+  "files": [
+    {
+      "after_mode": 420,
+      "after_sha256": "3df530da577d1159bbc5a7097e0d7277e072e42a21a4cee3a4a64665c40c8392",
+      "before_mode": 420,
+      "before_sha256": "bb34b4ef38060d7b9b5bd7b83c82f757f7f6a49426d6d574689dd201930e7363",
+      "diff": "--- before/src/editor.js\n+++ after/src/editor.js\n@@ -1,27 +1,40 @@\n import { attachSaveStatus } from \"./save-status.js\";\n+import { createTrailingTask } from \"./trailing-task.js\";\n \n export function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n   let current = null;\n-  function close() {\n+  let navigationVersion = 0;\n+  function leave() {\n     const leaving = current;\n     current = null;\n-    if (leaving) leaving.stop();\n-    renderDocument(null);\n+    if (leaving) {\n+      leaving.stop();\n+      leaving.save.flush();\n+    }\n+    if (!current) renderDocument(null);\n   }\n   return {\n     open(id) {\n-      close();\n-      current = { id, text: store.read(id), visit: {}, stop: attachSaveStatus(store, id, renderStatus) };\n+      const version = ++navigationVersion;\n+      leave();\n+      if (version !== navigationVersion) return;\n+      current = { id, text: store.read(id), visit: {},\n+        save: createTrailingTask(text => store.write(id, text), 120, timers),\n+        stop: attachSaveStatus(store, id, renderStatus) };\n       renderDocument({ id, text: current.text });\n     },\n     edit(text) {\n       if (!current) return;\n       current.text = text;\n-      store.write(current.id, text);\n+      current.save.push(text);\n     },\n     selection() {\n       return current && { id: current.id, text: current.text, visit: current.visit };\n     },\n-    close,\n+    flush(selection) {\n+      if (current?.visit === selection.visit) current.save.flush();\n+    },\n+    isCurrent(visit) { return current?.visit === visit; },\n+    close() { ++navigationVersion; leave(); },\n   };\n }\n",
+      "path": "src/editor.js",
+      "truncated": false
+    },
+    {
+      "after_mode": 420,
+      "after_sha256": "1a2d846b53e626bccab5d5711f9fef25dd135a82b32572e9167923e57001144c",
+      "before_mode": 420,
+      "before_sha256": "384107918a232fa3826807a0d49f85748b2e408a75cb1f175d0423836bcb7abb",
+      "diff": "--- before/src/workspace.js\n+++ after/src/workspace.js\n@@ -11,8 +11,9 @@\n     submit() {\n       const origin = editor.selection();\n       if (!origin) return null;\n+      editor.flush(origin);\n       const receipt = archive.capture({ id: origin.id, text: origin.text });\n-      renderSubmission(receipt);\n+      if (editor.isCurrent(origin.visit)) renderSubmission(receipt);\n       return receipt;\n     },\n   };\n",
+      "path": "src/workspace.js",
+      "truncated": false
+    }
+  ]
+}

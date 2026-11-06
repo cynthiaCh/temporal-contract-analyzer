@@ -1,0 +1,229 @@
+{
+  "bank_sha256": "f50ba245c8baecb733559d83691b8266c22f97e9dfd4cf00cff46b15b671cb65",
+  "config": {
+    "b": 0.75,
+    "dedup": "one result per stable ID; identical core_question collapsed; score descending, ID ascending",
+    "fields": {
+      "core_question": 2,
+      "preconditions": 1,
+      "retrieval.description": 2,
+      "retrieval.en_keywords": 3,
+      "retrieval.zh_keywords": 3,
+      "title": 2,
+      "verification_methods": 1
+    },
+    "k1": 1.5,
+    "minimum_distinct_english_matches": 3,
+    "threshold": 5.0,
+    "tokenizer": "camel/snake English words + Chinese bigrams; unique query terms; fixed stopwords",
+    "top_k": 2
+  },
+  "elapsed_seconds": 0.002268770709633827,
+  "query": "# Maintenance task\n\nImmediately after opening the presence panel, the initial online-user state is\nsometimes missing even though later presence updates appear. Fix the presence\npanel while preserving its existing behavior, including workspace navigation.\n\nDo not change the metrics consumer.\n\n\nclass PresenceEvent extends Event {\n  constructor(detail) {\n    super(\"presence\");\n    this.detail = detail;\n  }\n}\n\nexport function createPresenceChannel(token, { decode = (value) => value } = {}) {\n  const target = new EventTarget();\n  const emit = (kind) => target.dispatchEvent(new PresenceEvent(`${token}:${kind}`));\n  return {\n    target,\n    decode,\n    connect(bootstrapMode) {\n      if (bootstrapMode === \"deferred\") queueMicrotask(() => emit(\"bootstrap\"));\n      else emit(\"bootstrap\");\n    },\n    emitUpdate() {\n      emit(\"update\");\n    },\n  };\n}\n\nexport async function observeChannel({ token, bootstrapMode }) {\n  const events = [];\n  const channel = createPresenceChannel(token);\n  channel.connect(bootstrapMode);\n  channel.target.addEventListener(\"presence\", (event) => events.push(event.detail));\n  await Promise.resolve();\n  channel.emitUpdate();\n  return { events };\n}\n\n\nimport { observeChannel } from \"./channel.js\";\n\nexport function collectMetrics(token) {\n  // Metrics deliberately attach after the synchronous bootstrap and count deltas only.\n  return observeChannel({ token, bootstrapMode: \"synchronous\" });\n}\n\n\nimport { createPresenceChannel } from \"./channel.js\";\nimport { subscribeChannel } from \"./subscription.js\";\n\nexport function createPresencePanel(publish) {\n  let release = () => {};\n  return {\n    show(channel, bootstrapMode = \"synchronous\") {\n      release();\n      release = subscribeChannel(channel, bootstrapMode, publish);\n    },\n    close() {\n      release();\n      release = () => {};\n    },\n  };\n}\n\nexport async function renderPresence(token, bootstrapMode) {\n  const events = [];\n  const panel = createPresencePanel((value) => events.push(value));\n  const channel = createPresenceChannel(token);\n  panel.show(channel, bootstrapMode);\n  await Promise.resolve();\n  channel.emitUpdate();\n  panel.close();\n  return { events };\n}\n\n\nimport { collectMetrics } from \"./metrics-consumer.js\";\nimport { renderPresence } from \"./presence-panel.js\";\n\nexport async function render({ token, bootstrapMode }) {\n  const [presence, metrics] = await Promise.all([\n    renderPresence(token, bootstrapMode),\n    collectMetrics(token),\n  ]);\n  return { presence, metrics };\n}\n\n\n// The decoder may return a value or a Promise (compressed network frames).\n// EventTarget removal detaches reception; an already started decode still settles.\nexport function subscribeChannel(channel, bootstrapMode, receive) {\n  const listener = (event) => {\n    const decoded = channel.decode(event.detail);\n    if (decoded && typeof decoded.then === \"function\") decoded.then(receive);\n    else receive(decoded);\n  };\n  channel.connect(bootstrapMode);\n  channel.target.addEventListener(\"presence\", listener);\n  return () => channel.target.removeEventListener(\"presence\", listener);\n}\n\n\nimport { createPresencePanel } from \"./presence-panel.js\";\n\n// Presence publication can synchronously select a different room or hide the\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot).\n// Reusing a transport object on a later visit is supported by the workspace.\nexport function createWorkspaceNavigation(renderState) {\n  const panel = createPresencePanel((value) => renderState(value, navigation));\n  const navigation = {\n    select(channel, mode = \"synchronous\") { panel.show(channel, mode); },\n    hide() { panel.close(); },\n  };\n  return navigation;\n}\n",
+  "query_sha256": "6e14e193e3d83d38c20284d78a8fc75dee86b4384420f53f79ab2822e6b98f61",
+  "query_summary": {
+    "snippet_characters": 3366,
+    "task_characters": 292,
+    "terms": [
+      "add",
+      "all",
+      "already",
+      "appear",
+      "async",
+      "attach",
+      "await",
+      "behavior",
+      "bootstrap",
+      "change",
+      "channel",
+      "chooser",
+      "class",
+      "close",
+      "collect",
+      "compressed",
+      "connect",
+      "constructor",
+      "consumer",
+      "count",
+      "create",
+      "decode",
+      "decoded",
+      "decoder",
+      "deferred",
+      "deliberately",
+      "deltas",
+      "detaches",
+      "detail",
+      "different",
+      "dispatch",
+      "do",
+      "emit",
+      "empty",
+      "even",
+      "event",
+      "events",
+      "example",
+      "existing",
+      "extends",
+      "fix",
+      "frames",
+      "hide",
+      "immediately",
+      "including",
+      "initial",
+      "its",
+      "js",
+      "kind",
+      "later",
+      "listener",
+      "maintenance",
+      "metrics",
+      "microtask",
+      "missing",
+      "mode",
+      "navigation",
+      "network",
+      "not",
+      "object",
+      "observe",
+      "online",
+      "opening",
+      "panel",
+      "presence",
+      "preserving",
+      "promise",
+      "publication",
+      "publish",
+      "push",
+      "queue",
+      "reacting",
+      "receive",
+      "reception",
+      "release",
+      "removal",
+      "remove",
+      "render",
+      "resolve",
+      "reusing",
+      "room",
+      "select",
+      "settles",
+      "show",
+      "snapshot",
+      "sometimes",
+      "started",
+      "state",
+      "still",
+      "subscribe",
+      "subscription",
+      "super",
+      "supported",
+      "synchronous",
+      "synchronously",
+      "target",
+      "though",
+      "token",
+      "transport",
+      "typeof",
+      "update",
+      "updates",
+      "user",
+      "visit",
+      "while",
+      "workspace"
+    ],
+    "unique_terms": 106
+  },
+  "ranked": [
+    {
+      "eligible": true,
+      "english_match_count": 7,
+      "id": "TCQ-001",
+      "matched_terms": [
+        "bootstrap",
+        "consumer",
+        "event",
+        "initial",
+        "listener",
+        "snapshot",
+        "synchronous"
+      ],
+      "reason": "selected: threshold and lexical support passed, within top-k",
+      "score": 14.0715666500871,
+      "term_contributions": {
+        "bootstrap": 2.3373449137022138,
+        "consumer": 2.3373449137022138,
+        "event": 2.3373449137022138,
+        "initial": 2.3373449137022138,
+        "listener": 2.3373449137022138,
+        "snapshot": 1.4760735221532577,
+        "synchronous": 0.908768559422774
+      }
+    },
+    {
+      "eligible": true,
+      "english_match_count": 4,
+      "id": "TCQ-003",
+      "matched_terms": [
+        "navigation",
+        "publication",
+        "state",
+        "synchronous"
+      ],
+      "reason": "selected: threshold and lexical support passed, within top-k",
+      "score": 7.716454068180942,
+      "term_contributions": {
+        "navigation": 2.2770436259759133,
+        "publication": 2.2770436259759133,
+        "state": 2.2770436259759133,
+        "synchronous": 0.8853231902532027
+      }
+    },
+    {
+      "eligible": false,
+      "english_match_count": 2,
+      "id": "TCQ-002",
+      "matched_terms": [
+        "async",
+        "visit"
+      ],
+      "reason": "below score threshold",
+      "score": 4.769418606554772,
+      "term_contributions": {
+        "async": 2.384709303277386,
+        "visit": 2.384709303277386
+      }
+    },
+    {
+      "eligible": false,
+      "english_match_count": 1,
+      "id": "TCQ-004",
+      "matched_terms": [
+        "snapshot"
+      ],
+      "reason": "below score threshold",
+      "score": 1.4318355544563568,
+      "term_contributions": {
+        "snapshot": 1.4318355544563568
+      }
+    },
+    {
+      "eligible": false,
+      "english_match_count": 1,
+      "id": "TCQ-005",
+      "matched_terms": [
+        "synchronous"
+      ],
+      "reason": "below score threshold",
+      "score": 0.890428124318379,
+      "term_contributions": {
+        "synchronous": 0.890428124318379
+      }
+    }
+  ],
+  "return_reason": "selected qualifying nonduplicate questions",
+  "selected_ids": [
+    "TCQ-001",
+    "TCQ-003"
+  ]
+}

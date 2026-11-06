@@ -1,0 +1,3 @@
+The draft editor now uses the existing trailing-task utility to save the latest text after 120 ms of inactivity. It flushes pending edits before close, navigation, or submit returns, so those operations still see the accepted text. I also preserved the save badge and submission notice behavior when a store callback navigates during a save. The adjacent search preview is unchanged.
+
+Basic save and synchronous reentry checks passed.

@@ -1,0 +1,94 @@
+--- before/src/usePreparation.js
++++ after/src/usePreparation.js
+@@ -1,7 +1,7 @@
+ "use strict";
+ 
+ const React = require("react");
+-const { checkPreparation } = require("./preparation-api.js");
++const { checkPreparation, schedulePreparationRetry, cancelPreparationRetry } = require("./preparation-api.js");
+ 
+ function usePreparation(initialToken) {
+   const state = React.useRef({
+@@ -13,31 +13,76 @@
+     token: initialToken,
+   });
+   const [, render] = React.useReducer((value) => value + 1, 0);
++  const attempt = React.useRef(0);
++  const retry = React.useRef(null);
++  const mounted = React.useRef(true);
++
++  React.useEffect(() => {
++    mounted.current = true;
++    return () => {
++      mounted.current = false;
++      attempt.current += 1;
++      if (retry.current !== null) cancelPreparationRetry(retry.current);
++      retry.current = null;
++    };
++  }, []);
+ 
+   const publish = () => render();
+-  const check = () => {
++  const check = (id) => {
++    if (!mounted.current || id !== attempt.current) return;
+     const requestToken = state.current.token;
++    state.current.retryScheduled = false;
+     state.current.loading = true;
+     state.current.checkCount += 1;
+     publish();
+     checkPreparation(requestToken).then((status) => {
+-      state.current.loading = false;
+-      if (status) state.current.completed.push(requestToken);
+-      publish();
++      if (!mounted.current || id !== attempt.current) return;
++      if (status) {
++        state.current.loading = false;
++        state.current.retryScheduled = false;
++        if (!state.current.completed.includes(requestToken)) state.current.completed.push(requestToken);
++        publish();
++      } else {
++        state.current.retryScheduled = true;
++        publish();
++        let fired = false;
++        const handle = schedulePreparationRetry(() => {
++          fired = true;
++          retry.current = null;
++          check(id);
++        });
++        if (!fired && mounted.current && id === attempt.current) retry.current = handle;
++        else cancelPreparationRetry(handle);
++      }
+     });
+   };
+ 
++  const stop = () => {
++    attempt.current += 1;
++    if (retry.current !== null) cancelPreparationRetry(retry.current);
++    retry.current = null;
++    state.current.loading = false;
++    state.current.retryScheduled = false;
++  };
++
++  const start = () => {
++    stop();
++    check(attempt.current);
++  };
++
+   return {
+-    start: check,
++    start,
+     close() {
++      stop();
+       state.current.visible = false;
+       publish();
+     },
+     reopen(nextToken) {
++      stop();
+       state.current.token = nextToken;
+       state.current.visible = true;
+       publish();
+-      check();
++      check(attempt.current);
+     },
+     snapshot() {
+       return { ...state.current, completed: [...state.current.completed] };

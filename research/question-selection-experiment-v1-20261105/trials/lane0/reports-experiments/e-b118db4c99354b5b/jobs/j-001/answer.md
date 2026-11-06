@@ -1,0 +1,3 @@
+Updated [workspace.js](/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/question-selection-experiment-v1-20261105/trials/lane0/reports-experiments/e-b118db4c99354b5b/jobs/j-001/workspace/src/workspace.js) so `open(id)` performs the departure handoff before showing the target. If the handoff synchronously starts a later navigation call, that call takes precedence.
+
+Verified the handoff receives the stored edited text, redirects retain edit ownership, and reentrant `dispose()` prevents the earlier `open` from showing its target.

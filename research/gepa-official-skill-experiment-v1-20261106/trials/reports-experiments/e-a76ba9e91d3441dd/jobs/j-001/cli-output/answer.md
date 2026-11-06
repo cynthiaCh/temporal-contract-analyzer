@@ -1,0 +1,3 @@
+Updated [src/progress.js](/workspace/src/progress.js) so the panel subscribes before a warm source emits its initial packet. Decoded frames still enter progress history, but only the newest received frame can update the display.
+
+A Node smoke check passed for the initial update, ordinary streaming, out-of-order decoding, retry, reuse, cleanup, and diagnostic telemetry. `git diff --check` could not run because this workspace is not a Git repository.

@@ -1,0 +1,23 @@
+{
+  "excluded": [],
+  "files": [
+    {
+      "after_mode": 420,
+      "after_sha256": "ab4b9274a56aafde745b718fd419cac18667cd8880f034ae5de4348186292c56",
+      "before_mode": 420,
+      "before_sha256": "bb34b4ef38060d7b9b5bd7b83c82f757f7f6a49426d6d574689dd201930e7363",
+      "diff": "--- before/src/editor.js\n+++ after/src/editor.js\n@@ -1,27 +1,46 @@\n import { attachSaveStatus } from \"./save-status.js\";\n+import { createTrailingTask } from \"./trailing-task.js\";\n \n export function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n   let current = null;\n+  let navigationRequest = 0;\n   function close() {\n+    const request = ++navigationRequest;\n     const leaving = current;\n     current = null;\n-    if (leaving) leaving.stop();\n-    renderDocument(null);\n+    if (leaving) {\n+      leaving.stop();\n+      leaving.save.flush();\n+    }\n+    if (request === navigationRequest) renderDocument(null);\n   }\n   return {\n     open(id) {\n-      close();\n-      current = { id, text: store.read(id), visit: {}, stop: attachSaveStatus(store, id, renderStatus) };\n+      const request = ++navigationRequest;\n+      const leaving = current;\n+      current = null;\n+      if (leaving) {\n+        leaving.stop();\n+        leaving.save.flush();\n+      }\n+      if (request !== navigationRequest) return;\n+      renderDocument(null);\n+      const text = store.read(id);\n+      const save = createTrailingTask(value => store.write(id, value), 120, timers);\n+      current = { id, text, visit: {}, save, stop: attachSaveStatus(store, id, renderStatus) };\n       renderDocument({ id, text: current.text });\n     },\n     edit(text) {\n       if (!current) return;\n       current.text = text;\n-      store.write(current.id, text);\n+      current.save.push(text);\n     },\n     selection() {\n       return current && { id: current.id, text: current.text, visit: current.visit };\n     },\n+    flushSelection(selection) {\n+      if (current?.visit === selection.visit) current.save.flush();\n+    },\n     close,\n   };\n }\n",
+      "path": "src/editor.js",
+      "truncated": false
+    },
+    {
+      "after_mode": 420,
+      "after_sha256": "45afbae959baa06ca4f15864807964e7d4c046fc9e1e55ef7bfafd46fbc0c8d7",
+      "before_mode": 420,
+      "before_sha256": "384107918a232fa3826807a0d49f85748b2e408a75cb1f175d0423836bcb7abb",
+      "diff": "--- before/src/workspace.js\n+++ after/src/workspace.js\n@@ -11,8 +11,9 @@\n     submit() {\n       const origin = editor.selection();\n       if (!origin) return null;\n+      editor.flushSelection(origin);\n       const receipt = archive.capture({ id: origin.id, text: origin.text });\n-      renderSubmission(receipt);\n+      if (editor.selection()?.visit === origin.visit) renderSubmission(receipt);\n       return receipt;\n     },\n   };\n",
+      "path": "src/workspace.js",
+      "truncated": false
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+The draft editor now uses the existing trailing-task utility to save only the latest text after a 120 ms quiet interval. Later editing bursts save normally. Closing, switching documents, and submitting flush pending edits so the store and submission receipt have the accepted text before those calls return. The search preview was untouched.
+
+Controlled-timer and reentrant-navigation checks passed. The workspace has no configured test script or Git repository, so I could not run those checks.

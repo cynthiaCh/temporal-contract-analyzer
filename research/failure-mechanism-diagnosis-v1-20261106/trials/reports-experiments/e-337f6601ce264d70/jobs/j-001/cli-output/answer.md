@@ -1,0 +1,3 @@
+Updated [src/progress.js](/workspace/src/progress.js) so the panel listens before a warm feed emits its initial packet. It now records every decoded frame while preventing an older frame that finishes decoding late from moving the display backward.
+
+Node checks passed for initial progress, out-of-order decoding, streaming, hide and reselect, queue record shape, and telemetry startup. The available runtime was Node 22; the README specifies Node 16.20.2.

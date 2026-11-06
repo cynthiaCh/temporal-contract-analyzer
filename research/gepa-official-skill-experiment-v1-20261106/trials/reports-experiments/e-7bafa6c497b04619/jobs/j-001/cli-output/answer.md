@@ -1,0 +1,3 @@
+Updated [src/progress.js](/workspace/src/progress.js) so the panel listener receives a warm source’s synchronous initial packet. Decoded frames now reach the display in packet arrival order, preventing an older decode from rolling it backward; progress history still records every decoded frame.
+
+Focused checks passed for initial progress, reverse decode completion, retry and reuse, diagnostic telemetry, and synchronous hide during the initial callback. `node --check` passed. Git diff was unavailable because `/workspace` is not a Git repository.

@@ -1,0 +1,3 @@
+The Personnel editor now uses [the local JSON configuration](/workspace/src/config/personnel-form.json). It waits for the form API before applying the rules and parent values, preserving the editor’s behavior when that API arrives later. The Structure editor was not changed.
+
+A candidate-visible check passed for delayed readiness, parent values, picker behavior, and repeated loading. The workspace has no test script or Git repository, so I could not run a project test suite or Git diff.

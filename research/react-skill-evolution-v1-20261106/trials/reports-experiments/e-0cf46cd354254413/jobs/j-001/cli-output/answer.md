@@ -1,0 +1,3 @@
+Updated [src/progress.js](/workspace/src/progress.js) so the panel subscribes before the feed emits its cached packet. It also uses packet arrival order to prevent a late decoded frame from moving the display backward; both frames still enter progress history.
+
+Direct Node assertions passed for warm startup, reversed decode completion, retry, navigation, cleanup, and telemetry. The workspace has no test script, so verification was limited to those checks.

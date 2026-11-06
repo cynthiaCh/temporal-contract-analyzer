@@ -1,0 +1,3 @@
+Updated the download dialog hook to retry pending preparation checks and add the file to `completed` only after a ready result. Closing, reopening, or unmounting cancels scheduled retries and prevents an earlier check from completing a later dialog visit.
+
+`node --check src/usePreparation.js` passed. I could not run a React check because dependencies are not installed in this workspace; `git diff --check` was unavailable because the workspace is not a Git repository.

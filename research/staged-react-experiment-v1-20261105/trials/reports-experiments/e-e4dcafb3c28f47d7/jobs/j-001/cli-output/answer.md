@@ -1,0 +1,3 @@
+Updated [src/progress.js](/workspace/src/progress.js) so the panel subscribes before a warm feed emits its initial packet. Every decoded frame still enters progress history, while an older frame that finishes decoding late cannot move the display backward. Telemetry and the transfer, retry, navigation, cleanup, and queue code were unchanged.
+
+Node checks passed for the initial update, out-of-order decoding, repeat selection, telemetry, queue shape, and hiding during the initial callback. `node --check` passed.

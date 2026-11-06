@@ -1,0 +1,3 @@
+The panel now subscribes before starting the progress feed, so it shows a warm initial packet immediately. If full frames finish decoding out of order, an older frame still enters progress history but cannot move the display backward. Cleanup is ready before the initial callback runs, including when that callback hides the panel.
+
+Local checks passed for those cases, ordinary updates, telemetry, and queue records. The checks ran on Node 22; the README specifies Node 16.20.2, which was not available here.

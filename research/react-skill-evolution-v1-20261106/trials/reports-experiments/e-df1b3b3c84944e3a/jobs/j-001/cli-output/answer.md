@@ -1,0 +1,3 @@
+Fixed the premium action in [temporal-flow.js](/workspace/src/temporal-flow.js:3). It now checks the loaded entitlement flag after readiness, so an entitled user’s first click can trigger the action. The emergency control is unchanged.
+
+All six visible behavior checks passed, covering early and later premium clicks and both emergency paths. The workspace has no Git repository, so `git diff` was unavailable.

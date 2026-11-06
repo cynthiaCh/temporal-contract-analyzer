@@ -1,0 +1,155 @@
+{
+  "commands": [
+    {
+      "command": "/usr/bin/bash -lc \"pwd && rg --files -g '\"'!node_modules'\"' -g '\"'!vendor'\"' | sort && rg -n \\\"subscribeChannel|createPresencePanel|createWorkspaceNavigation|renderPresence|collectMetrics\\\" .\"",
+      "exit_code": 0,
+      "line": 7,
+      "output": "/workspace\npackage.json\nsrc/channel.js\nsrc/metrics-consumer.js\nsrc/presence-panel.js\nsrc/render-workspace.js\nsrc/subscription.js\nsrc/workspace-navigation.js\n./src/subscription.js:3:export function subscribeChannel(channel, bootstrapMode, receive) {\n./src/workspace-navigation.js:1:import { createPresencePanel } from \"./presence-panel.js\";\n./src/workspace-navigation.js:6:export function createWorkspaceNavigation(renderState) {\n./src/workspace-navigation.js:7:  const panel = createPresencePanel((value) => renderState(value, navigation));\n./src/render-workspace.js:1:import { collectMetrics } from \"./metrics-consumer.js\";\n./src/render-workspace.js:2:import { renderPresence } from \"./presence-panel.js\";\n./src/render-workspace.js:6:    renderPresence(token, bootstrapMode),\n./src/render-workspace.js:7:    collectMetrics(token),\n./src/metrics-consumer.js:3:export function collectMetrics(token) {\n./src/presence-panel.js:2:import { subscribeChannel } from \"./subscription.js\";\n./src/presence-panel.js:4:export function createPresencePanel(publish) {\n./src/presence-panel.js:9:      release = subscribeChannel(channel, bootstrapMode, publish);\n./src/presence-panel.js:18:export async function renderPresence(token, bootstrapMode) {\n./src/presence-panel.js:20:  const panel = createPresencePanel((value) => events.push(value));\n"
+    },
+    {
+      "command": "/usr/bin/bash -lc 'cat package.json && cat src/presence-panel.js && cat src/subscription.js && cat src/channel.js && cat src/workspace-navigation.js && git status --short'",
+      "exit_code": 128,
+      "line": 9,
+      "output": "{\n  \"name\": \"listener-registration-order-vanilla-fixture\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\nimport { createPresenceChannel } from \"./channel.js\";\nimport { subscribeChannel } from \"./subscription.js\";\n\nexport function createPresencePanel(publish) {\n  let release = () => {};\n  return {\n    show(channel, bootstrapMode = \"synchronous\") {\n      release();\n      release = subscribeChannel(channel, bootstrapMode, publish);\n    },\n    close() {\n      release();\n      release = () => {};\n    },\n  };\n}\n\nexport async function renderPresence(token, bootstrapMode) {\n  const events = [];\n  const panel = createPresencePanel((value) => events.push(value));\n  const channel = createPresenceChannel(token);\n  panel.show(channel, bootstrapMode);\n  await Promise.resolve();\n  channel.emitUpdate();\n  panel.close();\n  return { events };\n}\n// The decoder may return a value or a Promise (compressed network frames).\n// EventTarget removal detaches reception; an already started decode still settles.\nexport function subscribeChannel(channel, bootstrapMode, receive) {\n  const listener = (event) => {\n    const decoded = channel.decode(event.detail);\n    if (decoded && typeof decoded.then === \"function\") decoded.then(receive);\n    else receive(decoded);\n  };\n  channel.connect(bootstrapMode);\n  channel.target.addEventListener(\"presence\", listener);\n  return () => channel.target.removeEventListener(\"presence\", listener);\n}\nclass PresenceEvent extends Event {\n  constructor(detail) {\n    super(\"presence\");\n    this.detail = detail;\n  }\n}\n\nexport function createPresenceChannel(token, { decode = (value) => value } = {}) {\n  const target = new EventTarget();\n  const emit = (kind) => target.dispatchEvent(new PresenceEvent(`${token}:${kind}`));\n  return {\n    target,\n    decode,\n    connect(bootstrapMode) {\n      if (bootstrapMode === \"deferred\") queueMicrotask(() => emit(\"bootstrap\"));\n      else emit(\"bootstrap\");\n    },\n    emitUpdate() {\n      emit(\"update\");\n    },\n  };\n}\n\nexport async function observeChannel({ token, bootstrapMode }) {\n  const events = [];\n  const channel = createPresenceChannel(token);\n  channel.connect(bootstrapMode);\n  channel.target.addEventListener(\"presence\", (event) => events.push(event.detail));\n  await Promise.resolve();\n  channel.emitUpdate();\n  return { events };\n}\nimport { createPresencePanel } from \"./presence-panel.js\";\n\n// Presence publication can synchronously select a different room or hide the\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot).\n// Reusing a transport object on a later visit is supported by the workspace.\nexport function createWorkspaceNavigation(renderState) {\n  const panel = createPresencePanel((value) => renderState(value, navigation));\n  const navigation = {\n    select(channel, mode = \"synchronous\") { panel.show(channel, mode); },\n    hide() { panel.close(); },\n  };\n  return navigation;\n}\nfatal: not a git repository (or any parent up to mount point /)\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\n"
+    },
+    {
+      "command": "/usr/bin/bash -lc \"node --input-type=module <<'EOF'\nimport assert from 'node:assert/strict';\nimport { render } from './src/render-workspace.js';\nimport { createPresenceChannel } from './src/channel.js';\nimport { createPresencePanel } from './src/presence-panel.js';\nimport { createWorkspaceNavigation } from './src/workspace-navigation.js';\nfor (const mode of ['synchronous', 'deferred']) {\n  assert.deepEqual(await render({token:'room',bootstrapMode:mode}), {presence:{events:['room:bootstrap','room:update']},metrics:{events:['room:update']}});\n}\nconst seen=[];\nconst a=createPresenceChannel('a');\nconst b=createPresenceChannel('b');\nconst nav=createWorkspaceNavigation((value,navigation)=>{seen.push(value);if(value==='a:bootstrap') navigation.select(b);});\nnav.select(a);\na.emitUpdate();b.emitUpdate();\nassert.deepEqual(seen,['a:bootstrap','b:bootstrap','b:update']);\nnav.hide();b.emitUpdate();\nassert.equal(seen.length,3);\nlet resolve;\nconst deferred=createPresenceChannel('old',{decode: value=>new Promise(done=>{resolve=()=>done(value);})});\nconst values=[];\nconst panel=createPresencePanel(value=>values.push(value));\npanel.show(deferred);\npanel.close();\npanel.show(deferred);\nresolve();\nawait Promise.resolve();\nassert.deepEqual(values,['old:bootstrap']);\npanel.close();\nconsole.log('presence checks passed');\nEOF\"",
+      "exit_code": 0,
+      "line": 16,
+      "output": "presence checks passed\n"
+    },
+    {
+      "command": "/usr/bin/bash -lc \"node --input-type=module <<'EOF'\nimport assert from 'node:assert/strict';\nimport { createPresenceChannel } from './src/channel.js';\nimport { createPresencePanel } from './src/presence-panel.js';\nconst pending=[];\nconst channel=createPresenceChannel('room',{decode:value=>new Promise(resolve=>pending.push(()=>resolve(value)))});\nconst seen=[];\nconst panel=createPresencePanel(value=>seen.push(value));\npanel.show(channel);\npanel.close();\npanel.show(channel);\nassert.equal(pending.length,2);\npending[0]();\nawait Promise.resolve();\nassert.deepEqual(seen,[]);\npending[1]();\nawait Promise.resolve();\nassert.deepEqual(seen,['room:bootstrap']);\npanel.close();\nconsole.log('stale decode check passed');\nEOF\"",
+      "exit_code": 0,
+      "line": 18,
+      "output": "stale decode check passed\n"
+    }
+  ],
+  "errors": [
+    {
+      "item": {
+        "id": "item_0",
+        "message": "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation.",
+        "type": "error"
+      },
+      "line": 2
+    },
+    {
+      "item": {
+        "id": "item_1",
+        "message": "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation.",
+        "type": "error"
+      },
+      "line": 3
+    }
+  ],
+  "messages": [
+    {
+      "line": 5,
+      "text": "I’ll trace the panel’s subscription and navigation lifecycle, then make the smallest change that captures the initial presence event and verify the visible behavior."
+    },
+    {
+      "line": 10,
+      "text": "The shared subscription helper starts the channel before attaching its listener. The panel needs the opposite order, plus a cleanup handle that is active before a synchronous bootstrap callback can navigate away. I’ll keep that change in the panel so metrics retain their delta-only behavior."
+    },
+    {
+      "line": 19,
+      "text": "The presence panel now attaches its listener before connecting, so it receives the initial online-user state in synchronous and deferred modes. It also detaches correctly when a bootstrap callback navigates to another workspace, and ignores decodes that finish after a visit closes or the same channel is reopened. The metrics consumer was unchanged.\n\nVisible checks passed for initial presence, later updates, navigation, hiding the panel, same-channel reuse, and stale async decoding."
+    }
+  ],
+  "receipts": [
+    {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 120704,
+      "input_tokens": 137436,
+      "output_tokens": 1616,
+      "reasoning_output_tokens": 202
+    }
+  ],
+  "tools": [
+    {
+      "item": {
+        "aggregated_output": "/workspace\npackage.json\nsrc/channel.js\nsrc/metrics-consumer.js\nsrc/presence-panel.js\nsrc/render-workspace.js\nsrc/subscription.js\nsrc/workspace-navigation.js\n./src/subscription.js:3:export function subscribeChannel(channel, bootstrapMode, receive) {\n./src/workspace-navigation.js:1:import { createPresencePanel } from \"./presence-panel.js\";\n./src/workspace-navigation.js:6:export function createWorkspaceNavigation(renderState) {\n./src/workspace-navigation.js:7:  const panel = createPresencePanel((value) => renderState(value, navigation));\n./src/render-workspace.js:1:import { collectMetrics } from \"./metrics-consumer.js\";\n./src/render-workspace.js:2:import { renderPresence } from \"./presence-panel.js\";\n./src/render-workspace.js:6:    renderPresence(token, bootstrapMode),\n./src/render-workspace.js:7:    collectMetrics(token),\n./src/metrics-consumer.js:3:export function collectMetrics(token) {\n./src/presence-panel.js:2:import { subscribeChannel } from \"./subscription.js\";\n./src/presence-panel.js:4:export function createPresencePanel(publish) {\n./src/presence-panel.js:9:      release = subscribeChannel(channel, bootstrapMode, publish);\n./src/presence-panel.js:18:export async function renderPresence(token, bootstrapMode) {\n./src/presence-panel.js:20:  const panel = createPresencePanel((value) => events.push(value));\n",
+        "command": "/usr/bin/bash -lc \"pwd && rg --files -g '\"'!node_modules'\"' -g '\"'!vendor'\"' | sort && rg -n \\\"subscribeChannel|createPresencePanel|createWorkspaceNavigation|renderPresence|collectMetrics\\\" .\"",
+        "exit_code": 0,
+        "id": "item_3",
+        "status": "completed",
+        "type": "command_execution"
+      },
+      "line": 7,
+      "type": "command_execution"
+    },
+    {
+      "item": {
+        "aggregated_output": "{\n  \"name\": \"listener-registration-order-vanilla-fixture\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\nimport { createPresenceChannel } from \"./channel.js\";\nimport { subscribeChannel } from \"./subscription.js\";\n\nexport function createPresencePanel(publish) {\n  let release = () => {};\n  return {\n    show(channel, bootstrapMode = \"synchronous\") {\n      release();\n      release = subscribeChannel(channel, bootstrapMode, publish);\n    },\n    close() {\n      release();\n      release = () => {};\n    },\n  };\n}\n\nexport async function renderPresence(token, bootstrapMode) {\n  const events = [];\n  const panel = createPresencePanel((value) => events.push(value));\n  const channel = createPresenceChannel(token);\n  panel.show(channel, bootstrapMode);\n  await Promise.resolve();\n  channel.emitUpdate();\n  panel.close();\n  return { events };\n}\n// The decoder may return a value or a Promise (compressed network frames).\n// EventTarget removal detaches reception; an already started decode still settles.\nexport function subscribeChannel(channel, bootstrapMode, receive) {\n  const listener = (event) => {\n    const decoded = channel.decode(event.detail);\n    if (decoded && typeof decoded.then === \"function\") decoded.then(receive);\n    else receive(decoded);\n  };\n  channel.connect(bootstrapMode);\n  channel.target.addEventListener(\"presence\", listener);\n  return () => channel.target.removeEventListener(\"presence\", listener);\n}\nclass PresenceEvent extends Event {\n  constructor(detail) {\n    super(\"presence\");\n    this.detail = detail;\n  }\n}\n\nexport function createPresenceChannel(token, { decode = (value) => value } = {}) {\n  const target = new EventTarget();\n  const emit = (kind) => target.dispatchEvent(new PresenceEvent(`${token}:${kind}`));\n  return {\n    target,\n    decode,\n    connect(bootstrapMode) {\n      if (bootstrapMode === \"deferred\") queueMicrotask(() => emit(\"bootstrap\"));\n      else emit(\"bootstrap\");\n    },\n    emitUpdate() {\n      emit(\"update\");\n    },\n  };\n}\n\nexport async function observeChannel({ token, bootstrapMode }) {\n  const events = [];\n  const channel = createPresenceChannel(token);\n  channel.connect(bootstrapMode);\n  channel.target.addEventListener(\"presence\", (event) => events.push(event.detail));\n  await Promise.resolve();\n  channel.emitUpdate();\n  return { events };\n}\nimport { createPresencePanel } from \"./presence-panel.js\";\n\n// Presence publication can synchronously select a different room or hide the\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot).\n// Reusing a transport object on a later visit is supported by the workspace.\nexport function createWorkspaceNavigation(renderState) {\n  const panel = createPresencePanel((value) => renderState(value, navigation));\n  const navigation = {\n    select(channel, mode = \"synchronous\") { panel.show(channel, mode); },\n    hide() { panel.close(); },\n  };\n  return navigation;\n}\nfatal: not a git repository (or any parent up to mount point /)\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\n",
+        "command": "/usr/bin/bash -lc 'cat package.json && cat src/presence-panel.js && cat src/subscription.js && cat src/channel.js && cat src/workspace-navigation.js && git status --short'",
+        "exit_code": 128,
+        "id": "item_4",
+        "status": "failed",
+        "type": "command_execution"
+      },
+      "line": 9,
+      "type": "command_execution"
+    },
+    {
+      "item": {
+        "changes": [
+          {
+            "kind": "update",
+            "path": "/workspace/src/presence-panel.js"
+          }
+        ],
+        "id": "item_6",
+        "status": "completed",
+        "type": "file_change"
+      },
+      "line": 12,
+      "type": "file_change"
+    },
+    {
+      "item": {
+        "changes": [
+          {
+            "kind": "update",
+            "path": "/workspace/src/presence-panel.js"
+          }
+        ],
+        "id": "item_7",
+        "status": "completed",
+        "type": "file_change"
+      },
+      "line": 14,
+      "type": "file_change"
+    },
+    {
+      "item": {
+        "aggregated_output": "presence checks passed\n",
+        "command": "/usr/bin/bash -lc \"node --input-type=module <<'EOF'\nimport assert from 'node:assert/strict';\nimport { render } from './src/render-workspace.js';\nimport { createPresenceChannel } from './src/channel.js';\nimport { createPresencePanel } from './src/presence-panel.js';\nimport { createWorkspaceNavigation } from './src/workspace-navigation.js';\nfor (const mode of ['synchronous', 'deferred']) {\n  assert.deepEqual(await render({token:'room',bootstrapMode:mode}), {presence:{events:['room:bootstrap','room:update']},metrics:{events:['room:update']}});\n}\nconst seen=[];\nconst a=createPresenceChannel('a');\nconst b=createPresenceChannel('b');\nconst nav=createWorkspaceNavigation((value,navigation)=>{seen.push(value);if(value==='a:bootstrap') navigation.select(b);});\nnav.select(a);\na.emitUpdate();b.emitUpdate();\nassert.deepEqual(seen,['a:bootstrap','b:bootstrap','b:update']);\nnav.hide();b.emitUpdate();\nassert.equal(seen.length,3);\nlet resolve;\nconst deferred=createPresenceChannel('old',{decode: value=>new Promise(done=>{resolve=()=>done(value);})});\nconst values=[];\nconst panel=createPresencePanel(value=>values.push(value));\npanel.show(deferred);\npanel.close();\npanel.show(deferred);\nresolve();\nawait Promise.resolve();\nassert.deepEqual(values,['old:bootstrap']);\npanel.close();\nconsole.log('presence checks passed');\nEOF\"",
+        "exit_code": 0,
+        "id": "item_8",
+        "status": "completed",
+        "type": "command_execution"
+      },
+      "line": 16,
+      "type": "command_execution"
+    },
+    {
+      "item": {
+        "aggregated_output": "stale decode check passed\n",
+        "command": "/usr/bin/bash -lc \"node --input-type=module <<'EOF'\nimport assert from 'node:assert/strict';\nimport { createPresenceChannel } from './src/channel.js';\nimport { createPresencePanel } from './src/presence-panel.js';\nconst pending=[];\nconst channel=createPresenceChannel('room',{decode:value=>new Promise(resolve=>pending.push(()=>resolve(value)))});\nconst seen=[];\nconst panel=createPresencePanel(value=>seen.push(value));\npanel.show(channel);\npanel.close();\npanel.show(channel);\nassert.equal(pending.length,2);\npending[0]();\nawait Promise.resolve();\nassert.deepEqual(seen,[]);\npending[1]();\nawait Promise.resolve();\nassert.deepEqual(seen,['room:bootstrap']);\npanel.close();\nconsole.log('stale decode check passed');\nEOF\"",
+        "exit_code": 0,
+        "id": "item_9",
+        "status": "completed",
+        "type": "command_execution"
+      },
+      "line": 18,
+      "type": "command_execution"
+    }
+  ],
+  "totals": {
+    "cached_input_tokens": 120704,
+    "input_tokens": 137436,
+    "output_tokens": 1616,
+    "reasoning_output_tokens": 202
+  }
+}

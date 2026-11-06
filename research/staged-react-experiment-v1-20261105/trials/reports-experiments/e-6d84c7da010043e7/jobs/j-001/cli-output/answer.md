@@ -1,0 +1,3 @@
+The panel now receives a warm feed’s initial progress update. Decoded frames can finish out of order without an older frame moving the display backward, and a previous attempt cannot repaint the panel after a retry. Progress history still records every decoded frame; telemetry and queue record shape are unchanged.
+
+Node assertions passed for the initial update, out-of-order decoding, retry, streaming, reuse, telemetry, and queue records. The workspace has no Git repository, so I could not run `git status`.

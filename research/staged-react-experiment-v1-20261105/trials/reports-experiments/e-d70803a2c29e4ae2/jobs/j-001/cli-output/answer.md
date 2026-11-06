@@ -1,0 +1,3 @@
+[PersonnelEditor.vue](/workspace/src/editors/PersonnelEditor.vue) now loads the local JSON configuration and waits for the form API before applying it. Parent values and the picker callback retain their existing behavior. Structure was not changed.
+
+A candidate-visible check passed for delayed form readiness, configuration values, the picker callback, and repeat loading. The package has no test script.

@@ -1,0 +1,1 @@
+Fixed the premium action so a first click waits for the entitlement flag to load before it is evaluated. The emergency control is unchanged. I verified clicks before and after loading with the flag both enabled and disabled.

@@ -1,0 +1,1 @@
+Fixed the premium action so an early first click is evaluated after entitlement loads. The emergency control is unchanged. I verified early and later clicks for entitled and non-entitled users, plus both emergency-control cases.

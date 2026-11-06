@@ -1,0 +1,3 @@
+Updated [src/progress.js](/workspace/src/progress.js) so the panel subscribes before the feed starts. A warm source now delivers its initial progress update. Received frames are numbered so an older frame that finishes decoding later cannot move the display backward; every decoded frame still enters progress history.
+
+Node checks passed for the initial update, out-of-order decoding, streaming, telemetry, retry, hiding during the initial callback, and selecting the same file again.
