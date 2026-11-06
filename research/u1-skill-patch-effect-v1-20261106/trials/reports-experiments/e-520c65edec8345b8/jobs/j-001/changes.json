@@ -1,0 +1,23 @@
+{
+  "excluded": [],
+  "files": [
+    {
+      "after_mode": 420,
+      "after_sha256": "e5c640a14a58981b7d8d989281064e1a15ca4590c653ced20c5aa2febef03ccc",
+      "before_mode": 420,
+      "before_sha256": "69812c6d3f111528ec61c6807c25d727ba291e93c1b19f2d9e6e978d08f35061",
+      "diff": "--- before/src/progress.js\n+++ after/src/progress.js\n@@ -1,12 +1,22 @@\n // The source is shared by visits of the same file. Decoding may settle later.\n-export function watchTransferProgress(feed, receive, record) {\n+export function watchTransferProgress(feed, receive, record, signal) {\n+  let nextPacket = 0;\n+  let latestShown = 0;\n   const listener = event => {\n-    const deliver = frame => { record(frame); receive(frame); };\n+    if (signal?.aborted) return;\n+    const packet = ++nextPacket;\n+    const deliver = frame => {\n+      record(frame);\n+      if (packet > latestShown) {\n+        latestShown = packet;\n+        receive(frame);\n+      }\n+    };\n     const decoded = feed.decode(event.detail);\n     if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n     else deliver(decoded);\n   };\n+  feed.target.addEventListener(\"progress\", listener);\n   feed.start();\n-  feed.target.addEventListener(\"progress\", listener);\n   return () => feed.target.removeEventListener(\"progress\", listener);\n }\n",
+      "path": "src/progress.js",
+      "truncated": false
+    },
+    {
+      "after_mode": 420,
+      "after_sha256": "d5ddf701296bc62587902c9a3794ff350fe849ff9e5254d00ae677b3d6f9a76e",
+      "before_mode": 420,
+      "before_sha256": "fd27be4d41174cd20fea6d50e5b6be08da089f46779823c699709b64846fc4f8",
+      "diff": "--- before/src/transfer.js\n+++ after/src/transfer.js\n@@ -9,7 +9,9 @@\n   }, { once: true });\n   transport({ file, attemptId, signal: controller.signal });\n   if (file.progressFeed) {\n-    stopProgress = watchTransferProgress(file.progressFeed, progress.receive, progress.record);\n+    stopProgress = watchTransferProgress(file.progressFeed,\n+      frame => { if (!controller.signal.aborted) progress.receive(frame); }, progress.record,\n+      controller.signal);\n     if (controller.signal.aborted) stopProgress();\n   }\n   return { file, attemptId, signal: controller.signal,\n",
+      "path": "src/transfer.js",
+      "truncated": false
+    }
+  ]
+}

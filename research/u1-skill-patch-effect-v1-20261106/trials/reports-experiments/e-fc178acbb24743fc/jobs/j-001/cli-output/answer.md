@@ -1,0 +1,3 @@
+Updated [src/progress.js](/workspace/src/progress.js) so the panel subscribes before the feed starts. Its cached first packet now reaches progress history and the display. Packet order also prevents an older decoded frame from moving the display backward; history still records it.
+
+Node checks passed for the initial packet, reversed decode completion, hide and reentrant cleanup, retry, subsequent selection, and telemetry’s own bootstrap behavior. This workspace has no Git repository, so I could not run a Git diff check.

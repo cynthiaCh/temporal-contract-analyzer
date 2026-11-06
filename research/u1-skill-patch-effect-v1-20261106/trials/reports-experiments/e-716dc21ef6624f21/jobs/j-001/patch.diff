@@ -1,0 +1,44 @@
+--- before/src/progress.js
++++ after/src/progress.js
+@@ -1,12 +1,21 @@
+ // The source is shared by visits of the same file. Decoding may settle later.
+ export function watchTransferProgress(feed, receive, record) {
++  let nextFrame = 0;
++  let lastShown = 0;
+   const listener = event => {
+-    const deliver = frame => { record(frame); receive(frame); };
++    const frameNumber = ++nextFrame;
++    const deliver = frame => {
++      record(frame);
++      if (frameNumber > lastShown) {
++        lastShown = frameNumber;
++        receive(frame);
++      }
++    };
+     const decoded = feed.decode(event.detail);
+     if (decoded && typeof decoded.then === "function") decoded.then(deliver);
+     else deliver(decoded);
+   };
++  feed.target.addEventListener("progress", listener);
+   feed.start();
+-  feed.target.addEventListener("progress", listener);
+   return () => feed.target.removeEventListener("progress", listener);
+ }
+
+--- before/src/queue.js
++++ after/src/queue.js
+@@ -7,11 +7,13 @@
+ 
+ export function enqueueTransfer(state, visit, kind) {
+   const attemptId = ++state.nextAttempt;
++  visit.progressAttemptId = attemptId;
+   state.record(makeQueueRecord(visit.file, attemptId, visit.id, kind));
+   const progress = {
+     record(frame) { state.recordProgress({ fileId: visit.file.id, attemptId, frame }); },
+     receive(frame) {
+-      if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });
++      if (state.current === visit && visit.progressAttemptId === attemptId)
++        state.showProgress({ fileId: visit.file.id, attemptId, frame });
+     },
+   };
+   const handle = createTransfer(visit.file, attemptId, state.transport, state.onCancel, progress);

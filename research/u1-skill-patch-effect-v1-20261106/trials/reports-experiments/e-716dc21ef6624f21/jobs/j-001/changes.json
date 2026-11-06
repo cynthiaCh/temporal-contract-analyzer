@@ -1,0 +1,23 @@
+{
+  "excluded": [],
+  "files": [
+    {
+      "after_mode": 420,
+      "after_sha256": "38f36225b4a5332b354de5bc3c6d763ec04be754c9f07a10116f98e908b29ab8",
+      "before_mode": 420,
+      "before_sha256": "69812c6d3f111528ec61c6807c25d727ba291e93c1b19f2d9e6e978d08f35061",
+      "diff": "--- before/src/progress.js\n+++ after/src/progress.js\n@@ -1,12 +1,21 @@\n // The source is shared by visits of the same file. Decoding may settle later.\n export function watchTransferProgress(feed, receive, record) {\n+  let nextFrame = 0;\n+  let lastShown = 0;\n   const listener = event => {\n-    const deliver = frame => { record(frame); receive(frame); };\n+    const frameNumber = ++nextFrame;\n+    const deliver = frame => {\n+      record(frame);\n+      if (frameNumber > lastShown) {\n+        lastShown = frameNumber;\n+        receive(frame);\n+      }\n+    };\n     const decoded = feed.decode(event.detail);\n     if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n     else deliver(decoded);\n   };\n+  feed.target.addEventListener(\"progress\", listener);\n   feed.start();\n-  feed.target.addEventListener(\"progress\", listener);\n   return () => feed.target.removeEventListener(\"progress\", listener);\n }\n",
+      "path": "src/progress.js",
+      "truncated": false
+    },
+    {
+      "after_mode": 420,
+      "after_sha256": "85a973fc702c3942a513218d115ac53d4d4441476502ada53d9200a468452085",
+      "before_mode": 420,
+      "before_sha256": "7018d36249fb316c093c8fd992e8eabb1dc9a5ea82c054107120e007293bce4d",
+      "diff": "--- before/src/queue.js\n+++ after/src/queue.js\n@@ -7,11 +7,13 @@\n \n export function enqueueTransfer(state, visit, kind) {\n   const attemptId = ++state.nextAttempt;\n+  visit.progressAttemptId = attemptId;\n   state.record(makeQueueRecord(visit.file, attemptId, visit.id, kind));\n   const progress = {\n     record(frame) { state.recordProgress({ fileId: visit.file.id, attemptId, frame }); },\n     receive(frame) {\n-      if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });\n+      if (state.current === visit && visit.progressAttemptId === attemptId)\n+        state.showProgress({ fileId: visit.file.id, attemptId, frame });\n     },\n   };\n   const handle = createTransfer(visit.file, attemptId, state.transport, state.onCancel, progress);\n",
+      "path": "src/queue.js",
+      "truncated": false
+    }
+  ]
+}

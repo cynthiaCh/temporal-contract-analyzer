@@ -1,0 +1,3 @@
+Updated [src/progress.js](/workspace/src/progress.js) so the panel listener is active before a warm feed emits its initial packet. Decoded frames are numbered on arrival: every frame still enters progress history, but an older frame that finishes decoding late cannot move the display backward.
+
+Visible Node checks passed for the initial update, reversed decode completion, history, telemetry, same-file reuse, queue records, and synchronous hide with listener cleanup. No repository test suite was available.

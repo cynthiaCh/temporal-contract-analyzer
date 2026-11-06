@@ -1,0 +1,3 @@
+Updated [src/progress.js](/workspace/src/progress.js:2) so the panel subscribes before the feed starts. Cached progress now appears immediately. Each decoded frame still enters progress history, while an older frame that finishes decoding late cannot move the display backward. Releasing the listener also prevents pending frames from repainting a closed or replaced panel.
+
+Focused checks passed for startup, streaming, reversed decode completion, hide, retry, telemetry, queue records, and synchronous hide during startup. A smoke check passed on Node 16.20.2. There is no candidate-visible test suite.

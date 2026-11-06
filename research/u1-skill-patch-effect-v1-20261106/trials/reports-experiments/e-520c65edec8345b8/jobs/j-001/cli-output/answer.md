@@ -1,0 +1,3 @@
+Restored the initial panel update by subscribing before the progress feed starts. Decoded frames now paint in packet arrival order, so a late older frame cannot roll the display backward. Accepted frames still enter progress history, and cancellation prevents later packets from reaching a released attempt.
+
+The visible Node checks passed for warm startup, streaming, reversed decode completion, retry, hide, reuse, telemetry, queue record shape, and synchronous reentry. `git diff --check` was unavailable because this workspace is not a Git repository.

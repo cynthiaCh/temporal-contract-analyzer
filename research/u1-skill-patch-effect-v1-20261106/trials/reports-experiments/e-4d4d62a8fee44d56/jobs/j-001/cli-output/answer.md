@@ -1,0 +1,3 @@
+Updated [src/progress.js](/workspace/src/progress.js) so the panel subscribes before the feed starts. A warm source’s synchronous initial frame now reaches the panel. Decoded frames still enter progress history, while an older frame that finishes decoding late cannot move the display backward.
+
+The focused Node scenarios passed for initial delivery, reversed decode completion, hide and retry, telemetry, and a reentrant close. The syntax check passed. There is no Git repository in this workspace, so `git diff --check` could not run.
