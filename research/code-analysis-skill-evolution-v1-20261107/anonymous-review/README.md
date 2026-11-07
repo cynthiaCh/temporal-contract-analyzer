@@ -1,0 +1,1 @@
+Random IDs hide phase/order labels only. Unit/source content may identify source or condition. Executing-agent review is unblinded proxy, not independent human blind review. Labels are outside this package. Use approved standard and source-only applicability; freeze review before unblinded summary.
