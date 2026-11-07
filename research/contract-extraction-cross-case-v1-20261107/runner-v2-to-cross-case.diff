@@ -1,0 +1,75 @@
+--- u2-v2/run.py
++++ cross-case/run.py
+@@ -13,9 +13,12 @@
+  for p in [work,out,profile]:p.mkdir(parents=True,exist_ok=True)
+  profile.chmod(0o700)
+  if copy_auth:
+-  for n in ['auth.json','config.toml','models_cache.json']:
++  for n in ['auth.json']:
+    p=Path.home()/'.codex'/n
+    if p.is_file():shutil.copyfile(p,profile/n);(profile/n).chmod(0o600)
++ shutil.copyfile(OUT/'research-config.toml',profile/'config.toml')
++ if (OUT/'models-cache.snapshot.json').exists():shutil.copyfile(OUT/'models-cache.snapshot.json',profile/'models_cache.json')
++ save(folder/'configuration-before.json',{'research_config_sha256':sha((profile/'config.toml').read_bytes()),'research_config_text':(profile/'config.toml').read_text(),'global_config':global_snapshot(),'model_catalog_sha256':sha((profile/'models_cache.json').read_bytes()) if (profile/'models_cache.json').exists() else None})
+  hooks={'hooks':{e:[{'hooks':[{'type':'command','command':'/usr/bin/python3 /request_guard.py','timeout':10}]}] for e in ['PreModelRequest','PostModelRequest','PreToolUse','PermissionRequest']}}
+  save(profile/'hooks.json',hooks);save(folder/'hooks.json',hooks)
+  ns=['bwrap','--die-with-parent','--new-session','--unshare-user','--unshare-pid','--unshare-ipc','--unshare-uts','--cap-drop','ALL','--ro-bind','/usr','/usr','--ro-bind','/lib','/lib','--ro-bind','/lib64','/lib64','--symlink','usr/bin','/bin','--symlink','usr/sbin','/sbin','--proc','/proc','--dev','/dev','--tmpfs','/tmp','--dir','/home/agent','--dir','/etc','--ro-bind','/etc/resolv.conf','/etc/resolv.conf','--ro-bind','/etc/ssl','/etc/ssl','--ro-bind',str(BINARY.parent),'/opt','--bind',str(profile),'/home/agent/.codex','--ro-bind',str(work),'/workspace','--bind',str(out),'/output','--ro-bind',str(OUT/'request_guard.py'),'/request_guard.py','--ro-bind',str(OUT/('reflection.schema.json' if mode=='reflection' else 'extraction.schema.json')),'/format.json','--bind',str(meter or OUT/'request-meter'),'/meter','--chdir','/workspace','--setenv','HOME','/home/agent','--setenv','CODEX_HOME','/home/agent/.codex','--setenv','PATH','/usr/bin:/bin:/opt','--setenv','LANG','C.UTF-8']
+@@ -24,7 +27,7 @@
+  for k in ['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy']:
+   if k in os.environ:ns+=['--setenv',k,os.environ[k]]
+  ns+=['--setenv','DIAG_CALL_ID',call,'--']
+- cmd=ns+['/opt/codex','exec','--ignore-rules','--ephemeral','--json','--color','never','--skip-git-repo-check','--sandbox','read-only','-c','approval_policy="never"','-m','gpt-6-sol','-c','model_reasoning_effort="low"','-c','web_search="disabled"','-c','model_provider="experiment_no_retry"','-c','model_providers.experiment_no_retry.name="OpenAI"','-c','model_providers.experiment_no_retry.wire_api="responses"','-c','model_providers.experiment_no_retry.requires_openai_auth=true','-c','model_providers.experiment_no_retry.request_max_retries=0','-c','model_providers.experiment_no_retry.stream_max_retries=0','--dangerously-bypass-hook-trust','--output-schema','/format.json']
++ cmd=ns+['/opt/codex','exec','--ignore-rules','--ephemeral','--json','--color','never','--skip-git-repo-check','--sandbox','read-only','-c','approval_policy="never"','-m','gpt-6-sol','-c','model_reasoning_effort="low"','-c','web_search="disabled"','-c','service_tier="priority"','-c','model_provider="experiment_no_retry"','-c','model_providers.experiment_no_retry.name="OpenAI"','-c','model_providers.experiment_no_retry.wire_api="responses"','-c','model_providers.experiment_no_retry.requires_openai_auth=true','-c','model_providers.experiment_no_retry.request_max_retries=0','-c','model_providers.experiment_no_retry.stream_max_retries=0','--dangerously-bypass-hook-trust','--output-schema','/format.json']
+  for feature in DISABLE+(['shell_tool','code_mode_host'] if mode=='reflection' else []):cmd+=['--disable',feature]
+  if mode=='extraction':cmd+=['--enable','code_mode_host','--enable','shell_tool']
+  return cmd+['-C','/workspace','-o','/output/answer.json','-']
+@@ -32,11 +35,14 @@
+  p=read(OUT/'protocol.json');assert sha((OUT/'protocol.json').read_bytes())==(OUT/'protocol.sha256').read_text().strip()
+  for n,h in p['files'].items():assert sha(Path(n).read_bytes())==h,n
+  return p
+-def prompt_for(skill):return (OUT/'prompt-template.md').read_text().replace('{{TASK}}',(OUT/'materials/task.md').read_text()).replace('{{SKILL}}',skill)
++def global_snapshot():
++ p=Path.home()/'.codex/config.toml'
++ return {'sha256':sha(p.read_bytes()),'mtime':p.stat().st_mtime,'fields':[x for x in p.read_text().splitlines() if x.startswith(('model =','model_reasoning_effort','service_tier'))]}
++def prompt_for(skill,case):return (OUT/'prompt-template.md').read_text().replace('{{TASK}}',(OUT/'materials'/case/'task.md').read_text()).replace('{{SKILL}}',skill)
+ def one(slot,prompt):
+- frozen();rows=read(OUT/'requests.json') if (OUT/'requests.json').exists() else [];assert len(rows)<5 and slot['call_id'] not in [r['call_id'] for r in rows]
++ frozen();rows=read(OUT/'requests.json') if (OUT/'requests.json').exists() else [];assert len(rows)<8 and slot['call_id'] not in [r['call_id'] for r in rows]
+  folder=OUT/'runs'/slot['call_id'];folder.mkdir(parents=True,exist_ok=False);mode='reflection' if slot['phase']=='reflection' else 'extraction'
+- if mode=='extraction':shutil.copytree(OUT/'materials/candidate',folder/'workspace')
++ if mode=='extraction':shutil.copytree(OUT/'materials'/slot['case']/'candidate',folder/'workspace')
+  (folder/'actual-prompt.md').write_text(prompt);cmd=command(slot['call_id'],folder,mode)
+  rec=dict(**slot,path=str(folder),mode=mode,model='gpt-6-sol',effort='low',timeout=600,prompt_sha256=sha(prompt),started_at=time.time(),status='launched',command=cmd);rows.append(rec);save(OUT/'requests.json',rows)
+  try:
+@@ -59,23 +65,20 @@
+     (folder/'contract.md').write_text(obj['report']);rec['report_characters']=len(obj['report'])
+    else:assert set(obj)=={'skill','changes'} and isinstance(obj['skill'],str) and len(obj['skill'])<=4000 and isinstance(obj['changes'],list)
+   except (ValueError,AssertionError,TypeError):errors.append('invalid_output_format')
+-  if mode=='extraction':assert hashes(folder/'workspace')==read(OUT/'scope-and-sources.json')['candidate_files'],'input changed'
++  if mode=='extraction':assert hashes(folder/'workspace')==read(OUT/'source-and-exposure.json')['cases'][slot['case']]['candidate_files'],'input changed'
+   save(folder/'read-trace.json',{'completed_tool_items':tools,'hook_tool_attempts':[x for x in meter.get('events',[]) if x['call_id']==slot['call_id'] and x['event'].get('hook_event_name') in ['PreToolUse','PermissionRequest']]})
+   rec['format_errors']=errors;rec['status']='completed' if proc.returncode==0 and len(turns)==1 and native.get('started',0)>0 and native.get('started')==native.get('completed') and not native.get('blocked_requests') and not native.get('blocked_tools') and not errors else 'failed'
+   save(folder/'receipt.json',rec);rows=read(OUT/'requests.json');rows[-1]=rec;save(OUT/'requests.json',rows);print(json.dumps({'slot':slot['call_id'],'status':rec['status'],'requests':native.get('started'),'tools':len(tools),'seconds':rec['seconds']}),flush=True)
+   if not native.get('started'):raise RuntimeError('No native request accounting, stop remaining schedule')
+   return rec
+- finally:shutil.rmtree(OUT/'.runtime'/slot['call_id'],ignore_errors=True)
++ finally:
++  profile=OUT/'.runtime'/slot['call_id']
++  if (profile/'config.toml').exists():save(folder/'configuration-after.json',{'profile_config_sha256':sha((profile/'config.toml').read_bytes()),'profile_config_text':(profile/'config.toml').read_text(),'global_config':global_snapshot(),'service_route_attestation':'not independently available; configured priority is client-side evidence only'})
++  shutil.rmtree(profile,ignore_errors=True)
+ def run_slot(call):
+  frozen();assert read(OUT/'offline-validation.json')['status']=='PASS'
+- slot=next(x for x in read(OUT/'schedule.json')['order'] if x['call_id']==call)
+- if call!='k0-1':assert read(OUT/'first-baseline-gate.json')['status']=='PASS'
+- if slot['phase']=='reflection':
+-  for previous in ['k0-1','k0-2']:assert read(OUT/'runs'/previous/'validity.json')['status']=='PASS'
+-  save(OUT/'reflection.freeze.json',{'files':{str(OUT/n):sha((OUT/n).read_bytes()) for n in ['reflection.prompt.md','difference-feedback.json','baseline-review.csv']},'before_request':True})
+-  return one(slot,(OUT/'reflection.prompt.md').read_text())
+- if slot['phase']=='K1':
+-  f=read(OUT/'K1.freeze.json');assert f['allow_execution'] and sha((OUT/'contract_extraction_K1.md').read_bytes())==f['skill_sha256']
++ schedule=read(OUT/'schedule.json')['order'];slot=next(x for x in schedule if x['call_id']==call)
++ for previous in schedule[:slot['sequence']-1]:assert read(OUT/'runs'/previous['call_id']/'validity.json')['status']=='PASS'
+  skill=(OUT/('contract_extraction_K0.md' if slot['phase']=='K0' else 'contract_extraction_K1.md')).read_text()
+- return one(slot,prompt_for(skill))
++ return one(slot,prompt_for(skill,slot['case']))
+ if __name__=='__main__':run_slot(sys.argv[1])

@@ -1,0 +1,68 @@
+{
+  "completed_tool_items": [
+    {
+      "line": 7,
+      "item": {
+        "id": "item_3",
+        "type": "command_execution",
+        "command": "/usr/bin/bash -lc 'pwd && rg --files /workspace | head -80'",
+        "aggregated_output": "/workspace\n/workspace/package.json\n/workspace/src/subscription.js\n/workspace/src/workspace-navigation.js\n/workspace/src/channel.js\n/workspace/src/metrics-consumer.js\n/workspace/src/presence-panel.js\n/workspace/src/render-workspace.js\n",
+        "exit_code": 0,
+        "status": "completed"
+      }
+    },
+    {
+      "line": 9,
+      "item": {
+        "id": "item_4",
+        "type": "command_execution",
+        "command": "/usr/bin/bash -lc 'nl -ba /workspace/src/presence-panel.js && nl -ba /workspace/src/subscription.js && nl -ba /workspace/src/channel.js && nl -ba /workspace/src/workspace-navigation.js && nl -ba /workspace/src/render-workspace.js && nl -ba /workspace/src/metrics-consumer.js && nl -ba /workspace/package.json'",
+        "aggregated_output": "     1\timport { createPresenceChannel } from \"./channel.js\";\n     2\timport { subscribeChannel } from \"./subscription.js\";\n     3\t\n     4\texport function createPresencePanel(publish) {\n     5\t  let release = () => {};\n     6\t  return {\n     7\t    show(channel, bootstrapMode = \"synchronous\") {\n     8\t      release();\n     9\t      release = subscribeChannel(channel, bootstrapMode, publish);\n    10\t    },\n    11\t    close() {\n    12\t      release();\n    13\t      release = () => {};\n    14\t    },\n    15\t  };\n    16\t}\n    17\t\n    18\texport async function renderPresence(token, bootstrapMode) {\n    19\t  const events = [];\n    20\t  const panel = createPresencePanel((value) => events.push(value));\n    21\t  const channel = createPresenceChannel(token);\n    22\t  panel.show(channel, bootstrapMode);\n    23\t  await Promise.resolve();\n    24\t  channel.emitUpdate();\n    25\t  panel.close();\n    26\t  return { events };\n    27\t}\n     1\t// The decoder may return a value or a Promise (compressed network frames).\n     2\t// EventTarget removal detaches reception; an already started decode still settles.\n     3\texport function subscribeChannel(channel, bootstrapMode, receive) {\n     4\t  const listener = (event) => {\n     5\t    const decoded = channel.decode(event.detail);\n     6\t    if (decoded && typeof decoded.then === \"function\") decoded.then(receive);\n     7\t    else receive(decoded);\n     8\t  };\n     9\t  channel.connect(bootstrapMode);\n    10\t  channel.target.addEventListener(\"presence\", listener);\n    11\t  return () => channel.target.removeEventListener(\"presence\", listener);\n    12\t}\n     1\tclass PresenceEvent extends Event {\n     2\t  constructor(detail) {\n     3\t    super(\"presence\");\n     4\t    this.detail = detail;\n     5\t  }\n     6\t}\n     7\t\n     8\texport function createPresenceChannel(token, { decode = (value) => value } = {}) {\n     9\t  const target = new EventTarget();\n    10\t  const emit = (kind) => target.dispatchEvent(new PresenceEvent(`${token}:${kind}`));\n    11\t  return {\n    12\t    target,\n    13\t    decode,\n    14\t    connect(bootstrapMode) {\n    15\t      if (bootstrapMode === \"deferred\") queueMicrotask(() => emit(\"bootstrap\"));\n    16\t      else emit(\"bootstrap\");\n    17\t    },\n    18\t    emitUpdate() {\n    19\t      emit(\"update\");\n    20\t    },\n    21\t  };\n    22\t}\n    23\t\n    24\texport async function observeChannel({ token, bootstrapMode }) {\n    25\t  const events = [];\n    26\t  const channel = createPresenceChannel(token);\n    27\t  channel.connect(bootstrapMode);\n    28\t  channel.target.addEventListener(\"presence\", (event) => events.push(event.detail));\n    29\t  await Promise.resolve();\n    30\t  channel.emitUpdate();\n    31\t  return { events };\n    32\t}\n     1\timport { createPresencePanel } from \"./presence-panel.js\";\n     2\t\n     3\t// Presence publication can synchronously select a different room or hide the\n     4\t// panel (for example, a room chooser reacting to an empty bootstrap snapshot).\n     5\t// Reusing a transport object on a later visit is supported by the workspace.\n     6\texport function createWorkspaceNavigation(renderState) {\n     7\t  const panel = createPresencePanel((value) => renderState(value, navigation));\n     8\t  const navigation = {\n     9\t    select(channel, mode = \"synchronous\") { panel.show(channel, mode); },\n    10\t    hide() { panel.close(); },\n    11\t  };\n    12\t  return navigation;\n    13\t}\n     1\timport { collectMetrics } from \"./metrics-consumer.js\";\n     2\timport { renderPresence } from \"./presence-panel.js\";\n     3\t\n     4\texport async function render({ token, bootstrapMode }) {\n     5\t  const [presence, metrics] = await Promise.all([\n     6\t    renderPresence(token, bootstrapMode),\n     7\t    collectMetrics(token),\n     8\t  ]);\n     9\t  return { presence, metrics };\n    10\t}\n     1\timport { observeChannel } from \"./channel.js\";\n     2\t\n     3\texport function collectMetrics(token) {\n     4\t  // Metrics deliberately attach after the synchronous bootstrap and count deltas only.\n     5\t  return observeChannel({ token, bootstrapMode: \"synchronous\" });\n     6\t}\n     1\t{\n     2\t  \"name\": \"listener-registration-order-vanilla-fixture\",\n     3\t  \"version\": \"0.1.0\",\n     4\t  \"private\": true,\n     5\t  \"type\": \"module\"\n     6\t}\n",
+        "exit_code": 0,
+        "status": "completed"
+      }
+    }
+  ],
+  "hook_tool_attempts": [
+    {
+      "at": 1794065667.6850188,
+      "call_id": "s07",
+      "event": {
+        "session_id": "01a1b6a5-7fa2-7ee2-9d8b-5669062a5ebf",
+        "turn_id": "01a1b6a5-8727-7850-b346-ecae8fa750cd",
+        "transcript_path": null,
+        "cwd": "/workspace",
+        "hook_event_name": "PreToolUse",
+        "model": "gpt-6-sol",
+        "permission_mode": "bypassPermissions",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "pwd && rg --files /workspace | head -80"
+        },
+        "tool_use_id": "exec-d06a4384-e64c-4a25-b75f-883e973ef844"
+      },
+      "denied": false,
+      "reason": null
+    },
+    {
+      "at": 1794065671.1973104,
+      "call_id": "s07",
+      "event": {
+        "session_id": "01a1b6a5-7fa2-7ee2-9d8b-5669062a5ebf",
+        "turn_id": "01a1b6a5-8727-7850-b346-ecae8fa750cd",
+        "transcript_path": null,
+        "cwd": "/workspace",
+        "hook_event_name": "PreToolUse",
+        "model": "gpt-6-sol",
+        "permission_mode": "bypassPermissions",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "nl -ba /workspace/src/presence-panel.js && nl -ba /workspace/src/subscription.js && nl -ba /workspace/src/channel.js && nl -ba /workspace/src/workspace-navigation.js && nl -ba /workspace/src/render-workspace.js && nl -ba /workspace/src/metrics-consumer.js && nl -ba /workspace/package.json"
+        },
+        "tool_use_id": "exec-d32d6d3b-c93e-4bf6-a73c-cff3bcbddedf"
+      },
+      "denied": false,
+      "reason": null
+    }
+  ]
+}

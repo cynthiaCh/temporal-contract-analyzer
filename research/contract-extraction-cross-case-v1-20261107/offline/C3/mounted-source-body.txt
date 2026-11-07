@@ -1,0 +1,30 @@
+{"README.md": "26990c6d638f44af89d01a03e6607c8b6553dfd320c11600791239e26dc4d327", "package.json": "a90fc33418afa2b9cbf4768524b021135b965ecdf993457505bfae3ac44a8428", "src/trailing-task.js": "a5eab4a56995aa183bca380390525f61d2f55e51aa20b6dde06602c84c60d54b", "src/search-preview.js": "6c6a9c8276c539eb680e916174db66c7ef4209d5a237b0e340c1bb9aec3524d8", "src/timers.js": "db6d40d6bdf9c27a74d012dbafe7bce3230ab168e57061d33f73574349d2acc7", "src/observations.js": "d538d33d552c48db6a665f10ed7fcf6fe4bee66414bfa5a0a23eca146d63f647", "src/controller.js": "92d0b57a66b09e96c21e96c86bc17f60ecd0ab29418b99484215521235a2a5f7"}
+import { browserTimers } from "./timers.js";
+
+// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.
+// Retire the old batch before invoking work so a callback may enqueue a new batch.
+export function createTrailingTask(work, delay, timers = browserTimers) {
+  let handle = null;
+  let pending = null;
+  function flush() {
+    if (handle !== null) timers.cancel(handle);
+    handle = null;
+    const args = pending;
+    pending = null;
+    if (args !== null) work(...args);
+  }
+  return {
+    push(...args) {
+      if (handle !== null) timers.cancel(handle);
+      pending = args;
+      handle = timers.schedule(flush, delay);
+    },
+    flush,
+    cancel() {
+      if (handle !== null) timers.cancel(handle);
+      handle = null;
+      pending = null;
+    },
+  };
+}
+

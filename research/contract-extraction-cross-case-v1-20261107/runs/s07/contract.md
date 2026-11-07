@@ -1,0 +1,16 @@
+1. 可确认的 Contract
+原任务要求：打开 presence panel 后，初始在线用户状态应能出现；后续 presence 更新仍应出现；修复须保留 workspace 导航行为；metrics consumer 不得更改。现有源码还明确将同步发布期间切换房间或隐藏面板、以及日后复用同一 transport，列为 workspace 支持的情形。
+
+2. 每条的条件、效果、来源及依据
+- 打开面板并接入 presence channel 时：初始状态不得因订阅时序而丢失。依据是原任务对缺失初始状态的直接要求。当前实现事实：`show` 调用 `subscribeChannel`（`/workspace/src/presence-panel.js:7-10`）；后者先 `connect`，再注册监听器（`/workspace/src/subscription.js:3-11`）；同步模式会在 `connect` 内立即发送 bootstrap（`/workspace/src/channel.js:14-17`）。这些代码解释了可疑时序，但不构成指定修法或完整产品规格。
+- 面板保持打开并收到后续更新时：应保留更新的发布效果。依据是原任务“even though later presence updates appear”及“preserving its existing behavior”。当前实现事实：channel 可发送 update（`/workspace/src/channel.js:18-20`），订阅器把解码值交给回调（`/workspace/src/subscription.js:4-8`）。
+- presence 发布同步触发导航时：切换房间或隐藏面板应继续可用；日后再次选用同一 transport 也应可用。依据是源码明确注释（`/workspace/src/workspace-navigation.js:3-5`），且 `select`、`hide` 分别调用面板的 `show`、`close`（同文件 `:6-12`）。当前实现事实：`show` 先释放旧订阅再建立新订阅，`close` 释放订阅（`/workspace/src/presence-panel.js:7-14`）。注释足以支持这些场景需要保留，但未规定重入时每个事件的精确顺序。
+- 本次修复期间：不得更改 metrics consumer。依据是原任务的直接限制。当前实现事实：metrics 使用 `observeChannel`（`/workspace/src/metrics-consumer.js:1-5`）；注释说明其有意在同步 bootstrap 后接入、只计增量（同文件 `:3-5`）。该事实不能转化为 presence panel 也应跳过 bootstrap 的要求。
+
+3. 不能确认的候选要求
+- 初始状态的具体数据结构、在线用户排序、去重规则及 UI 呈现方式：候选源码仅展示事件字符串和发布回调（`/workspace/src/channel.js:8-20`；`/workspace/src/presence-panel.js:18-26`），缺少产品规格。
+- 关闭或切换后，已经开始的异步解码结果是否必须丢弃：注释只说明移除监听器后解码仍会完成（`/workspace/src/subscription.js:1-2`），未规定其结果应否发布。
+- deferred bootstrap 与更新之间必须遵循的普遍顺序：当前模拟代码给出一种调度方式（`/workspace/src/channel.js:14-20`），不足以确立外部协议。
+
+4. 建议验证范围
+建议分别检查同步与 deferred 接入后初始状态、面板打开期间的后续更新；检查初始状态发布期间同步切换房间或隐藏面板，以及再次复用同一 transport；检查 metrics consumer 文件未改动且其既有增量行为保持。上述均为建议，未运行验证；即使通过，也不能据此确认缺失的 UI 规格、异步解码结果处置规则或外部协议顺序。
