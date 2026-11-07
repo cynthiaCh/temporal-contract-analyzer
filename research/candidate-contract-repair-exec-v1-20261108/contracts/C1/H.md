@@ -1,0 +1,3 @@
+- 打开 presence panel 后呈现初始在线用户状态，后续 presence 更新继续呈现。
+- 保留 workspace 导航行为，包括发布时同步选择其他房间或隐藏面板，以及后续访问复用 transport。
+- 不修改 metrics consumer；其既有行为只统计增量，不计同步 bootstrap。

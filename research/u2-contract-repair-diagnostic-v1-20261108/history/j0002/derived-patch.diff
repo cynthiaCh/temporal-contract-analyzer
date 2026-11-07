@@ -1,0 +1,123 @@
+diff -ruN /home/sribd/Downloads/wangshu/temporal-contract-bench-git/case-clusters/download-polling-restoration/arms/download-polling-restoration-low-cue-react18/base/src/usePreparation.js /home/sribd/Downloads/wangshu/temporal-contract-bench-git/results/core-24-completion-20261005/recovered-06-node18/jobs/j0002/agent/candidate/src/usePreparation.js
+--- /home/sribd/Downloads/wangshu/temporal-contract-bench-git/case-clusters/download-polling-restoration/arms/download-polling-restoration-low-cue-react18/base/src/usePreparation.js	2026-10-04 01:06:17.891454000 +0800
++++ /home/sribd/Downloads/wangshu/temporal-contract-bench-git/results/core-24-completion-20261005/recovered-06-node18/jobs/j0002/agent/candidate/src/usePreparation.js	2026-10-06 03:03:26.195957134 +0800
+@@ -1,7 +1,15 @@
+ "use strict";
+ 
+ const React = require("react");
+-const { checkPreparation } = require("./preparation-api.js");
++const {
++  checkPreparation,
++  schedulePreparationRetry,
++  cancelPreparationRetry,
++} = require("./preparation-api.js");
++
++function isReady(status) {
++  return status === true || status === "ready" || Boolean(status && (status.ready === true || status.status === "ready"));
++}
+ 
+ function usePreparation(initialToken) {
+   const state = React.useRef({
+@@ -12,32 +20,93 @@
+     completed: [],
+     token: initialToken,
+   });
++  const retry = React.useRef(null);
++  const generation = React.useRef(0);
++  const mounted = React.useRef(true);
+   const [, render] = React.useReducer((value) => value + 1, 0);
+ 
+-  const publish = () => render();
+-  const check = () => {
++  const publish = React.useCallback(() => {
++    if (mounted.current) render();
++  }, []);
++  const cancelRetry = React.useCallback(() => {
++    if (retry.current !== null) {
++      cancelPreparationRetry(retry.current);
++      retry.current = null;
++    }
++  }, []);
++  const check = React.useCallback((runGeneration) => {
++    if (!mounted.current || !state.current.visible || runGeneration !== generation.current) return;
+     const requestToken = state.current.token;
+     state.current.loading = true;
++    state.current.retryScheduled = false;
+     state.current.checkCount += 1;
+     publish();
+-    checkPreparation(requestToken).then((status) => {
+-      state.current.loading = false;
+-      if (status) state.current.completed.push(requestToken);
++
++    let response;
++    try {
++      response = checkPreparation(requestToken);
++    } catch (error) {
++      response = Promise.reject(error);
++    }
++    Promise.resolve(response).then((status) => {
++      if (!mounted.current || !state.current.visible || runGeneration !== generation.current) return;
++      if (isReady(status)) {
++        retry.current = null;
++        state.current.loading = false;
++        state.current.retryScheduled = false;
++        if (!state.current.completed.includes(requestToken)) state.current.completed.push(requestToken);
++        publish();
++        return;
++      }
++
++      // The dialog remains loading during the retry delay: preparation is pending.
++      state.current.retryScheduled = true;
++      const handle = schedulePreparationRetry(() => {
++        if (retry.current === handle) retry.current = null;
++        if (!mounted.current || !state.current.visible || runGeneration !== generation.current) return;
++        check(runGeneration);
++      });
++      retry.current = handle;
++      publish();
++    }, () => {
++      if (!mounted.current || !state.current.visible || runGeneration !== generation.current) return;
++      state.current.retryScheduled = true;
++      const handle = schedulePreparationRetry(() => {
++        if (retry.current === handle) retry.current = null;
++        if (!mounted.current || !state.current.visible || runGeneration !== generation.current) return;
++        check(runGeneration);
++      });
++      retry.current = handle;
+       publish();
+     });
+-  };
++  }, [publish]);
++  const invalidate = React.useCallback(() => {
++    generation.current += 1;
++    cancelRetry();
++    state.current.loading = false;
++    state.current.retryScheduled = false;
++  }, [cancelRetry]);
++
++  React.useEffect(() => () => {
++    mounted.current = false;
++    invalidate();
++  }, [invalidate]);
+ 
+   return {
+-    start: check,
++    start() {
++      invalidate();
++      check(generation.current);
++    },
+     close() {
++      invalidate();
+       state.current.visible = false;
+       publish();
+     },
+     reopen(nextToken) {
++      invalidate();
+       state.current.token = nextToken;
+       state.current.visible = true;
+-      publish();
+-      check();
++      check(generation.current);
+     },
+     snapshot() {
+       return { ...state.current, completed: [...state.current.completed] };

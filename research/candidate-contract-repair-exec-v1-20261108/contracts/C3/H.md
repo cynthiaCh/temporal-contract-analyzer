@@ -1,0 +1,6 @@
+- 每次 submit 在调用入口捕获 doc、actor、text 快照。
+- commit 成功后，按入口快照及 receipt revision 恰好记录一次审计；失败不生成成功审计。
+- 已接纳提交在 close 或 reopen 后继续处理其历史记录。
+- saved/error 反馈只属于当前 visit 的最新提交。
+- submit 返回在结果处理完成后定案的 Promise。
+- 保留编辑器公开方法及其他消费者行为；搜索预览保持 40 ms、hide 丢弃待处理查询并可复用。
