@@ -1,0 +1,17 @@
+1. 原任务目标与需要保留的行为
+原任务要求适配返回 Promise 或拒绝的 service.commit(snapshot)，使 submit 返回在处理结果后才结算的 Promise，并保留编辑器行为、公开方法及其他消费者；搜索预览不在范围内。README.md:3 另规定：每次提交在入口捕获 doc、actor、text；成功后用该快照和返回的 revision 生成一条审计记录，失败不生成成功审计；关闭或重新打开不取消已接受提交；saved/error 仅属于当前访问的最新提交。
+
+2. 关键源码事实及路径、行号
+[src/controller.js](/workspace/src/controller.js:5) 的 open 建立访问对象，edit 修改其 text；submit 在无当前访问时返回 null（第 8 行），随后设置 latest 标记并复制快照（第 9–10 行）。成功回调先调用 observe，再有条件渲染 saved，并返回 receipt（第 11 行）；失败回调有条件渲染 error，但未返回错误（第 12 行）。当前第 13 行把 commit 的返回值立即传给成功回调，try/catch 只包围这段同步调用。[src/observations.js](/workspace/src/observations.js:1) 的 observe 从 receipt.revision 形成 audit.record。工作区检索到的调用点仅有这些；未见 service、audit 或 render 的实现。
+
+3. 相关事件顺序及其依据
+当前 submit 先确定访问和快照，再调用 commit；若 commit 返回 Promise，第 13 行会在该 Promise 结算前调用 done，第 11 行再将 Promise 当作 receipt 交给 observe，因此审计与 saved 可能早于真实提交成功。异步拒绝发生在同步 try/catch 结束之后，不能由当前 failed 路径处理。多个提交的完成先后未知；第 11–12 行的访问对象与 latest 标记判断，允许旧提交完成，但限制其 UI 更新。close 将 current 设为 null（第 15 行），重新 open 创建新访问对象（第 5 行）。
+
+4. 不同消费者、阶段或效果是否采用不同条件
+审计记录在成功回调中无访问状态条件；saved/error 渲染须同时满足原访问仍是 current 且该提交仍是 latest（controller.js:11–12）。失败路径没有审计调用。搜索预览使用独立的延时任务（[src/search-preview.js](/workspace/src/search-preview.js:3)，[src/trailing-task.js](/workspace/src/trailing-task.js:5)），没有发现与 submit 的调用关系。
+
+5. 能确认的要求、线索及未知项
+可确认的要求来自原任务与 README.md:3；上述调用和条件是实现事实。当前返回值中，无当前访问为 null、同步失败为 undefined、同步成功为 receipt（controller.js:8,11–13）；异步化后的具体拒绝值、失败时 submit 应兑现还是拒绝，以及无访问时的返回约定如何与“返回 Promise”协调，材料未明示。audit.record 与 render 是否同步、是否抛错，以及 Promise 的结算策略也缺少依赖定义；不能据此推定唯一处理方式。
+
+6. 建议验证的行为范围
+建议验证提交入口快照与后续 edit 的隔离；成功结算后审计次数、内容及 receipt 返回；拒绝时无成功审计且当前最新访问显示 error；同一访问的乱序完成、close/reopen 后完成时的审计与 UI；无当前访问和依赖回调异常时的返回或结算行为。以上仅是待验证事件与观察对象，本轮未执行测试。
