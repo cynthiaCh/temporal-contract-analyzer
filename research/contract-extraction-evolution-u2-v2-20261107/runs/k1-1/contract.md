@@ -1,0 +1,18 @@
+1. 可确认的 Contract
+原任务明确要求：下载弹窗遇到准备服务返回 pending 时继续检查；只有收到 ready 后才交付文件。这里的 pending、ready 是任务用语；候选源码没有给出它们的具体返回值格式。
+
+2. 每条的条件、效果、来源及依据
+- 条件：下载弹窗的一次准备检查返回 pending。效果：整个准备活动继续安排后续检查，不能将该次结果当作文件已就绪。来源：原任务“keeps checking pending preparation and delivers the file only after a ready status”。依据充分支持行为方向，但不足以规定轮询间隔或调度方式。
+- 条件：检查返回 ready。效果：此后才交付该文件。来源：同一任务描述。依据充分支持交付时机，但未规定交付接口、重复交付策略或界面收尾方式。
+- 当前实现事实：`DownloadDialog` 使用 `usePreparation(token)`，把 `snapshot().visible` 和 `snapshot().loading` 映射到 DOM 属性；未直接呈现交付动作（/workspace/src/DownloadDialog.jsx:6-14）。`usePreparation` 每次检查捕获当前 token，将 loading 设为 true、增加 checkCount；响应时无条件将 loading 设为 false，并在 status 为真时把捕获的 token 加入 completed（/workspace/src/usePreparation.js:18-27）。它目前没有调用重试调度器。上述字段及真假判断是实现事实，不足以证明服务协议或业务含义。
+- 当前生命周期事实：`close` 只改变 visible；`reopen` 更换共享 token、显示弹窗并立即检查；响应回调仍可写入共享 loading 和 completed（/workspace/src/usePreparation.js:23-40）。因此若旧请求在重开后返回，旧 token 的回调可能与新活动交错；是否实际发生取决于请求完成顺序。当前没有已排队重试，所以不能声称现有弹窗在关闭后仍会轮询。
+- 相邻组件事实：`BackgroundExportPanel` 在非完成结果后安排重试，完成后记录 token；卸载时取消已保存的重试句柄并用 active 阻止回调继续处理（/workspace/src/BackgroundExportPanel.jsx:14-35）。这是参考实现的行为，原任务未把它的状态写法、取消策略或去重方式规定为下载弹窗的义务。调度与取消入口存在于 /workspace/src/preparation-api.js:10-26；其实际触发时机及取消保证未定义。
+
+3. 不能确认的候选要求
+- pending、ready 的确切编码，以及错误、拒绝或其他状态的处理：缺少服务协议；不能直接规定真值或假值映射。
+- 请求结束至下一次请求之间 `loading` 应显示什么，以及 `retryScheduled` 是否必须代表整个准备活动：缺少产品状态定义。现有弹窗在响应后把 loading 设为 false（/workspace/src/usePreparation.js:23-26），相邻组件在非完成结果下保留 loading 为 true 并设置 retryScheduled（/workspace/src/BackgroundExportPanel.jsx:19-34）；两者都不能单独充当规范。
+- 关闭、重开、切换 token、卸载时是否继续检查、取消排队工作、忽略旧响应或隔离活动：缺少生命周期政策和宿主卸载行为。若新增排队重试，还需按其所属活动考察旧任务能否在新 token 下触发；不能从现有 API 推定唯一方案或取消的实际保证。
+- 交付文件的具体机制、是否只交付一次、是否自动关闭弹窗：候选源码仅有 completed 记录，缺少交付接口及产品要求。
+
+4. 建议验证范围
+针对同一 token 的 pending→pending→ready 序列，观察各次请求、请求间隙、排队状态及最终交付时机；针对关闭、重开和 token 切换，分别控制旧请求回调与已排队任务的触发顺序，观察使用的 token 和共享状态；针对卸载，检查回调及调度器仍可能触发时的效果。另需由接口或产品资料确认状态编码、交付动作及生命周期政策；这些建议均非已完成的验证。
