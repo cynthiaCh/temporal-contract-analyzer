@@ -1,0 +1,82 @@
+--- v2/toolflow.py
++++ v2r1/toolflow.py
+@@ -37,34 +37,21 @@
+ 
+ 
+ def extraction_prompt(material):
+-    return '''你是候选可见材料的预分析员，只读 /workspace 的当前源码和文档。
+-一次完成候选自动Contract提取和机制主类分类，不修代码、不评分。
+-不得利用目录外身份、包名、案例ID、历史成绩或隐藏标准；相似词不是类别依据。
+-先实际读取源码正文和当前README/docs，AST只作线索；AST未命中不等于机制不存在。
+-主类按当前维护目标的机制选择T1/T2/T3/T4，可附副标签或unknown。
+-Contract只包含当前任务/文档有据义务；实现缺陷本身不否认机制存在。
+-对下面每个predicate逐一输出known/unknown/contradicted；known表示条件存在且有据，
+-contradicted表示有据明确不成立，unknown表示不足。排除政策不存在不能凭沉默推断。
+-所有known/contradicted事实附当前局部文件、1起始行号和逐字单行quote；unknown可空证据。
+-事实只针对维护对象；不要因相邻预览等另一对象有某政策就赋给维护对象。
+-不使用shell循环之外的执行/写入/测试工具，只允许候选读命令。
+-最终唯一外层字段report是一个JSON字符串，其解析后的对象严格为：
+-{"contract":"可独立交付的中文Contract正文；不含类别/路由信息", "primary_class":"T1|T2|T3|T4|unknown",
+- "secondary_tags":[], "evidence":[{"file":"src/...","line":1,"quote":"逐字单行文本"}],
+- "facts":[{"predicate":"固定key","state":"known|unknown|contradicted","evidence":[{"file":"...","line":1,"quote":"..."}]}]}
+-report总长不超过6000字符；Contract宜不超过1200字符，证据简短但确切。不另发分类调用。
+-语义要求（通用规则，不是标准答案）：
+-识别修复请求中的“实际错误现象”与“希望保留的行为”。Repair/Fix后描述的问题不能直接改写成必须继续发生。
+-逐条核查条件、否定、事件先后、记录/资源归属、历史结果/当前界面资格、取消/结算/完成的区别。
+-源码现有读写位置与未使用字段分别记录；未使用字段或同名字段不能证明应替换现有语义。
+-引用命中不等于论述正确。不要根据API名字补所有权政策，不把取消请求等同结算完成。
+-在同一个report JSON对象额外输出claims和consistency：
+-"claims":[{"kind":"reported_defect|requirement|source_fact|preservation_inference","statement":"一条可核对的断言","evidence":[{"file":"TASK或相对源码路径","line":1,"quote":"逐字单行片段"}]}],
+-"consistency":{"conflicts":[],"unknowns":[],"checked_dimensions":["negation","conditions","event_order","ownership","history_vs_ui","cancellation_vs_completion"]}。
+-TASK指下面原任务的虚拟编号文本。最多4条claims；每条quote尽量短。存在影响修复目标的真实冲突/未知则列出，不能为了通过检查清空。
+-最终检查Contract与claims是否逐条相容；不要把reported_defect写成保留义务。不要引入执行选择的具体补丁。
+-候选公共材料（源码在/workspace，以下不含管理/评价身份）：
+-''' + canonical({k: v for k, v in material.items() if k != 'sources'})
++    return """只读 /workspace 当前源码和README/docs，一次输出候选自动Contract、机制主类、前提和语义自查。
++最终响应严格遵循CLI提供的顶层结构化schema；直接输出JSON对象，不使用report包装、不把JSON编码为字符串、不用Markdown。
++先实际读取源码正文，AST仅为线索；未命中不等于机制不存在。只允许候选读命令，不修代码、不测试、不联网。
++只用原任务、当前源码/文档和以下公共材料，不按目录、包名、case/cluster身份、历史成绩或评分器选类别。
++语义核查：
++1. Repair/Fix之后可能描述待修的错误现象，不能把它改写成应保留的要求。区分reported_defect、requirement、source_fact和preservation_inference。
++2. 原任务要求保留的行为要按当前证据的条件、否定和事件先后表述；不能扩大取消或完成义务。
++3. 每个source_fact明确记录的实际读写对象/寿命(record_owner)，并给出源码owner_expression。记录归属与物理资源归属分别查证。不能因另一个对象有同名或未使用字段，就要求迁移正在使用的记录。不能只凭“对应某次执行”推断记录存放在哪里。
++4. 区分历史持久结果和当前显示资格、取消请求和结算完成。Contract与source_fact必须相容；存在核心冲突则列在consistency，不能假装已核查。
++每个predicate输出一次known/unknown/contradicted。known/contradicted需一条当前证据；unknown可空。
++TASK是原任务虚拟编号文本，line从1开始。file用局部相对路径，quote必须是逐字连续的单行短片段，最长80字符；遇到压缩长行只引相关子串，绝不能复制整行。每个事实/claim只用一条证据。
++Contract最多1400字符，claims最多4条，evidence最多3条；未知归属诚实填unknown。
++不额外调用分类模型；不输出源码补丁或任务标准答案。
++公共材料：
++""" + canonical({k:v for k,v in material.items() if k!='sources'})
+ 
+ 
+ def maintenance_prompt(task, contract, experience=None):
+@@ -96,7 +83,7 @@
+         if set(extra)!={'claims','consistency'}:return 'incomplete_semantic_structure'
+         if not isinstance(extra['claims'],list) or not isinstance(extra['consistency'],dict):return 'invalid_semantic_types'
+         for claim in extra['claims']:
+-            if set(claim)!={'kind','statement','evidence'} or claim['kind'] not in ['reported_defect','requirement','source_fact','preservation_inference']:return 'invalid_semantic_claim'
++            if set(claim) not in [{'kind','statement','evidence'},{'kind','statement','evidence','record_owner','owner_expression'}] or claim['kind'] not in ['reported_defect','requirement','source_fact','preservation_inference']:return 'invalid_semantic_claim'
+             if not valid_evidence(claim['evidence'],sources):return 'unbound_semantic_claim'
+         if set(extra['consistency'])!={'conflicts','unknowns','checked_dimensions'}:return 'invalid_semantic_review'
+         if extra['consistency']['conflicts'] or extra['consistency']['unknowns']:return 'unresolved_semantic_conflict'
+@@ -132,7 +119,7 @@
+             raise ValueError('unknown applicability predicate')
+     if set(candidate['requires']) & set(candidate['excludes']):
+         raise ValueError('applicability conflict')
+-    entry = {**candidate, 'version': 'pilot-v2-1', 'primary_class': primary,
++    entry = {**candidate, 'version': 'pilot-v2r1-1', 'primary_class': primary,
+              'text_sha256': digest(candidate['text'])}
+     entry['sha256'] = digest(canonical(entry))
+     return entry
+@@ -202,9 +189,9 @@
+ 适用性requires/excludes只用固定predicate key；至少一个requires；仅当有依据时设置
+ 排除predicate。excludes只有被当前证据明确否定才可路由，未知会回退；不要把相邻
+ 对象政策误用于维护对象。不要要求候选已经修好才适用。
+-最终唯一外层字段report为JSON字符串，解析后严格为
++最终直接输出CLI schema规定的顶层JSON对象，不使用report包装，不把JSON放进字符串：
+ {"text":"完整经验原文", "requires":["predicate key"], "excludes":[]}。
+-report不超过6000字符。只生成一个候选，不另给修订版。
++text最多3600字符。只生成一个候选，不另给修订版。requires/excludes必须与正文适用边界一致；无法核查的适用政策不能强行肯定。
+ 固定predicate词典：''' + canonical(PREDICATES) + '\n本批训练材料：\n' + canonical(payload)
+ 
+ 

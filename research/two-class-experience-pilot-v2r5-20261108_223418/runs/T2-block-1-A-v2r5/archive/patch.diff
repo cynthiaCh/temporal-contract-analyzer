@@ -1,0 +1,54 @@
+--- a/src/workflow.py
++++ b/src/workflow.py
+@@ -91,14 +91,21 @@
+         if leaving:
+             self.env.store.stop(leaving.token)
+         self.env.output('document', None)
+-        pass
++        # A departure must not turn an accepted edit into discarded timer work.
++        # Stop the visit first, so this final save cannot render through a
++        # subscription that has already been retired.
++        if leaving:
++            leaving.task.flush()
+ 
+     def open(self, key):
+         self.env.output('notice', None)
+         self.navigation += 1
+         request = self.navigation
+         self.retire()
+-        pass
++        # Saving the departing visit is synchronous and integrations may start
++        # another navigation while it is delivered.
++        if request != self.navigation:
++            return
+         token = self.env.store.subscribe(lambda event: self.env.output('status', event) if event['id'] == key else None)
+         task = Trailing(self.env, 120, lambda text: self.env.write(key, text))
+         self.current = Visit(key, self.env.store.read(key), token, task)
+@@ -107,7 +114,7 @@
+     def edit(self, text):
+         if self.current is not None:
+             self.current.text = text
+-            self.env.write(self.current.id, text)
++            self.current.task.push(text)
+ 
+     def close(self):
+         self.env.output('notice', None)
+@@ -119,10 +126,15 @@
+         if visit is None:
+             return None
+         snapshot = dict(id=visit.id, text=visit.text)
+-        pass
+-        pass
++        navigation = self.navigation
++        # Capture is a persistence boundary, rather than merely a rendering
++        # boundary.  Flush the value accepted at entry before capture.
++        visit.task.flush()
+         receipt = self.env.capture(snapshot)
+-        self.env.output('notice', receipt)
++        # A save delivery may have navigated away.  That acceptance remains
++        # valid, but its feedback must not appear in the later visit.
++        if self.navigation == navigation and self.current is visit:
++            self.env.output('notice', receipt)
+         return receipt
+ 
+     def dispose(self):

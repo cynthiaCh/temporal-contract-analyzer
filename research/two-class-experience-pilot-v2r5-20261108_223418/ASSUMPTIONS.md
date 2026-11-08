@@ -1,0 +1,7 @@
+# Test-only v2r5 material acceptance
+
+Self-review field names are not an oracle. Preserve all model conflicts/unknowns verbatim; mandatory executing-agent review from current task/source must establish actual incompatible policy or unresolved core policy. Resource-vs-record distinctions, expected defect-vs-current-source differences and non-exhaustiveness are not automatically incompatible obligations. Quotes alone remain insufficient. No class/Contract/fact editing, no new extraction or model judge, no test scores exist before this change.
+
+Reuse exact correct D1/T1 automatic objects, correct D2/T2 original objects, two new controlled D1 baselines and the one rejected raw reflection. D1 raw candidate has confirmed unsupported policy, stays rejected; no second reflection, no revalidation with known-invalid policy, no experience delivered. Empty library was locked in the source revision before T1 extraction. Eight fixed tests run with AUTO fallback, matching A/B prompts, independent starts, same roles/tools/time/requests. No learning.
+
+Current model caps:8 test maintenance sessions,192 requests (24 each),600s each,concurrency1; extract/reflect caps0. V2-family preparation already used4 extraction attempts,2 AUTO and1 reflection:22 requests in total. All are charged and reported in history, not re-run. No production/global changes, installs or commits. Actual first infrastructure failure stops, no retry or replacement slots.

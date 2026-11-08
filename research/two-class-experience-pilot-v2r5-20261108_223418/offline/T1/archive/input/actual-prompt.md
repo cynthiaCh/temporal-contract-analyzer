@@ -1,0 +1,1 @@
+Offline fixture only, no model calls.

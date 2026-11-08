@@ -1,0 +1,7 @@
+# v2r3 corrected execution interfaces
+
+Uses the already offline-fixed typed extraction/reflector schemas, separate maintenance envelope, null-safe archival, complete-candidate scoring and safe stderr-to-null/||true read grammar. No new production/global changes, installs or model probes.44 unit checks, all16 historical real read inputs, exact3 formerly interrupted safe tools inside the production namespace, all4 actual candidate namespaces and both historical malformed/failed response replays passed in this fresh checkout. Known fixed branches are verified; future model/service behavior is not guaranteed.
+
+Latest user `try again` authorizes this fresh execution. Prior stopped v2/r1 keep2 extraction sessions,4 requests and60945 known tokens; they are not erased or counted as new successful data. Only two remaining original extraction slots are used for D1/T1. D2/T2 correctly reused automatic Contract remains byte-identical. No old learned experience seed, T3 search, new cases, model changes, retry or test-result-driven modifications.
+
+Role budgets unchanged: extraction gpt-6-sol/low/12, maintenance gpt-5.6-terra/low/24, reflection gpt-5.6-terra/medium/12/no-tools,600s,concurrency1. Current max15 sessions/324 requests, including prior actual requests at most328 across the v2 family. Tests frozen before first maintenance and retain all8 fixed slots even for fallback. First infrastructure/invalid core material stops after best-effort archive.
