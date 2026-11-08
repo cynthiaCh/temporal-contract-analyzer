@@ -104,3 +104,13 @@
 | 2026-10-31 21:59 +0800 | /idea-creator | .aris/traces/idea-creator/2026-10-31_run01/002-non-temporal-ranking.meta.json | idea-discovery | Non-temporal tool proposals, sources, coverage, report or provisional review |
 | 2026-10-31 21:59 +0800 | /idea-creator | .aris/traces/idea-creator/2026-10-31_run01/002-non-temporal-ranking.request.json | idea-discovery | Non-temporal tool proposals, sources, coverage, report or provisional review |
 | 2026-10-31 21:59 +0800 | /idea-creator | .aris/traces/idea-creator/2026-10-31_run01/002-non-temporal-ranking.response.md | idea-discovery | Non-temporal tool proposals, sources, coverage, report or provisional review |
+
+| 2026-11-08 11:22:42 +0800 | /experiment-plan | refine-logs/contract-self-evolution-v1-20261108/EXPERIMENT_PLAN.md | implementation | Contract E1 planning only; no experiment launched |
+| 2026-11-08 11:22:42 +0800 | /experiment-plan | refine-logs/contract-self-evolution-v1-20261108/EXPERIMENT_PLAN_20261108_111945.md | implementation | Contract E1 planning only; no experiment launched |
+| 2026-11-08 11:22:42 +0800 | /experiment-plan | refine-logs/contract-self-evolution-v1-20261108/EXPERIMENT_TRACKER.md | implementation | Contract E1 planning only; no experiment launched |
+| 2026-11-08 11:22:42 +0800 | /experiment-plan | refine-logs/contract-self-evolution-v1-20261108/EXPERIMENT_TRACKER_20261108_111945.md | implementation | Contract E1 planning only; no experiment launched |
+| 2026-11-08 11:22:42 +0800 | /experiment-plan | refine-logs/contract-self-evolution-v1-20261108/README.md | implementation | Contract E1 planning only; no experiment launched |
+| 2026-11-08 11:22:42 +0800 | /experiment-plan | refine-logs/contract-self-evolution-v1-20261108/case-selection.csv | implementation | Contract E1 planning only; no experiment launched |
+| 2026-11-08 11:22:42 +0800 | /experiment-plan | refine-logs/contract-self-evolution-v1-20261108/protocol.json | implementation | Contract E1 planning only; no experiment launched |
+| 2026-11-08 11:22:42 +0800 | /experiment-plan | refine-logs/contract-self-evolution-v1-20261108/source-manifest.json | implementation | Contract E1 planning only; no experiment launched |
+| 2026-11-08 11:22:42 +0800 | /experiment-plan | refine-logs/contract-self-evolution-v1-20261108/validation.json | implementation | Contract E1 planning only; no experiment launched |
