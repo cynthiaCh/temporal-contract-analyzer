@@ -1,0 +1,676 @@
+{
+  "README.md": [
+    {
+      "line": 1,
+      "text": "# Museum accession notes"
+    },
+    {
+      "line": 2,
+      "text": ""
+    },
+    {
+      "line": 3,
+      "text": "This desk edits persistent records and accepts archive receipts. The host injects"
+    },
+    {
+      "line": 4,
+      "text": "store, timers, archive and rendering services. Public calls open(id), edit(text),"
+    },
+    {
+      "line": 5,
+      "text": "close(), submit() and dispose() are synchronous. Renderers are output sinks and"
+    },
+    {
+      "line": 6,
+      "text": "never reenter. Store delivery may call workspace integrations inline; the latest"
+    },
+    {
+      "line": 7,
+      "text": "navigation request by start order is the host's selection. Adjacent preview uses"
+    },
+    {
+      "line": 8,
+      "text": "its own trailing utility and can be hidden or reused. See docs/host-api.md and"
+    },
+    {
+      "line": 9,
+      "text": "the source implementations for the service APIs."
+    }
+  ],
+  "docs/host-api.md": [
+    {
+      "line": 1,
+      "text": "# Host API"
+    },
+    {
+      "line": 2,
+      "text": ""
+    },
+    {
+      "line": 3,
+      "text": "Store read/write/subscribe are synchronous. Records are written before inline"
+    },
+    {
+      "line": 4,
+      "text": "delivery; removed subscriptions are skipped. onSaved may call navigation or edit."
+    },
+    {
+      "line": 5,
+      "text": "Rendering a save event is tied to the mounted subscription; close/open retires"
+    },
+    {
+      "line": 6,
+      "text": "that subscription immediately. Departed text is readable when navigation returns."
+    },
+    {
+      "line": 7,
+      "text": "Each opening is a fresh visit, even when its record key is the same."
+    },
+    {
+      "line": 8,
+      "text": ""
+    },
+    {
+      "line": 9,
+      "text": "Archive capture/list copy document and text values; these sinks never navigate."
+    },
+    {
+      "line": 10,
+      "text": "A submit accepts its selected record and text at entry, returns one immutable"
+    },
+    {
+      "line": 11,
+      "text": "receipt, and the store already contains that text when capture is called. No"
+    },
+    {
+      "line": 12,
+      "text": "selection returns null. Later navigation does not undo acceptance. Visible"
+    },
+    {
+      "line": 13,
+      "text": "feedback belongs to its original visit; navigation clears it, and uninterrupted"
+    },
+    {
+      "line": 14,
+      "text": "acceptance displays it. This API is also used after edits continue."
+    },
+    {
+      "line": 15,
+      "text": ""
+    },
+    {
+      "line": 16,
+      "text": "Timers schedule(callback, delay) and cancel(handle) are injected by the host."
+    },
+    {
+      "line": 17,
+      "text": "Cancellation discards a pending preview query. Preview publishes at a 40 ms"
+    },
+    {
+      "line": 18,
+      "text": "quiet interval; hide discards unpublished work and subsequent reuse is supported."
+    }
+  ],
+  "src/workflow.py": [
+    {
+      "line": 1,
+      "text": "\"\"\"Accession editor and its injected workspace services.\"\"\""
+    },
+    {
+      "line": 2,
+      "text": "from dataclasses import dataclass"
+    },
+    {
+      "line": 3,
+      "text": ""
+    },
+    {
+      "line": 4,
+      "text": ""
+    },
+    {
+      "line": 5,
+      "text": "class Store:"
+    },
+    {
+      "line": 6,
+      "text": "    def __init__(self, records):"
+    },
+    {
+      "line": 7,
+      "text": "        self.records = dict(records)"
+    },
+    {
+      "line": 8,
+      "text": "        self.listeners = {}"
+    },
+    {
+      "line": 9,
+      "text": "        self.serial = self.revision = 0"
+    },
+    {
+      "line": 10,
+      "text": ""
+    },
+    {
+      "line": 11,
+      "text": "    def read(self, key):"
+    },
+    {
+      "line": 12,
+      "text": "        return self.records.get(key, '')"
+    },
+    {
+      "line": 13,
+      "text": ""
+    },
+    {
+      "line": 14,
+      "text": "    def subscribe(self, listener):"
+    },
+    {
+      "line": 15,
+      "text": "        self.serial += 1"
+    },
+    {
+      "line": 16,
+      "text": "        token = self.serial"
+    },
+    {
+      "line": 17,
+      "text": "        self.listeners[token] = listener"
+    },
+    {
+      "line": 18,
+      "text": "        return token"
+    },
+    {
+      "line": 19,
+      "text": ""
+    },
+    {
+      "line": 20,
+      "text": "    def stop(self, token):"
+    },
+    {
+      "line": 21,
+      "text": "        self.listeners.pop(token, None)"
+    },
+    {
+      "line": 22,
+      "text": ""
+    },
+    {
+      "line": 23,
+      "text": "    def write(self, key, text):"
+    },
+    {
+      "line": 24,
+      "text": "        self.records[key] = text"
+    },
+    {
+      "line": 25,
+      "text": "        self.revision += 1"
+    },
+    {
+      "line": 26,
+      "text": "        event = dict(id=key, text=text, revision=self.revision)"
+    },
+    {
+      "line": 27,
+      "text": "        for token, listener in list(self.listeners.items()):"
+    },
+    {
+      "line": 28,
+      "text": "            if token in self.listeners:"
+    },
+    {
+      "line": 29,
+      "text": "                listener(event)"
+    },
+    {
+      "line": 30,
+      "text": "        return event"
+    },
+    {
+      "line": 31,
+      "text": ""
+    },
+    {
+      "line": 32,
+      "text": ""
+    },
+    {
+      "line": 33,
+      "text": "@dataclass(frozen=True)"
+    },
+    {
+      "line": 34,
+      "text": "class Receipt:"
+    },
+    {
+      "line": 35,
+      "text": "    id: str"
+    },
+    {
+      "line": 36,
+      "text": "    text: str"
+    },
+    {
+      "line": 37,
+      "text": ""
+    },
+    {
+      "line": 38,
+      "text": ""
+    },
+    {
+      "line": 39,
+      "text": "class Archive:"
+    },
+    {
+      "line": 40,
+      "text": "    def __init__(self):"
+    },
+    {
+      "line": 41,
+      "text": "        self.receipts = []"
+    },
+    {
+      "line": 42,
+      "text": ""
+    },
+    {
+      "line": 43,
+      "text": "    def capture(self, value):"
+    },
+    {
+      "line": 44,
+      "text": "        receipt = Receipt(value['id'], value['text'])"
+    },
+    {
+      "line": 45,
+      "text": "        self.receipts.append(receipt)"
+    },
+    {
+      "line": 46,
+      "text": "        return vars(receipt).copy()"
+    },
+    {
+      "line": 47,
+      "text": ""
+    },
+    {
+      "line": 48,
+      "text": "    def list(self):"
+    },
+    {
+      "line": 49,
+      "text": "        return [vars(receipt).copy() for receipt in self.receipts]"
+    },
+    {
+      "line": 50,
+      "text": ""
+    },
+    {
+      "line": 51,
+      "text": ""
+    },
+    {
+      "line": 52,
+      "text": "class Trailing:"
+    },
+    {
+      "line": 53,
+      "text": "    def __init__(self, env, delay, work):"
+    },
+    {
+      "line": 54,
+      "text": "        self.env, self.delay, self.work = env, delay, work"
+    },
+    {
+      "line": 55,
+      "text": "        self.handle = self.pending = None"
+    },
+    {
+      "line": 56,
+      "text": ""
+    },
+    {
+      "line": 57,
+      "text": "    def push(self, value):"
+    },
+    {
+      "line": 58,
+      "text": "        if self.handle is not None:"
+    },
+    {
+      "line": 59,
+      "text": "            self.env.cancel(self.handle)"
+    },
+    {
+      "line": 60,
+      "text": "        self.pending = value"
+    },
+    {
+      "line": 61,
+      "text": "        self.handle = self.env.schedule(self.flush, self.delay)"
+    },
+    {
+      "line": 62,
+      "text": ""
+    },
+    {
+      "line": 63,
+      "text": "    def flush(self):"
+    },
+    {
+      "line": 64,
+      "text": "        if self.handle is not None:"
+    },
+    {
+      "line": 65,
+      "text": "            self.env.cancel(self.handle)"
+    },
+    {
+      "line": 66,
+      "text": "        value = self.pending"
+    },
+    {
+      "line": 67,
+      "text": "        self.handle = self.pending = None"
+    },
+    {
+      "line": 68,
+      "text": "        if value is not None:"
+    },
+    {
+      "line": 69,
+      "text": "            self.work(value)"
+    },
+    {
+      "line": 70,
+      "text": ""
+    },
+    {
+      "line": 71,
+      "text": "    def cancel(self):"
+    },
+    {
+      "line": 72,
+      "text": "        if self.handle is not None:"
+    },
+    {
+      "line": 73,
+      "text": "            self.env.cancel(self.handle)"
+    },
+    {
+      "line": 74,
+      "text": "        self.handle = self.pending = None"
+    },
+    {
+      "line": 75,
+      "text": ""
+    },
+    {
+      "line": 76,
+      "text": ""
+    },
+    {
+      "line": 77,
+      "text": "@dataclass"
+    },
+    {
+      "line": 78,
+      "text": "class Visit:"
+    },
+    {
+      "line": 79,
+      "text": "    id: str"
+    },
+    {
+      "line": 80,
+      "text": "    text: str"
+    },
+    {
+      "line": 81,
+      "text": "    token: int"
+    },
+    {
+      "line": 82,
+      "text": "    task: Trailing"
+    },
+    {
+      "line": 83,
+      "text": ""
+    },
+    {
+      "line": 84,
+      "text": ""
+    },
+    {
+      "line": 85,
+      "text": "class Workspace:"
+    },
+    {
+      "line": 86,
+      "text": "    def __init__(self, env):"
+    },
+    {
+      "line": 87,
+      "text": "        self.env, self.current, self.navigation = env, None, 0"
+    },
+    {
+      "line": 88,
+      "text": ""
+    },
+    {
+      "line": 89,
+      "text": "    def retire(self):"
+    },
+    {
+      "line": 90,
+      "text": "        leaving, self.current = self.current, None"
+    },
+    {
+      "line": 91,
+      "text": "        if leaving:"
+    },
+    {
+      "line": 92,
+      "text": "            self.env.store.stop(leaving.token)"
+    },
+    {
+      "line": 93,
+      "text": "        self.env.output('document', None)"
+    },
+    {
+      "line": 94,
+      "text": "        pass"
+    },
+    {
+      "line": 95,
+      "text": ""
+    },
+    {
+      "line": 96,
+      "text": "    def open(self, key):"
+    },
+    {
+      "line": 97,
+      "text": "        self.env.output('notice', None)"
+    },
+    {
+      "line": 98,
+      "text": "        self.navigation += 1"
+    },
+    {
+      "line": 99,
+      "text": "        request = self.navigation"
+    },
+    {
+      "line": 100,
+      "text": "        self.retire()"
+    },
+    {
+      "line": 101,
+      "text": "        pass"
+    },
+    {
+      "line": 102,
+      "text": "        token = self.env.store.subscribe(lambda event: self.env.output('status', event) if event['id'] == key else None)"
+    },
+    {
+      "line": 103,
+      "text": "        task = Trailing(self.env, 120, lambda text: self.env.write(key, text))"
+    },
+    {
+      "line": 104,
+      "text": "        self.current = Visit(key, self.env.store.read(key), token, task)"
+    },
+    {
+      "line": 105,
+      "text": "        self.env.output('document', dict(id=key, text=self.current.text))"
+    },
+    {
+      "line": 106,
+      "text": ""
+    },
+    {
+      "line": 107,
+      "text": "    def edit(self, text):"
+    },
+    {
+      "line": 108,
+      "text": "        if self.current is not None:"
+    },
+    {
+      "line": 109,
+      "text": "            self.current.text = text"
+    },
+    {
+      "line": 110,
+      "text": "            self.env.write(self.current.id, text)"
+    },
+    {
+      "line": 111,
+      "text": ""
+    },
+    {
+      "line": 112,
+      "text": "    def close(self):"
+    },
+    {
+      "line": 113,
+      "text": "        self.env.output('notice', None)"
+    },
+    {
+      "line": 114,
+      "text": "        self.navigation += 1"
+    },
+    {
+      "line": 115,
+      "text": "        self.retire()"
+    },
+    {
+      "line": 116,
+      "text": ""
+    },
+    {
+      "line": 117,
+      "text": "    def submit(self):"
+    },
+    {
+      "line": 118,
+      "text": "        visit = self.current"
+    },
+    {
+      "line": 119,
+      "text": "        if visit is None:"
+    },
+    {
+      "line": 120,
+      "text": "            return None"
+    },
+    {
+      "line": 121,
+      "text": "        snapshot = dict(id=visit.id, text=visit.text)"
+    },
+    {
+      "line": 122,
+      "text": "        pass"
+    },
+    {
+      "line": 123,
+      "text": "        pass"
+    },
+    {
+      "line": 124,
+      "text": "        receipt = self.env.capture(snapshot)"
+    },
+    {
+      "line": 125,
+      "text": "        self.env.output('notice', receipt)"
+    },
+    {
+      "line": 126,
+      "text": "        return receipt"
+    },
+    {
+      "line": 127,
+      "text": ""
+    },
+    {
+      "line": 128,
+      "text": "    def dispose(self):"
+    },
+    {
+      "line": 129,
+      "text": "        self.close()"
+    },
+    {
+      "line": 130,
+      "text": ""
+    },
+    {
+      "line": 131,
+      "text": ""
+    },
+    {
+      "line": 132,
+      "text": "class Preview:"
+    },
+    {
+      "line": 133,
+      "text": "    def __init__(self, env):"
+    },
+    {
+      "line": 134,
+      "text": "        self.task = Trailing(env, 40, lambda query: env.output('preview', dict(query=query)))"
+    },
+    {
+      "line": 135,
+      "text": ""
+    },
+    {
+      "line": 136,
+      "text": "    def query(self, text):"
+    },
+    {
+      "line": 137,
+      "text": "        self.task.push(text)"
+    },
+    {
+      "line": 138,
+      "text": ""
+    },
+    {
+      "line": 139,
+      "text": "    def hide(self):"
+    },
+    {
+      "line": 140,
+      "text": "        self.task.cancel()"
+    }
+  ]
+}

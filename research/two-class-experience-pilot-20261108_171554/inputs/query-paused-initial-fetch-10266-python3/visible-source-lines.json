@@ -1,0 +1,398 @@
+{
+  "README.md": [
+    {
+      "line": 1,
+      "text": "# Museum exhibit lookup"
+    },
+    {
+      "line": 2,
+      "text": ""
+    },
+    {
+      "line": 3,
+      "text": "A shared per-key query cache provides subscribe(key,options) -> unique observer"
+    },
+    {
+      "line": 4,
+      "text": "handle, unsubscribe(handle), online(boolean), focus(boolean), snapshot(key),"
+    },
+    {
+      "line": 5,
+      "text": "and dispose() of observer scopes. Queries retain status (pending/success/error),"
+    },
+    {
+      "line": 6,
+      "text": "fetchStatus (idle/fetching/paused), and data. queryFn receives a lazy signal"
+    },
+    {
+      "line": 7,
+      "text": "accessor. Each actual access records consumption; each fetch owns its controller"
+    },
+    {
+      "line": 8,
+      "text": "and completion. Completion is asynchronous; initial online entry is synchronous,"
+    },
+    {
+      "line": 9,
+      "text": "paused continuation resumes on a Promise turn. First start uses network mode;"
+    },
+    {
+      "line": 10,
+      "text": "continuation also needs focus. 'always' can run offline; 'offlineFirst' allows"
+    },
+    {
+      "line": 11,
+      "text": "first offline entry but retry can pause. Retries use explicit scheduler handles."
+    },
+    {
+      "line": 12,
+      "text": "Multiple observers share one fetch. Unconsumed active work can finish into cache"
+    },
+    {
+      "line": 13,
+      "text": "after its view departs; consumed work is physically abortable. Cancellation"
+    },
+    {
+      "line": 14,
+      "text": "reverts previous query data/status and settles the originating attempt. Late"
+    },
+    {
+      "line": 15,
+      "text": "fulfillment cannot become a new attempt's data. Unknown unsubscribe is inert."
+    },
+    {
+      "line": 16,
+      "text": "The component owns observer scope; the cache remains outside individual views."
+    },
+    {
+      "line": 17,
+      "text": "Dependency versions and build/test configuration are outside the repair scope."
+    },
+    {
+      "line": 18,
+      "text": ""
+    },
+    {
+      "line": 19,
+      "text": "Embedding API: bind registers a native callable; Environment.call"
+    },
+    {
+      "line": 20,
+      "text": "provides newAttempt(key,number), abort(key,number), request(key,number, lazy-read"
+    },
+    {
+      "line": 21,
+      "text": "token, completion token), defer(callback token), schedule(callback token,delay)."
+    },
+    {
+      "line": 22,
+      "text": "The request host calls queryFn with an actual AbortSignal property. Reading it"
+    },
+    {
+      "line": 23,
+      "text": "invokes the native consumption closure synchronously; Promise settlement later"
+    },
+    {
+      "line": 24,
+      "text": "invokes the native completion with {ok,value}. All observer, retry, cancellation,"
+    },
+    {
+      "line": 25,
+      "text": "state and cache logic executes in the target language. No native JS Promise or"
+    },
+    {
+      "line": 26,
+      "text": "DOM claim is made. Native object identity binds query and attempt generations;"
+    },
+    {
+      "line": 27,
+      "text": "wire handles only identify injected callbacks. "
+    },
+    {
+      "line": 28,
+      "text": "Python cache owner and lazy context property; closure retry continuations"
+    }
+  ],
+  "src/workflow.py": [
+    {
+      "line": 1,
+      "text": "class Attempt:"
+    },
+    {
+      "line": 2,
+      "text": "    def __init__(self,number,previous,options):self.number=number;self.previous=dict(previous);self.options=options;self.settled=False;self.consumed=False;self.retry_cancelled=False;self.failures=0;self.queued=False"
+    },
+    {
+      "line": 3,
+      "text": "class Query:"
+    },
+    {
+      "line": 4,
+      "text": "    def __init__(self,key,data):self.key=key;self.state=dict(status='success' if data is not None else 'pending',fetchStatus='idle',data=data);self.observers=set();self.attempt=None;self.consumed=False"
+    },
+    {
+      "line": 5,
+      "text": "class Session:"
+    },
+    {
+      "line": 6,
+      "text": "    def __init__(self,env,initial):self.env=env;self.cache={};self.handles={};self.online=initial.get('online',True);self.focused=initial.get('focused',True);self.serial=0;self.fetch_serial=0"
+    },
+    {
+      "line": 7,
+      "text": "    def eligible(self,a):return self.focused and (a.options.get('networkMode','online')=='always' or self.online)"
+    },
+    {
+      "line": 8,
+      "text": "    def active(self,q,a):return q.attempt is a and not a.settled"
+    },
+    {
+      "line": 9,
+      "text": "    def cancel(self,q,a):"
+    },
+    {
+      "line": 10,
+      "text": "        if a.settled:return"
+    },
+    {
+      "line": 11,
+      "text": "        a.settled=True;q.state=dict(a.previous);q.state['fetchStatus']='idle';self.env.call('abort',q.key,a.number)"
+    },
+    {
+      "line": 12,
+      "text": "    def invoke(self,q,a):"
+    },
+    {
+      "line": 13,
+      "text": "        a.queued=False"
+    },
+    {
+      "line": 14,
+      "text": "        if not self.active(q,a):return"
+    },
+    {
+      "line": 15,
+      "text": "        q.state['fetchStatus']='fetching';q.consumed=False"
+    },
+    {
+      "line": 16,
+      "text": "        def consume(_):q.consumed=True;return None"
+    },
+    {
+      "line": 17,
+      "text": "        def complete(value):"
+    },
+    {
+      "line": 18,
+      "text": "            if not self.active(q,a):return"
+    },
+    {
+      "line": 19,
+      "text": "            if value['ok']:"
+    },
+    {
+      "line": 20,
+      "text": "                a.settled=True;q.state.update(data=value['value'],status='success',fetchStatus='idle')"
+    },
+    {
+      "line": 21,
+      "text": "            elif not a.retry_cancelled and a.failures<a.options.get('retry',0):"
+    },
+    {
+      "line": 22,
+      "text": "                a.failures+=1"
+    },
+    {
+      "line": 23,
+      "text": "                def retry(_):"
+    },
+    {
+      "line": 24,
+      "text": "                    if not self.active(q,a):return"
+    },
+    {
+      "line": 25,
+      "text": "                    if a.retry_cancelled:a.settled=True;q.state.update(status='error',fetchStatus='idle');return"
+    },
+    {
+      "line": 26,
+      "text": "                    if self.eligible(a):self.invoke(q,a)"
+    },
+    {
+      "line": 27,
+      "text": "                    else:q.state['fetchStatus']='paused'"
+    },
+    {
+      "line": 28,
+      "text": "                self.env.call('schedule',self.env.bind(retry),a.options.get('retryDelay',10))"
+    },
+    {
+      "line": 29,
+      "text": "            else:a.settled=True;q.state.update(status='error',fetchStatus='idle')"
+    },
+    {
+      "line": 30,
+      "text": "        self.env.call('request',q.key,a.number,self.env.bind(consume),self.env.bind(complete))"
+    },
+    {
+      "line": 31,
+      "text": "    def resume(self,q):"
+    },
+    {
+      "line": 32,
+      "text": "        a=q.attempt"
+    },
+    {
+      "line": 33,
+      "text": "        if a and self.active(q,a) and q.state['fetchStatus']=='paused' and self.eligible(a) and not a.queued:"
+    },
+    {
+      "line": 34,
+      "text": "            a.queued=True"
+    },
+    {
+      "line": 35,
+      "text": "            def continuation(_):"
+    },
+    {
+      "line": 36,
+      "text": "                a.queued=False"
+    },
+    {
+      "line": 37,
+      "text": "                if not self.active(q,a):return"
+    },
+    {
+      "line": 38,
+      "text": "                if a.failures and a.retry_cancelled:a.settled=True;q.state.update(status='error',fetchStatus='idle');return"
+    },
+    {
+      "line": 39,
+      "text": "                self.invoke(q,a)"
+    },
+    {
+      "line": 40,
+      "text": "            self.env.call('defer',self.env.bind(continuation))"
+    },
+    {
+      "line": 41,
+      "text": "    def subscribe(self,key,options):"
+    },
+    {
+      "line": 42,
+      "text": "        q=self.cache.get(key)"
+    },
+    {
+      "line": 43,
+      "text": "        if q is None:q=Query(key,options.get('initialData'));self.cache[key]=q"
+    },
+    {
+      "line": 44,
+      "text": "        self.serial+=1;handle=self.serial;self.handles[handle]=q;q.observers.add(handle)"
+    },
+    {
+      "line": 45,
+      "text": "        if q.attempt and not q.attempt.settled:q.attempt.retry_cancelled=False;self.resume(q)"
+    },
+    {
+      "line": 46,
+      "text": "        else:"
+    },
+    {
+      "line": 47,
+      "text": "            self.fetch_serial+=1;a=Attempt(self.fetch_serial,q.state,options);q.attempt=a;self.env.call('newAttempt',key,a.number)"
+    },
+    {
+      "line": 48,
+      "text": "            if options.get('networkMode','online')!='online' or self.online:self.invoke(q,a)"
+    },
+    {
+      "line": 49,
+      "text": "            else:q.state['fetchStatus']='paused'"
+    },
+    {
+      "line": 50,
+      "text": "        return handle"
+    },
+    {
+      "line": 51,
+      "text": "    def unsubscribe(self,handle):"
+    },
+    {
+      "line": 52,
+      "text": "        q=self.handles.pop(handle,None)"
+    },
+    {
+      "line": 53,
+      "text": "        if q is None:return"
+    },
+    {
+      "line": 54,
+      "text": "        q.observers.remove(handle)"
+    },
+    {
+      "line": 55,
+      "text": "        if not q.observers:"
+    },
+    {
+      "line": 56,
+      "text": "            a=q.attempt"
+    },
+    {
+      "line": 57,
+      "text": "            if a and not a.settled:"
+    },
+    {
+      "line": 58,
+      "text": "                if q.consumed:self.cancel(q,a)"
+    },
+    {
+      "line": 59,
+      "text": "                else:a.retry_cancelled=True"
+    },
+    {
+      "line": 60,
+      "text": "    def handle(self,name,args):"
+    },
+    {
+      "line": 61,
+      "text": "        if name=='subscribe':return self.subscribe(*args)"
+    },
+    {
+      "line": 62,
+      "text": "        if name=='unsubscribe':return self.unsubscribe(*args)"
+    },
+    {
+      "line": 63,
+      "text": "        if name=='online':self.online=args[0]"
+    },
+    {
+      "line": 64,
+      "text": "        elif name=='focus':self.focused=args[0]"
+    },
+    {
+      "line": 65,
+      "text": "        elif name=='snapshot':return dict(self.cache[args[0]].state)"
+    },
+    {
+      "line": 66,
+      "text": "        elif name=='dispose':"
+    },
+    {
+      "line": 67,
+      "text": "            for h in list(self.handles):self.unsubscribe(h)"
+    },
+    {
+      "line": 68,
+      "text": "            return None"
+    },
+    {
+      "line": 69,
+      "text": "        else:raise ValueError(name)"
+    },
+    {
+      "line": 70,
+      "text": "        for q in list(self.cache.values()):self.resume(q)"
+    }
+  ]
+}
