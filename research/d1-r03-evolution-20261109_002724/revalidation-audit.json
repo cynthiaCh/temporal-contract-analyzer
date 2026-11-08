@@ -1,0 +1,264 @@
+{
+  "author": "execution_agent_AI_assisted_source_review",
+  "independent_human_review": false,
+  "cause_status": "No isolated cause or benefit of R03 established. Multi-hunk repairs differ; no ablation or extra run.",
+  "runs": [
+    {
+      "run": 1,
+      "source_facts": "The getter and unsubscribe now use attempt-local consumption; the shared record reset/field is removed. This is a direct source difference, despite the frozen experience cautioning against inference from controller ownership.",
+      "source_anchors": [
+        {
+          "file": "runs/D1-revalidation-1/archive/final-candidate/src/session.js",
+          "sha256": "7653984d39b896a2411c7e0ac4cccf8248b9f371ab27bee61277198b0ac678bc",
+          "line": 9,
+          "quote": " invoke(q,a){a.queued=false;if(!this.active(q,a))return;a.started=true;q.state.fetchStatus='fetching';const context={key:q.key,attempt:a.number};Object.defineProperty(context,'signal',{enumerable:true,get(){a.consumed=true;return a.controller.signal;}});let value;try{value=this.host.queryFn(context);}catch(e){value=Promise.reject(e);}Promise.resolve(value).then(value=>{if(!this.active(q,a))return;a.settled=true;q.state={...q.state,data:value,status:'success',fetchStatus:'idle'};this.project(q);},()=>{if(!this.active(q,a))return;if(!a.retryCancelled&&a.failures<(a.options.retry||0)){a.failures++;this.host.timers.schedule(()=>{if(!this.active(q,a))return;if(a.retryCancelled){a.settled=true;q.state={...q.state,status:'error',fetchStatus:'idle'};}else if(this.eligible(a))this.invoke(q,a);else q.state.fetchStatus='paused';this.project(q);},a.options.retryDelay||10);}else{a.settled=true;q.state={...q.state,status:'error',fetchStatus:'idle'};}this.project(q);});this.project(q);}"
+        },
+        {
+          "file": "runs/D1-revalidation-1/archive/final-candidate/src/session.js",
+          "sha256": "7653984d39b896a2411c7e0ac4cccf8248b9f371ab27bee61277198b0ac678bc",
+          "line": 10,
+          "quote": " resume(q){const a=q.attempt;if(a&&this.active(q,a)&&q.state.fetchStatus==='paused'&&this.eligible(a)&&!a.queued){a.queued=true;Promise.resolve().then(()=>{a.queued=false;if(!this.active(q,a))return;if(a.failures&&a.retryCancelled){a.settled=true;q.state={...q.state,status:'error',fetchStatus:'idle'};this.project(q);return;}this.invoke(q,a);});}}"
+        },
+        {
+          "file": "runs/D1-revalidation-1/archive/final-candidate/src/session.js",
+          "sha256": "7653984d39b896a2411c7e0ac4cccf8248b9f371ab27bee61277198b0ac678bc",
+          "line": 12,
+          "quote": " unsubscribe(handle){const q=this.handles.get(handle);if(!q)return;this.handles.delete(handle);q.observers.delete(handle);if(q.observers.size===0){const a=q.attempt;if(a&&!a.settled){if(a.consumed)this.cancel(q,a);else if(a.started)a.retryCancelled=true;else if(a.previous.status==='pending')this.cancel(q,a);}}this.project(q);}"
+        }
+      ],
+      "failed_observations": {
+        "cached-prior-consumed-success": {
+          "scenario": "cached-prior-consumed-success",
+          "passed": false,
+          "runtimeError": null,
+          "checks": [
+            {
+              "id": "prior-consumed-new-attempt-paused",
+              "actual": "paused",
+              "expected": "paused",
+              "passed": true
+            },
+            {
+              "id": "prior-consumption-not-cleared-by-paused-attempt",
+              "actual": 2,
+              "expected": 1,
+              "passed": false
+            },
+            {
+              "id": "prior-data-preserved",
+              "actual": "retained",
+              "expected": "retained",
+              "passed": true
+            }
+          ],
+          "calls": [
+            {
+              "key": "K",
+              "attempt": 1,
+              "abortedAtInvocation": false,
+              "abortedAfter": false
+            },
+            {
+              "key": "K",
+              "attempt": 2,
+              "abortedAtInvocation": false,
+              "abortedAfter": false
+            }
+          ],
+          "state": {
+            "status": "success",
+            "fetchStatus": "idle",
+            "data": "cleanup"
+          }
+        },
+        "retained-context-query-flag": {
+          "scenario": "retained-context-query-flag",
+          "passed": false,
+          "runtimeError": null,
+          "checks": [
+            {
+              "id": "old-context-marks-owning-query-flag",
+              "actual": 2,
+              "expected": 1,
+              "passed": false
+            },
+            {
+              "id": "retained-context-controller-independent",
+              "actual": false,
+              "expected": false,
+              "passed": true
+            },
+            {
+              "id": "retained-context-cache-preserved",
+              "actual": "retained",
+              "expected": "retained",
+              "passed": true
+            }
+          ],
+          "calls": [
+            {
+              "key": "K",
+              "attempt": 1,
+              "abortedAtInvocation": null,
+              "abortedAfter": null
+            },
+            {
+              "key": "K",
+              "attempt": 2,
+              "abortedAtInvocation": null,
+              "abortedAfter": null
+            }
+          ],
+          "state": {
+            "status": "success",
+            "fetchStatus": "idle",
+            "data": "cleanup"
+          }
+        }
+      },
+      "interpretation_hypothesis": "The ownership migration is consistent with the two observed extra-call regressions, but its individual causal contribution was not experimentally isolated.",
+      "public_delivery_status": "Unverified model claim; external score and archived source remain primary."
+    },
+    {
+      "run": 2,
+      "source_facts": "Shared consumption remains, but departure cancels all not-started attempts and the queued continuation adds an eligibility recheck. These are direct source differences, not isolated causal findings.",
+      "source_anchors": [
+        {
+          "file": "runs/D1-revalidation-2/archive/final-candidate/src/session.js",
+          "sha256": "487ee1e272bffe35270b12de5d37b8781e3e379e10fbbd4e0203ce3ed683ce65",
+          "line": 9,
+          "quote": " invoke(q,a){a.queued=false;if(!this.active(q,a))return;a.started=true;q.state.fetchStatus='fetching';q.consumed=false;const context={key:q.key,attempt:a.number};Object.defineProperty(context,'signal',{enumerable:true,get(){q.consumed=true;return a.controller.signal;}});let value;try{value=this.host.queryFn(context);}catch(e){value=Promise.reject(e);}Promise.resolve(value).then(value=>{if(!this.active(q,a))return;a.settled=true;q.state={...q.state,data:value,status:'success',fetchStatus:'idle'};this.project(q);},()=>{if(!this.active(q,a))return;if(!a.retryCancelled&&a.failures<(a.options.retry||0)){a.failures++;this.host.timers.schedule(()=>{if(!this.active(q,a))return;if(a.retryCancelled){a.settled=true;q.state={...q.state,status:'error',fetchStatus:'idle'};}else if(this.eligible(a))this.invoke(q,a);else q.state.fetchStatus='paused';this.project(q);},a.options.retryDelay||10);}else{a.settled=true;q.state={...q.state,status:'error',fetchStatus:'idle'};}this.project(q);});this.project(q);}"
+        },
+        {
+          "file": "runs/D1-revalidation-2/archive/final-candidate/src/session.js",
+          "sha256": "487ee1e272bffe35270b12de5d37b8781e3e379e10fbbd4e0203ce3ed683ce65",
+          "line": 10,
+          "quote": " resume(q){const a=q.attempt;if(a&&this.active(q,a)&&q.state.fetchStatus==='paused'&&this.eligible(a)&&!a.queued){a.queued=true;Promise.resolve().then(()=>{a.queued=false;if(!this.active(q,a))return;if(!this.eligible(a)){q.state.fetchStatus='paused';this.project(q);return;}if(a.failures&&a.retryCancelled){a.settled=true;q.state={...q.state,status:'error',fetchStatus:'idle'};this.project(q);return;}this.invoke(q,a);});}}"
+        },
+        {
+          "file": "runs/D1-revalidation-2/archive/final-candidate/src/session.js",
+          "sha256": "487ee1e272bffe35270b12de5d37b8781e3e379e10fbbd4e0203ce3ed683ce65",
+          "line": 12,
+          "quote": " unsubscribe(handle){const q=this.handles.get(handle);if(!q)return;this.handles.delete(handle);q.observers.delete(handle);if(q.observers.size===0){const a=q.attempt;if(a&&!a.settled){if(q.consumed||!a.started)this.cancel(q,a);else a.retryCancelled=true;}}this.project(q);}"
+        }
+      ],
+      "failed_observations": {
+        "cached-paused-background": {
+          "scenario": "cached-paused-background",
+          "passed": false,
+          "runtimeError": null,
+          "checks": [
+            {
+              "id": "cached-pause-status",
+              "actual": {
+                "status": "success",
+                "fetchStatus": "paused",
+                "data": "retained"
+              },
+              "expected": {
+                "status": "success",
+                "fetchStatus": "paused",
+                "data": "retained"
+              },
+              "passed": true
+            },
+            {
+              "id": "cached-unconsumed-work-preserved",
+              "actual": 0,
+              "expected": 1,
+              "passed": false
+            },
+            {
+              "id": "completion-exists-0",
+              "actual": false,
+              "expected": true,
+              "passed": false
+            },
+            {
+              "id": "cached-refresh-success",
+              "actual": "retained",
+              "expected": "refresh",
+              "passed": false
+            }
+          ],
+          "calls": [],
+          "state": {
+            "status": "success",
+            "fetchStatus": "idle",
+            "data": "retained"
+          }
+        },
+        "cached-later-consumption": {
+          "scenario": "cached-later-consumption",
+          "passed": false,
+          "runtimeError": null,
+          "checks": [
+            {
+              "id": "cached-later-signal-read-allowed",
+              "actual": 0,
+              "expected": 1,
+              "passed": false
+            },
+            {
+              "id": "cached-later-live-entry",
+              "actual": null,
+              "expected": false,
+              "passed": false
+            },
+            {
+              "id": "completion-exists-0",
+              "actual": false,
+              "expected": true,
+              "passed": false
+            },
+            {
+              "id": "cached-later-result",
+              "actual": "retained",
+              "expected": "refresh",
+              "passed": false
+            }
+          ],
+          "calls": [],
+          "state": {
+            "status": "success",
+            "fetchStatus": "idle",
+            "data": "retained"
+          }
+        },
+        "accepted-resume-then-offline": {
+          "scenario": "accepted-resume-then-offline",
+          "passed": false,
+          "runtimeError": null,
+          "checks": [
+            {
+              "id": "accepted-continuation-not-revoked",
+              "actual": 0,
+              "expected": 1,
+              "passed": false
+            },
+            {
+              "id": "completion-exists-0",
+              "actual": false,
+              "expected": true,
+              "passed": false
+            },
+            {
+              "id": "accepted-continuation-cache",
+              "actual": null,
+              "expected": "accepted",
+              "passed": false
+            }
+          ],
+          "calls": [],
+          "state": {
+            "status": "pending",
+            "fetchStatus": "idle",
+            "data": null
+          }
+        }
+      },
+      "interpretation_hypothesis": "The widened not-started cancellation and/or continuation changes are consistent with lost cached/accepted work; exact contribution is unverified.",
+      "public_delivery_status": "Unverified model claim; external score and archived source remain primary."
+    }
+  ]
+}
