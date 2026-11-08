@@ -16,6 +16,11 @@ def main():
   d=O/'runs'/r['slot'];assert read(d/'receipt.json')==r
   assert sha(d/'actual-prompt.md')==r['prompt_sha256']
   assert all((d/name).exists() for name in ['events.jsonl','stderr.log','raw-answer.txt','configuration-before.json','configuration-after.json','meter/ledger.json','frozen-start.json'])
+  before=read(d/'configuration-before.json');after=read(d/'configuration-after.json')
+  assert before['research_config_sha256']==after['profile_sha256']==sha(O/'research-config.toml')
+  assert before['global_config']['sha256']==after['global_config']['sha256']==initial['global_config_sha256']
+  assert r['native']['started']==r['native']['completed'] and not r['native']['blocked_requests'] and not r['native']['blocked_tools']
+  assert r['native']['started'] <= (12 if r['phase']=='extract' else 24)
   if r['phase']=='repair':
    assert (d/'patch.diff').exists() and (d/'score.stdout.json').exists()
    score=read(d/'score.stdout.json');assert score['case_id']==r['case']

@@ -223,3 +223,37 @@ diff -ruN /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/cont
 
 DELIVERY
 {"report":"已更新 src/controller.js：submit 现在立即固定 doc/actor/text 快照，调用异步 commit，并返回会在审计与 UI 处理后才解决/拒绝的 Promise。成功以 receipt.revision 写入一次审计；失败不写成功审计且向调用方继续拒绝。关闭/重开不影响已接受提交的审计；saved/error 仍仅限当前访问的最新提交。未改动 search preview 或公开方法。\n\n验证：/runtime/node --version 为 v16.20.2；通过 node --check；内联断言覆盖异步成功、快照固定、关闭/重开、拒绝、最新提交 UI 隔离及同步抛错适配。未提供项目测试脚本，且 /workspace 不是 Git 工作树，无法执行 Git 差异检查。"}
+
+# s2-r2-E E1-v1经验增强
+ROW {"slot": "s2-r2-E", "case": "audit-commit-attribution-vanilla", "phase": "repair", "condition": "E", "repeat": 2, "status": "VALID", "failure_class": null, "infrastructure_valid": true, "overall_pass": true, "target_pass": true, "raw_verdict": "PASS", "lost_required": [], "new_forbidden": [], "paired_no_contract_lost_required": [], "patch_delivered": true, "source_body_read": true, "extra_unsupported_conventions": [], "scope_review_status": "REVIEWED", "seconds": 239.97117590904236, "requests": 24, "tools": 15, "hook_tool_attempts": 23, "input_tokens": 406227, "cached_input_tokens": 377856, "cache_write_input_tokens": 0, "output_tokens": 8063, "reasoning_output_tokens": 3867, "usage_incomplete": false, "not_started_reason": null, "business_files_changed": ["src/controller.js"], "auxiliary_artifacts": ["patch-archive/submit-async.patch", "__pycache__/read_policy.cpython-38.pyc (tool generated)"]}
+PATCH
+Binary files /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/contract-repair-small-v1-20261108/materials/audit-commit-attribution-vanilla/candidate/__pycache__/read_policy.cpython-38.pyc and /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/contract-repair-small-v1-20261108/runs/s2-r2-E/workspace/__pycache__/read_policy.cpython-38.pyc differ
+diff -ruN /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/contract-repair-small-v1-20261108/materials/audit-commit-attribution-vanilla/candidate/patch-archive/submit-async.patch /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/contract-repair-small-v1-20261108/runs/s2-r2-E/workspace/patch-archive/submit-async.patch
+--- /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/contract-repair-small-v1-20261108/materials/audit-commit-attribution-vanilla/candidate/patch-archive/submit-async.patch	1970-01-01 08:00:00.000000000 +0800
++++ /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/contract-repair-small-v1-20261108/runs/s2-r2-E/workspace/patch-archive/submit-async.patch	2026-11-08 09:05:52.418991331 +0800
+@@ -0,0 +1,8 @@
++--- src/controller.js
+++++ src/controller.js
++@@ -12,3 +12,3 @@ export function createController({service,audit,render}) {
++-   const failed=error=>{if(current===visit&&visit.latest===owner)render({status:"error",doc:snapshot.doc});};
++-   try{return done(service.commit(snapshot));}catch(error){return failed(error);}
+++   const failed=error=>{if(current===visit&&visit.latest===owner)render({status:"error",doc:snapshot.doc});throw error;};
+++   try{return Promise.resolve(service.commit(snapshot)).then(done,failed);}catch(error){return Promise.reject(error).catch(failed);}
++   },
+diff -ruN /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/contract-repair-small-v1-20261108/materials/audit-commit-attribution-vanilla/candidate/src/controller.js /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/contract-repair-small-v1-20261108/runs/s2-r2-E/workspace/src/controller.js
+--- /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/contract-repair-small-v1-20261108/materials/audit-commit-attribution-vanilla/candidate/src/controller.js	2026-10-04 01:06:18.035456046 +0800
++++ /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/contract-repair-small-v1-20261108/runs/s2-r2-E/workspace/src/controller.js	2026-11-08 09:03:46.049101153 +0800
+@@ -9,8 +9,8 @@
+    const owner={};visit.latest=owner;
+    const snapshot={doc:visit.doc,actor:visit.actor,text:visit.text};
+    const done=receipt=>{observe(audit,snapshot,receipt);if(current===visit&&visit.latest===owner)render({status:"saved",doc:snapshot.doc});return receipt;};
+-   const failed=error=>{if(current===visit&&visit.latest===owner)render({status:"error",doc:snapshot.doc});};
+-   try{return done(service.commit(snapshot));}catch(error){return failed(error);}
++   const failed=error=>{if(current===visit&&visit.latest===owner)render({status:"error",doc:snapshot.doc});throw error;};
++   try{return Promise.resolve(service.commit(snapshot)).then(done,failed);}catch(error){return Promise.reject(error).catch(failed);}
+   },
+   close(){current=null;}
+  };
+
+DELIVERY
+{"report":"已更新 `src/controller.js`：submit 现在调用异步 `service.commit(snapshot)` 并返回 Promise；成功后以入口固定的 doc/actor/text 和 receipt.revision 审计一次，失败不审计且 Promise 保持拒绝。关闭或重开后已接受提交仍会审计，但旧访问不会显示 saved/error；同一访问仅最新提交可更新界面。保留 open/edit/submit/close 及无活动访问时 submit 返回 null 的既有行为。未修改 search preview。\n\n验证：`/runtime/node --version` 为 v16.20.2；已运行 Node 断言覆盖成功快照、审计、最新提交界面、拒绝、关闭/重开、同步异常归一化，并通过语法检查。归档补丁位于 `/workspace/patch-archive/submit-async.patch`，已在独立临时工作区前向应用并检查。未覆盖：项目未提供自动化测试套件，未进行浏览器/UI 集成测试。"}

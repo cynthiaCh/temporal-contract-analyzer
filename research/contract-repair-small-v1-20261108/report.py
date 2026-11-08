@@ -7,6 +7,10 @@ def main():
  assert (O/'completion.json').exists(), 'Never present an unfinished batch as complete.'
  summary=read(O/'summary.json');actual=read(O/'actual-schedule.json');reviews=read(O/'patch-review.json');costs=read(O/'costs.json');pairs=read(O/'paired-comparisons.json')
  assert len(actual)==18 and len(reviews)==16 and all(r['status']=='VALID' for r in actual)
+ batch_seconds=(O/'completion.json').stat().st_mtime-actual[0]['started_at']
+ costs['batch_wall_seconds']=batch_seconds
+ costs['batch_wall_scope']='First formal session start through completion.json after last score/gate; includes dispatch and host scoring overhead, excludes preparation and final report review.'
+ (O/'costs.json').write_text(json.dumps(costs,ensure_ascii=False,indent=2)+'\n');summary['costs']=costs
  labels={'N':'无契约','H':'人工契约参考','M':'自动契约','E':'E1-v1经验增强'};cases=read(O/'cohort.json')['cases'];a,b=[c['case'] for c in cases]
  for cid,passes in [(a,0),(b,2)]:
   assert all(summary['groups_by_case'][cid][g]['overall_passes']==passes and summary['groups_by_case'][cid][g]['target_passes']==passes for g in labels), 'Revise interpretation to match actual final results.'
@@ -77,6 +81,8 @@ N首次定义为**无契约**，H为**人工契约参考**，M为**自动契约*
 '''+'\n'.join(conditions)+f'''
 
 维护成本按组列出；表中完成工具项仅指command_execution。包含编辑在内的全部hook工具尝试为{total['hook_tool_attempts']}次（提取{ext['hook_tool_attempts']}、维护{maint['hook_tool_attempts']}），逐槽CSV及costs.json另列。实际共享提取只在本批总额计一次，不在每个重复或M/E两组中重复相加。缓存包含于输入、推理包含于输出，cache-write为0；全部原生请求用量完整，详见[costs.json](costs.json)。旧失败批另外是{old['requests']}请求、{old['input_tokens']}输入、{old['output_tokens']}输出、{old['seconds']:.2f}秒，原样保留且不混入本批。主聊天准备/分析token及人时不可取得，明确排除而非伪称0。无核验费率或账单，不编造货币成本。
+
+表中为累计CLI会话耗时；从首个正式会话启动至最后评分/执行门完成的本批墙钟为{batch_seconds:.2f}秒，包含调度和研究侧评分开销，不含前期离线准备及最终审查写报告时间。
 
 ## Task 3：四组差异、退步、交付和限制
 
