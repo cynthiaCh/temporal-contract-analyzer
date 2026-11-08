@@ -13,6 +13,7 @@ from urllib.request import build_opener, ProxyHandler, Request
 
 from . import archive
 from .core import EvidenceError, ROOT, VERSION
+from .development import DevelopmentArchive
 from .workbench import Workbench
 
 WEB = Path(__file__).parent/'web'
@@ -34,6 +35,7 @@ class ReportServer(ThreadingHTTPServer):
     def __init__(self, store=None, port=0, node=None):
         self.store = archive.store_path(store)
         self.node = node
+        self.development = DevelopmentArchive()
         self.instance = secrets.token_hex(24)
         self.experiments = Workbench(self.store, node)
         self.experiments.recover()
@@ -93,7 +95,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send(dict(store=str(store), instance=self.server.instance, version=VERSION,
                            experiment_ui='local-codex-models-v1', context_enrichment='snapshot-definitions-v1',
                            scenario_progress='explicit-schedules-v1', failure_learning='candidate-memory-v1',
-                           hypothesis_repair='matched-patch-v2'))
+                           hypothesis_repair='matched-patch-v2', experience_development='archive-read-only-v1'))
         elif url.path == '/api/state':
             self.send(dict(store=str(store), version=VERSION, url=self.server.url))
         elif url.path == '/api/reports':
@@ -105,6 +107,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send(self.server.experiments.case_options())
         elif parts == ['api', 'experiments']:
             self.send(self.server.experiments.list())
+        elif parts == ['api', 'development']:
+            self.send(self.server.development.list())
+        elif len(parts) == 3 and parts[:2] == ['api', 'development']:
+            self.send(self.server.development.read(parts[2]))
+        elif len(parts) == 4 and parts[:2] == ['api', 'development'] and parts[3] == 'artifact':
+            self.send(self.server.development.artifact(parts[2], query['name']))
         elif len(parts) >= 3 and parts[:2] == ['api', 'experiments']:
             if len(parts) == 3:
                 self.send(self.server.experiments.read(parts[2]))
@@ -139,8 +147,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(review_template(item['measurement'], query['reviewer']))
             else:
                 self.send({'error': 'Not found'}, 404)
-        elif url.path in {'/', '/app.js', '/style.css', '/experiments', '/experiments.js'}:
-            name = {'/': 'index.html', '/experiments': 'experiments.html'}.get(url.path, url.path[1:])
+        elif url.path in {'/', '/app.js', '/style.css', '/experiments', '/experiments.js',
+                          '/development', '/development.js', '/development.css'}:
+            name = {'/': 'index.html', '/experiments': 'experiments.html',
+                    '/development': 'development.html'}.get(url.path, url.path[1:])
             content_type = 'text/html' if name.endswith('.html') else ('text/javascript' if name.endswith('.js') else 'text/css')
             self.send((WEB/name).read_bytes(), content_type=content_type+'; charset=utf-8')
         else:
