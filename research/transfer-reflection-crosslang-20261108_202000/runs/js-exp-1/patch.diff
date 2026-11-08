@@ -1,0 +1,282 @@
+diff -ruN /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/patch-archive/independent-workspace/src/progress.js /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/patch-archive/independent-workspace/src/progress.js
+--- /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/patch-archive/independent-workspace/src/progress.js	1970-01-01 08:00:00.000000000 +0800
++++ /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/patch-archive/independent-workspace/src/progress.js	2026-11-08 12:46:31.266415185 +0800
+@@ -0,0 +1,35 @@
++// The source is shared by visits of the same file. Decoding may settle later.
++export function watchTransferProgress(feed, receive, record) {
++  let accepting = true;
++  let nextArrival = 0;
++  let lastProjectedArrival = 0;
++  const listener = event => {
++    if (!accepting) return;
++    // Preserve source order before asynchronous decoding can reorder settlement.
++    const arrival = ++nextArrival;
++    const deliver = frame => {
++      // Frames admitted while this listener was live retain their audit entry,
++      // even when the listener is released before decoding finishes.
++      record(frame);
++
++      // Recording is host code and can synchronously change visits or attempts.
++      // Only the live listener may project a frame, and never behind one it has
++      // already projected.
++      if (accepting && arrival > lastProjectedArrival) {
++        lastProjectedArrival = arrival;
++        receive(frame);
++      }
++    };
++    const decoded = feed.decode(event.detail);
++    if (decoded && typeof decoded.then === "function") decoded.then(deliver);
++    else deliver(decoded);
++  };
++  feed.target.addEventListener("progress", listener);
++  // start() may synchronously publish a cached frame, so install first.
++  feed.start();
++  return () => {
++    if (!accepting) return;
++    accepting = false;
++    feed.target.removeEventListener("progress", listener);
++  };
++}
+diff -ruN /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/patch-archive/independent-workspace/src/queue.js /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/patch-archive/independent-workspace/src/queue.js
+--- /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/patch-archive/independent-workspace/src/queue.js	1970-01-01 08:00:00.000000000 +0800
++++ /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/patch-archive/independent-workspace/src/queue.js	2026-11-08 12:46:31.266415185 +0800
+@@ -0,0 +1,26 @@
++import { createTransfer } from "./transfer.js";
++
++// Queue records are retained even when their originating panel visit ends.
++export function makeQueueRecord(file, attemptId, visitId, kind) {
++  return { fileId: file.id, attemptId, visitId, kind };
++}
++
++export function enqueueTransfer(state, visit, kind) {
++  const attemptId = ++state.nextAttempt;
++  // A visit can retry without changing identity. Keep its current physical
++  // attempt separate so delayed decoding from a cancelled attempt cannot paint
++  // the replacement attempt's panel.
++  visit.progressAttemptId = attemptId;
++  state.record(makeQueueRecord(visit.file, attemptId, visit.id, kind));
++  const progress = {
++    record(frame) { state.recordProgress({ fileId: visit.file.id, attemptId, frame }); },
++    receive(frame) {
++      if (state.current === visit && visit.progressAttemptId === attemptId) {
++        state.showProgress({ fileId: visit.file.id, attemptId, frame });
++      }
++    },
++  };
++  const handle = createTransfer(visit.file, attemptId, state.transport, state.onCancel, progress);
++  state.tasks.set(attemptId, handle);
++  return handle;
++}
+diff -ruN /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/patch-archive/independent-workspace/src/retry.js /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/patch-archive/independent-workspace/src/retry.js
+--- /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/patch-archive/independent-workspace/src/retry.js	1970-01-01 08:00:00.000000000 +0800
++++ /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/patch-archive/independent-workspace/src/retry.js	2026-11-08 12:46:31.262415143 +0800
+@@ -0,0 +1,18 @@
++import { enqueueTransfer } from "./queue.js";
++import { publishQueued } from "./notice.js";
++
++// A retry click accepts exactly one command for the current visit and file.
++export function retryTransfer(state) {
++  const visit = state.current;
++  if (!visit || !visit.handle || state.disposed) return null;
++  const previous = visit.handle;
++  previous.cancel();
++  // Cancellation callbacks are synchronous and may navigate, hide, or issue a
++  // nested retry. Do not let this superseded command create another attempt.
++  if (state.current !== visit || state.disposed || visit.handle !== previous) return null;
++  const handle = enqueueTransfer(state, visit, "retry");
++  if (state.current === visit) visit.handle = handle;
++  else handle.cancel();
++  if (state.current === visit) publishQueued(state, visit, handle);
++  return handle;
++}
+diff -ruN /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/patch-archive/independent-workspace/src/retry.js.orig /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/patch-archive/independent-workspace/src/retry.js.orig
+--- /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/patch-archive/independent-workspace/src/retry.js.orig	1970-01-01 08:00:00.000000000 +0800
++++ /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/patch-archive/independent-workspace/src/retry.js.orig	2026-11-08 12:46:31.266415185 +0800
+@@ -0,0 +1,18 @@
++import { enqueueTransfer } from "./queue.js";
++import { publishQueued } from "./notice.js";
++
++// A retry click accepts exactly one command for the current visit and file.
++export function retryTransfer(state) {
++  const visit = state.current;
++  if (!visit || !visit.handle || state.disposed) return null;
++  const previous = visit.handle;
++  previous.cancel();
++  // Cancellation callbacks are synchronous and may navigate, hide, or issue a
++  // nested retry. Do not let this superseded command create another attempt.
++  if (state.current !== visit || state.disposed || visit.handle !== previous) return null;
++  const handle = enqueueTransfer(state, visit, "retry");
++  if (state.current === visit) visit.handle = handle;
++  else handle.cancel();
++  if (state.current === visit) publishQueued(state, visit, handle);
++  return handle;
++}
+diff -ruN /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/patch-archive/independent-workspace/src/retry.js.rej /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/patch-archive/independent-workspace/src/retry.js.rej
+--- /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/patch-archive/independent-workspace/src/retry.js.rej	1970-01-01 08:00:00.000000000 +0800
++++ /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/patch-archive/independent-workspace/src/retry.js.rej	2026-11-08 12:46:31.266415185 +0800
+@@ -0,0 +1,12 @@
++--- src/retry.js
+++++ src/retry.js
++@@ -5,6 +5,9 @@
++ export function retryTransfer(state) {
++   const visit = state.current;
++   if (!visit || !visit.handle || state.disposed) return null;
++   const previous = visit.handle;
++   previous.cancel();
+++  // Cancellation callbacks are synchronous and may navigate, hide, or issue a
+++  // nested retry. Do not let this superseded command create another attempt.
+++  if (state.current !== visit || state.disposed || visit.handle !== previous) return null;
++   const handle = enqueueTransfer(state, visit, "retry");
+diff -ruN /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/patch-archive/initial-progress-ordering.patch /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/patch-archive/initial-progress-ordering.patch
+--- /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/patch-archive/initial-progress-ordering.patch	1970-01-01 08:00:00.000000000 +0800
++++ /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/patch-archive/initial-progress-ordering.patch	2026-11-08 12:46:25.258350996 +0800
+@@ -0,0 +1,72 @@
++--- a/src/progress.js
+++++ b/src/progress.js
++@@ -1,12 +1,35 @@
++ // The source is shared by visits of the same file. Decoding may settle later.
++ export function watchTransferProgress(feed, receive, record) {
+++  let accepting = true;
+++  let nextArrival = 0;
+++  let lastProjectedArrival = 0;
++   const listener = event => {
++-    const deliver = frame => { record(frame); receive(frame); };
+++    if (!accepting) return;
+++    // Preserve source order before asynchronous decoding can reorder settlement.
+++    const arrival = ++nextArrival;
+++    const deliver = frame => {
+++      // Frames admitted while this listener was live retain their audit entry,
+++      // even when the listener is released before decoding finishes.
+++      record(frame);
+++
+++      // Recording is host code and can synchronously change visits or attempts.
+++      // Only the live listener may project a frame, and never behind one it has
+++      // already projected.
+++      if (accepting && arrival > lastProjectedArrival) {
+++        lastProjectedArrival = arrival;
+++        receive(frame);
+++      }
+++    };
++     const decoded = feed.decode(event.detail);
++     if (decoded && typeof decoded.then === "function") decoded.then(deliver);
++     else deliver(decoded);
++   };
++-  feed.start();
++   feed.target.addEventListener("progress", listener);
++-  return () => feed.target.removeEventListener("progress", listener);
+++  // start() may synchronously publish a cached frame, so install first.
+++  feed.start();
+++  return () => {
+++    if (!accepting) return;
+++    accepting = false;
+++    feed.target.removeEventListener("progress", listener);
+++  };
++ }
++--- a/src/queue.js
+++++ b/src/queue.js
++@@ -8,9 +8,15 @@
++ export function enqueueTransfer(state, visit, kind) {
++   const attemptId = ++state.nextAttempt;
+++  // A visit can retry without changing identity. Keep its current physical
+++  // attempt separate so delayed decoding from a cancelled attempt cannot paint
+++  // the replacement attempt's panel.
+++  visit.progressAttemptId = attemptId;
++   state.record(makeQueueRecord(visit.file, attemptId, visit.id, kind));
++   const progress = {
++     record(frame) { state.recordProgress({ fileId: visit.file.id, attemptId, frame }); },
++     receive(frame) {
++-      if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });
+++      if (state.current === visit && visit.progressAttemptId === attemptId) {
+++        state.showProgress({ fileId: visit.file.id, attemptId, frame });
+++      }
++     },
++   };
++--- a/src/retry.js
+++++ b/src/retry.js
++@@ -5,6 +5,9 @@
++ export function retryTransfer(state) {
++   const visit = state.current;
++   if (!visit || !visit.handle || state.disposed) return null;
++   const previous = visit.handle;
++   previous.cancel();
+++  // Cancellation callbacks are synchronous and may navigate, hide, or issue a
+++  // nested retry. Do not let this superseded command create another attempt.
+++  if (state.current !== visit || state.disposed || visit.handle !== previous) return null;
++   const handle = enqueueTransfer(state, visit, "retry");
+diff -ruN /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/src/progress.js /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/src/progress.js
+--- /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/src/progress.js	2026-10-04 01:06:18.007455648 +0800
++++ /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/src/progress.js	2026-11-08 12:43:05.660126109 +0800
+@@ -1,12 +1,35 @@
+ // The source is shared by visits of the same file. Decoding may settle later.
+ export function watchTransferProgress(feed, receive, record) {
++  let accepting = true;
++  let nextArrival = 0;
++  let lastProjectedArrival = 0;
+   const listener = event => {
+-    const deliver = frame => { record(frame); receive(frame); };
++    if (!accepting) return;
++    // Preserve source order before asynchronous decoding can reorder settlement.
++    const arrival = ++nextArrival;
++    const deliver = frame => {
++      // Frames admitted while this listener was live retain their audit entry,
++      // even when the listener is released before decoding finishes.
++      record(frame);
++
++      // Recording is host code and can synchronously change visits or attempts.
++      // Only the live listener may project a frame, and never behind one it has
++      // already projected.
++      if (accepting && arrival > lastProjectedArrival) {
++        lastProjectedArrival = arrival;
++        receive(frame);
++      }
++    };
+     const decoded = feed.decode(event.detail);
+     if (decoded && typeof decoded.then === "function") decoded.then(deliver);
+     else deliver(decoded);
+   };
+-  feed.start();
+   feed.target.addEventListener("progress", listener);
+-  return () => feed.target.removeEventListener("progress", listener);
++  // start() may synchronously publish a cached frame, so install first.
++  feed.start();
++  return () => {
++    if (!accepting) return;
++    accepting = false;
++    feed.target.removeEventListener("progress", listener);
++  };
+ }
+diff -ruN /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/src/queue.js /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/src/queue.js
+--- /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/src/queue.js	2026-10-04 01:06:18.007455648 +0800
++++ /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/src/queue.js	2026-11-08 12:43:05.660126109 +0800
+@@ -7,11 +7,17 @@
+ 
+ export function enqueueTransfer(state, visit, kind) {
+   const attemptId = ++state.nextAttempt;
++  // A visit can retry without changing identity. Keep its current physical
++  // attempt separate so delayed decoding from a cancelled attempt cannot paint
++  // the replacement attempt's panel.
++  visit.progressAttemptId = attemptId;
+   state.record(makeQueueRecord(visit.file, attemptId, visit.id, kind));
+   const progress = {
+     record(frame) { state.recordProgress({ fileId: visit.file.id, attemptId, frame }); },
+     receive(frame) {
+-      if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });
++      if (state.current === visit && visit.progressAttemptId === attemptId) {
++        state.showProgress({ fileId: visit.file.id, attemptId, frame });
++      }
+     },
+   };
+   const handle = createTransfer(visit.file, attemptId, state.transport, state.onCancel, progress);
+diff -ruN /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/src/retry.js /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/src/retry.js
+--- /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/materials/transfer-progress-composition-v4-vanilla/candidate/src/retry.js	2026-10-04 01:06:18.007455648 +0800
++++ /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runs/js-exp-1/workspace/src/retry.js	2026-11-08 12:43:05.664126155 +0800
+@@ -7,6 +7,9 @@
+   if (!visit || !visit.handle || state.disposed) return null;
+   const previous = visit.handle;
+   previous.cancel();
++  // Cancellation callbacks are synchronous and may navigate, hide, or issue a
++  // nested retry. Do not let this superseded command create another attempt.
++  if (state.current !== visit || state.disposed || visit.handle !== previous) return null;
+   const handle = enqueueTransfer(state, visit, "retry");
+   if (state.current === visit) visit.handle = handle;
+   else handle.cancel();

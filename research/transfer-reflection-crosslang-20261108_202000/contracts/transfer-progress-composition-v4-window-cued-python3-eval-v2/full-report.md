@@ -1,0 +1,22 @@
+1. 可确认的 Contract
+
+传输面板应收到 warm progress source 在启动时同步发出的初始进度；后续普通流式进度仍应显示。完整进度帧即使按不同于包到达的顺序完成解码，也不得让较旧的帧把当前显示回滚。修复须保留公开的传输、重试、导航、清理、审计、队列记录行为，诊断遥测及后续使用。
+
+2. 每条的条件、效果、来源及依据
+
+- 初始进度：当 `start` 同步发出缓存包时，当前打开的访问应能显示该包解码得到的帧，而不必等下一包。用户任务直接要求恢复；[README.md](/workspace/README.md:7) 确认同步发包及同步或延迟解码。当前 [workflow.py](/workspace/src/workflow.py:12) 先 `start` 后 `listen`，说明初始包可能错过；这是实现事实，不是期望顺序的规范。
+- 显示顺序：同一次活动的多个包产生完整帧且解码乱序时，较旧包的帧不得覆盖较新包已显示的帧。用户任务直接要求；[README.md](/workspace/README.md:7) 确认解码完成顺序可变，[README.md](/workspace/README.md:30) 确认完整帧替换显示状态、loaded 可下降或重置。因此不能仅凭 loaded 数值判定新旧。当前 `active()` 在收包时取得 `order`，但会话传入固定的 `lambda:0`，`view` 也未使用该值；见 [workflow.py](/workspace/src/workflow.py:5) 与 [workflow.py](/workspace/src/workflow.py:35)。
+- 审计与遥测：进度审计应继续追加传输历史；诊断消费者应继续观察其原有的实时增量。来源是用户任务及 [README.md](/workspace/README.md:13)、[README.md](/workspace/README.md:24)。当前每个解码完成帧先调用 `audit` 再调用 `view`；Telemetry 独立监听并调用 `recordDelta`，见 [workflow.py](/workspace/src/workflow.py:7) 与 [workflow.py](/workspace/src/workflow.py:73)。显示防回滚不能未经依据地改写审计或诊断语义。
+- 访问与尝试身份：选文件建立新 visit；retry 在同一 visit 内替换物理 attempt；再次选择同一文件对象建立新 visit，来源为 [README.md](/workspace/README.md:7)。当前队列记录含 fileId、attemptId、visitId、kind；进度审计捕获提交时的 fileId 和 attemptId；显示在回调时检查 visit 是否仍为当前，见 [workflow.py](/workspace/src/workflow.py:30)。用户任务及 [README.md](/workspace/README.md:13) 要求保留队列、重试、导航与清理行为。队列字段不得擅加 byteCount，除非另有授权，见 [README.md](/workspace/README.md:15)。
+- 生命周期：`select`、`retry`、`hide`、`dispose` 会经由 `release` 或任务列表调用 attempt 的 `cancel`；取消会移除监听并通知物理传输，见 [workflow.py](/workspace/src/workflow.py:24) 与 [workflow.py](/workspace/src/workflow.py:40)。`unlisten` 可以同步重入导航；一次 `start` 可同步发多个包，`showProgress` 也可在 `start` 返回、调用者取得清理句柄前切换或隐藏 visit，见 [README.md](/workspace/README.md:17)、[README.md](/workspace/README.md:27)。所以该启动窗口内，回调、句柄赋值及取消的先后次序都须纳入验证。
+- 等待间隙与后续使用：每包的延迟解码会安排一次后续完成回调；当前源码未显示会话主动安排其他后续工作。回调捕获旧 visit、attempt 与文件身份；审计使用捕获身份，显示读取当时共享的 `self.visit`。若旧解码在切换后才完成，仍可能调用审计；仅当旧 visit 再次成为当前时才会通过现有显示检查。相同文件对象可用于新 visit，不能用文件身份代替访问身份。依据为 [workflow.py](/workspace/src/workflow.py:30) 和 [README.md](/workspace/README.md:7)、[README.md](/workspace/README.md:35)。
+
+3. 不能确认的候选要求
+
+- 延迟解码在取消、隐藏或卸载之后是否必须停止审计、停止回调或由宿主撤销：文档仅说明监听移除、物理取消及延迟完成机制，未规定已在途解码的撤销保证或产品政策。
+- 进度顺序应跨 retry、跨 visit 还是仅在某一面板显示活动内重置，以及队列通知与初始显示的精确先后政策：任务要求保留行为，但未给出完整排序规则。当前 `showQueued` 在 enqueue 返回后调用；不能仅据此推出唯一规范。
+- 某个字段必须独自表示整个活动，或必须采用特定缓冲、取消、隔离方案：源码标识符与当前写法不足以支持这些要求。
+
+4. 建议验证范围
+
+只读分析尚未运行候选程序。建议验证：同步首包及多包、立即与乱序延迟解码、loaded 合法下降、后续包继续显示；逐项核对审计、`recordDelta`、队列字段及传输取消。覆盖请求执行中、请求结束后的延迟回调间隙、retry、同文件再次选择、隐藏、卸载和 `unlisten` 同步重入，检查每个可见效果归属的 visit 与 attempt。此类验证仍不能单独确定文档未规定的宿主撤销保证或产品政策。

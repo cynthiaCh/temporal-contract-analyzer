@@ -1,0 +1,21 @@
+export function createDetailPanel({ repository, renderSelection, renderDetail }) {
+  let current = null;
+  function close() {
+    const previous = current;
+    current = null;
+    if (previous && previous.release) previous.release();
+    renderSelection(null);
+  }
+  function open(id) {
+    close();
+    const visit = { id, release: null };
+    current = visit;
+    renderSelection(id);
+    const release = repository.watch(id, "prefer-cache", record => {
+      if (current === visit && record.source === "cache") renderDetail(record);
+    });
+    if (current === visit) visit.release = release;
+    else release();
+  }
+  return { open, close, selection: () => current && current.id };
+}

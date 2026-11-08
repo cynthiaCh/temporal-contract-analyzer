@@ -1,0 +1,297 @@
+--- /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/runner.py	2026-11-08 12:21:13.182683823 +0800
++++ /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/runner-owned-archive-v1-20261108_130748/runner.py	2026-11-08 13:20:20.027082086 +0800
+@@ -1,105 +1,144 @@
+-"""Exactly two cases / 18 unique sessions. Never imports an old dispatcher."""
+-import importlib.util,json,os,re,shutil,signal,subprocess,sys,time
++"""Single-session adaptation of frozen research runner, with runner-owned archival.
++
++No scheduler, implicit model execution, retry, or implicit score invocation.
++Native execution requires an explicit new-protocol opt-in from its caller.
++"""
++import importlib.util,json,os,re,shutil,signal,subprocess,sys,tempfile,time
+ from pathlib import Path
+-sys.dont_write_bytecode=True
+-O=Path(__file__).resolve().parent;R=O.parent.parent
+-spec=importlib.util.spec_from_file_location('small_native',O/'native_backend.py');backend=importlib.util.module_from_spec(spec);spec.loader.exec_module(backend);backend.OUT=O
+-read=backend.read;save=backend.save;hashes=backend.hashes
+-def sha(p):return backend.sha(Path(p).read_bytes())
+-def cases():return read(O/'cohort.json')['cases']
+-def command(call,folder,phase,cap=None):
+- meter=folder/'meter';cap=cap or (12 if phase in ['extract','reflect'] else 24)
+- if not (meter/'config.json').exists():save(meter/'config.json',{'global_cap':cap,'calls':{call:{'cap':cap,'mode':'extraction' if phase=='extract' else 'reflection' if phase=='reflect' else 'maintenance'}}})
+- cmd=backend.command(call,folder,'reflection' if phase=='reflect' else 'extraction',True,meter)
+- if phase in ['repair','reflect']:
+-  i=cmd.index(str(folder/'workspace'));assert cmd[i-1]=='--ro-bind';cmd[i-1]='--bind'
+-  cmd[cmd.index('--sandbox')+1]='danger-full-access';cmd[cmd.index('-m')+1]='gpt-5.6-terra'
+-  cmd=[s.replace('model_reasoning_effort="low"','model_reasoning_effort="medium"') for s in cmd]
+- node=cases()[0]['node'];i=cmd.index('--chdir')
+- cmd[i:i]=['--ro-bind',node,'/runtime/node','--ro-bind',str(O/'read_policy.py'),'/read_policy.py']
+- return cmd
+-def verify():
+- for p,h in read(O/'protocol.json')['files'].items():assert sha(p)==h,p
+-def source_proof(events,c):
+- proofs=[]
+- for n,e in enumerate(events,1):
+-  item=e.get('item',{})
+-  if e.get('type')!='item.completed' or item.get('type')!='command_execution' or item.get('exit_code')!=0:continue
+-  output=item.get('aggregated_output','');normalized={re.sub(r'^\s*\d+\s+','',line).strip() for line in output.splitlines()}
+-  for f in (O/'materials'/c['case']/'candidate').rglob('*'):
+-   if f.suffix not in ['.js','.py']:continue
+-   lines={s.strip() for s in f.read_text().splitlines() if len(s.strip())>=20};matched=sorted(lines&normalized)
+-   if len(matched)>=3:proofs.append({'event_line':n,'source':str(f),'source_sha256':sha(f),'matched_lines':matched,'tool_output_sha256':backend.sha(output)})
+- return proofs
+-def session(slot,prompt):
+- verify();case=next(c for c in cases() if c['case']==slot['case']);call=slot['slot'];phase=slot['phase'];d=O/'runs'/call
+- d.mkdir(parents=True,exist_ok=False);shutil.copytree(O/'materials'/case['case']/'candidate',d/'workspace');assert hashes(d/'workspace')==case['candidate_files']
+- save(d/'frozen-start.json',{'case':case['case'],'files':hashes(d/'workspace'),'recorded_before_launch':True})
+- (d/'actual-prompt.md').write_text(prompt);cmd=command(call,d,phase)
+- rec=dict(slot,status='LAUNCHED',started_at=time.time(),command=cmd,prompt_sha256=backend.sha(prompt),stop_reason=None)
+- save(d/'receipt.json',rec);proc=None
+- try:
+-  with (d/'actual-prompt.md').open('rb') as inp,(d/'events.jsonl').open('wb') as out,(d/'stderr.log').open('wb') as err:
+-   proc=subprocess.Popen(cmd,stdin=inp,stdout=out,stderr=err,cwd=d/'workspace',start_new_session=True)
+-   while proc.poll() is None:
+-    if time.time()-rec['started_at']>=600:rec['resource_limit']='timeout';os.killpg(proc.pid,signal.SIGKILL);break
+-    if (d/'events.jsonl').stat().st_size>16777216:rec['resource_limit']='stdout_archive_limit';os.killpg(proc.pid,signal.SIGKILL);break
+-    try:proc.wait(timeout=1)
+-    except subprocess.TimeoutExpired:pass
+-   proc.wait()
+-  events=[];badlines=[]
+-  for n,line in enumerate((d/'events.jsonl').read_text().splitlines(),1):
+-   try:events.append(json.loads(line))
+-   except ValueError:badlines.append(n)
+-  meter=read(d/'meter/ledger.json') if (d/'meter/ledger.json').exists() else {};native=meter.get('sessions',{}).get(call,{})
+-  posts=[r['event'] for r in meter.get('events',[]) if r['event'].get('hook_event_name')=='PostModelRequest']
+-  usage={k:sum(e.get('token_usage',{}).get(k,0) or 0 for e in posts) for k in ['input_tokens','cached_input_tokens','cache_write_input_tokens','output_tokens','reasoning_output_tokens']}
+-  rawpath=d/'cli-output/answer.json';raw=rawpath.read_text() if rawpath.exists() else '';(d/'raw-answer.txt').write_text(raw)
+-  try:ans=json.loads(raw);format_ok=isinstance(ans,dict) and set(ans)=={'report'} and isinstance(ans['report'],str) and len(ans['report'])<=6000
+-  except (ValueError,TypeError):ans={};format_ok=False
+-  budget_hit=bool(rec.get('resource_limit')) or bool(native.get('blocked_requests') and native.get('started')==(12 if phase in ['extract','reflect'] else 24))
+-  expected='gpt-6-sol' if phase=='extract' else 'gpt-5.6-terra'
+-  model_events=[r['event'] for r in meter.get('events',[]) if r['event'].get('hook_event_name') in ['PreModelRequest','PostModelRequest']]
+-  models_ok=bool(model_events) and all(e.get('model')==expected for e in model_events)
+-  pending=(native.get('started',0)-native.get('completed',0))
+-  accounted=bool(native.get('started')) and (pending==0 or budget_hit and pending==1) and len(posts)==native.get('completed')
+-  service_error=any(e.get('status')!='completed' for e in posts) or any(e.get('type')=='turn.failed' for e in events)
+-  completed=proc.returncode==0 and sum(e.get('type')=='turn.completed' for e in events)==1
+-  infra_ok=accounted and models_ok and not native.get('blocked_tools') and not service_error and not badlines and (completed or budget_hit)
+-  rec.update(exit_code=proc.returncode,seconds=time.time()-rec['started_at'],usage=usage,native=native,usage_incomplete=not accounted or pending!=0 or any(not e.get('token_usage') for e in posts),usage_unknown_request_count=pending+sum(not e.get('token_usage') for e in posts),model_match=models_ok,output_format_valid=format_ok,malformed_event_lines=badlines,tools=sum(e.get('type')=='item.completed' and e.get('item',{}).get('type')=='command_execution' for e in events),source_body_proofs=source_proof(events,case),candidate_files=hashes(d/'workspace'),infrastructure_valid=infra_ok,model_budget_limit=budget_hit)
+-  rec['status']='VALID' if infra_ok and (completed or budget_hit) else 'INVALID'
+-  rec['failure_class']='infrastructure' if not infra_ok else 'model_resource_limit' if budget_hit else 'model_delivery_format' if not format_ok else None
+-  if not infra_ok:rec['stop_reason']='tool_guard_service_configuration_or_accounting_failure'
+-  if phase=='extract':
+-   assert hashes(d/'workspace')==case['candidate_files']
+-   full=ans.get('report','');(d/'contract-full.md').write_text(full)
+-   h1='1. 可确认的 Contract\n';h2='2. 每条的条件、效果、来源及依据\n'
+-   if rec['status']=='VALID' and rec['source_body_proofs'] and full.count(h1)==full.count(h2)==1:
+-    body=full.split(h1,1)[1].split(h2,1)[0];assert body.strip();(d/'contract.md').write_text(body);rec['contract_sha256']=backend.sha(body)
+-   else:
+-    rec['status']='INVALID';rec['failure_class']=rec['failure_class'] or 'model_extraction_format_or_read_omission';rec['stop_reason']=rec['stop_reason'] or 'no_valid_frozen_automatic_contract'
+-  elif phase=='reflect':
+-   (d/'experience.md').write_text(ans.get('report',''))
+-  else:
+-   diff=subprocess.run(['diff','-ruN',str(O/'materials'/case['case']/'candidate'),str(d/'workspace')],capture_output=True,text=True);(d/'patch.diff').write_text(diff.stdout)
+-   rec['patch_delivered']=bool(diff.stdout)
+-   result=subprocess.run([case['node'],str(Path(case['source_case'])/'oracle/probe.cjs'),str(d/'workspace'),'ungranted'],capture_output=True,text=True,timeout=90)
+-   (d/'score.stdout.json').write_text(result.stdout);(d/'score.stderr.txt').write_text(result.stderr)
+-   try:
+-    score=json.loads(result.stdout);assert score['case_id']==case['case'];assert set(score['observed_effects'])==set(case['calibration'][0]['effects']);rec['raw_verdict']=score['verdict'];score_ok=result.returncode in [0,1]
+-   except (ValueError,KeyError,AssertionError):score_ok=False
+-   rec['scoring_valid']=score_ok;rec['scored_candidate_files']=hashes(d/'workspace');assert rec['scored_candidate_files']==rec['candidate_files']
+-   if not score_ok:rec.update(status='INVALID',failure_class='scoring_anomaly',stop_reason='score_case_or_effects_or_execution_mismatch')
+-  save(d/'receipt.json',rec)
+- except Exception as exc:
+-  if proc and proc.poll() is None:os.killpg(proc.pid,signal.SIGKILL);proc.wait()
+-  rec.update(status='INVALID',failure_class='infrastructure',stop_reason='runner_exception',exception=repr(exc),seconds=time.time()-rec['started_at'])
+-  if (d/'meter/ledger.json').exists():
+-   meter=read(d/'meter/ledger.json');rec['native']=meter.get('sessions',{}).get(call,{})
+-   posts=[r['event'] for r in meter.get('events',[]) if r['event'].get('hook_event_name')=='PostModelRequest'];rec['usage']={k:sum(e.get('token_usage',{}).get(k,0) or 0 for e in posts) for k in ['input_tokens','cached_input_tokens','cache_write_input_tokens','output_tokens','reasoning_output_tokens']}
+-  rec['usage_incomplete']=True;save(d/'receipt.json',rec)
+- finally:
+-  profile=Path((O/'runtime-location.txt').read_text().strip())/'.runtime'/call
+-  if (profile/'config.toml').exists():save(d/'configuration-after.json',{'profile_sha256':sha(profile/'config.toml'),'global_config':backend.global_snapshot()})
+-  shutil.rmtree(profile,ignore_errors=True)
+- return rec
++from archive import Archive,inventory,digest,save,sha
++from guard_server import GuardServer
++
++O=Path(__file__).resolve().parent
++spec=importlib.util.spec_from_file_location('archive_native',O/'native_backend.py')
++backend=importlib.util.module_from_spec(spec);spec.loader.exec_module(backend);backend.OUT=O
++ROLE={'extract':('gpt-6-sol','low',12,'extraction'),'repair':('gpt-5.6-terra','medium',24,'maintenance'),'reflect':('gpt-5.6-terra','medium',12,'reflection')}
++
++def command(call,folder,phase,case,*,runtime,socket_dir,copy_auth=True):
++    """Original autonomous Codex CLI and role flags, no host archive bind mounts."""
++    cmd=backend.command(call,folder,'reflection' if phase=='reflect' else 'extraction',copy_auth=copy_auth,runtime=runtime,socket_dir=socket_dir)
++    if phase in ['repair','reflect']:
++        i=cmd.index(str(folder/'workspace'));assert cmd[i-1]=='--ro-bind';cmd[i-1]='--bind'
++        cmd[cmd.index('--sandbox')+1]='danger-full-access';cmd[cmd.index('-m')+1]='gpt-5.6-terra'
++        cmd=[s.replace('model_reasoning_effort="low"','model_reasoning_effort="medium"') for s in cmd]
++    i=cmd.index('--chdir');cmd[i:i]=['--ro-bind',case['node'],'/runtime/node']
++    return cmd
++
++def source_proof(events,original):
++    # Same body-line evidence as historical runner, with both source suffixes.
++    result=[]
++    for n,e in enumerate(events,1):
++        item=e.get('item',{})
++        if e.get('type')!='item.completed' or item.get('type')!='command_execution' or item.get('exit_code')!=0:continue
++        output=item.get('aggregated_output','');normalized={re.sub(r'^\s*\d+\s+','',x).strip() for x in output.splitlines()}
++        for f in original.rglob('*'):
++            if f.suffix not in ['.js','.py'] or f.is_symlink() or not f.is_file():continue
++            matched=sorted({x.strip() for x in f.read_text().splitlines() if len(x.strip())>=20}&normalized)
++            if len(matched)>=3:result.append({'event_line':n,'source':str(f.relative_to(original)),'source_sha256':sha(f),'matched_lines':matched,'tool_output_sha256':backend.sha(output)})
++    return result
++
++def verify(files):
++    for path,expected in files.items():
++        if sha(path)!=expected:raise ValueError('frozen source/configuration drift: '+str(path))
++
++def stop_process(proc):
++    if proc is not None and proc.poll() is None:
++        try:os.killpg(proc.pid,signal.SIGKILL)
++        except ProcessLookupError:pass
++    if proc is not None:proc.wait()
++
++def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=None,score_fn=None,allow_model_execution=False,diff_runner=subprocess.run):
++    """Actual lifecycle; fake CLI can exercise it offline without model/scorer calls.
++
++    score_fn is an explicit trusted evaluation callback. It receives ONLY the
++    frozen final candidate and score destination after all actor processes stop.
++    """
++    phase=slot['phase'];model,effort,cap,mode=ROLE[phase]
++    fixture=command_factory is not None
++    if not fixture and not allow_model_execution:raise RuntimeError('model execution disabled; this change is offline-only')
++    if not fixture:
++        if not config.get('frozen_files'):raise ValueError('a separate frozen protocol is required for native execution')
++        verify(config['frozen_files'])
++    seconds=config.get('seconds_per_session',600);stdout_limit=config.get('stdout_bytes',16777216)
++    if not 0<seconds<=600 or not 0<stdout_limit<=16777216:raise ValueError('cannot increase original resource limits')
++    frozen={**config,'slot':slot,'model':model,'effort':effort,'requests_per_session':cap,'seconds_per_session':seconds,'stdout_bytes':stdout_limit,'offline_fixture':fixture,'archiver':'runner-owned-v1','input_archive_policy':'snapshots/logs outside model workspace; no model archival duty'}
++    a=Archive(run_dir).prepare(candidate,task,prompt,frozen)
++    if 'candidate_files' in case and backend.hashes(a.original)!=case['candidate_files']:raise ValueError('candidate version mismatch before launch')
++    if case.get('task_sha256') and sha(a.root/'input/task.md')!=case['task_sha256']:raise ValueError('task version mismatch before launch')
++    runtime=Path(tempfile.mkdtemp(prefix='research-archive-runtime-'));proc=None
++    outcome={**slot,'status':'LAUNCHED','started_at':time.time(),'failure_class':None,'stop_reason':None,'offline_fixture':fixture}
++    events=[];answer=None
++    try:
++        with GuardServer(runtime/'hook-control',a.root/'meter',slot['slot'],cap,mode) as guard:
++            try:
++                cmd=command_factory(a,runtime,guard) if fixture else command(slot['slot'],a.run_dir,phase,case,runtime=runtime,socket_dir=guard.directory)
++                save(a.root/'command.json',cmd)
++                with (a.root/'input/actual-prompt.md').open('rb') as inp,(a.root/'events.jsonl').open('wb') as out,(a.root/'stderr.log').open('wb') as err:
++                    proc=subprocess.Popen(cmd,stdin=inp,stdout=out,stderr=err,cwd=a.workspace,start_new_session=True)
++                    while proc.poll() is None:
++                        if time.time()-outcome['started_at']>=seconds:
++                            outcome.update(resource_limit='timeout',failure_class='model_resource_limit',stop_reason='timeout');stop_process(proc);break
++                        if (a.root/'events.jsonl').stat().st_size>stdout_limit:
++                            outcome.update(resource_limit='stdout_archive_limit',failure_class='model_resource_limit',stop_reason='stdout_archive_limit');stop_process(proc);break
++                        try:proc.wait(timeout=.05)
++                        except subprocess.TimeoutExpired:pass
++                    proc.wait()
++                outcome['exit_code']=proc.returncode
++                if proc.returncode!=0 and not outcome['failure_class']:outcome.update(failure_class='model_or_cli_abnormal_exit',stop_reason='nonzero_exit')
++            except Exception as exc:
++                outcome.update(failure_class=outcome['failure_class'] or 'runner_exception',stop_reason=outcome['stop_reason'] or 'runner_exception',exception=repr(exc))
++            finally:
++                stop_process(proc)
++    except Exception as exc:
++        outcome.update(failure_class=outcome['failure_class'] or 'runner_exception',stop_reason=outcome['stop_reason'] or 'runner_exception',exception=repr(exc))
++    finally:
++        stop_process(proc)
++        if 'guard' in locals():save(a.root/'guard-collector-status.json',{'errors':guard.errors})
++        outcome['seconds']=time.time()-outcome['started_at']
++        if proc is not None:outcome['exit_code']=proc.returncode
++        outcome['status']='STOPPED'
++        # Original failure cause is saved before archival; archival errors stay separate.
++        save(a.root/'model-outcome.json',outcome)
++        profile=runtime/'.runtime'/slot['slot']
++        try:
++            if (profile/'config.toml').exists():save(a.root/'configuration-after.json',{'profile_sha256':sha(profile/'config.toml'),'global_config':backend.global_snapshot()})
++        except Exception as exc:a.error('configuration_after',exc)
++        try:shutil.rmtree(runtime)  # runner-owned temporary profile only; never candidate files
++        except Exception as exc:a.error('runtime_cleanup',exc)
++        archive_state=a.finalize(model_stopped=proc is None or proc.poll() is not None,diff_runner=diff_runner)
++    # Reuse original role/accounting and resource-result interpretation.
++    malformed=[]
++    try:
++        for n,line in enumerate((a.root/'events.jsonl').read_text().splitlines(),1):
++            try:events.append(json.loads(line))
++            except ValueError:malformed.append(n)
++    except OSError:pass
++    raw=(a.root/'raw-answer.txt').read_text() if (a.root/'raw-answer.txt').exists() else ''
++    try:ans=json.loads(raw);format_ok=set(ans)=={'report'} and isinstance(ans['report'],str) and len(ans['report'])<=6000
++    except (ValueError,TypeError):ans={};format_ok=False
++    try:ledger=json.loads((a.root/'meter/ledger.json').read_text())
++    except (OSError,ValueError):ledger={}
++    native=ledger.get('sessions',{}).get(slot['slot'],{});budget_hit=bool(outcome.get('resource_limit')) or bool(native.get('blocked_requests') and native.get('started')==cap)
++    if budget_hit and outcome['failure_class'] in [None,'model_or_cli_abnormal_exit']:outcome['failure_class']='model_resource_limit'
++    model_events=[x['event'] for x in ledger.get('events',[]) if x['event'].get('hook_event_name') in ['PreModelRequest','PostModelRequest']]
++    posts=[e for e in model_events if e['hook_event_name']=='PostModelRequest'];pending=native.get('started',0)-native.get('completed',0)
++    accounted=bool(native.get('started')) and (pending==0 or budget_hit and pending==1) and len(posts)==native.get('completed')
++    completed=outcome.get('exit_code')==0 and sum(e.get('type')=='turn.completed' for e in events)==1
++    infra_ok=accounted and bool(model_events) and all(e.get('model')==model for e in model_events) and not native.get('blocked_tools') and all(e.get('status')=='completed' for e in posts) and not any(e.get('type')=='turn.failed' for e in events) and not malformed and (completed or budget_hit)
++    rec={**outcome,'native':native,'output_format_valid':format_ok,'infrastructure_valid':infra_ok,'status':'VALID' if infra_ok and (completed or budget_hit) else 'INVALID','archive_status':archive_state,'archive_failure_requires_stop':archive_state['status']!='OK','archive_stop_reason':'archive_error' if archive_state['status']!='OK' else None,'scoring_status':'NOT_REQUESTED','source_body_proofs':source_proof(events,a.original),'final_candidate':str(a.final) if a.final.exists() else None,'patch_delivered':archive_state['steps'].get('diff')=='CHANGED'}
++    if phase=='repair' and archive_state['status']=='OK' and score_fn is not None:
++        before=inventory(a.final);save(a.root/'score-before-manifest.json',before);score_dir=a.root/'score';score_dir.mkdir()
++        try:
++            rec['score_result']=score_fn(a.final,score_dir);rec['scoring_status']='COLLECTED'
++            if inventory(a.final)!=before:raise ValueError('external scorer changed frozen final candidate')
++        except Exception as exc:rec.update(scoring_status='ERROR',scoring_error=repr(exc))
++        after=inventory(a.final);save(a.root/'score-after-manifest.json',after)
++        rec['scored_candidate_sha256']=digest(before);rec['scored_candidate_unchanged']=before==after
++    elif score_fn is not None:rec['scoring_status']='BLOCKED_ARCHIVE_ERROR_OR_NON_REPAIR'
++    if phase=='extract':
++        full=ans.get('report','');(a.root/'contract-full.md').write_text(full)
++        h1='1. 可确认的 Contract\n';h2='2. 每条的条件、效果、来源及依据\n'
++        if infra_ok and rec['source_body_proofs'] and full.count(h1)==full.count(h2)==1 and full.split(h1,1)[1].split(h2,1)[0].strip():
++            body=full.split(h1,1)[1].split(h2,1)[0];(a.root/'contract.md').write_text(body);rec['contract_sha256']=backend.sha(body)
++        else:rec.update(status='INVALID',failure_class=rec['failure_class'] or 'model_extraction_format_or_read_omission',stop_reason=rec['stop_reason'] or 'no_valid_frozen_automatic_contract')
++    elif phase=='reflect':(a.root/'experience.md').write_text(ans.get('report',''))
++    save(a.root/'model-outcome.json',outcome);save(a.root/'receipt.json',rec);a.write_manifest();return rec
+--- /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-reflection-crosslang-20261108_202000/native_backend.py	2026-11-08 12:21:13.178683804 +0800
++++ /home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/runner-owned-archive-v1-20261108_130748/native_backend.py	2026-11-08 13:11:42.919941025 +0800
+@@ -1,4 +1,4 @@
+-"""Five fixed slots; no pre-run, retry, scorer, maintenance or optimizer."""
++"""Reused native CLI namespace; host archives are never mounted into the actor."""
+ import json,hashlib,os,shutil,subprocess,time,signal,sys
+ from pathlib import Path
+ OUT=Path(__file__).resolve().parent;ROOT=OUT.parent.parent
+@@ -8,9 +8,10 @@
+ def save(p,d):p=Path(p);p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n')
+ def sha(b):return hashlib.sha256(b if isinstance(b,bytes) else b.encode()).hexdigest()
+ def hashes(root):return {str(p.relative_to(root)):sha(p.read_bytes()) for p in root.rglob('*') if p.is_file()}
+-def command(call,folder,mode,copy_auth=True,meter=None):
+- work=folder/'workspace';out=folder/'cli-output';profile=Path((OUT/'runtime-location.txt').read_text().strip())/'.runtime'/call
+- for p in [work,out,profile]:p.mkdir(parents=True,exist_ok=True)
++def command(call,folder,mode,copy_auth=True,meter=None,*,runtime=None,socket_dir=None):
++ if runtime is None or socket_dir is None:raise ValueError('explicit external runtime and hook endpoint required')
++ work=folder/'workspace';archive=folder/'archive';profile=Path(runtime)/'.runtime'/call
++ for p in [work,profile]:p.mkdir(parents=True,exist_ok=True)
+  profile.chmod(0o700)
+  if copy_auth:
+   for n in ['auth.json']:
+@@ -18,10 +19,10 @@
+    if p.is_file():shutil.copyfile(p,profile/n);(profile/n).chmod(0o600)
+  shutil.copyfile(OUT/'research-config.toml',profile/'config.toml')
+  if (OUT/'models-cache.snapshot.json').exists():shutil.copyfile(OUT/'models-cache.snapshot.json',profile/'models_cache.json')
+- save(folder/'configuration-before.json',{'research_config_sha256':sha((profile/'config.toml').read_bytes()),'research_config_text':(profile/'config.toml').read_text(),'global_config':global_snapshot(),'model_catalog_sha256':sha((profile/'models_cache.json').read_bytes()) if (profile/'models_cache.json').exists() else None})
+- hooks={'hooks':{e:[{'hooks':[{'type':'command','command':'/usr/bin/python3 -B /request_guard.py','timeout':10}]}] for e in ['PreModelRequest','PostModelRequest','PreToolUse','PermissionRequest']}}
+- save(profile/'hooks.json',hooks);save(folder/'hooks.json',hooks)
+- ns=['bwrap','--die-with-parent','--new-session','--unshare-user','--unshare-pid','--unshare-ipc','--unshare-uts','--cap-drop','ALL','--ro-bind','/usr','/usr','--ro-bind','/lib','/lib','--ro-bind','/lib64','/lib64','--symlink','usr/bin','/bin','--symlink','usr/sbin','/sbin','--proc','/proc','--dev','/dev','--tmpfs','/tmp','--dir','/home/agent','--dir','/etc','--ro-bind','/etc/resolv.conf','/etc/resolv.conf','--ro-bind','/etc/ssl','/etc/ssl','--ro-bind',str(BINARY.parent),'/opt','--bind',str(profile),'/home/agent/.codex','--ro-bind',str(work),'/workspace','--bind',str(out),'/output','--ro-bind',str(OUT/'request_guard.py'),'/request_guard.py','--ro-bind',str(OUT/('reflection.schema.json' if mode=='reflection' else 'extraction.schema.json')),'/format.json','--bind',str(meter or OUT/'request-meter'),'/meter','--chdir','/workspace','--setenv','HOME','/home/agent','--setenv','CODEX_HOME','/home/agent/.codex','--setenv','PATH','/usr/bin:/bin:/opt','--setenv','LANG','C.UTF-8']
++ save(archive/'configuration-before.json',{'research_config_sha256':sha((profile/'config.toml').read_bytes()),'research_config_text':(profile/'config.toml').read_text(),'global_config':global_snapshot(),'model_catalog_sha256':sha((profile/'models_cache.json').read_bytes()) if (profile/'models_cache.json').exists() else None})
++ hooks={'hooks':{e:[{'hooks':[{'type':'command','command':'/usr/bin/python3 -B /guard_client.py','timeout':10}]}] for e in ['PreModelRequest','PostModelRequest','PreToolUse','PermissionRequest']}}
++ save(profile/'hooks.json',hooks);save(archive/'hooks.json',hooks)
++ ns=['bwrap','--die-with-parent','--new-session','--unshare-user','--unshare-pid','--unshare-ipc','--unshare-uts','--cap-drop','ALL','--ro-bind','/usr','/usr','--ro-bind','/lib','/lib','--ro-bind','/lib64','/lib64','--symlink','usr/bin','/bin','--symlink','usr/sbin','/sbin','--proc','/proc','--dev','/dev','--tmpfs','/tmp','--dir','/home/agent','--dir','/etc','--ro-bind','/etc/resolv.conf','/etc/resolv.conf','--ro-bind','/etc/ssl','/etc/ssl','--ro-bind',str(BINARY.parent),'/opt','--bind',str(profile),'/home/agent/.codex','--ro-bind',str(work),'/workspace','--ro-bind',str(OUT/'request_guard.py'),'/request_guard.py','--ro-bind',str(OUT/('reflection.schema.json' if mode=='reflection' else 'extraction.schema.json')),'/format.json','--ro-bind',str(socket_dir),'/hook-control','--ro-bind',str(OUT/'guard_client.py'),'/guard_client.py','--ro-bind',str(OUT/'read_policy.py'),'/read_policy.py','--chdir','/workspace','--setenv','HOME','/home/agent','--setenv','CODEX_HOME','/home/agent/.codex','--setenv','PATH','/usr/bin:/bin:/opt','--setenv','LANG','C.UTF-8']
+  for k in sorted(os.environ):
+   if k not in ['HOME','CODEX_HOME','PATH','LANG']:ns+=['--unsetenv',k]
+  for k in ['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy']:
+@@ -30,7 +31,7 @@
+  cmd=ns+['/opt/codex','exec','--ignore-rules','--ephemeral','--json','--color','never','--skip-git-repo-check','--sandbox','read-only','-c','approval_policy="never"','-m','gpt-6-sol','-c','model_reasoning_effort="low"','-c','web_search="disabled"','-c','service_tier="priority"','-c','model_provider="experiment_no_retry"','-c','model_providers.experiment_no_retry.name="OpenAI"','-c','model_providers.experiment_no_retry.wire_api="responses"','-c','model_providers.experiment_no_retry.requires_openai_auth=true','-c','model_providers.experiment_no_retry.request_max_retries=0','-c','model_providers.experiment_no_retry.stream_max_retries=0','--dangerously-bypass-hook-trust','--output-schema','/format.json']
+  for feature in DISABLE+(['shell_tool','code_mode_host'] if mode=='reflection' else []):cmd+=['--disable',feature]
+  if mode=='extraction':cmd+=['--enable','code_mode_host','--enable','shell_tool']
+- return cmd+['-C','/workspace','-o','/output/answer.json','-']
++ return cmd+['-C','/workspace','-']
+ 
+ def global_snapshot():
+  p=Path.home()/'.codex/config.toml'

@@ -1,0 +1,25 @@
+{
+  "schema_version": "0.1",
+  "case_id": "transfer-progress-composition-v4-vanilla",
+  "schedules": [
+    {"id":"warm-bootstrap","description":"The current attempt observes the synchronous warm frame.","events":["select-a","start-emits-warm-frame","observe-audit-and-ui","dispose"]},
+    {"id":"start-switch-admission","description":"Warm-frame UI switches visits before start emits again; the retired attempt admits no second frame.","events":["select-a","warm-ui-selects-b","old-start-emits-again","observe-owner-and-effects","dispose"]},
+    {"id":"accepted-after-hide","description":"A frame accepted before hide finishes decoding afterward: audit remains, UI is suppressed.","events":["select-a","accept-deferred-frame","hide","resolve-decode","observe-split-effects"]},
+    {"id":"frame-in-order","description":"Two deferred frames resolving in arrival order both advance the UI.","events":["select-a","accept-two-frames","resolve-first","resolve-second","observe-monotonic-ui"]},
+    {"id":"frame-reversed","description":"A newer synchronous frame publishes before an older decode; the older frame remains audit-only.","events":["select-a","accept-old-deferred","publish-newer","resolve-older","observe-no-rollback"]},
+    {"id":"cleanup-switch","description":"Detaching A synchronously selects C, so outer select B is superseded before B starts.","events":["select-a","outer-select-b","detach-selects-c","observe-c-owner","dispose"]},
+    {"id":"cleanup-hide","description":"Detaching A synchronously hides, so outer select B is superseded before B starts.","events":["select-a","outer-select-b","detach-hides","observe-no-owner","dispose"]},
+    {"id":"composed-reverse-cleanup-switch","description":"Reversed decode, progress-triggered switch, cleanup-triggered switch, audit retention, and current UI compose in one trace.","events":["select-a","accept-old-frame","newer-ui-selects-b","detach-selects-c","resolve-old-frame","emit-old-and-current","observe-all-effects"]},
+    {"id":"retry-preserved","description":"Retry keeps the visit-wide arrival order: a late accepted old-attempt frame is audited but cannot roll back the new warm frame.","events":["select-a","accept-old-deferred-frame","retry","new-attempt-warm-frame","resolve-old-frame","observe-records-progress-and-owner","dispose"]},
+    {"id":"telemetry-scope","description":"The adjacent diagnostic consumer intentionally ignores cached bootstrap and records only later live deltas.","events":["start-telemetry","cached-bootstrap-emits-before-listener","emit-live-delta","observe-diagnostics","stop"]}
+  ],
+  "counterfactual_pairs": [
+    {"left":"warm-bootstrap","right":"start-switch-admission","changed_relation":"The warm publication synchronously switches visits before start returns.","expected_changed_effects":["The old attempt rejects the second start-time frame and B owns the workspace."]},
+    {"left":"accepted-after-hide","right":"frame-in-order","changed_relation":"The visit remains current while accepted decodes settle in arrival order.","expected_changed_effects":["Current ordered decodes publish to both audit and UI."]},
+    {"left":"frame-in-order","right":"frame-reversed","changed_relation":"Decode completion order is reversed while event arrival order is unchanged.","expected_changed_effects":["The older completion remains in audit but cannot roll visible progress backward."]},
+    {"left":"cleanup-switch","right":"cleanup-hide","changed_relation":"The detach hook hides instead of selecting C.","expected_changed_effects":["No destination owns a listener after cleanup."]},
+    {"left":"frame-reversed","right":"composed-reverse-cleanup-switch","changed_relation":"The newer frame additionally triggers outer navigation whose cleanup selects C.","expected_changed_effects":["C supersedes B while the accepted old frame remains audit-only."]},
+    {"left":"warm-bootstrap","right":"retry-preserved","changed_relation":"A retry replaces the attempt without replacing the visit, then an old accepted decode settles late.","expected_changed_effects":["The previous attempt is canceled, its accepted frame remains audited, and the visit-wide UI order does not roll back."]},
+    {"left":"warm-bootstrap","right":"telemetry-scope","changed_relation":"The same warm feed is consumed by diagnostics rather than the panel.","expected_changed_effects":["Diagnostics preserve their delta-only policy and do not count cached bootstrap."]}
+  ]
+}

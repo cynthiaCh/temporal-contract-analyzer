@@ -1,0 +1,98 @@
+--- a/src/progress.js
++++ b/src/progress.js
+@@ -1,12 +1,24 @@
+ // The source is shared by visits of the same file. Decoding may settle later.
+ export function watchTransferProgress(feed, receive, record) {
++  let accepting = true;
++  let sequence = 0;
+   const listener = event => {
+-    const deliver = frame => { record(frame); receive(frame); };
++    // Assign freshness when the frame arrives, rather than when an async
++    // decoder happens to finish. Frames already accepted remain historical
++    // even if this listener is subsequently released.
++    if (!accepting) return;
++    const frameSequence = ++sequence;
++    const deliver = frame => { record(frame); receive(frame, frameSequence); };
+     const decoded = feed.decode(event.detail);
+     if (decoded && typeof decoded.then === "function") decoded.then(deliver);
+     else deliver(decoded);
+   };
+-  feed.start();
+   feed.target.addEventListener("progress", listener);
+-  return () => feed.target.removeEventListener("progress", listener);
++  // Some feeds synchronously replay their warm packet from start().
++  feed.start();
++  return () => {
++    if (!accepting) return;
++    accepting = false;
++    feed.target.removeEventListener("progress", listener);
++  };
+ }
+--- a/src/transfer.js
++++ b/src/transfer.js
+@@ -7,9 +7,15 @@ export function createTransfer(file, attemptId, transport, onCancel, progress = {}) {
+     stopProgress();
+     onCancel({ file, attemptId, signal: controller.signal });
+   }, { once: true });
+-  transport({ file, attemptId, signal: controller.signal });
+   if (file.progressFeed) {
+     stopProgress = watchTransferProgress(file.progressFeed, progress.receive, progress.record);
+     if (controller.signal.aborted) stopProgress();
+   }
++  // Installing the receiver may synchronously navigate away. Do not start a
++  // producer after that ownership has been invalidated.
++  if (!controller.signal.aborted && (!progress.isActive || progress.isActive())) {
++    transport({ file, attemptId, signal: controller.signal });
++  } else if (!controller.signal.aborted) {
++    controller.abort();
++  }
+   return { file, attemptId, signal: controller.signal,
+--- a/src/queue.js
++++ b/src/queue.js
+@@ -9,8 +9,16 @@ export function enqueueTransfer(state, visit, kind) {
+   const attemptId = ++state.nextAttempt;
+   state.record(makeQueueRecord(visit.file, attemptId, visit.id, kind));
++  // This is installed before subscription because a warm feed can deliver
++  // synchronously while createTransfer is still constructing its handle.
++  visit.activeAttemptId = attemptId;
++  let lastShownSequence = 0;
+   const progress = {
+     record(frame) { state.recordProgress({ fileId: visit.file.id, attemptId, frame }); },
+-    receive(frame) {
+-      if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });
++    receive(frame, sequence) {
++      if (state.current === visit && visit.activeAttemptId === attemptId && sequence > lastShownSequence) {
++        lastShownSequence = sequence;
++        state.showProgress({ fileId: visit.file.id, attemptId, frame });
++      }
+     },
++    isActive() { return !state.disposed && state.current === visit && visit.activeAttemptId === attemptId; },
+   };
+--- a/src/panel.js
++++ b/src/panel.js
+@@ -15,7 +15,7 @@ export function selectFile(state, file) {
+   const visit = { id: requestId, file, handle: null };
+   state.current = visit;
+   const handle = enqueueTransfer(state, visit, "select");
+-  if (state.current === visit) {
++  if (state.current === visit && visit.activeAttemptId === handle.attemptId) {
+     visit.handle = handle;
+     publishQueued(state, visit, handle);
+   } else {
+--- a/src/retry.js
++++ b/src/retry.js
+@@ -7,9 +7,12 @@ export function retryTransfer(state) {
+   if (!visit || !visit.handle || state.disposed) return null;
+   const previous = visit.handle;
+   previous.cancel();
++  // Cancellation callbacks may synchronously change the selected visit or
++  // launch another attempt.
++  if (state.current !== visit || visit.handle !== previous || state.disposed) return null;
+   const handle = enqueueTransfer(state, visit, "retry");
+-  if (state.current === visit) visit.handle = handle;
++  if (state.current === visit && visit.activeAttemptId === handle.attemptId) visit.handle = handle;
+   else handle.cancel();
+-  if (state.current === visit) publishQueued(state, visit, handle);
++  if (state.current === visit && visit.activeAttemptId === handle.attemptId) publishQueued(state, visit, handle);
+   return handle;
+ }

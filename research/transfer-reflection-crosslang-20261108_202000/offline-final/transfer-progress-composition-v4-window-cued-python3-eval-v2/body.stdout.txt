@@ -1,0 +1,128 @@
+/workspace/README.md
+     1	# Museum multispectral scan ingestion
+     2	
+     3	This workspace selects payload files, starts transfers, records queue and
+     4	progress history, and paints progress for its open panel. Runtime: CPython 3.8.10.
+     5	Dependencies: Python standard library. See src for the session/component entry API.
+     6	
+     7	Selecting a file creates a visit. Retry replaces the physical attempt without
+     8	opening another visit. Selecting the same file object again opens a new visit.
+     9	The source is shared by attempts and visits for that file. start may emit cached
+    10	packets synchronously; decoding yields a full frame, immediately or later.
+    11	Decode completion order can differ from packet arrival order.
+    12	
+    13	recordProgress appends transfer history; showProgress paints the open panel.
+    14	Queue records, notices, cancellation, retry, navigation, and cleanup retain
+    15	their existing behavior. Queue records are {fileId, attemptId, visitId, kind}
+    16	unless a separate authorization adds byteCount from file.size.
+    17	
+    18	One startup window is relevant to this maintenance request: start may emit
+    19	more than one packet synchronously. A showProgress callback may select or hide
+    20	another visit before start returns, while its caller has not yet received the
+    21	returned cleanup handle.
+    22	
+    23	The same source service also has a diagnostic consumer, Telemetry/
+    24	collectProgressTelemetry, whose existing live delta observations are separate
+    25	from the panel. Keep its existing behavior during this maintenance.
+    26	Removing a listener commits removal before calling the host detach callback;
+    27	that callback may synchronously select, hide or dispose. Repeated removal is
+    28	inert. Host callbacks execute synchronously unless explicitly deferred.
+    29	
+    30	Files have stable object identity and immutable id/size during these commands.
+    31	A full frame replaces displayed state; loaded values can decrease or reset.
+    32	A decode result resolves once; rejected decode and physical transfer completion
+    33	are outside this embedding's model. Each workspace has its own lifetime.
+    34	
+    35	Environment.call/bind provides a synchronous source embedding: listen(file
+    36	 token, callback token) returns a subscription, start can invoke it before
+    37	returning, and unlisten may reenter navigation. decode(file token, packet,
+    38	completion token) returns {deferred:false,frame} or {deferred:true}. Deferred
+    39	completion invokes the bound native closure on an explicit later host turn.
+    40	Transport receives a physical cancellation observer corresponding to the
+    41	native attempt state; cancel is idempotent. The wire embedding interns file
+    42	objects and forwards source/sink calls. Go uses context cancellation; the other
+    43	native ports use object flags. No native DOM/Promise runtime is claimed.
+/workspace/src/workflow.py
+     1	class Subscription:
+     2	    @staticmethod
+     3	    def attach(env,file,active,audit,view):
+     4	        if not file['feed']:return lambda:None
+     5	        def listener(packet):
+     6	            order=active()
+     7	            def deliver(frame):
+     8	                audit(frame);view(frame,order)
+     9	            value=env.call('decode',file['token'],packet,env.bind(deliver))
+    10	            if not value['deferred']:deliver(value['frame'])
+    11	        callback=env.bind(listener)
+    12	        env.call('start',file['token'])
+    13	        subscription=env.call('listen',file['token'],callback)
+    14	        return lambda:env.call('unlisten',file['token'],subscription)
+    15	# A session owns visits, while attempt closures own source and decode callbacks.
+    16	class Visit:
+    17	    def __init__(self, number, file):self.id=number;self.file=file;self.handle=None
+    18	class Attempt:
+    19	    def __init__(self, env, file, number, active=lambda:1, audit=lambda f:None, view=lambda f,o:None):
+    20	        self.env=env;self.file=file;self.number=number;self.aborted=False;self.stop=lambda:None
+    21	        env.call('transport',file['token'],number)
+    22	        self.stop=Subscription.attach(env,file,active,audit,view)
+    23	        if self.aborted:self.stop()
+    24	    def cancel(self):
+    25	        if self.aborted:return
+    26	        self.aborted=True;self.stop();self.env.call('cancel',self.file['token'],self.number)
+    27	class Session:
+    28	    def __init__(self,env):self.env=env;self.visit=None;self.serial=0;self.attempts=0;self.tasks=[];self.disposed=False
+    29	    def current(self,v):return self.visit is v
+    30	    def enqueue(self,v,kind):
+    31	        self.attempts+=1;n=self.attempts
+    32	        entry=dict(fileId=v.file['id'],attemptId=n,visitId=v.id,kind=kind)
+    33	        self.env.call('record',entry)
+    34	        def audit(frame):self.env.call('recordProgress',dict(fileId=v.file['id'],attemptId=n,frame=frame))
+    35	        def view(frame,order):
+    36	            if self.current(v):self.env.call('showProgress',dict(fileId=v.file['id'],attemptId=n,frame=frame))
+    37	        h=Attempt(self.env,v.file,n,lambda:0,audit,view);self.tasks.append(h);return h
+    38	    def notice(self,v,h):
+    39	        self.env.call('showQueued',dict(fileId=v.file['id'],attemptId=h.number,visitId=v.id,status='queued'))
+    40	    def release(self,v):
+    41	        h=v.handle;v.handle=None
+    42	        if h:h.cancel()
+    43	    def select(self,file):
+    44	        if self.disposed:return None
+    45	        self.serial+=1;request=self.serial;old=self.visit;self.visit=None
+    46	        if old:self.release(old)
+    47	        if self.disposed or self.serial!=request:return None
+    48	        v=Visit(request,file);self.visit=v;h=self.enqueue(v,'select')
+    49	        if self.current(v):v.handle=h;self.notice(v,h)
+    50	        else:h.cancel()
+    51	        return h
+    52	    def retry(self):
+    53	        v=self.visit
+    54	        if not v or not v.handle or self.disposed:return None
+    55	        v.handle.cancel()
+    56	        accepted=v
+    57	        h=self.enqueue(accepted,'retry')
+    58	        if self.current(accepted):accepted.handle=h
+    59	        else:h.cancel()
+    60	        if self.current(accepted):self.notice(accepted,h)
+    61	        return h
+    62	    def hide(self):
+    63	        self.serial+=1;old=self.visit;self.visit=None
+    64	        if old:self.release(old)
+    65	    def dispose(self):
+    66	        if self.disposed:return
+    67	        self.disposed=True;self.hide()
+    68	        for h in self.tasks:h.cancel()
+    69	    def snapshot(self):
+    70	        v=self.visit
+    71	        return dict(visitId=v.id if v else None,fileId=v.file['id'] if v else None,attemptId=v.handle.number if v and v.handle else None,disposed=self.disposed,attempts=self.attempts)
+    72	
+    73	class Telemetry:
+    74	    def __init__(self,env,file):
+    75	        def listener(packet):
+    76	            def deliver(frame):env.call('recordDelta',frame)
+    77	            value=env.call('decode',file['token'],packet,env.bind(deliver))
+    78	            if not value['deferred']:deliver(value['frame'])
+    79	        callback=env.bind(listener)
+    80	        env.call('start',file['token'])
+    81	        subscription=env.call('listen',file['token'],callback)
+    82	        self.stop=lambda:env.call('unlisten',file['token'],subscription)
+

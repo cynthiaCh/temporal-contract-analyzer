@@ -1,0 +1,11 @@
+# AI辅助核查：候选可见政策与边界
+
+原任务要求detail改用已有prefer-cache模式，缓存需在open调用内显示，并继续network更新；cold正常；仅detail授权，compliance和recent preview保留。README明确每次open含同key均为新activation；close结束activation；selection及其绘制代表最新请求；row只在其activation被选中时有用；离开后无transport订阅。onDetail同步且可导航；renderSelection/renderDetail只绘制。repository.js注释声明prefer-cache回调可在release返回前发生，每个handle仍拥有原watch；watchFresh无缓存。
+
+对应义务：调用前建立activation身份、选中后才能发布；同步回调新导航不能被旧open尾部覆盖；迟到handle应绑定原activation、已退役则释放，不能只比较record key；当前activation持续接收network，离开后无订阅/无发布；相邻fresh-only及preview独立授权保留。以上有任务/README/源码说明支持，不由参考通过反推政策。
+
+当前源码事实：detail.open先close，再watchFresh，再安装current并renderSelection；仅更改watch模式会把回调提前至current安装前。repository已经保证每个watch的live开关和幂等stop；compliance/preview使用watchFresh，不能全局改默认缓存。
+
+未知范围：transport声明subscribe返回后才发network；不自行加入同步transport通知、任意抛错/Promise或业务新授权政策。模板中的prefer-cache是原API名称，属于候选可见输入；学习经验不能绑定具体API或测试值。相邻消费者自身可能已有未请求问题，不扩大本轮任务。
+
+评价保留原ungranted、原schedules/effects/rubric/probe/worker。bounded通过是校准，不是政策批准；expanded的preview授权扩展应被拒绝。mutants分别破坏network持续、key身份、迟到handle交接、资源释放、重入优先级或共享缓存策略。正式评分全部冻结，不根据正式反馈删项。没有独立人工审查标记，本报告只称AI辅助核查。

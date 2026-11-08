@@ -1,0 +1,87 @@
+--- research/contract-repair-e1-cluster-hard-v1-20261108/native_backend.py	2026-11-08 10:58:29.283275173 +0800
++++ research/transfer-reflection-crosslang-20261108_202000/native_backend.py	2026-11-08 12:21:13.178683804 +0800
+@@ -9,7 +9,7 @@
+ def sha(b):return hashlib.sha256(b if isinstance(b,bytes) else b.encode()).hexdigest()
+ def hashes(root):return {str(p.relative_to(root)):sha(p.read_bytes()) for p in root.rglob('*') if p.is_file()}
+ def command(call,folder,mode,copy_auth=True,meter=None):
+- work=folder/'workspace';out=folder/'cli-output';profile=OUT/'.runtime'/call
++ work=folder/'workspace';out=folder/'cli-output';profile=Path((OUT/'runtime-location.txt').read_text().strip())/'.runtime'/call
+  for p in [work,out,profile]:p.mkdir(parents=True,exist_ok=True)
+  profile.chmod(0o700)
+  if copy_auth:
+@@ -19,7 +19,7 @@
+  shutil.copyfile(OUT/'research-config.toml',profile/'config.toml')
+  if (OUT/'models-cache.snapshot.json').exists():shutil.copyfile(OUT/'models-cache.snapshot.json',profile/'models_cache.json')
+  save(folder/'configuration-before.json',{'research_config_sha256':sha((profile/'config.toml').read_bytes()),'research_config_text':(profile/'config.toml').read_text(),'global_config':global_snapshot(),'model_catalog_sha256':sha((profile/'models_cache.json').read_bytes()) if (profile/'models_cache.json').exists() else None})
+- hooks={'hooks':{e:[{'hooks':[{'type':'command','command':'/usr/bin/python3 /request_guard.py','timeout':10}]}] for e in ['PreModelRequest','PostModelRequest','PreToolUse','PermissionRequest']}}
++ hooks={'hooks':{e:[{'hooks':[{'type':'command','command':'/usr/bin/python3 -B /request_guard.py','timeout':10}]}] for e in ['PreModelRequest','PostModelRequest','PreToolUse','PermissionRequest']}}
+  save(profile/'hooks.json',hooks);save(folder/'hooks.json',hooks)
+  ns=['bwrap','--die-with-parent','--new-session','--unshare-user','--unshare-pid','--unshare-ipc','--unshare-uts','--cap-drop','ALL','--ro-bind','/usr','/usr','--ro-bind','/lib','/lib','--ro-bind','/lib64','/lib64','--symlink','usr/bin','/bin','--symlink','usr/sbin','/sbin','--proc','/proc','--dev','/dev','--tmpfs','/tmp','--dir','/home/agent','--dir','/etc','--ro-bind','/etc/resolv.conf','/etc/resolv.conf','--ro-bind','/etc/ssl','/etc/ssl','--ro-bind',str(BINARY.parent),'/opt','--bind',str(profile),'/home/agent/.codex','--ro-bind',str(work),'/workspace','--bind',str(out),'/output','--ro-bind',str(OUT/'request_guard.py'),'/request_guard.py','--ro-bind',str(OUT/('reflection.schema.json' if mode=='reflection' else 'extraction.schema.json')),'/format.json','--bind',str(meter or OUT/'request-meter'),'/meter','--chdir','/workspace','--setenv','HOME','/home/agent','--setenv','CODEX_HOME','/home/agent/.codex','--setenv','PATH','/usr/bin:/bin:/opt','--setenv','LANG','C.UTF-8']
+  for k in sorted(os.environ):
+--- research/contract-repair-e1-cluster-hard-v1-20261108/runner.py	2026-11-08 10:58:29.283275173 +0800
++++ research/transfer-reflection-crosslang-20261108_202000/runner.py	2026-11-08 12:21:13.182683823 +0800
+@@ -8,10 +8,10 @@
+ def sha(p):return backend.sha(Path(p).read_bytes())
+ def cases():return read(O/'cohort.json')['cases']
+ def command(call,folder,phase,cap=None):
+- meter=folder/'meter';cap=cap or (12 if phase=='extract' else 24)
+- if not (meter/'config.json').exists():save(meter/'config.json',{'global_cap':cap,'calls':{call:{'cap':cap,'mode':'extraction' if phase=='extract' else 'maintenance'}}})
+- cmd=backend.command(call,folder,'extraction',True,meter)
+- if phase=='repair':
++ meter=folder/'meter';cap=cap or (12 if phase in ['extract','reflect'] else 24)
++ if not (meter/'config.json').exists():save(meter/'config.json',{'global_cap':cap,'calls':{call:{'cap':cap,'mode':'extraction' if phase=='extract' else 'reflection' if phase=='reflect' else 'maintenance'}}})
++ cmd=backend.command(call,folder,'reflection' if phase=='reflect' else 'extraction',True,meter)
++ if phase in ['repair','reflect']:
+   i=cmd.index(str(folder/'workspace'));assert cmd[i-1]=='--ro-bind';cmd[i-1]='--bind'
+   cmd[cmd.index('--sandbox')+1]='danger-full-access';cmd[cmd.index('-m')+1]='gpt-5.6-terra'
+   cmd=[s.replace('model_reasoning_effort="low"','model_reasoning_effort="medium"') for s in cmd]
+@@ -26,7 +26,8 @@
+   item=e.get('item',{})
+   if e.get('type')!='item.completed' or item.get('type')!='command_execution' or item.get('exit_code')!=0:continue
+   output=item.get('aggregated_output','');normalized={re.sub(r'^\s*\d+\s+','',line).strip() for line in output.splitlines()}
+-  for f in (O/'materials'/c['case']/'candidate').rglob('*.js'):
++  for f in (O/'materials'/c['case']/'candidate').rglob('*'):
++   if f.suffix not in ['.js','.py']:continue
+    lines={s.strip() for s in f.read_text().splitlines() if len(s.strip())>=20};matched=sorted(lines&normalized)
+    if len(matched)>=3:proofs.append({'event_line':n,'source':str(f),'source_sha256':sha(f),'matched_lines':matched,'tool_output_sha256':backend.sha(output)})
+  return proofs
+@@ -56,7 +57,7 @@
+   rawpath=d/'cli-output/answer.json';raw=rawpath.read_text() if rawpath.exists() else '';(d/'raw-answer.txt').write_text(raw)
+   try:ans=json.loads(raw);format_ok=isinstance(ans,dict) and set(ans)=={'report'} and isinstance(ans['report'],str) and len(ans['report'])<=6000
+   except (ValueError,TypeError):ans={};format_ok=False
+-  budget_hit=bool(rec.get('resource_limit')) or bool(native.get('blocked_requests') and native.get('started')==(12 if phase=='extract' else 24))
++  budget_hit=bool(rec.get('resource_limit')) or bool(native.get('blocked_requests') and native.get('started')==(12 if phase in ['extract','reflect'] else 24))
+   expected='gpt-6-sol' if phase=='extract' else 'gpt-5.6-terra'
+   model_events=[r['event'] for r in meter.get('events',[]) if r['event'].get('hook_event_name') in ['PreModelRequest','PostModelRequest']]
+   models_ok=bool(model_events) and all(e.get('model')==expected for e in model_events)
+@@ -65,9 +66,9 @@
+   service_error=any(e.get('status')!='completed' for e in posts) or any(e.get('type')=='turn.failed' for e in events)
+   completed=proc.returncode==0 and sum(e.get('type')=='turn.completed' for e in events)==1
+   infra_ok=accounted and models_ok and not native.get('blocked_tools') and not service_error and not badlines and (completed or budget_hit)
+-  rec.update(exit_code=proc.returncode,seconds=time.time()-rec['started_at'],usage=usage,native=native,usage_incomplete=not accounted or pending!=0 or any(not e.get('token_usage') for e in posts),model_match=models_ok,output_format_valid=format_ok,malformed_event_lines=badlines,tools=sum(e.get('type')=='item.completed' and e.get('item',{}).get('type')=='command_execution' for e in events),source_body_proofs=source_proof(events,case),candidate_files=hashes(d/'workspace'),infrastructure_valid=infra_ok,model_budget_limit=budget_hit)
+-  rec['status']='VALID' if infra_ok and completed and format_ok else 'INVALID'
+-  rec['failure_class']=None if rec['status']=='VALID' else 'infrastructure' if not infra_ok else 'model_resource_limit' if budget_hit else 'model_delivery_format'
++  rec.update(exit_code=proc.returncode,seconds=time.time()-rec['started_at'],usage=usage,native=native,usage_incomplete=not accounted or pending!=0 or any(not e.get('token_usage') for e in posts),usage_unknown_request_count=pending+sum(not e.get('token_usage') for e in posts),model_match=models_ok,output_format_valid=format_ok,malformed_event_lines=badlines,tools=sum(e.get('type')=='item.completed' and e.get('item',{}).get('type')=='command_execution' for e in events),source_body_proofs=source_proof(events,case),candidate_files=hashes(d/'workspace'),infrastructure_valid=infra_ok,model_budget_limit=budget_hit)
++  rec['status']='VALID' if infra_ok and (completed or budget_hit) else 'INVALID'
++  rec['failure_class']='infrastructure' if not infra_ok else 'model_resource_limit' if budget_hit else 'model_delivery_format' if not format_ok else None
+   if not infra_ok:rec['stop_reason']='tool_guard_service_configuration_or_accounting_failure'
+   if phase=='extract':
+    assert hashes(d/'workspace')==case['candidate_files']
+@@ -77,6 +78,8 @@
+     body=full.split(h1,1)[1].split(h2,1)[0];assert body.strip();(d/'contract.md').write_text(body);rec['contract_sha256']=backend.sha(body)
+    else:
+     rec['status']='INVALID';rec['failure_class']=rec['failure_class'] or 'model_extraction_format_or_read_omission';rec['stop_reason']=rec['stop_reason'] or 'no_valid_frozen_automatic_contract'
++  elif phase=='reflect':
++   (d/'experience.md').write_text(ans.get('report',''))
+   else:
+    diff=subprocess.run(['diff','-ruN',str(O/'materials'/case['case']/'candidate'),str(d/'workspace')],capture_output=True,text=True);(d/'patch.diff').write_text(diff.stdout)
+    rec['patch_delivered']=bool(diff.stdout)
+@@ -96,7 +99,7 @@
+    posts=[r['event'] for r in meter.get('events',[]) if r['event'].get('hook_event_name')=='PostModelRequest'];rec['usage']={k:sum(e.get('token_usage',{}).get(k,0) or 0 for e in posts) for k in ['input_tokens','cached_input_tokens','cache_write_input_tokens','output_tokens','reasoning_output_tokens']}
+   rec['usage_incomplete']=True;save(d/'receipt.json',rec)
+  finally:
+-  profile=O/'.runtime'/call
++  profile=Path((O/'runtime-location.txt').read_text().strip())/'.runtime'/call
+   if (profile/'config.toml').exists():save(d/'configuration-after.json',{'profile_sha256':sha(profile/'config.toml'),'global_config':backend.global_snapshot()})
+   shutil.rmtree(profile,ignore_errors=True)
+  return rec
