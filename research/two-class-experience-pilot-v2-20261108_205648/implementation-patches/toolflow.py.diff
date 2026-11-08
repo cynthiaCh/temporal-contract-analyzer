@@ -1,0 +1,124 @@
+--- v1/toolflow.py
++++ v2/toolflow.py
+@@ -52,7 +52,17 @@
+ {"contract":"可独立交付的中文Contract正文；不含类别/路由信息", "primary_class":"T1|T2|T3|T4|unknown",
+  "secondary_tags":[], "evidence":[{"file":"src/...","line":1,"quote":"逐字单行文本"}],
+  "facts":[{"predicate":"固定key","state":"known|unknown|contradicted","evidence":[{"file":"...","line":1,"quote":"..."}]}]}
+-report总长不超过6000字符；Contract宜不超过1800字符，证据简短但确切。不另发分类调用。
++report总长不超过6000字符；Contract宜不超过1200字符，证据简短但确切。不另发分类调用。
++语义要求（通用规则，不是标准答案）：
++识别修复请求中的“实际错误现象”与“希望保留的行为”。Repair/Fix后描述的问题不能直接改写成必须继续发生。
++逐条核查条件、否定、事件先后、记录/资源归属、历史结果/当前界面资格、取消/结算/完成的区别。
++源码现有读写位置与未使用字段分别记录；未使用字段或同名字段不能证明应替换现有语义。
++引用命中不等于论述正确。不要根据API名字补所有权政策，不把取消请求等同结算完成。
++在同一个report JSON对象额外输出claims和consistency：
++"claims":[{"kind":"reported_defect|requirement|source_fact|preservation_inference","statement":"一条可核对的断言","evidence":[{"file":"TASK或相对源码路径","line":1,"quote":"逐字单行片段"}]}],
++"consistency":{"conflicts":[],"unknowns":[],"checked_dimensions":["negation","conditions","event_order","ownership","history_vs_ui","cancellation_vs_completion"]}。
++TASK指下面原任务的虚拟编号文本。最多4条claims；每条quote尽量短。存在影响修复目标的真实冲突/未知则列出，不能为了通过检查清空。
++最终检查Contract与claims是否逐条相容；不要把reported_defect写成保留义务。不要引入执行选择的具体补丁。
+ 候选公共材料（源码在/workspace，以下不含管理/评价身份）：
+ ''' + canonical({k: v for k, v in material.items() if k != 'sources'})
+ 
+@@ -79,6 +89,17 @@
+ 
+ 
+ def validate_analysis(analysis, sources):
++    if not isinstance(analysis,dict):return 'non_object_analysis'
++    extra={k:analysis[k] for k in ['claims','consistency'] if k in analysis}
++    analysis={k:v for k,v in analysis.items() if k not in extra}
++    if extra:
++        if set(extra)!={'claims','consistency'}:return 'incomplete_semantic_structure'
++        if not isinstance(extra['claims'],list) or not isinstance(extra['consistency'],dict):return 'invalid_semantic_types'
++        for claim in extra['claims']:
++            if set(claim)!={'kind','statement','evidence'} or claim['kind'] not in ['reported_defect','requirement','source_fact','preservation_inference']:return 'invalid_semantic_claim'
++            if not valid_evidence(claim['evidence'],sources):return 'unbound_semantic_claim'
++        if set(extra['consistency'])!={'conflicts','unknowns','checked_dimensions'}:return 'invalid_semantic_review'
++        if extra['consistency']['conflicts'] or extra['consistency']['unknowns']:return 'unresolved_semantic_conflict'
+     if set(analysis) != {'contract', 'primary_class', 'secondary_tags', 'evidence', 'facts'}:
+         return 'invalid_or_invisible_analysis_fields'
+     if not isinstance(analysis['contract'], str) or not isinstance(analysis['facts'], list):
+@@ -111,18 +132,22 @@
+             raise ValueError('unknown applicability predicate')
+     if set(candidate['requires']) & set(candidate['excludes']):
+         raise ValueError('applicability conflict')
+-    entry = {**candidate, 'version': 'pilot-1', 'primary_class': primary,
++    entry = {**candidate, 'version': 'pilot-v2-1', 'primary_class': primary,
+              'text_sha256': digest(candidate['text'])}
+     entry['sha256'] = digest(canonical(entry))
+     return entry
+ 
+ 
+-def route(analysis, sources, library):
++def route(analysis, sources, library, *, task=None, review=None):
+     # Only data used below is accepted. No case/cluster/history/oracle arguments.
+     def fallback(reason, checks=None):
+         return {'condition': 'AUTO', 'reason': reason, 'selected': None,
+                 'checks': checks or [], 'primary_class': analysis.get('primary_class', 'unknown')}
+     invalid = validate_analysis(analysis, sources)
++    if invalid:return fallback(invalid)
++    if task is None:return fallback('missing_task_semantic_inputs')
++    issue=semantic_gate(task,sources,analysis,review)
++    if issue:return fallback(issue)
+     if invalid:
+         return fallback(invalid)
+     if analysis['primary_class'] == 'unknown':
+@@ -163,41 +188,14 @@
+                          'text_sha256': chosen['text_sha256']}, 'checks': checks}
+ 
+ 
+-def feedback(original, repairs, standards):
+-    """No diagnosis from assertion names; only structured actual/expected deltas."""
+-    out = {'standards': standards, 'original_effects': original['observed_effects'], 'runs': [],
+-           'explanations': [], 'unknown_causes': 'No causal diagnosis inferred from score labels. Read actual patches/source evidence.'}
+-    for score in repairs:
+-        row = {'verdict': score['verdict'], 'differences': [], 'existing_successes': [], 'improvements': [], 'regressions': []}
+-        for relation in standards:
+-            key, expected = relation['effect'], relation['expected']
+-            before, actual = original['observed_effects'].get(key), score['observed_effects'].get(key)
+-            item = {'relation': relation['description'], 'effect': key, 'expected': expected,
+-                    'original': before, 'actual': actual}
+-            if type(actual) is not bool or type(before) is not bool:
+-                row.setdefault('unknown_observations', []).append(item)
+-                continue
+-            if actual != expected:
+-                row['differences'].append(item)
+-            if before == expected:
+-                row['existing_successes'].append(item)
+-            if before != expected and actual == expected:
+-                row['improvements'].append(item)
+-            if before == expected and actual != expected:
+-                row['regressions'].append(item)
+-        row['assertion_differences'] = [
+-            {'schedule': name, 'assertion': a, 'runtimeError': schedule.get('runtimeError')}
+-            for name, schedule in score['schedules'].items() for a in schedule.get('assertions', [])
+-            if not a.get('passed', False)]
+-        out['runs'].append(row)
+-    return out
++from feedback_v2 import feedback
+ 
+ 
+ def reflection_prompt(payload):
+     return '''只根据以下本批训练反馈反思一次，不能使用工具。生成一个可迁移经验候选，
+ 不得读取或借用旧经验。材料含原始候选、原任务文档标准、两份实际修复/评分及公开交付。
+ 参考实现/参考补丁不在输入。保留已经成功的关系，区分实际差异、退步与未知原因，
+-不要从断言名称臆造政策或根因。标准解释的执行Agent来源已记录。
++不要从断言名称臆造政策或根因。actual_successes才是该补丁已通过项，original_successes只是原始起点曾通过项；regressions是丢失的既有关系。all_checks包含checks/assertions原始实际值与期望值。公开交付中的模型自述未经验证，不能当评分事实。任何修好/保留/退步的叙述必须与实际关系核对；多处改动只能支持原因假设，不能宣称因果已经隔离证明。避免在经验正文复述哪次训练补丁成功，写成一般适用边界和验证动作。标准解释的执行Agent来源已记录。
+ 经验必须包含适用前提、事件关系、验证动作、保留行为、不适用情况。
+ 经验正文不得含案例ID、评分断言名、文件路径、程序专用字段/函数名或可复制补丁。
+ 用一般时序机制和普通中文描述，不引用训练案例名字，不承诺未观察的效果。
+@@ -208,3 +206,15 @@
+ {"text":"完整经验原文", "requires":["predicate key"], "excludes":[]}。
+ report不超过6000字符。只生成一个候选，不另给修订版。
+ 固定predicate词典：''' + canonical(PREDICATES) + '\n本批训练材料：\n' + canonical(payload)
++
++
++def semantic_gate(task, sources, analysis, review):
++    """A source-bound veto record; never changes category, Contract or experience."""
++    required={'contract_sha256','task_sha256','sources_sha256','reviewer','approved','conflicts','unknowns','evidence','findings'}
++    if not isinstance(review,dict) or set(review)!=required:return 'missing_or_invalid_semantic_veto_record'
++    if review['contract_sha256']!=digest(analysis['contract']) or review['task_sha256']!=digest(task) or review['sources_sha256']!=digest(canonical(sources)):return 'semantic_review_input_drift'
++    if review['reviewer']!='execution_agent_visible_input_only':return 'invalid_semantic_review_provenance'
++    if not review['approved'] or review['conflicts'] or review['unknowns']:return 'unresolved_semantic_conflict'
++    if not valid_evidence(review['evidence'],sources):return 'unbound_semantic_review'
++    return None
++

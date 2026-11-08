@@ -1,0 +1,38 @@
+--- v1/test_toolflow.py
++++ v2/test_toolflow.py
+@@ -2,7 +2,7 @@
+ import json
+ import unittest
+ from toolflow import (PREDICATES, validate_analysis, freeze_entry, route, maintenance_prompt,
+-                      feedback, public_material, extraction_prompt)
++                      feedback, public_material, extraction_prompt, canonical, digest)
+ 
+ 
+ class ToolflowTests(unittest.TestCase):
+@@ -11,10 +11,14 @@
+         proof = [{'file': 'src/unit.py', 'line': 1, 'quote': 'shared state'}]
+         self.analysis = {'contract': 'fixture', 'primary_class': 'T4', 'secondary_tags': [],
+                          'evidence': proof, 'facts': [{'predicate': 'shared_lifetime', 'state': 'known', 'evidence': proof}]}
++        self.task='Repair a reported defect while preserving shared state.'
++        self.review={'contract_sha256':digest(self.analysis['contract']),'task_sha256':digest(self.task),
++                     'sources_sha256':digest(canonical(self.sources)),'reviewer':'execution_agent_visible_input_only',
++                     'approved':True,'conflicts':[],'unknowns':[],'evidence':proof,'findings':[]}
+         self.entry = freeze_entry({'text': 'synthetic experience', 'requires': ['shared_lifetime'], 'excludes': []}, 'T4')
+ 
+     def result(self, library=None):
+-        return route(self.analysis, self.sources, [self.entry] if library is None else library)
++        return route(self.analysis, self.sources, [self.entry] if library is None else library, task=self.task, review=self.review)
+ 
+     def test_positive(self):
+         self.assertEqual(self.result()['condition'], 'ROUTED')
+@@ -91,8 +95,8 @@
+         row = feedback(original, [repaired], standards)['runs'][0]
+         self.assertEqual(len(row['improvements']), 1)
+         self.assertEqual(len(row['regressions']), 1)
+-        self.assertEqual(len(row['existing_successes']), 1)
+-        self.assertEqual(len(row['unknown_observations']), 1)
++        self.assertEqual(len(row['original_successes']), 1)
++        self.assertEqual(len(row['unknown']), 1)
+ 
+ 
+ if __name__ == '__main__':

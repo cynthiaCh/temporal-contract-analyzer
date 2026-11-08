@@ -1,0 +1,88 @@
+--- v1/runner.py
++++ v2/runner.py
+@@ -27,9 +27,10 @@
+     # Same body-line evidence as historical runner, with both source suffixes.
+     result=[]
+     for n,e in enumerate(events,1):
+-        item=e.get('item',{})
++        item=e.get('item') or {}
++        if not isinstance(item,dict):continue
+         if e.get('type')!='item.completed' or item.get('type')!='command_execution' or item.get('exit_code')!=0:continue
+-        output=item.get('aggregated_output','');normalized={re.sub(r'^\s*\d+\s+','',x).strip() for x in output.splitlines()}
++        output=item.get('aggregated_output') or '';normalized={re.sub(r'^\s*\d+\s+','',x).strip() for x in output.splitlines()}
+         for f in original.rglob('*'):
+             if f.suffix not in ['.js','.py'] or f.is_symlink() or not f.is_file():continue
+             matched=sorted({x.strip() for x in f.read_text().splitlines() if len(x.strip())>=20}&normalized)
+@@ -60,7 +61,7 @@
+         verify(config['frozen_files'])
+     seconds=config.get('seconds_per_session',600);stdout_limit=config.get('stdout_bytes',16777216)
+     if not 0<seconds<=600 or not 0<stdout_limit<=16777216:raise ValueError('cannot increase original resource limits')
+-    frozen={**config,'slot':slot,'model':model,'effort':effort,'requests_per_session':cap,'seconds_per_session':seconds,'stdout_bytes':stdout_limit,'offline_fixture':fixture,'archiver':'runner-owned-v1','input_archive_policy':'snapshots/logs outside model workspace; no model archival duty'}
++    frozen={**config,'slot':slot,'model':model,'effort':effort,'requests_per_session':cap,'seconds_per_session':seconds,'stdout_bytes':stdout_limit,'offline_fixture':fixture,'archiver':'runner-owned-v2-null-safe','input_archive_policy':'snapshots/logs outside model workspace; no model archival duty'}
+     a=Archive(run_dir).prepare(candidate,task,prompt,frozen)
+     if 'candidate_files' in case and backend.hashes(a.original)!=case['candidate_files']:raise ValueError('candidate version mismatch before launch')
+     if case.get('task_sha256') and sha(a.root/'input/task.md')!=case['task_sha256']:raise ValueError('task version mismatch before launch')
+@@ -109,23 +110,30 @@
+     malformed=[]
+     try:
+         for n,line in enumerate((a.root/'events.jsonl').read_text().splitlines(),1):
+-            try:events.append(json.loads(line))
+-            except ValueError:malformed.append(n)
++            try:
++                event=json.loads(line)
++                if not isinstance(event,dict):raise ValueError('non-object event')
++                events.append(event)
++            except (ValueError,TypeError):malformed.append(n)
+     except OSError:pass
+     raw=(a.root/'raw-answer.txt').read_text() if (a.root/'raw-answer.txt').exists() else ''
+     try:ans=json.loads(raw);format_ok=set(ans)=={'report'} and isinstance(ans['report'],str) and len(ans['report'])<=6000
+-    except (ValueError,TypeError):ans={};format_ok=False
++    except (ValueError,TypeError,AttributeError):ans={};format_ok=False
++    if not isinstance(ans,dict):ans={};format_ok=False
+     try:ledger=json.loads((a.root/'meter/ledger.json').read_text())
+     except (OSError,ValueError):ledger={}
+-    native=ledger.get('sessions',{}).get(slot['slot'],{});budget_hit=bool(outcome.get('resource_limit')) or bool(native.get('blocked_requests') and native.get('started')==cap)
++    if not isinstance(ledger,dict):ledger={}
++    native=(ledger.get('sessions') or {}).get(slot['slot'],{});budget_hit=bool(outcome.get('resource_limit')) or bool(native.get('blocked_requests') and native.get('started')==cap)
+     if budget_hit and outcome['failure_class'] in [None,'model_or_cli_abnormal_exit']:outcome['failure_class']='model_resource_limit'
+-    model_events=[x['event'] for x in ledger.get('events',[]) if x['event'].get('hook_event_name') in ['PreModelRequest','PostModelRequest']]
++    model_events=[x['event'] for x in (ledger.get('events') or []) if isinstance(x,dict) and isinstance(x.get('event'),dict) and x['event'].get('hook_event_name') in ['PreModelRequest','PostModelRequest']]
+     posts=[e for e in model_events if e['hook_event_name']=='PostModelRequest'];pending=native.get('started',0)-native.get('completed',0)
+     accounted=bool(native.get('started')) and (pending==0 or budget_hit and pending==1) and len(posts)==native.get('completed')
+-    completed=outcome.get('exit_code')==0 and sum(e.get('type')=='turn.completed' for e in events)==1
+-    infra_ok=accounted and bool(model_events) and all(e.get('model')==model for e in model_events) and not native.get('blocked_tools') and all(e.get('status')=='completed' for e in posts) and not any(e.get('type')=='turn.failed' for e in events) and not malformed and (completed or budget_hit)
+-    rec={**outcome,'native':native,'output_format_valid':format_ok,'infrastructure_valid':infra_ok,'status':'VALID' if infra_ok and (completed or budget_hit) else 'INVALID','archive_status':archive_state,'archive_failure_requires_stop':archive_state['status']!='OK','archive_stop_reason':'archive_error' if archive_state['status']!='OK' else None,'scoring_status':'NOT_REQUESTED','source_body_proofs':source_proof(events,a.original),'final_candidate':str(a.final) if a.final.exists() else None,'patch_delivered':archive_state['steps'].get('diff')=='CHANGED'}
+-    if phase=='repair' and archive_state['status']=='OK' and score_fn is not None:
++    completed=outcome.get('exit_code')==0 and sum(e.get('type')=='turn.completed' for e in events)==1 and not any(e.get('type') in ['error','turn.failed'] for e in events) and not malformed and not budget_hit
++    infra_ok=accounted and bool(model_events) and all(e.get('model')==model for e in model_events) and not native.get('blocked_tools') and all(e.get('status')=='completed' for e in posts) and not any(e.get('type')=='turn.failed' for e in events) and not malformed and completed
++    rec={**outcome,'native':native,'output_format_valid':format_ok,'infrastructure_valid':infra_ok,'status':'VALID' if infra_ok and completed else 'INVALID','archive_status':archive_state,'archive_failure_requires_stop':archive_state['status']!='OK','archive_stop_reason':'archive_error' if archive_state['status']!='OK' else None,'scoring_status':'NOT_REQUESTED','source_body_proofs':source_proof(events,a.original),'final_candidate':str(a.final) if a.final.exists() else None,'patch_delivered':archive_state['steps'].get('diff')=='CHANGED'}
++    rec['candidate_complete']=bool(completed and infra_ok and format_ok)
++    rec['scoring_admissible']=bool(phase=='repair' and rec['candidate_complete'] and rec['source_body_proofs'] and archive_state['status']=='OK')
++    if rec['scoring_admissible'] and score_fn is not None:
+         before=inventory(a.final);save(a.root/'score-before-manifest.json',before);score_dir=a.root/'score';score_dir.mkdir()
+         try:
+             rec['score_result']=score_fn(a.final,score_dir);rec['scoring_status']='COLLECTED'
+@@ -133,13 +141,14 @@
+         except Exception as exc:rec.update(scoring_status='ERROR',scoring_error=repr(exc))
+         after=inventory(a.final);save(a.root/'score-after-manifest.json',after)
+         rec['scored_candidate_sha256']=digest(before);rec['scored_candidate_unchanged']=before==after
+-    elif score_fn is not None:rec['scoring_status']='BLOCKED_ARCHIVE_ERROR_OR_NON_REPAIR'
++    elif score_fn is not None:rec['scoring_status']='NOT_ADMITTED_INCOMPLETE_OR_INVALID_CANDIDATE'
+     if phase=='extract':
+         from toolflow import validate_analysis
+-        full=ans.get('report','');(a.root/'preanalysis-raw.txt').write_text(full)
++        full=ans.get('report') if isinstance(ans.get('report'),str) else '';(a.root/'preanalysis-raw.txt').write_text(full)
+         try:
+             analysis=json.loads(full)
+             sources={str(f.relative_to(a.original)):f.read_text() for f in a.original.rglob('*') if f.is_file() and f.suffix in ['.js','.py','.md']}
++            sources['TASK']=(a.root/'input/task.md').read_text()
+             error=validate_analysis(analysis,sources)
+             if error:raise ValueError(error)
+             if not rec['source_body_proofs']:raise ValueError('source body not read')
+@@ -150,5 +159,5 @@
+             rec['contract_sha256']=backend.sha(analysis['contract']);rec['preanalysis_valid']=True
+         except (ValueError,TypeError,KeyError,AttributeError) as exc:
+             rec.update(preanalysis_valid=False,preanalysis_error=repr(exc))
+-    elif phase=='reflect':(a.root/'experience.md').write_text(ans.get('report',''))
++    elif phase=='reflect':(a.root/'experience.md').write_text(ans.get('report') if isinstance(ans.get('report'),str) else '')
+     save(a.root/'model-outcome.json',outcome);save(a.root/'receipt.json',rec);a.write_manifest();return rec
