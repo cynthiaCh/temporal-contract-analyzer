@@ -1,0 +1,79 @@
+/workspace/README.md
+     1	# Museum scan bundle preparation
+     2	The transport asynchronously fulfills false (pending) or true (ready). It can
+     3	report pending repeatedly. It does not issue retries itself. Retry callbacks are
+     4	scheduled for a later event turn and can be cancelled; no real-time interval is
+     5	part of this API. Render consumers never call back into this resource.
+     6	
+     7	The foreground resource serves an opened document package. start, close, reopen
+     8	and snapshot are its public commands. The adjacent workspace job has its own
+     9	lifetime; its panel is only a display. Final owner disposal releases resources.
+    10	See the native resource classes and the workspace close implementation.
+    11	
+    12	Business context: Museum scan bundle preparation. The package token identifies the prepared artifact;
+    13	foreground presentation and workspace preparation have separate owners.
+/workspace/dependencies.lock.json
+     1	{
+     2	  "runtime": "CPython 3.8.10",
+     3	  "external_dependencies": [],
+     4	  "stdlib_only": true
+     5	}
+/workspace/src/workflow.py
+     1	# Host futures notify through the asyncio loop; timers are injected separately.
+     2	class Resource:
+     3	    def __init__(self,host,token):
+     4	        self.host,self.generation,self.timer,self.disposed=host,0,None,False
+     5	        self.state=dict(visible=True,loading=False,retryScheduled=False,checkCount=0,completed=[],token=token)
+     6	    def snapshot(self):
+     7	        return dict(self.state,completed=list(self.state['completed']))
+     8	    def publish(self):
+     9	        if not self.disposed:self.host.publish(self.snapshot())
+    10	    def cancel_retry(self):
+    11	        if self.timer is not None:self.host.cancel(self.timer)
+    12	        self.timer=None;self.state['retryScheduled']=False
+    13	    def invalidate(self):
+    14	        self.generation+=1
+    15	        self.cancel_retry()
+    16	        self.state['loading']=False
+    17	    def start(self):
+    18	        self.invalidate();self.state['visible']=True;self.check(self.generation)
+    19	    def reopen(self,token):
+    20	        self.invalidate();self.state['token']=token;self.state['visible']=True;self.check(self.generation)
+    21	    def check(self,generation):
+    22	        token=self.state['token'];self.state['loading']=True;self.state['checkCount']+=1;self.publish()
+    23	        def response(future):
+    24	            ready=future.result()
+    25	            if self.disposed or generation!=self.generation:return
+    26	            if ready is True:
+    27	                self.cancel_retry();self.state['loading']=False
+    28	                if token not in self.state['completed']:self.state['completed'].append(token)
+    29	                self.publish()
+    30	            else:self.pending(generation)
+    31	        self.host.check(token).add_done_callback(response)
+    32	    def schedule(self,generation):
+    33	        self.state['retryScheduled']=True
+    34	        def retry():
+    35	            if self.disposed or generation!=self.generation:return
+    36	            self.timer=None;self.state['retryScheduled']=False;self.check(generation)
+    37	        self.timer=self.host.schedule(retry);self.publish()
+    38	    def dispose(self):
+    39	        self.disposed=True;self.generation+=1;self.cancel_retry()
+    40	class DialogResource(Resource):
+    41	    def pending(self,generation):
+    42	        self.state['loading']=False;self.publish()
+    43	    def close(self):
+    44	        self.state['visible']=False;self.invalidate();self.publish()
+    45	class WorkspaceJob(Resource):
+    46	    def start(self):self.check(self.generation)
+    47	    def pending(self,generation):self.schedule(generation)
+    48	    def close(self):
+    49	        self.state['visible']=False
+    50	        pass
+    51	        self.publish()
+    52	def create_resource(host,surface,token):
+    53	    return (DialogResource if surface=='download' else WorkspaceJob)(host,token)
+
+Python 3.8.10
+
+v18.17.0
+
