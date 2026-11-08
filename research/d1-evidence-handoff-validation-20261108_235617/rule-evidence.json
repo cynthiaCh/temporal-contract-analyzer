@@ -1,0 +1,119 @@
+{
+  "rules": [
+    {
+      "id": "fresh-detached-entry",
+      "quote": "Repair the transit stop lookup cache: a fresh online-mode query mounted and unmounted entirely offline later calls its signal-consuming query function with a live signal after reconnect. This occurs independently of refetchOnReconnect. Preserve supported query behavior, interfaces, dependencies and build/test configuration. Change product source only.",
+      "support": [
+        "R-task",
+        "F-boundary",
+        "F-events",
+        "O-original-offline-detach-false",
+        "O-auto1-offline-detach-false",
+        "O-auto2-offline-detach-false"
+      ],
+      "conditions": [
+        "A fresh online-mode shared record is created while offline.",
+        "Its final observer departs before actual execution entry.",
+        "A later connectivity event would otherwise release deferred entry."
+      ],
+      "preserve": [
+        "C-events",
+        "C-ownership",
+        "C-cached",
+        "Keep cancellation, settlement, resource abort, retry suppression, deferred entry",
+        "and cache writes distinct.",
+        "Do not alter an unrelated shared record or its resource."
+      ],
+      "counterevidence": [
+        "O-auto1-0",
+        "O-auto2-0",
+        "O-auto1-1",
+        "O-auto2-1"
+      ],
+      "counterevidence_resolution": "The candidate outcomes show that a rule based only on being unstarted or paused is too broad: it suppressed previously successful cached work and its later allowed consumption. The rule is narrowed to the documented fresh offline-created, observerless-before-entry condition; it does not authorize retirement of cached background work.",
+      "causal_status": "documented_relation"
+    },
+    {
+      "id": "background-preservation",
+      "quote": "Unconsumed active work can finish into cache after its view departs; consumed work is physically abortable. Cancellation reverts previous query data/status and settles the originating attempt. Late fulfillment cannot become a new attempt's data.",
+      "support": [
+        "R-background",
+        "F-events",
+        "O-original-0",
+        "O-original-1",
+        "O-original-nonconsuming-flight-cache"
+      ],
+      "conditions": [
+        "Work is active and unconsumed when observers depart.",
+        "The record already carries successful cached data, or the work has entered and a",
+        "background completion remains permitted by the documented behavior."
+      ],
+      "preserve": [
+        "C-cached",
+        "C-events",
+        "C-ownership",
+        "Preserve physical abort only for the documented consumed branch.",
+        "Preserve prior visible data/state on cancellation and reject late writes from a",
+        "settled or superseded execution."
+      ],
+      "counterevidence": [
+        "O-auto1-0",
+        "O-auto2-0",
+        "O-auto1-1",
+        "O-auto2-1"
+      ],
+      "counterevidence_resolution": "Both candidates retained ordinary unconsumed in-flight caching yet failed the cached paused variants. This narrows preservation: ordinary started background success alone is insufficient evidence that a proposed retirement rule also preserves deferred cached work; that cached condition must be checked separately.",
+      "causal_status": "documented_relation"
+    },
+    {
+      "id": "ownership-and-timing-boundary",
+      "quote": "queryFn receives a lazy signal accessor. Each actual access records consumption; each fetch owns its controller and completion. Completion is asynchronous; initial online entry is synchronous, paused continuation resumes on a Promise turn.",
+      "support": [
+        "R-entry",
+        "F-ownership",
+        "F-creation",
+        "F-boundary",
+        "I-preservation",
+        "O-original-retained-context-query-flag",
+        "O-auto1-retained-context-query-flag",
+        "O-auto2-retained-context-query-flag"
+      ],
+      "conditions": [
+        "A deferred continuation has not yet entered execution, or an older context may",
+        "be read after its execution completed.",
+        "The current source continues to store the consumption record separately from",
+        "the per-execution resource."
+      ],
+      "preserve": [
+        "C-ownership",
+        "C-events",
+        "Retain lazy recording at actual access rather than treating resource ownership",
+        "as proof of record ownership.",
+        "Retain synchronous initial entry and promise-turn deferred entry; eligibility",
+        "release and actual entry remain separate events."
+      ],
+      "counterevidence": [
+        "O-auto1-0",
+        "O-auto2-0",
+        "O-auto1-1",
+        "O-auto2-1"
+      ],
+      "counterevidence_resolution": "The regressions do not establish a replacement ownership model. Together with the retained older-context observation, they limit this rule to preservation of the current separate ownership semantics until a source-supported alternative and isolated execution evidence exist.",
+      "causal_status": "source_reasoning"
+    }
+  ],
+  "unresolved": [
+    {
+      "statement": "No independently isolated experiment establishes which individual change produced the fresh-detach improvement or the cached-work regressions; the supplied patches are multi-change candidates.",
+      "impact": "policy"
+    },
+    {
+      "statement": "A complete, reviewable repair that satisfies both the fresh-detach requirement and the cached deferred-background behaviors is not supplied by the evidence; execute a candidate against both boundary families before admission.",
+      "impact": "applicability"
+    },
+    {
+      "statement": "Why the reflector selected the rejected ownership and retirement prescriptions is unknown; no model-internal causal evidence is available.",
+      "impact": "scope_limit"
+    }
+  ]
+}
