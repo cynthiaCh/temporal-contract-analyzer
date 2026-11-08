@@ -1,0 +1,18 @@
+"use strict";
+
+const React = require("react");
+const { useBackgroundPreparation } = require("./useBackgroundPreparation.js");
+
+const BackgroundExportPanel = React.forwardRef(function BackgroundExportPanel({ token }, ref) {
+  const preparation = useBackgroundPreparation(token);
+  React.useImperativeHandle(ref, () => preparation);
+  const snapshot = preparation.snapshot();
+  return React.createElement("section", {
+    "data-surface": "background-export",
+    "data-visible": String(snapshot.visible),
+    "data-loading": String(snapshot.loading),
+  });
+});
+
+module.exports = { BackgroundExportPanel };
+
