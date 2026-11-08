@@ -1,0 +1,115 @@
+{
+  "runs": [
+    {
+      "slot": "block-1-A",
+      "nonzero_tool_commands": [
+        {
+          "event_line": 12,
+          "exit_code": 128,
+          "git_non_repository_warning": false,
+          "command": "/usr/bin/bash -lc \"rg -n \\\"retryCancelled|queued|resume\\\\(|unsubscribe\\\\(\\\" . -g '\"'!node_modules'\"' -g '\"'!dependencies.lock.json'\"' && git status --short\"",
+          "output_excerpt": "./README.md:4:handle, unsubscribe(handle), online(boolean), focus(boolean), snapshot(key),\n./src/session.js:2: constructor(number,state,options){this.number=number;this.previous={...state};this.options=options;this.controller=new AbortController();this.settled=false;this.consumed=false;this.retryCancelled=false;this.failures=0;this.queued=false;}\n./src/session.js:9: invoke(q,a){a.queued=false;if(!this.active(q,a))return;q.state.fetchStatus='fetching';q.consumed=false;const context={key:q.key,att",
+          "classification": "git_status_no_worktree"
+        },
+        {
+          "event_line": 16,
+          "exit_code": 1,
+          "git_non_repository_warning": false,
+          "command": "/usr/bin/bash -lc \"/runtime/node --input-type=module <<'EOF'\nimport assert from 'node:assert/strict';\nimport { Session } from './src/session.js';\n\nconst timers={schedule(callback){callback();}};\nlet calls=0;\nconst offline=new Session({queryFn({signal}){calls++; void signal; return 'unexpected';},timers},{online:false});\nconst abandoned=offline.subscribe('stop');\noffline.unsubscribe(abandoned);\noffline.online(true);\nawait Promise.resolve();\nassert.equal(calls,0);\nassert.deepEqual(offline.snapshot('stop'),{status:'pending',fetchStatus:'idle',data:null});\n\nlet resolve;\nconst retained=new Session({queryFn(){calls++; return new Promise(done=>{resolve=done;});},timers});\nconst handle=retained.subscribe('shared');\nretained.unsubscribe(handle);\nresolve('cached');\nawait Promise.resolve();\nassert.deepEqual(retained.snapshot('shared'),{status:'success',fetchStatus:'idle',data:'cached'});\n\nlet sharedCalls=0;\nconst shared=new Session({queryFn(){sharedCalls++; return 'ok';},timers},{online:false});\nconst first=shared.subscribe('stops');\nshared.subscribe('stops');\nshared.unsubscribe(first);\nshared.online(true);\nawait Promise.resolve();\nassert.equal(sharedCalls,1);\nassert.deepEqual(shared.snapshot('stops'),{status:'success',fetchStatus:'idle',data:'ok'});\nconsole.log('targeted lifecycle assertions passed');\nEOF\"",
+          "output_excerpt": "node:internal/process/esm_loader:97\n    internalBinding('errors').triggerUncaughtException(\n                              ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n+   data: null,\n+   fetchStatus: 'fetching',\n+   status: 'pending'\n-   data: 'ok',\n-   fetchStatus: 'idle',\n-   status: 'success'\n  }\n    at file:///workspace/[eval1]:30:8 {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: { status: 'pending', fetchStatus: 'fetch",
+          "classification": "self_test_microtask_settlement_timing"
+        }
+      ]
+    },
+    {
+      "slot": "block-1-B",
+      "nonzero_tool_commands": [
+        {
+          "event_line": 9,
+          "exit_code": 1,
+          "git_non_repository_warning": false,
+          "command": "/usr/bin/bash -lc \"find .. -name AGENTS.md -print && /runtime/node --version && sed -n '1,260p' src/session.js && sed -n '1,220p' package.json && sed -n '1,220p' README.md\"",
+          "output_excerpt": "find: ‘../etc/ssl/private’: Permission denied\nfind: ‘../proc/tty/driver’: Permission denied\n",
+          "classification": "namespace_parent_scan_permission_denied_prompt_scope_deviation"
+        },
+        {
+          "event_line": 16,
+          "exit_code": 129,
+          "git_non_repository_warning": true,
+          "command": "/usr/bin/bash -lc \"/runtime/node --input-type=module <<'NODE'\nimport assert from 'node:assert/strict';\nimport { Session } from './src/session.js';\nconst tick=()=>Promise.resolve();\n\nlet calls=0;\nlet s=new Session({queryFn:({signal})=>{calls++; assert(signal instanceof AbortSignal); return 'stop';},timers:{schedule:cb=>setTimeout(cb,0)}},{online:false});\nlet h=s.subscribe('fresh',{networkMode:'online'});\nassert.deepEqual(s.snapshot('fresh'),{status:'pending',fetchStatus:'paused',data:null});\ns.unsubscribe(h);\nassert.deepEqual(s.snapshot('fresh'),{status:'pending',fetchStatus:'idle',data:null});\ns.online(true); await tick();\nassert.equal(calls,0);\nh=s.subscribe('fresh',{networkMode:'online'});\nassert.equal(calls,1);\nawait tick(); assert.equal(s.snapshot('fresh').data,'stop');\n\nlet resolve;\ncalls=0;\ns=new Session({queryFn:()=>{calls++; return new Promise(r=>resolve=r);},timers:{schedule:cb=>setTimeout(cb,0)}});\nh=s.subscribe('running');\ns.unsubscribe(h);\nresolve('cached'); await tick();\nassert.deepEqual(s.snapshot('running'),{status:'success',fetchStatus:'idle',data:'cached'});\n\ncalls=0;\ns=new Session({queryFn:()=>{calls++; return 'refresh';},timers:{schedule:cb=>setTimeout(cb,0)}},{online:false});\nh=s.subscribe('cached',{initialData:'old',networkMode:'online'});\ns.unsubscribe(h);\ns.online(true); await tick();\nassert.equal(calls,1);\n\ncalls=0;\ns=new Session({queryFn:()=>{calls++; return 'queued';},timers:{schedule:cb=>setTimeout(cb,0)}},{online:false});\nh=s.subscribe('race');\ns.online(true);\ns.unsubscribe(h);\nawait tick();\nassert.equal(calls,0);\nassert.equal(s.snapshot('race').fetchStatus,'idle');\nconsole.log('targeted lifecycle assertions passed');\nNODE\n\ngit diff --check && git diff -- src/session.js\"",
+          "output_excerpt": "targeted lifecycle assertions passed\nwarning: Not a git repository. Use --no-index to compare two paths outside a working tree\nusage: git diff --no-index [<options>] <path> <path>\n\nDiff output format options\n    -p, --patch           generate patch\n    -s, --no-patch        suppress diff output\n    -u                    generate patch\n    -U, --unified[=<n>]   generate diffs with <n> lines context\n    -W, --function-context\n                          generate diffs with <n> lines context\n    --ra",
+          "classification": "git_diff_no_worktree"
+        }
+      ]
+    },
+    {
+      "slot": "block-2-A",
+      "nonzero_tool_commands": [
+        {
+          "event_line": 14,
+          "exit_code": 129,
+          "git_non_repository_warning": true,
+          "command": "/usr/bin/bash -lc \"/runtime/node --input-type=module <<'NODE'\nimport { Session } from './src/session.js'\n\nconst timers = { schedule(fn) { fn() } }\nlet calls = 0\nlet observedSignal\nconst offline = new Session({ timers, queryFn(context) { calls++; observedSignal = context.signal; return 'unexpected' } }, { online: false })\nconst offlineHandle = offline.subscribe('central')\noffline.unsubscribe(offlineHandle)\noffline.online(true)\nawait Promise.resolve()\nif (calls \"'!== 0) throw new Error(`detached offline attempt invoked ${calls} times`)\nif (offline.snapshot('\"'central').fetchStatus \"'!== '\"'idle') throw new Error('detached offline attempt remained active')\n\nlet resolve\nlet inflightCalls = 0\nconst inflight = new Session({ timers, queryFn() { inflightCalls++; return new Promise(r => { resolve = r }) } })\nconst inflightHandle = inflight.subscribe('harbor')\ninflight.unsubscribe(inflightHandle)\nresolve('cached')\nawait Promise.resolve()\nif (inflightCalls \"'!== 1 || inflight.snapshot('\"'harbor').data \"'!== '\"'cached') throw new Error('unconsumed inflight request no longer cached')\n\nlet consumedSignal\nconst consumed = new Session({ timers, queryFn(context) { consumedSignal = context.signal; return new Promise(() => {}) } })\nconst consumedHandle = consumed.subscribe('museum')\nconsumed.unsubscribe(consumedHandle)\nif (\"'!consumedSignal.aborted) throw new Error('\"'consumed request was not aborted')\nconsole.log('targeted session checks passed')\nNODE\ngit diff --check && git diff -- src/session.js\"",
+          "output_excerpt": "targeted session checks passed\nwarning: Not a git repository. Use --no-index to compare two paths outside a working tree\nusage: git diff --no-index [<options>] <path> <path>\n\nDiff output format options\n    -p, --patch           generate patch\n    -s, --no-patch        suppress diff output\n    -u                    generate patch\n    -U, --unified[=<n>]   generate diffs with <n> lines context\n    -W, --function-context\n                          generate diffs with <n> lines context\n    --raw     ",
+          "classification": "git_diff_no_worktree"
+        }
+      ]
+    },
+    {
+      "slot": "block-2-B",
+      "nonzero_tool_commands": [
+        {
+          "event_line": 14,
+          "exit_code": 129,
+          "git_non_repository_warning": true,
+          "command": "/usr/bin/bash -lc \"/runtime/node --version && /runtime/node --input-type=module <<'NODE'\nimport { Session } from './src/session.js'\n\nconst timers={schedule(fn){ queueMicrotask(fn) }}\nlet calls=0\nconst fresh=new Session({timers,queryFn(){calls++; return 'stop'}},{online:false})\nconst h=fresh.subscribe('fresh')\nif(fresh.snapshot('fresh').fetchStatus \"'!== '\"'paused') throw new Error('fresh was not paused')\nfresh.unsubscribe(h)\nif(fresh.snapshot('fresh').fetchStatus \"'!== '\"'idle') throw new Error('abandoned fresh attempt was not idle')\nfresh.online(true)\nawait Promise.resolve()\nif(calls \"'!== 0) throw new Error(`abandoned fresh attempt invoked (${calls})`)\nfresh.subscribe('\"'fresh')\nif(calls \"'!== 1) throw new Error('\"'resubscribe did not start a new attempt')\n\nlet resolveActive\nlet activeCalls=0\nconst active=new Session({timers,queryFn(){activeCalls++; return new Promise(resolve=>{resolveActive=resolve})}})\nconst ah=active.subscribe('active')\nactive.unsubscribe(ah)\nresolveActive('cached')\nawait Promise.resolve(); await Promise.resolve()\nif(activeCalls \"'!== 1 || active.snapshot('\"'active').data \"'!== '\"'cached') throw new Error('unconsumed started work did not complete')\n\nlet resolveCached\nlet cachedCalls=0\nconst cached=new Session({timers,queryFn(){cachedCalls++; return new Promise(resolve=>{resolveCached=resolve})}},{online:true})\nconst ch=cached.subscribe('cached')\nresolveCached('old')\nawait Promise.resolve(); await Promise.resolve()\ncached.unsubscribe(ch)\ncached.online(false)\nconst refresh=cached.subscribe('cached')\nif(cached.snapshot('cached').fetchStatus \"'!== '\"'paused') throw new Error('cached refresh did not pause')\ncached.unsubscribe(refresh)\ncached.online(true)\nawait Promise.resolve()\nif(cachedCalls \"'!== 2) throw new Error('\"'cached paused refresh did not resume')\nconsole.log('focused lifecycle checks passed')\nNODE\n\ngit diff --check && git diff -- src/session.js\"",
+          "output_excerpt": "v16.20.2\nfocused lifecycle checks passed\nwarning: Not a git repository. Use --no-index to compare two paths outside a working tree\nusage: git diff --no-index [<options>] <path> <path>\n\nDiff output format options\n    -p, --patch           generate patch\n    -s, --no-patch        suppress diff output\n    -u                    generate patch\n    -U, --unified[=<n>]   generate diffs with <n> lines context\n    -W, --function-context\n                          generate diffs with <n> lines context\n    ",
+          "classification": "git_diff_no_worktree"
+        }
+      ]
+    },
+    {
+      "slot": "block-3-B",
+      "nonzero_tool_commands": [
+        {
+          "event_line": 17,
+          "exit_code": 129,
+          "git_non_repository_warning": true,
+          "command": "/usr/bin/bash -lc 'git diff --check && git diff -- src/session.js && git status --short'",
+          "output_excerpt": "warning: Not a git repository. Use --no-index to compare two paths outside a working tree\nusage: git diff --no-index [<options>] <path> <path>\n\nDiff output format options\n    -p, --patch           generate patch\n    -s, --no-patch        suppress diff output\n    -u                    generate patch\n    -U, --unified[=<n>]   generate diffs with <n> lines context\n    -W, --function-context\n                          generate diffs with <n> lines context\n    --raw                 generate the diff i",
+          "classification": "git_diff_no_worktree"
+        }
+      ]
+    },
+    {
+      "slot": "block-3-A",
+      "nonzero_tool_commands": [
+        {
+          "event_line": 14,
+          "exit_code": 129,
+          "git_non_repository_warning": true,
+          "command": "/usr/bin/bash -lc \"/runtime/node --input-type=module <<'EOF'\nimport assert from 'node:assert/strict';\nimport { Session } from './src/session.js';\n\nconst host = (queryFn) => ({ queryFn, timers: { schedule: (fn, delay) => setTimeout(fn, delay) } });\n\nlet offlineCalls = 0;\nconst offline = new Session(host(({ signal }) => { offlineCalls++; assert.equal(signal.aborted, false); return 'new'; }), { online: false });\nconst departed = offline.subscribe('stop:1', { networkMode: 'online' });\nassert.equal(offline.snapshot('stop:1').fetchStatus, 'paused');\noffline.unsubscribe(departed);\noffline.online(true);\nawait Promise.resolve();\nassert.equal(offlineCalls, 0);\nassert.deepEqual(offline.snapshot('stop:1'), { status: 'pending', fetchStatus: 'idle', data: null });\noffline.subscribe('stop:1', { networkMode: 'online' });\nassert.equal(offlineCalls, 1);\n\nlet resolve;\nconst running = new Session(host(() => new Promise(done => { resolve = done; })));\nconst handle = running.subscribe('stop:2');\nrunning.unsubscribe(handle);\nresolve('cached');\nawait Promise.resolve();\nassert.deepEqual(running.snapshot('stop:2'), { status: 'success', fetchStatus: 'idle', data: 'cached' });\n\nlet sharedCalls = 0;\nconst shared = new Session(host(() => { sharedCalls++; return new Promise(() => {}); }));\nconst first = shared.subscribe('stop:3');\nconst second = shared.subscribe('stop:3');\nassert.equal(sharedCalls, 1);\nshared.unsubscribe(first);\nshared.unsubscribe(second);\n\nlet aborted = false;\nconst consumed = new Session(host(({ signal }) => { signal.addEventListener('abort', () => { aborted = true; }); return new Promise(() => {}); }));\nconst consumingHandle = consumed.subscribe('stop:4');\nconsumed.unsubscribe(consumingHandle);\nassert.equal(aborted, true);\n\nconsole.log('session behavior checks passed');\nEOF\ngit diff --check && git diff -- src/session.js\"",
+          "output_excerpt": "session behavior checks passed\nwarning: Not a git repository. Use --no-index to compare two paths outside a working tree\nusage: git diff --no-index [<options>] <path> <path>\n\nDiff output format options\n    -p, --patch           generate patch\n    -s, --no-patch        suppress diff output\n    -u                    generate patch\n    -U, --unified[=<n>]   generate diffs with <n> lines context\n    -W, --function-context\n                          generate diffs with <n> lines context\n    --raw     ",
+          "classification": "git_diff_no_worktree"
+        }
+      ]
+    }
+  ],
+  "classification": "Business/self-validation command results, retained separately from infrastructure/scorer/archive failures; no model retry or score rerun.",
+  "notes": [
+    {
+      "slot": "block-1-A",
+      "events": [
+        12,
+        16,
+        19
+      ],
+      "finding": "Event12 git status exits128 outside git worktree; event16 self-check waits only one microtask and observes fetching before expected success. Visible message17 identifies timing; event19 waits two microtasks and passes. This is within-session self-validation, no external scoring rerun or restarted maintenance."
+    },
+    {
+      "slot": "block-1-B",
+      "event": 9,
+      "finding": "find .. -name AGENTS.md traverses the isolated namespace parent and encounters /etc/ssl/private and /proc permissions; && chain stops before source read, then later legitimate read succeeds. Record prompt/workspace-scope deviation, not evidence host archive or scorer is visible; no retrospective denominator exclusion."
+    }
+  ]
+}
