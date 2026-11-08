@@ -1,0 +1,1 @@
+Reflect once from current training evidence. No tools. No old seed.
