@@ -1,0 +1,24 @@
+// The source is shared by visits of the same file. Decoding may settle later.
+export function watchTransferProgress(feed, receive, record) {
+  let latestReceived = -1;
+  let nextFrame = 0;
+  const listener = event => {
+    const frameNumber = nextFrame++;
+    const deliver = frame => {
+      record(frame);
+      // Decoding is asynchronous for some complete frames. Keep history for
+      // every frame, but never let one that arrived earlier repaint the panel
+      // after a newer frame has already been shown.
+      if (frameNumber > latestReceived) {
+        latestReceived = frameNumber;
+        receive(frame);
+      }
+    };
+    const decoded = feed.decode(event.detail);
+    if (decoded && typeof decoded.then === "function") decoded.then(deliver);
+    else deliver(decoded);
+  };
+  feed.target.addEventListener("progress", listener);
+  feed.start();
+  return () => feed.target.removeEventListener("progress", listener);
+}

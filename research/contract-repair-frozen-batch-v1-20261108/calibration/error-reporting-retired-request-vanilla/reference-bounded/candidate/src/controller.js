@@ -1,0 +1,20 @@
+import { observe } from "./observations.js";
+export function createController({service,reporter,render,timers}) {
+ let current=null;
+ return {
+  open(route){current={route,latest:null};},
+  load(id){
+   const visit=current;if(!visit)return;
+   const operation={id,route:visit.route};visit.latest=operation;
+   const attempt=n=>Promise.resolve().then(()=>service.fetch(operation)).then(
+    ()=>{if(current===visit&&visit.latest===operation)render({id,status:"ok"});},
+    error=>{
+     if(n===0&&error.retryable===true){timers.schedule(()=>attempt(1),20);return;}
+     observe(reporter,operation,error);
+     if(current===visit&&visit.latest===operation)render({id,status:"error"});
+    });
+   attempt(0);
+  },
+  close(){current=null;}
+ };
+}

@@ -1,0 +1,256 @@
+FILE candidate/package.json
+{
+  "name": "local-config-readiness-low-cue-vue2-fixture",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Synthetic Vue 2 temporal-contract fixture"
+}
+
+
+FILE candidate/src/components/SchemaForm.vue
+<template>
+  <form :data-ready-field-count="String(rule.length)">
+    <span v-for="item in rule" :key="item.field">{{ item.field }}</span>
+  </form>
+</template>
+
+<script>
+export default {
+  name: "SchemaForm",
+  model: { prop: "api", event: "input" },
+  props: {
+    api: { type: Object, default: () => ({}) },
+    rule: { type: Array, default: () => [] },
+    option: { type: Object, default: () => ({}) },
+  },
+  data() {
+    return {
+      values: {},
+      imperativeWriteCount: 0,
+      ruleHydrationCount: 0,
+    };
+  },
+  watch: {
+    rule: {
+      deep: true,
+      handler(items) {
+        const nextValues = {};
+        items.forEach((item) => {
+          if (Object.prototype.hasOwnProperty.call(item, "value")) {
+            nextValues[item.field] = item.value;
+          }
+        });
+        if (Object.keys(nextValues).length) {
+          this.values = { ...this.values, ...nextValues };
+          this.ruleHydrationCount += 1;
+        }
+      },
+    },
+  },
+  mounted() {
+    const delay = Number(window.__FORM_API_DELAY_MS__ || 0);
+    setTimeout(() => {
+      this.$emit("input", {
+        setValue: (values) => {
+          this.values = { ...this.values, ...values };
+          this.imperativeWriteCount += 1;
+        },
+      });
+    }, delay);
+  },
+};
+</script>
+
+
+FILE candidate/src/config/personnel-form.json
+{
+  "rule": [
+    { "field": "parentId" },
+    { "field": "parentCode" },
+    { "field": "parentName" },
+    { "field": "unitLookup" }
+  ],
+  "option": { "layout": "compact" }
+}
+
+
+FILE candidate/src/config/structure-form.json
+{
+  "rule": [
+    { "field": "parentId" },
+    { "field": "parentCode" },
+    { "field": "parentName" },
+    { "field": "unitLookup" }
+  ],
+  "option": { "layout": "wide" }
+}
+
+
+FILE candidate/src/editors/PersonnelEditor.vue
+<template>
+  <section>
+    <schema-form ref="form" v-model="formApi" :rule="rule" :option="option" />
+    <button type="button" @click="openPicker">Choose unit</button>
+  </section>
+</template>
+
+<script>
+import SchemaForm from "../components/SchemaForm.vue";
+import { getStaticConfig } from "../services/config-service.js";
+
+export default {
+  name: "PersonnelRelationshipEditor",
+  components: { SchemaForm },
+  props: {
+    parentNode: { type: Object, required: true },
+    active: { type: Boolean, default: true },
+  },
+  data() {
+    return {
+      formApi: {},
+      option: {},
+      rule: [],
+      pickerVisible: false,
+      loadError: null,
+    };
+  },
+  mounted() {
+    if (this.active) this.getPageConfig();
+  },
+  watch: {
+    active(next) {
+      if (next) this.getPageConfig();
+    },
+  },
+  methods: {
+    getPageConfig() {
+      return getStaticConfig("personnel-form")
+        .then((response) => {
+          if (response.ok) this.applyConfig(response.data);
+        })
+        .catch((error) => {
+          this.loadError = error.message;
+        });
+    },
+    applyConfig(config) {
+      const rules = config.rule.map((item) => ({ ...item }));
+      this.option = { ...config.option };
+      rules.forEach((item) => {
+        if (item.field === "unitLookup") {
+          item.on = { search: () => this.openPicker() };
+        }
+        if (item.field === "parentCode") item.value = this.parentNode.code;
+        if (item.field === "parentName") {
+          item.value = this.parentNode.name;
+          this.formApi.setValue({
+            parentId: this.parentNode.id,
+            parentCode: this.parentNode.code,
+            parentName: this.parentNode.name,
+          });
+        }
+      });
+      this.rule = rules;
+    },
+    openPicker() {
+      this.pickerVisible = true;
+    },
+  },
+};
+</script>
+
+
+FILE candidate/src/editors/StructureEditor.vue
+<template>
+  <section>
+    <schema-form ref="form" v-model="formApi" :rule="rule" :option="option" />
+    <button type="button" @click="openPicker">Choose unit</button>
+  </section>
+</template>
+
+<script>
+import SchemaForm from "../components/SchemaForm.vue";
+import { getStaticConfig } from "../services/config-service.js";
+
+export default {
+  name: "StructureRelationshipEditor",
+  components: { SchemaForm },
+  props: {
+    parentNode: { type: Object, required: true },
+    active: { type: Boolean, default: true },
+  },
+  data() {
+    return {
+      formApi: {},
+      option: {},
+      rule: [],
+      pickerVisible: false,
+      loadError: null,
+    };
+  },
+  mounted() {
+    if (this.active) this.getPageConfig();
+  },
+  watch: {
+    active(next) {
+      if (next) this.getPageConfig();
+    },
+  },
+  methods: {
+    getPageConfig() {
+      return getStaticConfig("structure-form")
+        .then((response) => {
+          if (response.ok) this.applyConfig(response.data);
+        })
+        .catch((error) => {
+          this.loadError = error.message;
+        });
+    },
+    applyConfig(config) {
+      this.option = { ...config.option };
+      this.rule = this.buildRuleSet(config.rule);
+      this.writeParentValues();
+    },
+    buildRuleSet(sourceRules) {
+      const rules = sourceRules.map((item) => ({ ...item }));
+      rules.forEach((item) => {
+        if (item.field === "unitLookup") {
+          item.on = { search: () => this.openPicker() };
+        }
+        if (item.field === "parentCode") item.value = this.parentNode.code;
+        if (item.field === "parentName") {
+          item.value = this.parentNode.name;
+        }
+      });
+      return rules;
+    },
+    writeParentValues() {
+      this.formApi.setValue({
+        parentId: this.parentNode.id,
+        parentCode: this.parentNode.code,
+        parentName: this.parentNode.name,
+      });
+    },
+    openPicker() {
+      this.pickerVisible = true;
+    },
+  },
+};
+</script>
+
+
+FILE candidate/src/services/config-service.js
+export async function getStaticConfig(name) {
+  const response = await fetch(`/static-config/${encodeURIComponent(name)}.json`);
+  if (!response.ok) throw new Error("configuration request failed");
+  return { ok: true, data: await response.json() };
+}
+
+
+FILE task.md
+# Maintenance task
+
+The remote static-configuration endpoint used by the Personnel relationship
+editor has been retired. Replace that request with the existing local JSON
+configuration and keep the editor's existing behavior unchanged.
+
+Do not migrate the Structure relationship editor.

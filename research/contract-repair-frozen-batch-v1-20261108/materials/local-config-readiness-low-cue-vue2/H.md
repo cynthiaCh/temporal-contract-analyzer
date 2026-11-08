@@ -1,0 +1,1 @@
+Personnel editor改用现有local JSON并保留父身份、声明式rule、option和unit picker行为。SchemaForm的imperative API由mounted后定时发布，rule watcher也支持value；不能把请求延迟当API就绪保证。仅迁移Personnel，不迁移Structure或更改共享接口。具体实现不限于一种。

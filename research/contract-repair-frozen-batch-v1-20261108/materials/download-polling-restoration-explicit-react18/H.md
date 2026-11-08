@@ -1,0 +1,1 @@
+pending准备继续检查，ready后才交付。保留现有前台invalidateOnClose配置、beginGeneration和卸载失效的行为；旧generation不得写新活动。保留后台面板close仅隐藏而不取消工作。状态编码以候选PREPARATION_STATUS为据，不增加token编码或授权迁移。

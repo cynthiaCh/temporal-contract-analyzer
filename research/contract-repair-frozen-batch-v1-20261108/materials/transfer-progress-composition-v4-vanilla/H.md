@@ -1,0 +1,1 @@
+恢复warm source初始进度，保留普通streaming、公共API和相邻telemetry。README定义select创建visit、retry仅替换物理attempt、同文件重选创建新visit，feed对象共享。decode可能异步；不得用较旧帧回退当前显示。保留history与UI各自归属、同步宿主回调、队列记录结构及原导航/取消/cleanup行为；未授权新增byteCount。

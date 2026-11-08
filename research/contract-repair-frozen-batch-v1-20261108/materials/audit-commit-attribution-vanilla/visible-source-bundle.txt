@@ -1,0 +1,88 @@
+FILE candidate/README.md
+# Audit log：提交完成与历史身份
+
+Each submit captures doc, actor and text at call entry. A successful commit creates exactly one audit record with that snapshot and the returned revision, only after commit succeeds. Failed commits create no success audit. Accepted submissions survive close or reopen. Saved/error UI belongs only to the current visit and its latest submission; history is not owned by a view.
+
+The search preview remains 40 ms, discards pending queries on hide and is reusable.
+
+
+FILE candidate/package.json
+{"private":true,"type":"module"}
+
+
+FILE candidate/src/controller.js
+import { observe } from "./observations.js";
+export function createController({service,audit,render}) {
+ let current=null;
+ return {
+  open(doc,actor){current={doc,actor,text:"",latest:null};},
+  edit(text){if(current)current.text=text;},
+  submit(){
+   const visit=current;if(!visit)return null;
+   const owner={};visit.latest=owner;
+   const snapshot={doc:visit.doc,actor:visit.actor,text:visit.text};
+   const done=receipt=>{observe(audit,snapshot,receipt);if(current===visit&&visit.latest===owner)render({status:"saved",doc:snapshot.doc});return receipt;};
+   const failed=error=>{if(current===visit&&visit.latest===owner)render({status:"error",doc:snapshot.doc});};
+   try{return done(service.commit(snapshot));}catch(error){return failed(error);}
+  },
+  close(){current=null;}
+ };
+}
+
+
+FILE candidate/src/observations.js
+export function observe(audit, snapshot, receipt) { audit.record({...snapshot,revision:receipt.revision}); }
+
+
+FILE candidate/src/search-preview.js
+import { createTrailingTask } from "./trailing-task.js";
+
+export function createSearchPreview({ timers, publish }) {
+  const task = createTrailingTask(query => publish({ query }), 40, timers);
+  return {
+    query(value) { task.push(value); },
+    hide() { task.cancel(); },
+  };
+}
+
+
+FILE candidate/src/timers.js
+export const browserTimers = {
+  schedule(callback, delay) { return setTimeout(callback, delay); },
+  cancel(handle) { clearTimeout(handle); },
+};
+
+
+FILE candidate/src/trailing-task.js
+import { browserTimers } from "./timers.js";
+
+// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.
+// Retire the old batch before invoking work so a callback may enqueue a new batch.
+export function createTrailingTask(work, delay, timers = browserTimers) {
+  let handle = null;
+  let pending = null;
+  function flush() {
+    if (handle !== null) timers.cancel(handle);
+    handle = null;
+    const args = pending;
+    pending = null;
+    if (args !== null) work(...args);
+  }
+  return {
+    push(...args) {
+      if (handle !== null) timers.cancel(handle);
+      pending = args;
+      handle = timers.schedule(flush, delay);
+    },
+    flush,
+    cancel() {
+      if (handle !== null) timers.cancel(handle);
+      handle = null;
+      pending = null;
+    },
+  };
+}
+
+
+FILE task.md
+The save service is becoming asynchronous: service.commit(snapshot) now returns a Promise for a receipt, or rejects. Update submit to work with it and return a Promise that settles after handling the outcome. Preserve the editor behavior, public methods and other consumers. Search preview is outside this change.

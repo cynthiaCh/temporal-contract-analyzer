@@ -1,0 +1,21 @@
+## 1. 可确认的 Contract
+
+`submit` 要适配 `service.commit(snapshot)` 返回 receipt Promise 或拒绝的接口，并返回一个在相应结果处理完后才敲定的 Promise。每次提交在调用入口固定 doc、actor、text；成功后以该快照和返回的 revision 恰好写一条审计记录，失败不写成功审计。已接受的提交在关闭或重开后仍须完成其审计处理。saved/error 界面反馈只属于当前访问及该访问中最新的提交。保留 `open`、`edit`、`submit`、`close` 等公开方法及编辑器行为。Search preview 不在本次改动范围内。
+
+## 2. 每条的条件、效果、来源及依据
+
+- **提交入口与身份**：`open(doc,actor)` 创建一次访问，`edit(text)` 更新其文本；`submit` 在入口取得当前访问和快照。[controller.js](/workspace/src/controller.js:5) 与 [README.md](/workspace/README.md:3) 共同支持按调用入口的 doc、actor、text 归属提交。当前无访问时 `submit` 返回 `null` 是实现事实；新异步接口在该条件下是否也必须返回 Promise，来源未明确。
+- **成功**：commit 成功给出 receipt 后，须以入口快照及 `receipt.revision` 恰好记录一次，且记录发生在成功之后；随后仅当原访问仍是当前访问、该提交仍是最新提交时，显示 `{status:"saved",doc:快照的doc}`。[README.md](/workspace/README.md:3) 明确审计与界面归属；[observations.js](/workspace/src/observations.js:1) 和 [controller.js](/workspace/src/controller.js:11) 给出当前记录及渲染形状。成功路径当前返回 receipt；异步化后返回的 Promise 应在这些处理完成后敲定。
+- **失败**：commit 拒绝后不得产生成功审计；仅符合相同访问及最新提交条件时显示 error。[README.md](/workspace/README.md:3)、[controller.js](/workspace/src/controller.js:12) 支持这些效果。任务要求在处理结果之后才敲定返回的 Promise，但未指定拒绝应继续向调用者传播，还是处理后以某值兑现。
+- **等待间隙、后续提交与重开**：当前每次 `submit` 写入该访问的 `latest`，成功或失败回调读取它及共享的 `current`；后续提交可使较早提交失去界面反馈资格，但较早提交成功仍须记录审计。`close` 将 `current` 置空，`open` 创建新访问；旧提交成功后仍记录其入口身份，旧回调不得给新访问显示状态。[README.md](/workspace/README.md:3)、[controller.js](/workspace/src/controller.js:5) 至 [controller.js](/workspace/src/controller.js:15) 支持此要求。这里 `latest` 是界面资格标记，不能据此推定它独自代表全部在途提交。
+- **排队工作边界**：controller 当前没有安排计时器工作，也没有取消入口；其异步化后的在途 Promise 回调在关闭或重开后仍可能执行。相邻的 search preview 使用 40 ms 尾随任务，`hide` 调用取消；[search-preview.js](/workspace/src/search-preview.js:3)、[trailing-task.js](/workspace/src/trailing-task.js:5) 和 [README.md](/workspace/README.md:5) 说明其自身行为，不能据此给 `submit` 增加计时器或取消义务。
+
+## 3. 不能确认的候选要求
+
+- 拒绝后的返回 Promise 是拒绝还是兑现、兑现值是什么，以及同步抛错如何映射：任务只规定处理后敲定；缺少调用方或接口约定。
+- 无当前访问时的返回值是否须从 `null` 改成 Promise：现有实现与“返回一个 Promise”的适用范围有歧义。
+- 宿主卸载后 `render`、`audit` 或 controller 是否仍可用，及审计或渲染自身失败时的处理政策：源码和文档未提供生命周期或接口保证。关闭、重开并不等于卸载，也不能据此指定唯一的取消或隔离方案。
+
+## 4. 建议验证范围
+
+以可控 Promise 验证：入口快照在等待期间编辑后不变；成功审计恰好一次且使用 receipt revision，并发生在成功之后；拒绝无成功审计；返回 Promise 在相应审计或界面处理后才敲定。交错验证同一访问的多次提交、关闭、重开及身份切换：每个成功提交仍归其入口身份写历史，只有当前访问的最新提交能显示 saved/error。另检查无访问调用及调用方对拒绝的预期；这些测试本身不能确定未记载的返回语义或卸载政策。以上是只读源码与文档提取，未修改或执行候选程序。

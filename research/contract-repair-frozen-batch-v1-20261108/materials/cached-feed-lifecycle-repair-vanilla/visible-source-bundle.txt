@@ -1,0 +1,147 @@
+FILE candidate/README.md
+# Cached activity feed
+
+The activity panel reads a cached first batch and then incremental batches.
+The host supplies rendering and history adapters. Use native ES modules;
+there are no required dependencies.
+
+Public workspace methods are select(feed, mode) and hide(). Selecting the same
+feed after leaving creates a new panel visit. Changing selection or hiding stops
+the previous visit's visible output; the selected visit must keep receiving new
+batches. Reusing an existing feed object is supported.
+
+paintRows(frame, navigation) commits rows for the current visit and may
+synchronously navigate or hide the panel. It can return a Promise for layout
+completion. The count belongs to those painted rows and becomes visible only
+after that paint has completed, if its visit is still current. Ordinary live
+counts remain required. A component or feed object can survive several visits.
+
+History records each received batch once its decoding completes. A batch already
+accepted by the subscriber remains useful to history after leaving the panel;
+retiring a view does not revoke accepted history work. Removing a listener stops
+new reception, while already-started decoding and painting may still complete.
+
+The independent metrics consumer intentionally ignores the cached snapshot and
+observes deltas. Its policy is outside this panel repair unless separately
+authorized. Preserve APIs, payloads, rendering timing and history behavior.
+
+
+FILE candidate/package.json
+{"name":"cached-feed-lifecycle-repair","version":"0.1.0","private":true,"type":"module"}
+
+
+FILE candidate/src/batch-presenter.js
+// paintRows may finish now or after layout. showCount reports that completed
+// paint; its host may have selected another feed while painting was in progress.
+export function presentBatch(frame, { paintRows, showCount }) {
+  const painting = paintRows(frame);
+  if (painting && typeof painting.then === "function")
+    painting.then(() => showCount(frame));
+  else showCount(frame);
+}
+
+
+FILE candidate/src/feed-panel.js
+import { subscribeFeed } from "./subscription.js";
+import { presentBatch } from "./batch-presenter.js";
+
+export function createFeedPanel({ history, paintRows, showCount }) {
+  let release = () => {};
+  return {
+    show(feed, mode = "synchronous") {
+      release();
+      release = subscribeFeed(feed, mode, frame =>
+        presentBatch(frame, { paintRows, showCount }), history);
+    },
+    close() {
+      release();
+      release = () => {};
+    },
+  };
+}
+
+
+FILE candidate/src/feed.js
+class BatchEvent extends Event {
+  constructor(frame) { super("batch"); this.detail = frame; }
+}
+
+export function createFeed(token, { decode = frame => frame } = {}) {
+  const target = new EventTarget();
+  let sequence = 0;
+  const emit = (kind, seq) => target.dispatchEvent(new BatchEvent({
+    feed: token, kind, seq, rows: [token + ":" + kind + ":" + seq],
+  }));
+  return {
+    target,
+    decode,
+    start(mode = "synchronous") {
+      if (mode === "deferred") queueMicrotask(() => emit("snapshot", 0));
+      else emit("snapshot", 0);
+    },
+    emitDelta() { emit("delta", ++sequence); },
+  };
+}
+
+
+FILE candidate/src/metrics.js
+// Cached state is not a new activity delta. This consumer deliberately starts
+// before observing so that synchronous snapshot delivery is excluded.
+export async function collectMetrics(feed) {
+  const frames = [];
+  const listener = event => frames.push(event.detail);
+  feed.start("synchronous");
+  feed.target.addEventListener("batch", listener);
+  await Promise.resolve();
+  feed.emitDelta();
+  feed.target.removeEventListener("batch", listener);
+  return frames;
+}
+
+
+FILE candidate/src/subscription.js
+// Decoding can return a value or a Promise. Detaching an EventTarget listener
+// cannot retract a decode that has already started.
+export function subscribeFeed(feed, mode, receive, history) {
+  const listener = event => {
+    const deliver = frame => {
+      history.record(frame);
+      receive(frame);
+    };
+    const decoded = feed.decode(event.detail);
+    if (decoded && typeof decoded.then === "function") decoded.then(deliver);
+    else deliver(decoded);
+  };
+  feed.start(mode);
+  feed.target.addEventListener("batch", listener);
+  return () => feed.target.removeEventListener("batch", listener);
+}
+
+
+FILE candidate/src/workspace.js
+import { createFeedPanel } from "./feed-panel.js";
+
+// Rendering is a host integration boundary, not a pure read of panel state.
+export function createFeedWorkspace({ history, paintRows, showCount }) {
+  const panel = createFeedPanel({
+    history, showCount,
+    paintRows: frame => paintRows(frame, navigation),
+  });
+  const navigation = {
+    select(feed, mode = "synchronous") { panel.show(feed, mode); },
+    hide() { panel.close(); },
+  };
+  return navigation;
+}
+
+
+FILE task.md
+Fix the activity panel's startup and navigation lifecycle.
+
+Opening a feed backed by a warm cache sometimes leaves the first batch missing,
+although later activity appears. During quick feed changes or closing and
+reopening the panel, rows or the count can also appear for a previous visit.
+
+Correct these timing problems while preserving normal live updates, history
+recording, public APIs and the existing rendering adapters. The independent
+metrics consumer is outside this repair.

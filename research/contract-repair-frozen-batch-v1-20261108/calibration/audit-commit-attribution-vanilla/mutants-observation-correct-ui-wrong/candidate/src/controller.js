@@ -1,0 +1,17 @@
+import { observe } from "./observations.js";
+export function createController({service,audit,render}) {
+ let current=null;
+ return {
+  open(doc,actor){current={doc,actor,text:"",latest:null};},
+  edit(text){if(current)current.text=text;},
+  submit(){
+   const visit=current;if(!visit)return Promise.resolve(null);
+   const owner={};visit.latest=owner;
+   const snapshot={doc:visit.doc,actor:visit.actor,text:visit.text};
+   const done=receipt=>{observe(audit,snapshot,receipt);render({status:"saved",doc:snapshot.doc});return receipt;};
+   const failed=error=>{render({status:"error",doc:snapshot.doc});};
+   return Promise.resolve().then(()=>service.commit(snapshot)).then(done,failed);
+  },
+  close(){current=null;}
+ };
+}

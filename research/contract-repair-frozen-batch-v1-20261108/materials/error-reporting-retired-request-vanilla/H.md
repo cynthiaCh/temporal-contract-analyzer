@@ -1,0 +1,1 @@
+首个请求仅在error.retryable===true时用提供的timers等待20ms重试一次，第二次不再重试。reporter记录最终load失败，不记录成功或已恢复的初次错误。保留入口id/route、终止报告在close后仍发生的现有行为和current/latest的UI守卫，close/reopen不能把旧UI写到新visit。保留预览和public接口；不推定新的返回值政策。
