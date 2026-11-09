@@ -1,0 +1,32 @@
+Binary files /dev/null and b/src/__pycache__/workflow.cpython-38.pyc differ
+--- a/src/workflow.py
++++ b/src/workflow.py
+@@ -43,16 +43,25 @@
+         self.current=visit
+         def decoded(frame):
+             self.env.output("history",self.key,frame)
+-            if not (True): return
++            # Decoding was admitted while this visit was subscribed, so its
++            # history remains useful even if the view has since gone away.
++            # Rendering, however, belongs only to the visit that is current
++            # at the point it is started.
++            if not (visit.active and self.current is visit): return
+             def painted(_):
+-                if True:
++                # Painting may finish after navigation (and may itself cause
++                # navigation when it is started), so re-check the exact visit
++                # before publishing its count.
++                if visit.active and self.current is visit:
+                     self.env.output("count",self.key,frame)
+             self.env.resolve('paint',self.key,frame).add_done_callback(lambda result: painted(result.result()))
+         def deliver(frame):
+             self.env.resolve('decode',feed.key,frame).add_done_callback(lambda result: decoded(result.result()))
+-        feed.start(mode)
+         token=feed.listen(deliver)
+         visit.stop=lambda: feed.detach(token)
++        # A warm-cache snapshot may be emitted inline by start(), so the
++        # listener must already be installed (and detachable) beforehand.
++        feed.start(mode)
+ 
+ def collect_metrics(env, key, feed):
+     frames=[]

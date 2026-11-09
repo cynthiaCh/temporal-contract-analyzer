@@ -1,0 +1,454 @@
+{
+  "schema_version": "0.1",
+  "case_id": "cached-feed-lifecycle-repair-python3",
+  "schedules": [
+    {
+      "id": "bootstrap-sync",
+      "description": "A synchronous cached snapshot is observed before selection returns.",
+      "events": [
+        "select-a-synchronous",
+        "observe-inline",
+        "settle"
+      ]
+    },
+    {
+      "id": "bootstrap-deferred",
+      "description": "A microtask cached snapshot is observed once.",
+      "events": [
+        "select-a-deferred",
+        "settle"
+      ]
+    },
+    {
+      "id": "live-delta",
+      "description": "After the first snapshot, every ordinary active delta still renders and reports once.",
+      "events": [
+        "select-a",
+        "delta-1",
+        "delta-2",
+        "settle"
+      ]
+    },
+    {
+      "id": "decode-live",
+      "description": "An active delayed decode records history, paints rows, and reports the count after completion.",
+      "events": [
+        "select-a-deferred-start",
+        "hold-decode",
+        "release-decode"
+      ]
+    },
+    {
+      "id": "decode-hide",
+      "description": "A decode accepted before hiding records history after completion without visible output.",
+      "events": [
+        "select-a-deferred-start",
+        "hold-decode",
+        "hide",
+        "release-decode"
+      ]
+    },
+    {
+      "id": "decode-switch",
+      "description": "A decode accepted before switching records history but cannot publish into the next feed.",
+      "events": [
+        "select-a-deferred-start",
+        "hold-decode",
+        "select-b",
+        "release-a-decode"
+      ]
+    },
+    {
+      "id": "decode-reopen",
+      "description": "The identical feed object reopened in a new visit does not revive its old decoded frame.",
+      "events": [
+        "select-a-deferred-start",
+        "hold-decode",
+        "hide",
+        "reopen-identical-a",
+        "release-old-decode"
+      ]
+    },
+    {
+      "id": "decode-reopen-live",
+      "description": "After reopening the same feed, fresh deltas remain live while the previous decode stays retired.",
+      "events": [
+        "hold-a-decode",
+        "hide",
+        "reopen-identical-a",
+        "release-old-decode",
+        "new-a-delta"
+      ]
+    },
+    {
+      "id": "paint-live",
+      "description": "An active layout Promise postpones its required count until completion.",
+      "events": [
+        "select-a-deferred-start",
+        "hold-layout",
+        "release-layout"
+      ]
+    },
+    {
+      "id": "paint-hide",
+      "description": "A count waiting for layout is suppressed after hide while its already-committed rows and history remain.",
+      "events": [
+        "paint-a",
+        "hold-layout",
+        "hide",
+        "release-layout"
+      ]
+    },
+    {
+      "id": "paint-switch",
+      "description": "A count waiting for old layout cannot publish after another feed becomes active.",
+      "events": [
+        "paint-a",
+        "hold-layout",
+        "select-b",
+        "release-old-layout"
+      ]
+    },
+    {
+      "id": "paint-reopen",
+      "description": "An identical feed object in a new visit cannot revive a count waiting on the old visit layout.",
+      "events": [
+        "paint-a",
+        "hold-layout",
+        "hide",
+        "reopen-identical-a",
+        "release-old-layout"
+      ]
+    },
+    {
+      "id": "paint-reopen-live",
+      "description": "Fresh same-feed work remains live after reopening while old layout feedback stays retired.",
+      "events": [
+        "paint-a",
+        "hold-layout",
+        "hide",
+        "reopen-identical-a",
+        "release-old-layout",
+        "new-a-delta"
+      ]
+    },
+    {
+      "id": "paint-hook-hide",
+      "description": "Rendering synchronously hides during deferred startup, invalidating count after the host returns.",
+      "events": [
+        "select-a-deferred-start",
+        "paint-hook-hide",
+        "return-from-paint",
+        "inspect-immediate-detachment",
+        "emit-retired-delta-before-final-cleanup"
+      ]
+    },
+    {
+      "id": "paint-hook-switch",
+      "description": "Rendering synchronously selects another feed during deferred startup; new subscription stays usable.",
+      "events": [
+        "select-a-deferred-start",
+        "paint-hook-select-b",
+        "return-from-paint",
+        "b-delta"
+      ]
+    },
+    {
+      "id": "bootstrap-hook-hide",
+      "description": "Synchronous startup rendering hides before subscribe returns; the retired listener must still detach.",
+      "events": [
+        "select-a-synchronous",
+        "inline-paint-hook-hide",
+        "subscribe-return",
+        "inspect-detachment",
+        "inspect-immediate-detachment",
+        "emit-retired-delta-before-final-cleanup"
+      ]
+    },
+    {
+      "id": "bootstrap-hook-switch",
+      "description": "Synchronous startup rendering selects another feed; outer subscribe cannot overwrite newer cleanup.",
+      "events": [
+        "select-a-synchronous",
+        "inline-paint-hook-select-b",
+        "outer-subscribe-return",
+        "b-delta",
+        "hide"
+      ]
+    },
+    {
+      "id": "bootstrap-hook-reopen",
+      "description": "Synchronous startup rendering hides and reopens the identical feed: exactly two accepted snapshots, only the new count.",
+      "events": [
+        "select-a-synchronous",
+        "inline-hide-and-reopen-identical-a",
+        "nested-snapshot",
+        "outer-subscribe-return",
+        "a-delta",
+        "hide"
+      ]
+    },
+    {
+      "id": "history-after-retire",
+      "description": "Accepted decodes complete in reverse order after retirement and record exactly once; detached future events are ignored.",
+      "events": [
+        "select-a",
+        "accept-delta-1",
+        "accept-delta-2",
+        "hide",
+        "emit-unaccepted-delta-3",
+        "decode-2",
+        "decode-1"
+      ]
+    },
+    {
+      "id": "metrics-scope",
+      "description": "The independent metrics consumer retains a complete delta policy or the separately granted snapshot-plus-delta policy.",
+      "events": [
+        "collect-metrics",
+        "synchronous-snapshot",
+        "delta",
+        "inspect-policy-and-detachment"
+      ]
+    },
+    {
+      "id": "independent-workspaces",
+      "description": "Closing one workspace does not retire a separate workspace or suppress its live count.",
+      "events": [
+        "select-a-workspace-1",
+        "select-b-workspace-2",
+        "hide-workspace-1",
+        "b-delta"
+      ]
+    },
+    {
+      "id": "closed-empty",
+      "description": "Hide repeatedly before selecting; no effects or listener ownership remain.",
+      "events": [
+        "controlled-boundary",
+        "closed-empty",
+        "settle",
+        "hide-and-check-no-new-effects"
+      ]
+    },
+    {
+      "id": "hide-before-bootstrap",
+      "description": "A queued first batch executes after hide without new reception.",
+      "events": [
+        "controlled-boundary",
+        "hide-before-bootstrap",
+        "settle",
+        "hide-and-check-no-new-effects"
+      ]
+    },
+    {
+      "id": "retire-after-count",
+      "description": "Retire only after completed rows/count/history; completed effects remain and future deltas ignored.",
+      "events": [
+        "controlled-boundary",
+        "retire-after-count",
+        "settle",
+        "hide-and-check-no-new-effects"
+      ]
+    },
+    {
+      "id": "shared-feed-workspaces",
+      "description": "Two independent workspaces share a source; hiding one leaves the other live.",
+      "events": [
+        "controlled-boundary",
+        "shared-feed-workspaces",
+        "settle",
+        "hide-and-check-no-new-effects"
+      ]
+    },
+    {
+      "id": "dispose-inflight",
+      "description": "Actual framework unmount/native disposal retires pending decode output but retains accepted history.",
+      "events": [
+        "deferred-start",
+        "hold-decode",
+        "dispose",
+        "release-decode",
+        "observe-history-only"
+      ]
+    }
+  ],
+  "counterfactual_pairs": [
+    {
+      "left": "bootstrap-sync",
+      "right": "bootstrap-deferred",
+      "changed_relation": "Cached first delivery moves from synchronous startup to a microtask.",
+      "expected_changed_effects": [
+        "Both observe exactly one first frame; only synchronous startup must finish inline."
+      ]
+    },
+    {
+      "left": "decode-live",
+      "right": "decode-hide",
+      "changed_relation": "Retirement occurs before decode completion.",
+      "expected_changed_effects": [
+        "History remains while rows and count disappear."
+      ]
+    },
+    {
+      "left": "decode-hide",
+      "right": "decode-switch",
+      "changed_relation": "Retirement also activates another feed.",
+      "expected_changed_effects": [
+        "New feed remains live without old visible output."
+      ]
+    },
+    {
+      "left": "decode-hide",
+      "right": "decode-reopen",
+      "changed_relation": "Retirement is followed by reusing the same feed object.",
+      "expected_changed_effects": [
+        "New snapshot remains live without reviving old decode."
+      ]
+    },
+    {
+      "left": "decode-reopen",
+      "right": "decode-reopen-live",
+      "changed_relation": "A fresh delta follows reopening.",
+      "expected_changed_effects": [
+        "Fresh rows, history, and count must still appear."
+      ]
+    },
+    {
+      "left": "paint-live",
+      "right": "paint-hide",
+      "changed_relation": "Retirement occurs between row commit and layout completion.",
+      "expected_changed_effects": [
+        "Only the pending count disappears."
+      ]
+    },
+    {
+      "left": "paint-hide",
+      "right": "paint-switch",
+      "changed_relation": "Retirement activates a different feed while old layout is pending.",
+      "expected_changed_effects": [
+        "New feed count appears; old count remains absent."
+      ]
+    },
+    {
+      "left": "paint-hide",
+      "right": "paint-reopen",
+      "changed_relation": "Retirement reuses the same feed while old layout is pending.",
+      "expected_changed_effects": [
+        "New visit count appears; old count remains absent."
+      ]
+    },
+    {
+      "left": "paint-reopen",
+      "right": "paint-reopen-live",
+      "changed_relation": "Fresh delta follows retirement of an old layout.",
+      "expected_changed_effects": [
+        "New delta count stays live."
+      ]
+    },
+    {
+      "left": "bootstrap-deferred",
+      "right": "paint-hook-hide",
+      "changed_relation": "The paint adapter hides synchronously before returning.",
+      "expected_changed_effects": [
+        "Old count is suppressed at the host return boundary."
+      ]
+    },
+    {
+      "left": "paint-hook-hide",
+      "right": "bootstrap-hook-hide",
+      "changed_relation": "The first snapshot is delivered before subscribe returns.",
+      "expected_changed_effects": [
+        "Retired listener still detaches."
+      ]
+    },
+    {
+      "left": "paint-hook-switch",
+      "right": "bootstrap-hook-switch",
+      "changed_relation": "Nested navigation now occurs before outer subscribe returns.",
+      "expected_changed_effects": [
+        "Nested feed subscription remains owned and cleanable."
+      ]
+    },
+    {
+      "left": "bootstrap-hook-switch",
+      "right": "bootstrap-hook-reopen",
+      "changed_relation": "Nested selection reuses the identical feed instead of another object.",
+      "expected_changed_effects": [
+        "Exactly two snapshots are accepted without duplicate old-listener history."
+      ]
+    },
+    {
+      "left": "bootstrap-sync",
+      "right": "live-delta",
+      "changed_relation": "Add ordinary active deltas after the cached snapshot.",
+      "expected_changed_effects": [
+        "Each later delta adds one row, count and history effect."
+      ]
+    },
+    {
+      "left": "decode-hide",
+      "right": "history-after-retire",
+      "changed_relation": "Two already-accepted delta decodes finish after retirement while one additional delta is emitted after detachment.",
+      "expected_changed_effects": [
+        "Both accepted frames remain in history; the detached new frame creates no effects."
+      ]
+    },
+    {
+      "left": "bootstrap-sync",
+      "right": "metrics-scope",
+      "changed_relation": "The same cached snapshot is observed by the panel consumer or the independent metrics consumer.",
+      "expected_changed_effects": [
+        "Panel observes bootstrap; ungranted metrics retains delta-only policy."
+      ]
+    },
+    {
+      "left": "live-delta",
+      "right": "independent-workspaces",
+      "changed_relation": "An independent workspace remains active while another workspace retires.",
+      "expected_changed_effects": [
+        "Retiring the other workspace does not revoke active delta processing."
+      ]
+    },
+    {
+      "left": "bootstrap-sync",
+      "right": "closed-empty",
+      "changed_relation": "Hide repeatedly before selecting; no effects or listener ownership remain.",
+      "expected_changed_effects": [
+        "closed-empty"
+      ]
+    },
+    {
+      "left": "bootstrap-deferred",
+      "right": "hide-before-bootstrap",
+      "changed_relation": "A queued first batch executes after hide without new reception.",
+      "expected_changed_effects": [
+        "hide-before-bootstrap"
+      ]
+    },
+    {
+      "left": "live-delta",
+      "right": "retire-after-count",
+      "changed_relation": "Retire only after completed rows/count/history; completed effects remain and future deltas ignored.",
+      "expected_changed_effects": [
+        "retire-after-count"
+      ]
+    },
+    {
+      "left": "independent-workspaces",
+      "right": "shared-feed-workspaces",
+      "changed_relation": "Two independent workspaces share a source; hiding one leaves the other live.",
+      "expected_changed_effects": [
+        "shared-feed-workspaces"
+      ]
+    },
+    {
+      "left": "decode-hide",
+      "right": "dispose-inflight",
+      "changed_relation": "Replace hide with framework unmount/native disposal.",
+      "expected_changed_effects": [
+        "Same history retained and output absent through actual teardown."
+      ]
+    }
+  ]
+}

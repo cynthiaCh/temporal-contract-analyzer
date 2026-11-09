@@ -1,0 +1,7 @@
+The feed emits a cached snapshot during start, or queues it when mode is deferred. It then emits ordinary deltas. Sources are reusable across visits. Decoding accepts a frame and may return immediately or complete later. Host painting receives the decoded frame and a navigation API; it may synchronously select/hide and may finish immediately or later. History is a passive decoded-frame sink, count reports the painted frame. Listener detachment cannot undo already accepted decoding.
+Native host interface resolves decode/paint through native callbacks; defer enqueues source work. Those callbacks can run inline. It supplies no view-validity policy. Feed listener registries, emission, workspace state, history admission and rendering decisions execute in the target runtime. Source fields are stable and single-threaded; history/count do not navigate. Public select/hide and separate metrics collection must remain available. Runtime facade serializes frame transport; it restores each decoded object's identity across sinks.
+The independent metrics observer starts the source before subscribing, ignores the cached snapshot and collects deltas. It is outside the panel repair. Component unmount/disposal means hide.
+
+Runtime: CPython 3.8.10; standard library
+
+Python: env.defer(callback), resolve(kind,key,frame) -> concurrent.futures.Future, output(kind,key,value). Workspace.select/hide and Feed.listen/detach/start/delta execute on the same event thread. Future.add_done_callback runs inline for an already-completed Future.

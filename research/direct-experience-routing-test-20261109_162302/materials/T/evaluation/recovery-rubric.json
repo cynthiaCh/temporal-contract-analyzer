@@ -1,0 +1,109 @@
+{
+  "schema_version": "0.1",
+  "case_id": "cached-feed-lifecycle-repair-python3",
+  "dimensions": {
+    "obligation_correctness": "Recover bootstrap precedence, decoded row and post-paint count validity, accepted history retention, reentrant cleanup, and the distinct metrics policy.",
+    "evidence_grounding": "The answer cites the feed, subscription, panel, presenter, workspace, metrics and their candidate-visible behavior contract as relevant.",
+    "failure_prediction": "Predict missed synchronous bootstrap, stale decoded rows or post-paint counts including same-feed reopen, and subscription ownership loss during nested navigation.",
+    "unsupported_claim_penalty": "The answer does not require a timer, replay buffer, or global metrics migration without evidence."
+  },
+  "obligations": [
+    {
+      "id": "bootstrap-reception",
+      "statement": "The selected panel receives its synchronous or deferred first snapshot and ordinary deltas exactly once.",
+      "event_relation": "listener registration precedes synchronous start emission",
+      "failure_if_violated": "The warm-cache first batch is lost or normal deltas stop.",
+      "acceptable_evidence_paths": [
+        "base/README.md",
+        "base/docs/host-api.md",
+        "base/src/workflow.py"
+      ],
+      "required_concepts": [
+        "register before start",
+        "normal live work remains"
+      ]
+    },
+    {
+      "id": "decoded-row-validity",
+      "statement": "Rows from a decoded frame commit only in their owning current visit; a new visit of the same feed remains distinct and fresh live work continues.",
+      "event_relation": "visit retirement precedes rejection of old decoded row delivery",
+      "failure_if_violated": "Removing the listener or checking only the feed object lets an old Promise publish stale rows.",
+      "acceptable_evidence_paths": [
+        "base/README.md",
+        "base/docs/host-api.md",
+        "base/src/workflow.py"
+      ],
+      "required_concepts": [
+        "visit identity",
+        "in-flight decode survives detachment"
+      ]
+    },
+    {
+      "id": "painted-count-validity",
+      "statement": "A live count is emitted only after its own paint completes and only while the owning visit remains current, including navigation performed inside paintRows.",
+      "event_relation": "row commit precedes paint completion, which precedes a still-valid visit count",
+      "failure_if_violated": "An entry guard protects rows but a later Promise or synchronous callback allows a stale count; suppressing all counts is also wrong.",
+      "acceptable_evidence_paths": [
+        "base/README.md",
+        "base/docs/host-api.md",
+        "base/src/workflow.py"
+      ],
+      "required_concepts": [
+        "second commit boundary",
+        "post-paint visit validity",
+        "live counts remain required"
+      ]
+    },
+    {
+      "id": "accepted-history-retention",
+      "statement": "Every batch accepted by a listener records decoded history exactly once even when its view retires; detachment prevents later frames from being accepted.",
+      "event_relation": "accepted decode completion records history independently of view-output permission",
+      "failure_if_violated": "Using view validity to gate all effects drops required history, or leaked listeners record extra batches.",
+      "acceptable_evidence_paths": [
+        "base/README.md",
+        "base/docs/host-api.md",
+        "base/src/workflow.py"
+      ],
+      "required_concepts": [
+        "accepted work outlives view",
+        "history and visible output have different policies"
+      ]
+    },
+    {
+      "id": "subscription-ownership",
+      "statement": "Nested select or hide from synchronous startup rendering takes precedence and owns the active subscription; retirement detaches the actual previous listener before it can receive more work.",
+      "event_relation": "own actual cleanup before start can invoke navigation; newer navigation supersedes returning outer setup",
+      "failure_if_violated": "Late cleanup assignment loses the new listener or leaves an old listener accepting duplicates, including same-feed reentry.",
+      "acceptable_evidence_paths": [
+        "base/README.md",
+        "base/docs/host-api.md",
+        "base/src/workflow.py"
+      ],
+      "required_concepts": [
+        "synchronous reentrancy",
+        "actual subscription owner",
+        "same-feed revisit"
+      ]
+    },
+    {
+      "id": "metrics-scope",
+      "statement": "Metrics excludes the cached snapshot and observes deltas unless explicit authorization grants snapshot inclusion.",
+      "event_relation": "metrics attaches after synchronous snapshot in the ungranted condition",
+      "failure_if_violated": "A global bootstrap behavior change alters an independent consumer without authorization.",
+      "acceptable_evidence_paths": [
+        "base/README.md",
+        "base/docs/host-api.md",
+        "base/src/workflow.py"
+      ],
+      "required_concepts": [
+        "consumer-specific ordering",
+        "authorization boundary"
+      ]
+    }
+  ],
+  "decision_rule": {
+    "minimum_obligation_recall": 1.0,
+    "minimum_evidence_precision": 0.5,
+    "maximum_unsupported_claim_rate": 0.0
+  }
+}
