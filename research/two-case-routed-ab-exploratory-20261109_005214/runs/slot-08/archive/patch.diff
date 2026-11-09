@@ -1,0 +1,79 @@
+Binary files /dev/null and b/src/__pycache__/workflow.cpython-38.pyc differ
+--- a/src/workflow.py
++++ b/src/workflow.py
+@@ -87,27 +87,48 @@
+         self.env, self.current, self.navigation = env, None, 0
+ 
+     def retire(self):
+-        leaving, self.current = self.current, None
+-        if leaving:
++        leaving = self.current
++        if leaving is None:
++            self.env.output('document', None)
++            return
++
++        # A pending edit has already been accepted by this visit.  Flush it
++        # while its subscription is still mounted, rather than cancelling it
++        # as part of retirement.
++        leaving.task.flush()
++
++        # Writing may deliver inline and cause a newer navigation.  In that
++        # case that navigation owns the mounted document now.
++        if self.current is leaving:
+             self.env.store.stop(leaving.token)
+-        self.env.output('document', None)
+-        pass
++            self.current = None
++            self.env.output('document', None)
+ 
+     def open(self, key):
+         self.env.output('notice', None)
+         self.navigation += 1
+         request = self.navigation
+         self.retire()
+-        pass
+-        token = self.env.store.subscribe(lambda event: self.env.output('status', event) if event['id'] == key else None)
++
++        # A synchronous save delivery can start a later navigation while the
++        # previous visit is being retired.
++        if self.navigation != request:
++            return
++
++        visit = Visit(key, self.env.store.read(key), 0, None)
++        token = self.env.store.subscribe(
++            lambda event: self.env.output('status', event)
++            if event['id'] == key and self.current is visit else None
++        )
+         task = Trailing(self.env, 120, lambda text: self.env.write(key, text))
+-        self.current = Visit(key, self.env.store.read(key), token, task)
++        visit.token, visit.task = token, task
++        self.current = visit
+         self.env.output('document', dict(id=key, text=self.current.text))
+ 
+     def edit(self, text):
+         if self.current is not None:
+             self.current.text = text
+-            self.env.write(self.current.id, text)
++            self.current.task.push(text)
+ 
+     def close(self):
+         self.env.output('notice', None)
+@@ -119,10 +140,15 @@
+         if visit is None:
+             return None
+         snapshot = dict(id=visit.id, text=visit.text)
+-        pass
+-        pass
++        visit.task.flush()
++        # The visit may have received an inline edit while flushing.  The
++        # submission still represents its entry snapshot, so make sure that
++        # exact text is durable before handing it to the archive.
++        if self.env.store.read(snapshot['id']) != snapshot['text']:
++            self.env.write(snapshot['id'], snapshot['text'])
+         receipt = self.env.capture(snapshot)
+-        self.env.output('notice', receipt)
++        if self.current is visit:
++            self.env.output('notice', receipt)
+         return receipt
+ 
+     def dispose(self):
