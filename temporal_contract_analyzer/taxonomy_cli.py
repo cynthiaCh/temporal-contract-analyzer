@@ -5,7 +5,7 @@ from pathlib import Path
 from .core import EvidenceError
 from . import taxonomy, experience_routing
 
-COMMANDS = ('taxonomy', 'experience-prompt', 'experience-review-template', 'route-experience')
+COMMANDS = ('taxonomy', 'experience-prompt', 'experience-review-template', 'route-experience', 'maintenance-prompt')
 
 
 def register(sub):
@@ -41,6 +41,10 @@ def run(args):
             value = experience_routing.analysis_prompt(data['task'], data['sources'], data.get('AST'))
         elif args.command == 'experience-review-template':
             value = experience_routing.review_template(data['analysis'], data['task'], data['sources'])
+        elif args.command == 'maintenance-prompt':
+            codes = experience_routing.validate_analysis(data['analysis'], data['task'], data['sources'])
+            value = experience_routing.maintenance_prompt(data['task'], data['analysis']['contract'],
+                                                          obligation_labels=codes)
         else:
             value = experience_routing.route(data['analysis'], data['sources'], data['library'],
                                              task=data['task'], review=data.get('review'))
