@@ -1,0 +1,54 @@
+--- a/src/workflow.py
++++ b/src/workflow.py
+@@ -102,15 +102,19 @@
+         leaving, self.current = self.current, None
+         if leaving:
+             self.env.store.stop(leaving.token)
+-        self.env.output('document', None)
+-        pass
++            leaving.task.flush()
++        # A synchronous write may have opened another document.  That visit
++        # owns the outlet now, so do not clear it on behalf of the old one.
++        if self.current is None:
++            self.env.output('document', None)
+ 
+     def open(self, key):
+         self.env.output('notice', None)
+         self.navigation += 1
+         request = self.navigation
+         self.retire()
+-        pass
++        if request != self.navigation:
++            return
+         token = self.env.store.subscribe(lambda event: self.env.output('status', event) if event['id'] == key else None)
+         task = Trailing(self.env, 120, lambda text: self.env.write(key, text))
+         self.current = Visit(key, self.env.store.read(key), token, task)
+@@ -119,7 +123,7 @@
+     def edit(self, text):
+         if self.current is not None:
+             self.current.text = text
+-            self.env.write(self.current.id, text)
++            self.current.task.push(text)
+ 
+     def close(self):
+         self.env.output('notice', None)
+@@ -127,17 +131,13 @@
+         self.retire()
+ 
+     def submit(self):
+-        confirmation=Confirmation(lambda:self.current,lambda receipt:self.env.output('notice',receipt))
+         visit = self.current
+         if visit is None:
+             return None
++        confirmation=Confirmation(lambda:self.current,lambda receipt:self.env.output('notice',receipt))
+         snapshot = dict(id=visit.id, text=visit.text)
+-        pass
+-        pass
+-        pass
+-        pass
++        visit.task.flush()
+         receipt = self.env.capture(snapshot)
+-        pass
+         confirmation.show(receipt)
+         return receipt
+ 
