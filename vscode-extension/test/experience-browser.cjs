@@ -59,7 +59,31 @@ finally:server.server_close()
   await detail.getByRole('button',{name:'取消当前运行',exact:true}).click();
   await detail.getByRole('heading',{name:'经验开发训练 · 已取消',exact:true}).waitFor();
   assert.equal(new URL(page.url()).hash.slice(1),cancelId);
-  assert.deepEqual(errors,[]);console.log('SYNTHETIC ONLY: Web development, reviews, freeze, A/B, mobile and cancellation checks passed.');
- }finally{if(browser)await browser.close();server.kill('SIGTERM');await fs.rm(temporary,{recursive:true,force:true});}
+  await fs.unlink(path.join(temporary,'sleep-next'));
+  await fs.writeFile(path.join(temporary,'bad-citation-next'),'synthetic bad source anchors');
+  await page.getByRole('button',{name:'新建批次（不调用模型）',exact:true}).click();
+  await detail.getByRole('button',{name:'开始预分析（调用模型）',exact:true}).click();
+  await detail.getByRole('heading',{name:'经验开发训练 · 引用待修正',exact:true}).waitFor();
+  const citationId=new URL(page.url()).hash.slice(1);
+  const citation=await(await page.request.get(address.url+'/api/experience/'+citationId)).json();
+  assert.equal(citation.jobs.length,1);assert.equal(citation.citation_issues.length,2);
+  await detail.getByText('obligation_labels[0].evidence[0] · main.py:2',{exact:true}).click();
+  await detail.getByText('逐字引用可在第 1 行找到。',{exact:false}).waitFor();
+  const corrected=JSON.parse(JSON.stringify(citation.analysis));
+  corrected.obligation_labels[0].evidence[0].line=1;
+  corrected.facts[0].evidence[0].quote='accepted = True';
+  await page.locator('#review-analysis').fill(JSON.stringify({...corrected,contract:'Unapproved new policy'}));
+  await page.locator('#review-reason').fill('Correct the frozen source references.');await page.locator('#review-confirm').check();
+  await detail.getByRole('button',{name:'校验引用修正（不调用模型）',exact:true}).click();
+  await page.locator('#notice').filter({hasText:'仅允许修改 evidence'}).waitFor();
+  await page.locator('#review-analysis').fill(JSON.stringify(corrected));
+  await detail.getByRole('button',{name:'校验引用修正（不调用模型）',exact:true}).click();
+  await detail.getByRole('heading',{name:'经验开发训练 · 待审核 Contract 与分类',exact:true}).waitFor();
+  assert.equal(await detail.getByRole('button',{name:'开始训练（两次 AUTO＋一次反思）',exact:true}).count(),0);
+  const after=await(await page.request.get(address.url+'/api/experience/'+citationId)).json();assert.equal(after.jobs.length,1);
+  assert.equal(after.jobs[0].usage.input_tokens,citation.jobs[0].usage.input_tokens);
+  await approve();await detail.getByRole('button',{name:'开始训练（两次 AUTO＋一次反思）',exact:true}).waitFor();
+  assert.deepEqual(errors,[]);console.log('SYNTHETIC ONLY: Web development, reviews, freeze, A/B, mobile, cancellation and citation-correction checks passed.');
+ }finally{server.kill('SIGTERM');if(browser)await browser.close();await fs.rm(temporary,{recursive:true,force:true});}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});
