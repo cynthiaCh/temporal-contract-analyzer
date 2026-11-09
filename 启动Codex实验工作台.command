@@ -25,7 +25,8 @@ def main():
             or health.get('context_enrichment') != 'snapshot-definitions-v1'
             or health.get('scenario_progress') != 'explicit-schedules-v1'
             or health.get('failure_learning') != 'candidate-memory-v1'
-            or health.get('hypothesis_repair') != 'matched-patch-v2'):
+            or health.get('hypothesis_repair') != 'matched-patch-v2'
+            or health.get('experience_execution') != 'seven-label-web-v2'):
         try:
             with hub._opener.open(service['url'] + '/api/experiments', timeout=5) as response:
                 active = json.load(response).get('active')
@@ -53,6 +54,7 @@ def main():
     print('测试源码补全：进入报告库 → 选择报告 → 源码上下文。')
     print('“其他报告条件”可选失败经验辅助（开发）；原 A/D 条件保持原义。')
     print('已评分失败可“准备修复对照”：同补丁 D 再尝试与失败假设辅助，结果显示新增及丢失效果。')
+    print('侧栏“七类训练与测试”：创建开发批次、审核经验与回验、冻结后发起 A/B 测试。')
     print('打开页面不会调用模型；点击「运行实验」才开始运行。')
     print('已运行的服务会复用，不会中断其中的实验。')
     print('服务在后台运行，关闭此终端不会停止服务。')

@@ -14,6 +14,7 @@ from urllib.request import build_opener, ProxyHandler, Request
 from . import archive
 from .core import EvidenceError, ROOT, VERSION
 from .development import DevelopmentArchive
+from .experience_workbench import ExperienceWorkbench
 from .workbench import Workbench
 
 WEB = Path(__file__).parent/'web'
@@ -39,6 +40,8 @@ class ReportServer(ThreadingHTTPServer):
         self.instance = secrets.token_hex(24)
         self.experiments = Workbench(self.store, node)
         self.experiments.recover()
+        self.experience = ExperienceWorkbench(self.experiments)
+        self.experience.recover()
         super().__init__(('127.0.0.1', port), Handler)
         self.url = 'http://127.0.0.1:' + str(self.server_address[1])
 
@@ -95,7 +98,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send(dict(store=str(store), instance=self.server.instance, version=VERSION,
                            experiment_ui='local-codex-models-v1', context_enrichment='snapshot-definitions-v1',
                            scenario_progress='explicit-schedules-v1', failure_learning='candidate-memory-v1',
-                           hypothesis_repair='matched-patch-v2', experience_development='archive-read-only-v1'))
+                           hypothesis_repair='matched-patch-v2', experience_development='archive-read-only-v1',
+                           experience_execution='seven-label-web-v2'))
         elif url.path == '/api/state':
             self.send(dict(store=str(store), version=VERSION, url=self.server.url))
         elif url.path == '/api/taxonomy':
@@ -110,6 +114,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send(self.server.experiments.case_options())
         elif parts == ['api', 'experiments']:
             self.send(self.server.experiments.list())
+        elif parts == ['api', 'experience']:
+            self.send(self.server.experience.list())
+        elif len(parts) == 3 and parts[:2] == ['api', 'experience']:
+            self.send(self.server.experience.read(parts[2]))
+        elif len(parts) == 4 and parts[:2] == ['api', 'experience'] and parts[3] == 'artifact':
+            self.send(self.server.experience.artifact(parts[2], query['name']))
         elif parts == ['api', 'development']:
             self.send(self.server.development.list())
         elif len(parts) == 3 and parts[:2] == ['api', 'development']:
@@ -151,9 +161,10 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send({'error': 'Not found'}, 404)
         elif url.path in {'/', '/app.js', '/style.css', '/experiments', '/experiments.js',
-                          '/development', '/development.js', '/development.css'}:
+                          '/development', '/development.js', '/development.css',
+                          '/experience', '/experience.js', '/experience.css'}:
             name = {'/': 'index.html', '/experiments': 'experiments.html',
-                    '/development': 'development.html'}.get(url.path, url.path[1:])
+                    '/development': 'development.html', '/experience':'experience.html'}.get(url.path, url.path[1:])
             content_type = 'text/html' if name.endswith('.html') else ('text/javascript' if name.endswith('.js') else 'text/css')
             self.send((WEB/name).read_bytes(), content_type=content_type+'; charset=utf-8')
         else:
@@ -185,6 +196,13 @@ class Handler(BaseHTTPRequestHandler):
                 raise EvidenceError('请输入候选工程或源码文件的绝对路径')
             result = archive.scan_path(data['candidate'], store, self.server.node, 'web', **labels)
             self.send(result['archive'], 201)
+        elif parts == ['api', 'experience']:
+            self.send(self.server.experience.create(data), 201)
+        elif len(parts) == 4 and parts[:2] == ['api', 'experience']:
+            if parts[3] == 'cancel':
+                self.send(self.server.experiments.cancel(parts[2]), 202)
+            else:
+                self.send(self.server.experience.action(parts[2], parts[3], data), 202)
         elif parts == ['api', 'experiments', 'selective']:
             self.send(self.server.experiments.prepare_selective_case(data), 201)
         elif parts == ['api', 'experiments']:

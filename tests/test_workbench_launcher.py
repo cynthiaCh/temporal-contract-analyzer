@@ -33,12 +33,16 @@ class WorkbenchLauncherTests(unittest.TestCase):
         self.assertEqual(browser.args[0],'http://127.0.0.1:12346/experiments')
 
     def test_reuses_current_service(self):
-        status,starts,stops,browser=self.run_launcher(dict(experiment_ui='local-codex-models-v1',context_enrichment='snapshot-definitions-v1',scenario_progress='explicit-schedules-v1',failure_learning='candidate-memory-v1',hypothesis_repair='matched-patch-v2'))
+        status,starts,stops,browser=self.run_launcher(dict(experiment_ui='local-codex-models-v1',context_enrichment='snapshot-definitions-v1',scenario_progress='explicit-schedules-v1',failure_learning='candidate-memory-v1',hypothesis_repair='matched-patch-v2',experience_execution='seven-label-web-v2'))
         self.assertEqual((status,starts,stops),(0,1,0))
         self.assertEqual(browser.args[0],'http://127.0.0.1:12345/experiments')
 
     def test_upgrades_idle_service_missing_hypothesis_repair(self):
         status,starts,stops,browser=self.run_launcher(dict(experiment_ui='local-codex-models-v1',context_enrichment='snapshot-definitions-v1',scenario_progress='explicit-schedules-v1',failure_learning='candidate-memory-v1'))
+        self.assertEqual((status,starts,stops),(0,2,1))
+
+    def test_upgrades_idle_service_missing_seven_label_execution(self):
+        status,starts,stops,browser=self.run_launcher(dict(experiment_ui='local-codex-models-v1',context_enrichment='snapshot-definitions-v1',scenario_progress='explicit-schedules-v1',failure_learning='candidate-memory-v1',hypothesis_repair='matched-patch-v2'))
         self.assertEqual((status,starts,stops),(0,2,1))
 
     def test_refuses_to_interrupt_active_old_service(self):
