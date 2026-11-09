@@ -1,0 +1,30 @@
+--- a/src/progress.js
++++ b/src/progress.js
+@@ -6,7 +6,7 @@
+     if (decoded && typeof decoded.then === "function") decoded.then(deliver);
+     else deliver(decoded);
+   };
+-  feed.start();
+   feed.target.addEventListener("progress", listener);
++  feed.start();
+   return () => feed.target.removeEventListener("progress", listener);
+ }
+--- a/src/queue.js
++++ b/src/queue.js
+@@ -8,10 +8,15 @@
+ export function enqueueTransfer(state, visit, kind) {
+   const attemptId = ++state.nextAttempt;
+   state.record(makeQueueRecord(visit.file, attemptId, visit.id, kind));
++  // This is set before starting the feed: start() may synchronously publish a
++  // cached frame, before the caller has installed the returned handle.
++  visit.progressAttemptId = attemptId;
+   const progress = {
+     record(frame) { state.recordProgress({ fileId: visit.file.id, attemptId, frame }); },
+     receive(frame) {
+-      if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });
++      if (state.current === visit && visit.progressAttemptId === attemptId) {
++        state.showProgress({ fileId: visit.file.id, attemptId, frame });
++      }
+     },
+   };
+   const handle = createTransfer(visit.file, attemptId, state.transport, state.onCancel, progress);

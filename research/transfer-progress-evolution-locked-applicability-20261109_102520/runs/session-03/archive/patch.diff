@@ -1,0 +1,48 @@
+--- a/src/progress.js
++++ b/src/progress.js
+@@ -1,12 +1,16 @@
+ // The source is shared by visits of the same file. Decoding may settle later.
+-export function watchTransferProgress(feed, receive, record) {
++export function watchTransferProgress(feed, receive, record, accepts = () => true) {
+   const listener = event => {
++    // A listener can outlive its visit briefly when a visible update navigates
++    // synchronously from inside feed.start().  Decide eligibility before decode;
++    // once accepted, its eventual audit is retained.
++    if (!accepts()) return;
+     const deliver = frame => { record(frame); receive(frame); };
+     const decoded = feed.decode(event.detail);
+     if (decoded && typeof decoded.then === "function") decoded.then(deliver);
+     else deliver(decoded);
+   };
+-  feed.start();
+   feed.target.addEventListener("progress", listener);
++  feed.start();
+   return () => feed.target.removeEventListener("progress", listener);
+ }
+--- a/src/queue.js
++++ b/src/queue.js
+@@ -14,7 +14,10 @@
+       if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });
+     },
+   };
+-  const handle = createTransfer(visit.file, attemptId, state.transport, state.onCancel, progress);
++  const handle = createTransfer(visit.file, attemptId, state.transport, state.onCancel, {
++    ...progress,
++    accepts() { return state.current === visit; },
++  });
+   state.tasks.set(attemptId, handle);
+   return handle;
+ }
+--- a/src/transfer.js
++++ b/src/transfer.js
+@@ -9,7 +9,9 @@
+   }, { once: true });
+   transport({ file, attemptId, signal: controller.signal });
+   if (file.progressFeed) {
+-    stopProgress = watchTransferProgress(file.progressFeed, progress.receive, progress.record);
++    stopProgress = watchTransferProgress(
++      file.progressFeed, progress.receive, progress.record, progress.accepts,
++    );
+     if (controller.signal.aborted) stopProgress();
+   }
+   return { file, attemptId, signal: controller.signal,

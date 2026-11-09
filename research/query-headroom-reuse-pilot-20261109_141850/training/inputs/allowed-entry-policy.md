@@ -1,0 +1,1 @@
+The current task forbids a live signal at invocation for the fresh offline-departure situation. The original training check accepts zero calls or calls with an already-aborted signal; this does not establish a mandatory zero-entry implementation. All existing cached/active work and state/observer policies remain independently required.

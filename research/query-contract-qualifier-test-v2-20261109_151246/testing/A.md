@@ -1,0 +1,8 @@
+Repair the museum exhibit lookup cache: a fresh online-mode query mounted and unmounted entirely offline later calls its signal-consuming query function with a live signal after reconnect. This occurs independently of refetchOnReconnect. Preserve supported query behavior, interfaces, dependencies and build/test configuration. Change product source only.
+
+
+以下自动Contract为辅助材料，请依据当前任务和源码核查，不盲从无据政策：
+Repair the cache so a fresh online-mode query whose observer mounts and unmounts entirely offline does not later call its signal-consuming query function with a live signal after reconnect, regardless of refetchOnReconnect. Preserve supported behavior: multiple observers can share a fetch; unconsumed active work may finish into the cache after its observer leaves; consumed work can be aborted; cancellation restores prior query data and status and settles its originating attempt; late completion cannot publish as a newer attempt. Keep the supported query interfaces, dependencies, and build/test configuration. Change product source only. The reported defect constrains the offline-unmounted query's post-reconnect invocation; it does not establish a general ban on post-reconnect queries.
+
+在 /workspace 内自主定位、修复与验证。只修改产品源码；保留接口、依赖和构建/测试配置。不安装依赖，不访问网络或研究材料。JS使用 /runtime/node，Python使用 /usr/bin/python3 -B。
+原始快照、最终源码、补丁差异、日志及评分由外部Python自动保存。请只修业务代码并做必要验证，不创建实验备份、归档补丁或结果汇总文件。最终返回唯一字段report的JSON，简短说明实际修改、验证与未覆盖范围，不超过6000个Unicode字符。
