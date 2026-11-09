@@ -49,6 +49,22 @@ T4 不能直接改名为 L，T3 也不能直接改名为 B。旧分组可能同�
 
 实现位于 [taxonomy.py](../temporal_contract_analyzer/taxonomy.py) 与 [experience_routing.py](../temporal_contract_analyzer/experience_routing.py)。这是可运行的离线接口；旧研究运行器仍按冻结版本复现，不会被自动切换。本次未执行新的七类训练／测试，也未把一次 Reflection 改称官方 GEPA。
 
+## 根据分类追加通用提醒
+
+[contract-reminders.json](../temporal_contract_analyzer/contract-reminders.json) 保存一段共同提醒及 `by_label` 下的 R/O/B/L/I/F/A 七段核查问题。名称与类别边界仍从唯一 codebook 读取，不在提醒文件重复定义分类。这是预先编写的初始检查表，不是反思得到的经验，也不含具体案例的标准 Contract。
+
+分类结果为多标签时，按 codebook 顺序追加所有对应提醒，每类一次。未知分类只保留共同提醒与未知说明，不默认追加全部七类。分类应依据当前任务和源码，不能读取测试标准后再选提醒。
+
+`maintenance-prompt` 从已绑定可见引用的分析对象生成“原任务＋候选 Contract＋共同提醒＋命中类别提醒”，不启动维护模型：
+
+```sh
+python3 -B -m temporal_contract_analyzer maintenance-prompt analyzed-input.json --output maintenance-prompt.txt
+```
+
+比较经验增量时，A/B 必须使用同一自动 Contract、同一组标签与同一版提醒；B 仅追加冻结经验正文。Python 调用为 `maintenance_prompt(task, contract, obligation_labels=codes)` 和 `maintenance_prompt(task, contract, experience_text, obligation_labels=codes)`。提醒版本和摘要可通过 `reminders.material(codes)` 归档。只比较类别提醒本身的效果时，应另立对照，不与经验增量混算。
+
+原有调用若不传 `obligation_labels`，保持此前共同提示正文；旧归档、冻结脚本与历史 E/F 固定提醒不改。新命令及参数是显式接入点，既有服务器运行器需要调用它们才会使用七类提醒，不会自动改写旧实验。
+
 ## 离线命令
 
 ```sh

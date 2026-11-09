@@ -5,6 +5,8 @@ v2 接替 v1 的分类与路由口径。v1 以及所有已执行实验仍是历�
 唯一分类定义：`temporal_contract_analyzer/contract-taxonomy.json`。
 公共接口：`taxonomy.py`、`experience_routing.py`，命令行 `taxonomy`、`experience-prompt`、`experience-review-template`、`route-experience`。定义与输入规范见 [CONTRACT_TAXONOMY.md](../../docs/CONTRACT_TAXONOMY.md)。不在本目录复制第二份 codebook。
 
+七类初始通用提醒单独保存于 `contract-reminders.json`；`maintenance-prompt` 按当前公开输入支持的多标签追加对应问题。它们是固定检查表，训练得到的冻结经验仍单独存储。经验 A/B 对照中类别提醒两组相同，只有 B 增加经验正文。
+
 开发闭环保持“候选 Contract → 与开发标准／行为结果对比 → 反思修订经验 → 回验并记录得失 → 冻结”。测试阶段保持“可见任务与源码／AST → 七类多标签＋机制前提 → 候选经验检索 → 适用性核查 → 原任务＋候选 Contract＋零至一条冻结经验 → 补丁与行为评分”。
 
 七类是 R、O、B、L、I、F、A，不是强制单选；分类依据必须来自当前公开输入。旧 T4、T3 无直接一对一映射。旧经验正文继续保留，但在新流程使用前须另附七类元数据及适用条件。本目录注册表为空，表示尚未迁移条目，不表示旧经验无效，也不表示七类各有可用经验。

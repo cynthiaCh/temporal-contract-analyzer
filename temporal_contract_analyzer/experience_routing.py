@@ -175,9 +175,12 @@ def route(analysis, sources, library, *, task, review=None):
                               sha256=entry['sha256'], text_sha256=entry['text_sha256']), checks=checks)
 
 
-def maintenance_prompt(task, contract, experience=None):
+def maintenance_prompt(task, contract, experience=None, *, obligation_labels=None):
     if not isinstance(task, str) or not isinstance(contract, str):
         raise EvidenceError('Expected task and candidate Contract')
+    from . import reminders
     common = task + '\n\n候选自动Contract：请结合当前源码核查依据，不盲从无据政策。\n' + contract
-    common += '\n\n完成维护任务，保留有依据的既有行为；分别核查启动、接纳、完成、取消及副作用归属。'
+    common += '\n\n' + reminders.definition()['common']
+    if obligation_labels is not None:
+        common += reminders.material(obligation_labels)['text']
     return common if experience is None else common + '\n\n冻结经验正文：按当前证据核对适用条件。\n' + experience
