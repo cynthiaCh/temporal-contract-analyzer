@@ -102,7 +102,17 @@ class ExperienceWorkbench:
         return path
 
     def read(self, identifier):
-        return json.loads((self.folder(identifier)/'manifest.json').read_text(encoding='utf-8'))
+        folder = self.folder(identifier)
+        item = json.loads((folder/'manifest.json').read_text(encoding='utf-8'))
+        if item['status'] == 'stopped' and (folder/'analysis-raw.json').is_file():
+            try:
+                routing.validate_analysis(read(folder/'analysis-raw.json'), item['task'], item['sources'])
+            except routing.CitationError as error:
+                # Derived display only: do not migrate or resume frozen history.
+                item['citation_issues'] = error.issues
+            except (EvidenceError, ValueError, KeyError, TypeError):
+                pass
+        return item
 
     def save(self, item):
         archive.atomic_json(self.root/item['id']/'manifest.json', item)
@@ -244,7 +254,7 @@ class ExperienceWorkbench:
                     raise
                 expected = {'analyze':'prepared', 'train':'analysis_approved',
                             'revalidate':'candidate_approved', 'test':'analysis_approved'}
-                if action in ('review-analysis', 'review-candidate', 'freeze'):
+                if action in ('correct-citations', 'review-analysis', 'review-candidate', 'freeze'):
                     return self.decide(item, action, data)
                 if action not in expected or item['status'] != expected[action]:
                     raise EvidenceError('当前阶段不能执行此操作')
@@ -277,13 +287,27 @@ class ExperienceWorkbench:
                     handle.close()
 
     def decide(self, item, action, data):
-        expected = {'review-analysis':'analysis_review', 'review-candidate':'candidate_review', 'freeze':'ready_to_freeze'}
+        expected = {'correct-citations':'analysis_citation_review', 'review-analysis':'analysis_review',
+                    'review-candidate':'candidate_review', 'freeze':'ready_to_freeze'}
         if item['status'] != expected[action]:
             raise EvidenceError('当前阶段不能审核或冻结')
         if action == 'freeze':
             entry = read(self.folder(item['id'])/'candidate-entry.json')
             self.pin(item, 'frozen-entry.json', entry)
             item.update(entry=entry, status='frozen', frozen_at=archive.now())
+            return self.save(item)
+        if action == 'correct-citations':
+            corrected, reason = data.get('analysis'), data.get('reason')
+            if not isinstance(reason, str) or not reason.strip() or len(reason)>4000:
+                raise EvidenceError('请填写引用修正依据')
+            raw = read(self.folder(item['id'])/'analysis-raw.json')
+            routing.validate_citation_correction(raw, corrected, item['task'], item['sources'])
+            correction = dict(action=action, actor='human_operator', reason=reason, at=archive.now(),
+                              original_issues=item['citation_issues'])
+            item['analysis'] = corrected
+            self.pin(item, 'corrected-analysis.json', dict(analysis=corrected, correction=correction))
+            item['reviews'].append(correction)
+            item.update(status='analysis_review', citation_issues=[])
             return self.save(item)
         reason, approved = data.get('reason'), data.get('approved')
         if type(approved) is not bool or not isinstance(reason, str) or not reason.strip() or len(reason) > 4000:
@@ -386,8 +410,12 @@ class ExperienceWorkbench:
             if action == 'analyze':
                 analysis = self.session(item, 'analysis', routing.analysis_prompt(item['task'], item['sources']), taxonomy.analysis_schema())
                 self.pin(item, 'analysis-raw.json', analysis)
-                routing.validate_analysis(analysis, item['task'], item['sources'])
-                item.update(analysis=analysis, status='analysis_review')
+                try:
+                    routing.validate_analysis(analysis, item['task'], item['sources'])
+                except routing.CitationError as error:
+                    item.update(analysis=analysis, citation_issues=error.issues, status='analysis_citation_review')
+                else:
+                    item.update(analysis=analysis, status='analysis_review')
             elif action == 'train':
                 self.train(item)
             elif action == 'revalidate':

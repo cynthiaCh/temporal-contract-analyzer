@@ -1,5 +1,6 @@
 """Synthetic workflow verification, never live model evidence."""
 import json
+from copy import deepcopy
 import os
 from pathlib import Path
 import sys
@@ -66,6 +67,9 @@ if '--output-schema' in args:
     'evidence':[{'file':'main.py','line':1,'quote':'accepted = True'}]}],
   'facts':[{'predicate':'entry_snapshot','state':'known',
     'evidence':[{'file':'main.py','line':1,'quote':'accepted = True'}]}],'unknowns':[]}
+  if os.environ.get('TCA_SYNTHETIC_BAD_CITATION') or pathlib.Path(__file__).with_name('bad-citation-next').exists():
+   result['obligation_labels'][0]['evidence'][0]['line']=2
+   result['facts'][0]['evidence'][0]['quote']='accepted ... True'
  else:
   result={'requires':['entry_snapshot'],'excludes':[], 'rules':[{
    'body':'Invalidate logical acceptance before synchronous callbacks return a cleanup handle.',
@@ -206,6 +210,52 @@ class ExperienceTests(unittest.TestCase):
         (self.workflow.folder(item['id'])/'input/main.py').write_text('changed')
         with self.assertRaisesRegex(EvidenceError, '源码'):self.action(item, 'train')
         self.assertEqual(len(self.workflow.read(item['id'])['jobs']), 1)
+
+    def test_citation_only_correction_keeps_raw_output_and_requires_semantic_review(self):
+        item = self.create()
+        with patch.dict(os.environ, {'TCA_SYNTHETIC_BAD_CITATION':'1'}):
+            item = self.action(item, 'analyze')
+        self.assertEqual(item['status'], 'analysis_citation_review', item.get('error'))
+        self.assertEqual(len(item['citation_issues']), 2)
+        self.assertEqual(item['citation_issues'][0]['matching_lines'], [1])
+        folder = self.workflow.folder(item['id'])
+        raw = (folder/'analysis-raw.json').read_bytes()
+        usage = deepcopy(item['jobs'][0]['usage'])
+        with self.assertRaises(EvidenceError):self.action(item, 'train')
+        with self.assertRaises(EvidenceError):self.action(item, 'review-analysis', approved=True, reason='Cannot skip correction.')
+        corrected = deepcopy(item['analysis'])
+        corrected['obligation_labels'][0]['evidence'][0]['line'] = 1
+        corrected['facts'][0]['evidence'][0]['quote'] = 'accepted = True'
+        changed = dict(corrected, contract='A different requirement.')
+        with self.assertRaisesRegex(EvidenceError, '仅允许修改'):
+            self.action(item, 'correct-citations', analysis=changed, reason='Unapproved semantic change.')
+        item = self.action(item, 'correct-citations', analysis=corrected, reason='Read exact frozen source line.')
+        self.assertEqual(item['status'], 'analysis_review')
+        self.assertEqual(item['citation_issues'], [])
+        self.assertEqual((folder/'analysis-raw.json').read_bytes(), raw)
+        self.assertEqual(len(item['jobs']), 1)
+        self.assertEqual(item['jobs'][0]['usage'], usage)
+        self.assertTrue((folder/'corrected-analysis.json').is_file())
+        with self.assertRaises(EvidenceError):self.action(item, 'train')
+        item = self.action(item, 'review-analysis', approved=True, reason='Separately checked requirement meaning.')
+        self.assertEqual(item['status'], 'analysis_approved')
+        self.workflow.verify(item)
+
+    def test_legacy_stopped_citation_diagnostics_never_rewrite_record(self):
+        with patch.dict(os.environ, {'TCA_SYNTHETIC_BAD_CITATION':'1'}):
+            item = self.action(self.create(), 'analyze')
+        item.update(status='stopped', error='Unbound obligation label')
+        item.pop('citation_issues')
+        self.workflow.save(item)
+        path = self.workflow.folder(item['id'])/'manifest.json'
+        before = path.read_bytes()
+        viewed = self.workflow.read(item['id'])
+        self.assertEqual(viewed['status'], 'stopped')
+        self.assertEqual(len(viewed['citation_issues']), 2)
+        self.assertEqual(path.read_bytes(), before)
+        with self.assertRaises(EvidenceError):
+            self.action(viewed, 'correct-citations', analysis=viewed['analysis'], reason='Cannot resume old stop.')
+        self.assertEqual(path.read_bytes(), before)
 
     def test_incomplete_session_preserves_error_and_stops_no_retry(self):
         item = self.analysis(self.create())

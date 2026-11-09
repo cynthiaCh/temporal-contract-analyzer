@@ -1,6 +1,6 @@
 'use strict';
 const $=s=>document.querySelector(s);
-const states={prepared:'待预分析',analyzing:'预分析中',analysis_review:'待审核 Contract 与分类',analysis_approved:'分析已审核',training:'AUTO 与反思中',candidate_review:'待审核候选经验',candidate_approved:'经验已审核，待回验',revalidating:'开发回验中',ready_to_freeze:'达到改善门槛，待冻结',frozen:'已冻结研究经验',no_improvement:'无开发改善，测试未启动',auto_passed:'两次 AUTO 已通过，停止学习',testing:'A/B 测试中',completed:'测试完成',stopped:'异常停止',cancelled:'已取消',interrupted:'服务中断',rejected:'审核拒绝'};
+const states={prepared:'待预分析',analyzing:'预分析中',analysis_review:'待审核 Contract 与分类',analysis_citation_review:'引用待修正',analysis_approved:'分析已审核',training:'AUTO 与反思中',candidate_review:'待审核候选经验',candidate_approved:'经验已审核，待回验',revalidating:'开发回验中',ready_to_freeze:'达到改善门槛，待冻结',frozen:'已冻结研究经验',no_improvement:'无开发改善，测试未启动',auto_passed:'两次 AUTO 已通过，停止学习',testing:'A/B 测试中',completed:'测试完成',stopped:'异常停止',cancelled:'已取消',interrupted:'服务中断',rejected:'审核拒绝'};
 let selected=null,signature='',busy=false,items=[];
 function el(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
 async function api(path,body){const r=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-TCA-Request':'local'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error||r.statusText);return data;}
@@ -30,8 +30,13 @@ function render(item){
  if(['analyzing','training','revalidating','testing'].includes(item.status))controls.append(button('取消当前运行',()=>action(item,'cancel')));
  if(item.status==='frozen')controls.append(button('使用此经验新建测试',()=>{$('#kind').value='test';plan();$('#parent').value=item.id;$('#create-form').scrollIntoView({behavior:'smooth'});}));
  target.append(controls);
+ if(item.citation_issues?.length){
+  target.append(el('h3','引用校验问题'));
+  target.append(el('p',item.status==='stopped'?'旧批次保留停止状态，以下为只读诊断，不会续跑。':'仅需修正引用；不会重新调用模型。通过引用校验后仍须单独审核 Contract。','scope-notice'));
+  for(const issue of item.citation_issues){const found=issue.matching_lines.length?`逐字引用可在第 ${issue.matching_lines.join('、')} 行找到。`:'当前文件中找不到该连续片段；请对照原文重新摘取，不使用省略号拼接。';details(target,`${issue.field} · ${issue.file}:${issue.line}`,`模型引用：${issue.quote}\n声明行原文：${issue.actual_line||'（文件不存在或行号超出范围）'}${issue.actual_line_truncated?'（此处显示截取，完整正文见协议材料）':''}\n${found}`);}
+ }
  if(item.analysis){details(target,'候选 Contract、七类标签及源码引用',item.analysis);}
- if(item.status==='analysis_review'||item.status==='candidate_review')review(target,item);
+ if(['analysis_review','analysis_citation_review','candidate_review'].includes(item.status))review(target,item);
  if(item.candidate_text)details(target,'反思经验正文（维护端接收的文本）',item.candidate_text);
  if(item.candidate)details(target,'规则依据与适用／排除条件',item.candidate);
  if(item.admission)target.append(el('p',item.admission.reason,'scope-notice'));
@@ -48,14 +53,14 @@ function render(item){
  for(const name of names)artifacts.append(button(name,async()=>{const a=await api('/api/experience/'+item.id+'/artifact?name='+encodeURIComponent(name));viewer.textContent=a.exists?a.text+(a.truncated?'\n[显示截取，完整材料保存在磁盘]':''):'材料尚未生成。';}));const box=el('details');box.append(el('summary','证据、提示词、补丁和原始日志'),artifacts,viewer);target.append(box);
 }
 function review(target,item){
- const analysis=item.status==='analysis_review';const panel=el('section',undefined,'review-panel');panel.append(el('h3',analysis?'审核候选分析':'审核反思经验'));
- panel.append(el('p',analysis?'仅根据当前任务与源码核对义务方向、引用、机制前提和未知范围。可修正 JSON，原始模型输出仍保留。':'逐条核对规则正文、支持依据、适用条件、保留义务与反例。不把观察当作已验证因果；审核通过后仍须开发回验。'));
+ const correcting=item.status==='analysis_citation_review';const analysis=correcting||item.status==='analysis_review';const panel=el('section',undefined,'review-panel');panel.append(el('h3',correcting?'修正引用':analysis?'审核候选分析':'审核反思经验'));
+ panel.append(el('p',correcting?'仅修改 evidence 内的 file、line、quote。Contract、分类、前提和未知须保持不变；原始模型输出保留。':analysis?'仅根据当前任务与源码核对义务方向、引用、机制前提和未知范围。可修正 JSON，原始模型输出仍保留。':'逐条核对规则正文、支持依据、适用条件、保留义务与反例。不把观察当作已验证因果；审核通过后仍须开发回验。'));
  let editor;if(analysis){const label=el('label','候选分析 JSON');editor=el('textarea',undefined,'code');editor.value=JSON.stringify(item.analysis,null,2);editor.id='review-analysis';label.append(editor);panel.append(label);}
  else {details(panel,'开发证据与实际补丁', '在下方证据材料中打开 reflection-evidence.json，对照 AUTO 的完整行为、补丁与公开交付。');}
  const reasonLabel=el('label','审核依据');const reason=el('textarea');reason.id='review-reason';reason.rows=3;reason.required=true;reason.maxLength=4000;reasonLabel.append(reason);panel.append(reasonLabel);
- const checkLabel=el('label');const check=el('input');check.type='checkbox';check.id='review-confirm';checkLabel.append(check,document.createTextNode('我已核对以上内容；此记录为操作人的人工审核，不代表独立评审。'));panel.append(checkLabel);
+ const checkLabel=el('label');const check=el('input');check.type='checkbox';check.id='review-confirm';checkLabel.append(check,document.createTextNode(correcting?'我已对照原文修正引用；后续仍需审核 Contract。':'我已核对以上内容；此记录为操作人的人工审核，不代表独立评审。'));panel.append(checkLabel);
  const actions=el('div',undefined,'experience-actions');
- actions.append(button('审核通过',()=>{if(!check.checked||!reason.value.trim())throw Error('请填写审核依据并确认已核对。');return action(item,analysis?'review-analysis':'review-candidate',{approved:true,reason:reason.value,...(analysis?{analysis:JSON.parse(editor.value)}:{})});}),button('拒绝并停止本批',()=>{if(!reason.value.trim())throw Error('请填写拒绝依据。');return action(item,analysis?'review-analysis':'review-candidate',{approved:false,reason:reason.value});}));panel.append(actions);target.append(panel);
+ actions.append(button(correcting?'校验引用修正（不调用模型）':'审核通过',()=>{if(!check.checked||!reason.value.trim())throw Error('请填写审核依据并确认已核对。');return action(item,correcting?'correct-citations':analysis?'review-analysis':'review-candidate',{approved:true,reason:reason.value,...(analysis?{analysis:JSON.parse(editor.value)}:{})});}));if(!correcting)actions.append(button('拒绝并停止本批',()=>{if(!reason.value.trim())throw Error('请填写拒绝依据。');return action(item,analysis?'review-analysis':'review-candidate',{approved:false,reason:reason.value});}));panel.append(actions);target.append(panel);
 }
 $('#kind').addEventListener('change',plan);$('#refresh').addEventListener('click',()=>refresh().catch(notice));window.addEventListener('hashchange',()=>{selected=location.hash.slice(1);signature='';refresh().catch(notice);});
 $('#create-form').addEventListener('submit',event=>{event.preventDefault();mutate('/api/experience',{kind:$('#kind').value,case_id:$('#case').value,parent_id:$('#parent').value,model:$('#model').value,effort:$('#effort').value,reflection_effort:$('#reflection-effort').value,timeout:Number($('#timeout').value),source_relationship:$('#relationship').value});});

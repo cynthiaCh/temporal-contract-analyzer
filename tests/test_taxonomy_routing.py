@@ -118,6 +118,44 @@ class TaxonomyRoutingTests(unittest.TestCase):
             with self.assertRaises(EvidenceError):
                 routing.analysis_prompt(self.task, sources)
 
+    def test_citation_diagnostics_distinguish_wrong_lines_from_invented_quotes(self):
+        value = deepcopy(self.analysis)
+        value['obligation_labels'][0]['evidence'][0]['line'] = 1
+        value['facts'][0]['evidence'] = [dict(self.anchor, quote='Keep ... snapshot')]
+        with self.assertRaises(routing.CitationError) as caught:
+            routing.validate_analysis(value, self.task, self.sources)
+        issues = caught.exception.issues
+        self.assertEqual(issues[0]['field'], 'obligation_labels[0].evidence[0]')
+        self.assertEqual(issues[0]['matching_lines'], [2])
+        self.assertEqual(issues[0]['actual_line'], self.task.splitlines()[0])
+        self.assertEqual(issues[1]['matching_lines'], [])
+        self.assertEqual(issues[1]['quote'], 'Keep ... snapshot')
+        self.assertEqual(value['facts'][0]['evidence'][0]['quote'], 'Keep ... snapshot')
+
+    def test_bad_citations_do_not_hide_structural_errors(self):
+        value = deepcopy(self.analysis)
+        value['obligation_labels'][0]['evidence'][0]['line'] = 99
+        value['facts'][0]['predicate'] = 'invented'
+        try:
+            routing.validate_analysis(value, self.task, self.sources)
+        except EvidenceError as error:
+            self.assertNotIsInstance(error, routing.CitationError)
+        else:
+            self.fail('Malformed analysis must be rejected')
+
+    def test_citation_correction_preserves_all_claim_content(self):
+        raw = deepcopy(self.analysis)
+        raw['obligation_labels'][0]['evidence'][0]['line'] = 99
+        self.assertEqual(routing.validate_citation_correction(raw, self.analysis, self.task, self.sources), ['B', 'I'])
+        for key, value in [('contract','Different policy'), ('unknowns',[])]:
+            edited = deepcopy(self.analysis)
+            edited[key] = value if key == 'contract' else ['New uncertainty']
+            with self.assertRaisesRegex(EvidenceError, '仅允许修改'):
+                routing.validate_citation_correction(raw, edited, self.task, self.sources)
+        prompt = routing.analysis_prompt('Header\n\nKeep the condition.', self.sources)
+        self.assertIn('3 | Keep the condition.', prompt)
+        self.assertIn('2 | persist(entry);', prompt)
+
     def test_cli_rejects_metadata_and_does_not_overwrite(self):
         with tempfile.TemporaryDirectory() as directory:
             input_path, output = Path(directory)/'input.json', Path(directory)/'route.json'
