@@ -155,6 +155,10 @@ class DevelopmentArchiveTests(unittest.TestCase):
                     self.assertEqual(response.status, 200)
             with opener.open(server.url+'/api/development', timeout=5) as response:
                 self.assertEqual(len(json.load(response)['items']), 1)
+            with opener.open(server.url+'/api/taxonomy', timeout=5) as response:
+                taxonomy = json.load(response)
+                self.assertEqual(taxonomy['class_count'], 7)
+                self.assertEqual([row['code'] for row in taxonomy['codebook']], ['R', 'O', 'B', 'L', 'I', 'F', 'A'])
             path = '/api/development/'+batch+'/artifact?'+urlencode({'name':'NEW_EXPERIENCE.md'})
             with opener.open(server.url+path, timeout=5) as response:
                 self.assertIn('shared ownership', json.load(response)['text'])

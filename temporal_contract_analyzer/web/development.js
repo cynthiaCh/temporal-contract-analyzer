@@ -21,7 +21,12 @@ function renderList() {
   if(catalog.warnings.length)list.append(objectView('无法读取的归档（不当作零结果）',catalog.warnings));
 }
 async function refresh() {
-  catalog=await api('/api/development');$('#development-root').textContent=catalog.root;renderList();await load();
+  const [records,taxonomy]=await Promise.all([api('/api/development'),api('/api/taxonomy')]);
+  catalog=records;$('#development-root').textContent=catalog.root;
+  const labels=$('#taxonomy-labels');labels.replaceChildren();
+  taxonomy.codebook.forEach(row=>{const item=el('details','taxonomy-label');item.append(el('summary','',`${row.code} · ${row.name_zh}`),el('p','',row.family),el('p','muted',row.inclusion_rule));labels.append(item);});
+  $('#taxonomy-version').textContent=`版本：${taxonomy.schema_version} · 五组提示模板、五条题库问题分别保留为模板和条目，不作为当前分类。`;
+  renderList();await load();
 }
 async function load() {
   const ticket=++generation,params=new URLSearchParams(location.hash.slice(1)),id=params.get('batch');
@@ -78,7 +83,12 @@ function renderCases(target) {
   const list=el('div','development-cases');
   current.cases.forEach(row=>{const card=el('div','finding');card.append(el('strong','',`${row.alias||'案例'} · ${row.role==='test'?'测试':row.role==='train'?'开发':'同题开发／评价'}`),el('p','',row.case||'案例信息见原始材料'));if(row.independent_unit_id)card.append(el('p','muted','来源单元：'+row.independent_unit_id));list.append(card);});target.append(list);
   target.append(el('p','development-note','自动 Contract 是模型的候选理解；标准 Contract 是有依据的评价要求。此页展示研究材料，不把标准答案交付给维护 Agent。'));
-  for(const contract of current.contracts||[]){const box=el('details','development-record');box.append(el('summary','',`${contract.case} · 候选 Contract · ${contract.primary_class||'类别未记录'}`),el('p','development-note','归档模型原文；引用存在与冻结均不代表其语义正确。'),el('pre','development-text experience-prose',contract.text));target.append(box);}
+  for(const contract of current.contracts||[]){
+    const parts=[];
+    if(contract.taxonomy_version==='temporal-obligation-taxonomy-7-v1'&&Array.isArray(contract.obligation_labels))parts.push('七类义务：'+(contract.obligation_labels.map(item=>typeof item==='string'?item:item.code).join('、')||'未知'));
+    if(contract.primary_class)parts.push(`历史四类路由：${contract.primary_class}（未自动换算）`);
+    const box=el('details','development-record');box.append(el('summary','',`${contract.case} · 候选 Contract · ${parts.join('；')||'类别未记录'}`),el('p','development-note','归档模型原文；引用存在与冻结均不代表其语义正确。'),el('pre','development-text experience-prose',contract.text));target.append(box);
+  }
   if(current.preparation)target.append(objectView('材料准入与停止证据',current.preparation));
 }
 function renderExperience(target) {

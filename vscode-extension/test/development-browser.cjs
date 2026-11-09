@@ -22,6 +22,7 @@ async function main(){
   await write('replication','summary.json',{...summary,experience_frozen_no_revision:true,source_batch:'/server/research/revision'});
   await write('replication','NEW_EXPERIENCE.md','Reused experience.');
   await write('stopped','summary.json',{status:'STOPPED',development:[],tests:{T1:{runs:[{slot:'test-A',valid_score:false,execution_status:'NOT_STARTED'}]}},preparation_failure:{material_valid:false},frozen_library:null,stop:{reason:'invalid material'}});
+  await write('legacy','summary.json',{development:{D1:{preanalysis:{contract:'Synthetic legacy Contract',primary_class:'T4'}}},tests:{}});
   const code=`import sys,json
 sys.path.insert(0,sys.argv[1])
 from temporal_contract_analyzer.hub import ReportServer
@@ -39,6 +40,9 @@ finally: server.server_close()
     page.on('pageerror',error=>errors.push(error.message));page.on('request',request=>{if(request.method()!=='GET')mutations.push(request.url());});
     await page.goto(address.url);await page.getByRole('link',{name:'经验开发',exact:true}).click();
     await page.getByRole('heading',{name:'经验怎样形成'}).waitFor();
+    assert.equal(await page.locator('#taxonomy-labels > details').count(),7);
+    await page.locator('#obligation-taxonomy > summary').click();
+    await page.getByText('R · 就绪条件协调',{exact:true}).waitFor();
     await page.locator('#development-search').fill('revision');
     await page.locator('#development-list a').click();
     await page.getByRole('button',{name:/反思经验/}).click();
@@ -59,6 +63,9 @@ finally: server.server_close()
     await page.getByText('批次停止：invalid material',{exact:true}).waitFor();
     await page.getByRole('button',{name:/冻结决定/}).click();
     await page.getByText('未启动：依据本批实际记录展示，后续材料不会自动推定为已完成。',{exact:true}).waitFor();
+    await page.goto(address.url+'/development#batch=legacy&stage=case');
+    await page.getByText('D1 · 候选 Contract · 历史四类路由：T4（未自动换算）',{exact:true}).waitFor();
+    await page.locator('#obligation-taxonomy > summary').click();
     await page.setViewportSize({width:390,height:844});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
     assert.deepEqual(errors,[]);assert.deepEqual(mutations,[]);

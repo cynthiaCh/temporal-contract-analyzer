@@ -235,7 +235,9 @@ class DevelopmentArchive:
             state = item.get('state') or {}
             analysis = item.get('preanalysis') or {}
             if analysis.get('contract'):
-                contracts.append(dict(case=alias, text=analysis['contract'], primary_class=analysis.get('primary_class')))
+                contracts.append(dict(case=alias, text=analysis['contract'], primary_class=analysis.get('primary_class'),
+                                      taxonomy_version=analysis.get('taxonomy_version'),
+                                      obligation_labels=analysis.get('obligation_labels')))
             feedback = self.json(batch, 'development/' + alias + '/feedback.json', {})
             feedback_records.append(dict(case=alias, **self.feedback(feedback)))
             expected = {row['effect']: row['expected'] for row in feedback.get('standards', [])

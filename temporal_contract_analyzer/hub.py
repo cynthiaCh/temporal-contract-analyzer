@@ -98,6 +98,9 @@ class Handler(BaseHTTPRequestHandler):
                            hypothesis_repair='matched-patch-v2', experience_development='archive-read-only-v1'))
         elif url.path == '/api/state':
             self.send(dict(store=str(store), version=VERSION, url=self.server.url))
+        elif url.path == '/api/taxonomy':
+            from .taxonomy import definition
+            self.send(definition())
         elif url.path == '/api/reports':
             allowed = {k: v for k, v in query.items() if k in {'search', 'status', 'origin', 'project', 'limit', 'offset'}}
             self.send(archive.list_reports(store, **allowed))
