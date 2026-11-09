@@ -515,6 +515,8 @@ class Workbench:
                         '-m', manifest['model']]
         elif manifest.get('model_override'):
             command += ['-m', manifest['model_override'], '-c', 'model_reasoning_effort=' + json.dumps(manifest['effort'])]
+        if manifest.get('output_schema'):
+            command += ['--output-schema', manifest['output_schema']]
         return command + ['-C', str(workspace), '-o', str(answer), '-']
 
     @staticmethod
@@ -535,6 +537,79 @@ class Workbench:
                 pass
         process.wait(timeout=3)
 
+    def run_job(self, manifest, job, files, folder, on_update=None):
+        """One isolated subprocess; caller owns lifecycle, scoring and execution lock."""
+        import time
+        started = time.monotonic()
+        directory = folder/'jobs'/job['id']
+        workspace = directory/'workspace'
+        def persist():
+            archive.atomic_json(folder/'manifest.json', manifest)
+            if on_update:
+                on_update()
+        job.update(status='running', started_at=archive.now())
+        persist()
+        try:
+            write_files(workspace, files, manifest['file_modes'])
+            command = self.command(manifest, workspace, directory/'answer.md')
+            job['command'] = command
+            job['delivery'] = 'process_input_pending'
+            with (directory/'prompt.md').open('rb') as prompt, (directory/'events.jsonl').open('wb') as stdout, (directory/'stderr.log').open('wb') as stderr:
+                process = subprocess.Popen(command, cwd=str(workspace), stdin=prompt, stdout=stdout,
+                                           stderr=stderr, start_new_session=True)
+                job['delivery'] = 'stdin_file_attached'
+                persist()
+                deadline = time.monotonic() + manifest['timeout']
+                status = None
+                while process.poll() is None:
+                    if self.stop.is_set() or time.monotonic() >= deadline:
+                        status = 'cancelled' if self.stop.is_set() else 'timed_out'
+                        self.terminate(process)
+                        break
+                    self.stop.wait(0.1)
+                job['exit_code'] = process.returncode
+            completed, usage = False, None
+            with (directory/'events.jsonl').open(encoding='utf-8', errors='replace') as events:
+                for line in events:
+                    try:
+                        event = json.loads(line)
+                        if isinstance(event, dict) and event.get('type') == 'turn.completed':
+                            completed, usage = True, event.get('usage')
+                    except ValueError:
+                        pass
+            job.update(status=status or ('completed' if process.returncode == 0 and completed else 'failed'),
+                       turn_completed=completed, usage=usage, task_success='unscored')
+            try:
+                after, skipped = capture(workspace)
+                modes = file_modes(workspace, after)
+                changes = []
+                for name in sorted(set(files) | set(after)):
+                    before, updated = files.get(name), after.get(name)
+                    if before == updated and manifest['file_modes'].get(name) == modes.get(name):
+                        continue
+                    change = dict(path=name, before_sha256=sha(before) if before is not None else None,
+                                  after_sha256=sha(updated) if updated is not None else None,
+                                  before_mode=manifest['file_modes'].get(name), after_mode=modes.get(name))
+                    try:
+                        diff = ''.join(unified_diff((before or b'').decode().splitlines(True),
+                                                   (updated or b'').decode().splitlines(True),
+                                                   fromfile='before/'+name, tofile='after/'+name))
+                        change.update(diff=diff[:100000], truncated=len(diff) > 100000)
+                    except UnicodeError:
+                        change['binary'] = True
+                    changes.append(change)
+                archive.atomic_json(directory/'changes.json', dict(files=changes, excluded=skipped))
+                job['changed_files'] = len(changes)
+            except (OSError, EvidenceError) as error:
+                job['changes_error'] = str(error)
+        except Exception as error:
+            job.update(status='failed', error=str(error), task_success='unscored')
+        finally:
+            job['session_seconds'] = time.monotonic() - started
+            job['completed_at'] = archive.now()
+            archive.atomic_json(directory/'result.json', job)
+            persist()
+
     def run(self, manifest, files, handle):
         folder = self.folder(manifest['id'])
         try:
@@ -543,70 +618,7 @@ class Workbench:
                     job.update(status='cancelled', completed_at=archive.now(), task_success='unscored')
                     archive.atomic_json(folder/'jobs'/job['id']/'result.json', job)
                     continue
-                directory = folder/'jobs'/job['id']
-                workspace = directory/'workspace'
-                job.update(status='running', started_at=archive.now())
-                archive.atomic_json(folder/'manifest.json', manifest)
-                try:
-                    write_files(workspace, files, manifest['file_modes'])
-                    command = self.command(manifest, workspace, directory/'answer.md')
-                    job['command'] = command
-                    job['delivery'] = 'process_input_pending'
-                    with (directory/'prompt.md').open('rb') as prompt, (directory/'events.jsonl').open('wb') as stdout, (directory/'stderr.log').open('wb') as stderr:
-                        process = subprocess.Popen(command, cwd=str(workspace), stdin=prompt, stdout=stdout,
-                                                   stderr=stderr, start_new_session=True)
-                        job['delivery'] = 'stdin_file_attached'
-                        archive.atomic_json(folder/'manifest.json', manifest)
-                        import time
-                        deadline = time.monotonic() + manifest['timeout']
-                        status = None
-                        while process.poll() is None:
-                            if self.stop.is_set() or time.monotonic() >= deadline:
-                                status = 'cancelled' if self.stop.is_set() else 'timed_out'
-                                self.terminate(process)
-                                break
-                            self.stop.wait(0.1)
-                        job['exit_code'] = process.returncode
-                    completed, usage = False, None
-                    with (directory/'events.jsonl').open(encoding='utf-8', errors='replace') as events:
-                        for line in events:
-                            try:
-                                event = json.loads(line)
-                                if isinstance(event, dict) and event.get('type') == 'turn.completed':
-                                    completed, usage = True, event.get('usage')
-                            except ValueError:
-                                pass
-                    job.update(status=status or ('completed' if process.returncode == 0 and completed else 'failed'),
-                               turn_completed=completed, usage=usage, task_success='unscored')
-                    try:
-                        after, skipped = capture(workspace)
-                        modes = file_modes(workspace, after)
-                        changes = []
-                        for name in sorted(set(files) | set(after)):
-                            before, updated = files.get(name), after.get(name)
-                            if before == updated and manifest['file_modes'].get(name) == modes.get(name):
-                                continue
-                            change = dict(path=name, before_sha256=sha(before) if before is not None else None,
-                                          after_sha256=sha(updated) if updated is not None else None,
-                                          before_mode=manifest['file_modes'].get(name), after_mode=modes.get(name))
-                            try:
-                                diff = ''.join(unified_diff((before or b'').decode().splitlines(True),
-                                                           (updated or b'').decode().splitlines(True),
-                                                           fromfile='before/'+name, tofile='after/'+name))
-                                change.update(diff=diff[:100000], truncated=len(diff) > 100000)
-                            except UnicodeError:
-                                change['binary'] = True
-                            changes.append(change)
-                        archive.atomic_json(directory/'changes.json', dict(files=changes, excluded=skipped))
-                        job['changed_files'] = len(changes)
-                    except (OSError, EvidenceError) as error:
-                        job['changes_error'] = str(error)
-                except Exception as error:
-                    job.update(status='failed', error=str(error), task_success='unscored')
-                finally:
-                    job['completed_at'] = archive.now()
-                    archive.atomic_json(directory/'result.json', job)
-                    archive.atomic_json(folder/'manifest.json', manifest)
+                self.run_job(manifest, job, files, folder)
             statuses = {j['status'] for j in manifest['jobs']}
             manifest['status'] = 'cancelled' if self.stop.is_set() else ('completed' if statuses == {'completed'} else 'failed')
         except Exception as error:
