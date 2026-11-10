@@ -45,6 +45,18 @@ image IDs and scorer/input hashes. Benchmark cases must match scoring sources
 inside the frozen image. Self-contained local cases mount only their case
 directory into the trusted grader. Streams, errors and container state are saved.
 
+The public CLI's `codex-code-mode-host` companion must also exist and be mounted
+at `/opt/codex-code-mode-host`, the sibling path used by the CLI. Preflight starts
+that executable inside the solver image, negotiates IPC version 1, opens a session
+and executes a deterministic JavaScript expression without tools, credentials or
+model access. Its frames and hashes are saved separately in
+`solver-code-host.json`; grading-runtime identity remains unchanged, allowing
+valid original/reference/negative calibration to be reused. Missing companions,
+unknown protocol shapes and engine errors block before model dispatch.
+This startup/engine probe does not establish end-to-end delegated tool operation
+with a model. CLI `--version`, `--help` and fake-CLI transport checks alone do not
+establish that capability.
+
 For three-control calibration, add `degenerate_candidate` to the same JSON object
 with an explicit negative-control directory, then run:
 

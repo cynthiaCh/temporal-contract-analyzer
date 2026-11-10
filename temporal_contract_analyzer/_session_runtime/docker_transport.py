@@ -66,7 +66,12 @@ class Launcher:
         public=Path(namespace[namespace.index('/opt') - 1])
         mount(public, '/public-cli')
         mount(public/'codex', '/opt/codex')
+        companion=public/'codex-code-mode-host'
+        if not companion.is_file():raise ValueError('Public Codex code-mode companion is missing')
+        mount(companion, '/opt/codex-code-mode-host')
         if (public/'rg').is_file():mount(public/'rg', '/opt/rg')
+        for name in ('codex-resources','codex-path'):
+            if (public/name).is_dir():mount(public/name, '/opt/'+name)
         mount(home, '/home/agent')
         mount(profile, '/home/agent/.codex', False)
         readonly=namespace[namespace.index('/workspace') - 2]=='--ro-bind'

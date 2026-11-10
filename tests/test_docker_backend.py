@@ -80,7 +80,10 @@ class DockerTests(unittest.TestCase):
 
     def test_runtime_mismatch_cannot_be_credited_as_a_behavior_score(self):
         protocol=load(self.prepared().root/'protocol.json')
-        protocol['binary']=__import__('sys').executable
+        public=self.root/'public-cli';public.mkdir()
+        (public/'codex').write_text('SYNTHETIC_PUBLIC_CLI')
+        (public/'codex-code-mode-host').write_text('SYNTHETIC_COMPANION')
+        protocol['binary']=str(public/'codex')
         # Legacy version hashes are ignored; runtime mismatches still fail.
         protocol['executable_sha256']={protocol['binary']:'old-hash'}
         protocol['backend_sources']={'/old/runner.py':'old-hash'}
@@ -88,9 +91,36 @@ class DockerTests(unittest.TestCase):
              patch('temporal_contract_analyzer.docker_backend.subprocess.check_output',
                    side_effect=[CONFIG['solver_image']+'\n',CONFIG['grader_image']+'\n']), \
              patch('temporal_contract_analyzer.docker_backend.captured',side_effect=[
-                 dict(python='3.9.20',node='v16.20.2',codex='SYNTHETIC'),
+                 dict(python='3.9.20',node='v16.20.2',codex='SYNTHETIC',code_host=dict(javascript_execution=True)),
                  dict(python='3.0.0',node='v16.20.2')]):
             with self.assertRaisesRegex(EvidenceError,'Grader Python'):DockerBackend().environment(protocol,self.root/'check')
+
+    def test_missing_companion_blocks_before_a_model_or_solver_launch(self):
+        protocol=load(self.prepared().root/'protocol.json')
+        public=self.root/'incomplete-cli';public.mkdir();(public/'codex').write_text('SYNTHETIC')
+        protocol['binary']=str(public/'codex')
+        with patch('temporal_contract_analyzer.docker_backend.shutil.which',return_value='/synthetic/docker'), \
+             patch('temporal_contract_analyzer.docker_backend.subprocess.check_output',side_effect=[CONFIG['solver_image']+'\n',CONFIG['grader_image']+'\n']), \
+             patch('temporal_contract_analyzer.docker_backend.captured') as launch:
+            with self.assertRaisesRegex(EvidenceError,'companion is missing'):
+                DockerBackend().environment(protocol,self.root/'blocked')
+        launch.assert_not_called()
+
+    def test_actor_projects_companion_to_the_cli_expected_sibling_path(self):
+        from temporal_contract_analyzer._session_runtime.docker_transport import Launcher
+        public=self.root/'cli';public.mkdir()
+        for name in ('codex','codex-code-mode-host','rg'):(public/name).write_text('SYNTHETIC')
+        runtime=self.root/'runtime';profile=runtime/'.runtime'/'slot';profile.mkdir(parents=True)
+        (profile/'hooks.json').write_text('{"hooks":{}}')
+        folder=self.root/'session';(folder/'workspace').mkdir(parents=True)
+        schema=self.root/'schema.json';schema.write_text('{}')
+        native=['bwrap','--ro-bind',str(public),'/opt','--bind',str(folder/'workspace'),'/workspace',
+                '--ro-bind',str(schema),'/format.json','--','/opt/codex','exec']
+        command=Launcher(dict(name='tca-session-'+'c'*32,solver_image=CONFIG['solver_image'],
+                             node='/runtime/node16/bin/node'),self.root).command(native,folder,runtime,'slot',self.root)
+        bindings=[command[i+1] for i,value in enumerate(command) if value=='--mount']
+        self.assertIn('type=bind,src='+str(public/'codex-code-mode-host')+',dst=/opt/codex-code-mode-host,readonly',bindings)
+        self.assertFalse(any('dst=/opt,' in b for b in bindings))
 
     def test_unvalidated_frontend_dependencies_block_before_solver_dispatch(self):
         protocol=load(self.prepared().root/'protocol.json')

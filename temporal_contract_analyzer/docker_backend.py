@@ -125,14 +125,25 @@ class DockerBackend(NativeBackend):
                  manifest.get('framework',{}).get('runtime')!='vanilla-js'):
             raise EvidenceError('Docker admission currently requires self-contained vanilla-js or Python; frontend/upstream dependency setup is not validated')
         name='tca-check-'+uuid.uuid4().hex
-        args,image=container_command(config['solver_image'],name,[(binary,'/opt/codex')])
+        companion=binary.with_name('codex-code-mode-host')
+        if not companion.is_file():raise EvidenceError('Public Codex code-mode companion is missing')
+        probe_script=Path(__file__).parent/'_session_runtime/code_host_probe.py'
+        args,image=container_command(config['solver_image'],name,[(binary,'/opt/codex'),
+            (companion,'/opt/codex-code-mode-host'),(probe_script,'/code_host_probe.py')])
         solver_code='''import json,pathlib,subprocess,sys
 for path in ['/opt/swe-tempoc','/evaluation','/var/run/docker.sock','/run/docker.sock']:
  if pathlib.Path(path).exists():raise ValueError('Forbidden solver path: '+path)
-print(json.dumps(dict(python=sys.version.split()[0],node=subprocess.check_output([sys.argv[1],'--version'],text=True).strip(),codex=subprocess.check_output(['/opt/codex','--version'],text=True).strip())))
+sys.path.insert(0,'/')
+from code_host_probe import probe
+print(json.dumps(dict(python=sys.version.split()[0],node=subprocess.check_output([sys.argv[1],'--version'],text=True).strip(),codex=subprocess.check_output(['/opt/codex','--version'],text=True).strip(),code_host=probe())))
 '''
         solver=captured(args+['--entrypoint','python3',image,'-B','-c',solver_code,protocol['node']],
                         directory/'solver',name,seconds=30)
+        capability=solver.pop('code_host',None)
+        if not isinstance(capability,dict) or capability.get('javascript_execution') is not True:
+            raise EvidenceError('Code host capability was not verified')
+        archive.atomic_json(directory/'solver-code-host.json',dict(capability=capability,
+            companion_sha256=sha(companion.read_bytes()),probe_sha256=sha(probe_script.read_bytes())))
         if protocol['case']['adapter']=='python':
             minimum=tuple(int(n) for n in manifest.get('runtime',{}).get('minimum_version','3.9').split('.'))
             if tuple(map(int,solver['python'].split('.')))<minimum:

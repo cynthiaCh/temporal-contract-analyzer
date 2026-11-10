@@ -47,6 +47,9 @@ from docker_transport import Launcher
 base=Path(sys.argv[2]);phase=sys.argv[3];folder=base/phase
 archive=folder/'archive';archive.mkdir(parents=True)
 runtime=base/('runtime-'+phase);runtime.mkdir()
+public=base/'public';public.mkdir(exist_ok=True)
+for name in ('codex','codex-code-mode-host'):
+ (public/name).write_text('SYNTHETIC_PUBLIC_RUNTIME_PLACEHOLDER')
 runner.backend.BINARY=base/'public/codex'
 runner.backend.global_snapshot=lambda: {}
 native=runner.command(phase,folder,phase,dict(node='/runtime/node16/bin/node'),
