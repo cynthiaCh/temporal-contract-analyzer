@@ -1,3 +1,0 @@
-Updated [usePreparation.js](/workspace/src/usePreparation.js) so the download dialog schedules another check when preparation is pending and adds the file to `completed` only when a check reports ready. Closing, reopening, or unmounting cancels the scheduled retry and prevents an earlier result from completing a later dialog visit.
-
-`node --check src/usePreparation.js` passed. I could not run a React behavior test because dependencies are not installed in this workspace.

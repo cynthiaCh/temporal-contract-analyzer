@@ -1,3 +1,0 @@
-Updated [workspace.js](/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/question-selection-experiment-v1-20261105/trials/lane0/reports-experiments/e-c5dd5f62dbf94b92/jobs/j-001/workspace/src/workspace.js) so `open(id)` runs the departure handoff before showing the target. A navigation call made during that handoff takes precedence over the pending open.
-
-Verified handoff snapshots, redirects, close and dispose during handoff, and stored text with a Node check. Public interfaces remain unchanged.

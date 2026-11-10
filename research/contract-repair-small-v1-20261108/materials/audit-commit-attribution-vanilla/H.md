@@ -1,1 +1,0 @@
-每次submit在入口捕获doc、actor和text。commit成功后按receipt revision只记录一次该快照审计；失败不记录成功审计。已接纳提交跨close/reopen保留，saved/error只属于当前visit最新提交。返回Promise在处理结果后定案。保留40ms预览、hide丢弃待处理查询、后续复用。失败传播值及嵌套可变性未规定。

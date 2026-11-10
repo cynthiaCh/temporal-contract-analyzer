@@ -1,3 +1,0 @@
-Fixed the presence panel’s missing initial state. The listener now attaches before the channel emits its bootstrap event, and each panel visit ignores async decode results from an earlier visit. Synchronous navigation and hiding still work; the metrics consumer was unchanged.
-
-Visible Node checks passed for synchronous and deferred bootstrap, updates, metrics output, navigation, hiding, and reopening the same channel after a pending decode. No test suite was present. `git diff --check` could not run because `/workspace` is not a Git repository.

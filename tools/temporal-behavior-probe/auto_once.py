@@ -4,12 +4,13 @@ import argparse
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
 
 HERE = Path(__file__).resolve().parent
-NODE = '/Applications/Visual Studio Code.app/Contents/MacOS/Code'
+NODE = shutil.which('node') or 'node'
 
 
 def discover(path, node=NODE):

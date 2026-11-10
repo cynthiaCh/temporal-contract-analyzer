@@ -163,7 +163,7 @@ versions alongside three source-reviewed native-taxonomy child candidates:
 All remain in `legacy-toolflow-t1-t4-v1`. Their reviews, source objects, translation
 lineage and available evidence/outcomes are preserved as hashed audit copies.
 Initial provenance is recorded in
-[`IMPORT.json`](../implement-stage/experience-memory-v1/IMPORT.json).
+`implement-stage/experience-memory-v1/IMPORT.json` in the [research archive](ARCHIVE.md).
 
 The original legacy versions remain inspectable by digest and `list`; they are
 not overwritten. New native candidates carry explicit per-rule source annotations
@@ -175,7 +175,7 @@ The candidate labels are O/L/I/A (subscription retirement), R/L/I/A (paused shar
 work), and O/B/L/I/A (deferred boundary binding). No F label was forced into the
 inventory. Some B grounds are explicitly preserved-behavior inferences, not
 literal README deadlines. See the full
-[recoding audit](../research/unified-seven-label-recoding-20261110_112750/REPORT.md).
+[archived recoding audit](ARCHIVE.md) (`research/unified-seven-label-recoding-20261110_112750/REPORT.md`).
 
 No named expert has activated these versions. A valid current retrieval therefore
 returns `no_expert_activated_experience`; searching a native candidate does not

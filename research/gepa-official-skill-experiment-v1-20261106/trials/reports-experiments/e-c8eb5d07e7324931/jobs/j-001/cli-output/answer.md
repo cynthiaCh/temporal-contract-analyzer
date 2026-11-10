@@ -1,3 +1,0 @@
-The Personnel editor now loads its existing local JSON configuration instead of requesting the retired endpoint. Parent values still wait for the form API before they are written. The Structure editor was not changed.
-
-I checked the Personnel script syntax, the local config fields, and that Structure still uses its existing loader. No test suite is configured in this workspace, so I could not run a UI test.

@@ -1,3 +1,0 @@
-Updated [src/progress.js](/workspace/src/progress.js) so the panel subscribes before the feed starts. A synchronous cached frame now appears immediately. The watcher also tracks packet order: every decoded frame still enters progress history, but an older frame that finishes decoding late cannot move the display backward.
-
-A Node check passed for the initial frame, reversed decode completion, retry, cleanup, queue records, and telemetry. I could not run `git diff --check` because this workspace is not a Git repository.

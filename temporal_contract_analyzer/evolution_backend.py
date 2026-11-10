@@ -1,4 +1,4 @@
-"""Explicit bounded adapter to the archived single-session research runner.
+"""Explicit bounded adapter to the packaged single-session runner.
 
 Only the named runner dependencies are copied. No scheduler is imported. Reading
 this module never launches a model; NativeBackend.execute is an explicit action.
@@ -17,7 +17,7 @@ from .core import EvidenceError, ROOT, sha, canonical
 from .workbench import capture, inventory, file_modes, write_files, Workbench
 from .experience_workbench import scoring_inputs
 
-SOURCE = ROOT/'research/review-confirmation-lowpass-train-test-20261109_225210'
+SOURCE = Path(__file__).resolve().parent/'_session_runtime'
 DEPENDENCIES = ('runner.py','native_backend.py','archive.py','guard_server.py','guard_client.py',
                 'request_guard.py','read_policy.py','usage.py','structured.py','schema_validator.py',
                 'research-config.toml','maintenance.schema.json','extraction.schema.json')

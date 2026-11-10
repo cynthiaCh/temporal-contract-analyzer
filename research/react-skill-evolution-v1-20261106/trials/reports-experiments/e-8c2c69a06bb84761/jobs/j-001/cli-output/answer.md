@@ -1,3 +1,0 @@
-Fixed the premium action in [temporal-flow.js](/workspace/src/temporal-flow.js:3). An early click now waits for the loaded entitlement flag, so an entitled user’s first click triggers the action. The emergency action is unchanged.
-
-Node checks passed for early and later clicks with the flag enabled and disabled, plus both emergency cases. `git diff --check` could not run because this workspace is not a Git repository.

@@ -1,3 +1,0 @@
-The draft editor now coalesces edits with the existing trailing-task utility, saving only the latest text after 120 ms of quiet. Later editing bursts still save. Pending text is flushed before close, navigation, and receipt capture, so those synchronous behaviors remain intact. The search preview was unchanged.
-
-I verified coalescing, later bursts, close, submit, and navigation triggered by a save callback with a controlled-timer check.

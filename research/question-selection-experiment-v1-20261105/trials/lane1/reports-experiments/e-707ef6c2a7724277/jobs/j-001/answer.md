@@ -1,3 +1,0 @@
-Updated [workspace.js](/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/question-selection-experiment-v1-20261105/trials/lane1/reports-experiments/e-707ef6c2a7724277/jobs/j-001/workspace/src/workspace.js) so `open(id)` performs the departure handoff before displaying its target. A later navigation call takes precedence if the handoff redirects. Public interfaces, stored document text, and silent `dispose()` behavior are preserved.
-
-Verified handoff text, redirect order, stored text, and silent disposal with a Node assertion script.

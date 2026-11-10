@@ -50,7 +50,7 @@ def build_context(report_id, store=None, finding_id=None, depth=1, max_chars=120
                 scan_status=report['status'], aliases=aliases, parser=parser_info,
                 generator=dict(version=1, implementation_sha256=sha(canonical({
                     path: sha((ROOT/path).read_bytes()) for path in (
-                        'temporal_contract_analyzer/context.py', 'tools/temporal-contract-analyzer/context.cjs')}).encode())),
+                        'temporal_contract_analyzer/context.py', 'temporal_contract_analyzer/javascript/context.cjs')}).encode())),
                 qualification='Incomplete syntactic context; not proven behavior, complete dependencies or a defect verdict.',
                 limitations=['只补充可识别的词法引用与导入所指向的候选定义，未解析项不覆盖所有未知关系。',
                              '未建模对象成员派发、运行时重赋值、完整调用方、数据流和控制流。',
@@ -68,7 +68,7 @@ def parse_sources(sources, node=None):
     if not executable:
         return {}, dict(status='unavailable', reason='Node.js not found')
     try:
-        process = subprocess.run([executable, str(ROOT/'tools/temporal-contract-analyzer/context.cjs')],
+        process = subprocess.run([executable, str(ROOT/'temporal_contract_analyzer/javascript/context.cjs')],
                                  input=canonical(dict(files=[dict(path=p, text=t) for p,t in sorted(sources.items())])),
                                  capture_output=True, text=True, timeout=45)
         if process.returncode:

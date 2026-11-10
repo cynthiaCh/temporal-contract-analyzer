@@ -1,1 +1,0 @@
-Fixed the premium action so an entitled user’s first click works even when it happens before entitlement finishes loading. The emergency control was unchanged. Checks passed for early and later clicks, both entitled and unentitled.

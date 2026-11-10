@@ -18,7 +18,7 @@ python3 -B -m temporal_contract_analyzer reports open
 点击“经验开发”。若后台仍是更新前的版本，在没有活动实验时使用 `reports stop`
 再重新打开；停止报告服务会影响正在运行的网页实验。
 
-默认读取当前检出目录的 `research/`。在其他机器部署时，可在启动服务前设置
+Historical studies are kept in a separate archive. The default checkout `research/` may be absent; an empty history is valid. Before starting the service, set
 `TCA_DEVELOPMENT_ROOT=/absolute/path/to/research`，指向已有归档根目录。
 已运行服务不会自动切换环境变量。页面显示实际读取位置。
 

@@ -1,3 +1,0 @@
-The draft editor now saves the latest text after a 120 ms quiet interval. Later editing bursts still save. Pending edits are written before close, open, or submit returns, and submission receipts keep the text selected when submit began. The adjacent search preview is unchanged.
-
-Focused checks passed for coalescing, later bursts, boundary saves, and synchronous `onSaved` callbacks. Syntax checks passed. Git diff checking was unavailable because `/workspace` is not a Git repository.

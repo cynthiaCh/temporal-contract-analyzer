@@ -1,3 +1,0 @@
-The draft editor now uses the existing trailing-task utility to save only the latest text after 120 ms of quiet. Later editing bursts still save. Closing or switching documents flushes pending text, and submitting flushes it before the receipt is captured. The search preview was left unchanged.
-
-Controlled-timer checks passed for these paths, including save callbacks that navigate and submission notices tied to the original editor visit. No test suite is configured in the workspace. `git diff --check` could not run because this workspace is not a Git repository.

@@ -1,3 +1,0 @@
-Updated [usePreparation.js](/workspace/src/usePreparation.js) so the download dialog schedules another preparation check when the service reports pending and records completion only after a ready result. Closing, reopening, or unmounting cancels scheduled retries and prevents an earlier check from completing a later dialog visit.
-
-Syntax checks passed. There are no candidate-visible tests or installed dependencies in this workspace, so I could not run a React behavior test.

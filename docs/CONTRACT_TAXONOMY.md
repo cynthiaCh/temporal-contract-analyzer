@@ -90,4 +90,4 @@ python3 -B -m temporal_contract_analyzer route-experience route-input.json --out
 
 Python 调用者可用 `freeze_entry(text, obligation_labels, requires, excludes, version)` 生成完整性绑定对象，交给 `route(...)`；它不会批准或写入经验。使用 `maintenance_prompt(task, contract)` 构造 A，使用同一函数仅增加选中条目的 `text` 构造 B。该公共提示模板属于新版本，不能冒充旧实验 prompt 的逐字复现。
 
-当前流程入口为 [v2 METHOD](../refine-logs/experience-toolflow-v2-20261109/METHOD.md)。经验重新标注、语义核查与行为接纳必须分别记录，不能靠修改类别名称跳过。
+当前流程入口为 [archived v2 METHOD](ARCHIVE.md) (`refine-logs/experience-toolflow-v2-20261109/METHOD.md`)。经验重新标注、语义核查与行为接纳必须分别记录，不能靠修改类别名称跳过。

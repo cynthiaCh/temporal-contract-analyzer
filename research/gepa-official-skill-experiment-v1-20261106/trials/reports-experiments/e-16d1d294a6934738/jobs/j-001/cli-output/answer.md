@@ -1,3 +1,0 @@
-Updated [usePreparation.js](/workspace/src/usePreparation.js) so the download dialog schedules another check while preparation is pending and records the file as completed only after a ready result. Closing, reopening, or unmounting the dialog cancels its scheduled retry and prevents an older response from completing a later visit.
-
-`node --check` passed. Runtime behavior remains unverified because this workspace has no installed dependencies or visible test suite.

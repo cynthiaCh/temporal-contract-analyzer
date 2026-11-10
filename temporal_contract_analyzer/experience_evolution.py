@@ -102,7 +102,7 @@ class Evolution:
         if kind=='development' and not any(f['state']=='known' for f in visible['analysis']['facts']):
             raise EvidenceError('No established mechanism premises for development')
         self.root.mkdir(parents=True)
-        (self.root/'controller-prompt.md').write_bytes((ROOT/'MASTER_PROMPT.md').read_bytes())
+        (self.root/'controller-prompt.md').write_bytes((Path(__file__).resolve().parent/'prompts/MASTER_PROMPT.md').read_bytes())
         write_files(self.root/'input',files,file_modes(Path(inputs['candidate']),files))
         slots = [(f'BASE-{n}','repair') for n in (1,2)] if kind=='development' else [
             (name,'repair') for name in ('B1','A1','A2','B2')]

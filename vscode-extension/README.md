@@ -41,7 +41,7 @@ Vue 2 / Vue 3 的内联 `<script>`、`<script setup>` 支持 JS / TS / JSX / TSX
 在仓库根目录安装锁定的解析器依赖，再准备插件：
 
 ```sh
-npm ci --prefix tools/temporal-contract-analyzer --ignore-scripts --no-audit --no-fund
+npm ci --prefix temporal_contract_analyzer/javascript --ignore-scripts --no-audit --no-fund
 cd vscode-extension
 npm ci --ignore-scripts --no-audit --no-fund
 npm run stage

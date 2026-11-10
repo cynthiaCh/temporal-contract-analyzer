@@ -1,7 +1,0 @@
-The previous v2 model output was structurally valid, all span IDs resolved exactly, and the combined cat command printed all seven complete current JS files. Its exit code was 1 solely because the virtual TASK name was not a physical file. The old read-proof function rejected every nonzero command, incorrectly treating actual observed source as unread.
-
-The correction requires an actual read command naming the file, its complete exact current body in output, and at least three substantial source lines for nonzero exits. Successful command behavior is unchanged. Partial three-line output or echo output is rejected. Two new offline checks cover these boundaries and the exact real v2 stream; 35 total checks pass. This changes a false-negative measurement criterion, not citation validity or semantic policy.
-
-The original v2 receipt and stop remain unchanged. admission-recheck/ stores derived correction records; runs/session-01/archive/ retains the exact original receipt, raw object, events and usage. No new training preanalysis model call was made. The two requests already consumed by that v2 session count once toward the same 228-request v2 family budget. The original v1 cost is separate. Full semantic source review is still required and separately recorded.
-
-Only the not-yet-run test extraction prompt clarifies that TASK is virtual text, not /workspace/TASK. Its candidate source and actual maintenance task are unchanged. No experience, reference patch or test result was introduced.

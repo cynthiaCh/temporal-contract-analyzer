@@ -1,3 +1,0 @@
-Updated [usePreparation.js](/workspace/src/usePreparation.js) so the download dialog schedules another check while preparation is pending and records completion only when it is ready. Closing, reopening, starting again, or unmounting cancels or ignores obsolete work.
-
-A local hook harness passed checks for pending-to-ready polling, cancellation, and stale responses. Syntax checks passed. React dependencies are absent, so I could not run a component test.

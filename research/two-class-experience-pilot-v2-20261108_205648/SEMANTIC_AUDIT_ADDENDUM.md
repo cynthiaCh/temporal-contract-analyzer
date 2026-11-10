@@ -1,3 +1,0 @@
-# v2实际重新提取的审查边界
-
-仅D1启动一次。新raw report开头修正了否定方向，但6000字符字符串未形成完整内层JSON。新消费归属措辞未直接指定存储对象，只能判为未澄清，不能把该表述自动升级为“明确要求改写attempt字段”的确定性结论。没有完整consistency段可审查，故材料不准入。见diagnostics/preanalysis-material-failure.json，原文保留且未人工补全。T1未重新提取；没有证据声称v2的全部语义材料已经修好。

@@ -1,3 +1,0 @@
-Restored the warm progress update by registering the panel listener before the feed starts. Progress history still records every decoded frame, while the display ignores frames that finish decoding after a newer one. Retry also prevents an earlier attempt from repainting the current visit.
-
-Targeted Node checks passed for warm startup, out-of-order decoding, retry, same-file reopening, telemetry, and hiding the panel during the warm callback. `git diff --check` could not run because this workspace is not a Git repository.

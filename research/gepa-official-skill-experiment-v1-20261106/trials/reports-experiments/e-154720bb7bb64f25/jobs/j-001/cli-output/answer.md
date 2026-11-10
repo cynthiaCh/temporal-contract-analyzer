@@ -1,3 +1,0 @@
-Updated [src/progress.js](/workspace/src/progress.js) so the panel listener receives a synchronously emitted initial packet. Decoded frames still enter progress history, while an older frame that finishes decoding late can no longer move the display backward.
-
-A Node smoke check passed for the initial update, reversed decode order, history, telemetry startup, and selecting the same file again. Git diff checks were unavailable because this workspace is not a Git repository.

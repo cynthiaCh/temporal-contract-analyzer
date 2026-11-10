@@ -1,1 +1,0 @@
-edit按现有trailing utility在120ms静默后只写该burst最新值，后续burst仍可保存。close/open返回时离开文档最后接纳编辑已持久化；先退休旧badge。保留按请求开始顺序后发导航优先。submit入口确定文档和文本，无selection返回null，否则同步返回恰好一个不可变receipt；capture前先持久化，接纳提交跨后续导航仍存在。notice只属原visit，导航清旧notice，同文档重开也是新visit。保留public API及40ms预览hide丢弃/可复用。

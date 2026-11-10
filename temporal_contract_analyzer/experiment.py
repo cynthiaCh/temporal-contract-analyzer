@@ -18,7 +18,7 @@ def digest_bytes(raw):
 
 def implementation_hashes():
     paths = list((ROOT / 'temporal_contract_analyzer').glob('*.py'))
-    paths += [ROOT / 'tools/temporal-contract-analyzer' / name
+    paths += [ROOT / 'temporal_contract_analyzer/javascript' / name
               for name in ('parse.cjs', 'package.json', 'package-lock.json')]
     return {str(p.relative_to(ROOT)): digest_bytes(p.read_bytes()) for p in sorted(paths)}
 

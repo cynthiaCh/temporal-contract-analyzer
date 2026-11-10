@@ -10,7 +10,7 @@ def attach_review_evidence(packet):
     sources={f['path']:f['text'] for f in p['files'] if f['role']=='candidate' and PurePosixPath(f['path']).suffix.lower() in CODE_EXT}
     report=analyze_sources(sources)
     if report['adapters'].get('javascript_typescript',{}).get('status')=='unavailable':
-        raise ValueError('生成工具辅助材料需要 Node.js 与固定解析器；先运行 npm ci --prefix tools/temporal-contract-analyzer')
+        raise ValueError('生成工具辅助材料需要 Node.js 与固定解析器；先运行 npm ci --prefix temporal_contract_analyzer/javascript')
     content=markdown(report)
     p['files']=[f for f in p['files'] if f['path']!='TEMPORAL-CONTRACT-ANALYSIS.md']
     p['files'].append(dict(path='TEMPORAL-CONTRACT-ANALYSIS.md',text=content,sha256=sha(content.encode()),role='analysis'))

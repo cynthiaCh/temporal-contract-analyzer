@@ -1,3 +1,0 @@
-Updated [workspace.js](/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/question-selection-experiment-v1-20261105/trials/lane2/reports-experiments/e-63c2c3eda84a417c/jobs/j-001/workspace/src/workspace.js) so `open(id)` performs the same departure handoff as `close()` before showing the target. A navigation started during that handoff takes precedence over the pending open. `dispose()` remains silent, and the public interfaces and stored text are unchanged.
-
-Verified switching, handoff redirection, reentrant close, and disposal with passing Node assertions.

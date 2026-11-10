@@ -1,1 +1,0 @@
-function make(invoke) { let occupied; return function entry() { if (occupied) return; occupied = setTimeout(() => invoke(), 0); }; }

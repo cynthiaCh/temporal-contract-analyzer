@@ -1,3 +1,0 @@
-The presence panel now attaches its listener before connecting, so it receives the initial online-user state in synchronous and deferred modes. It also detaches correctly when a bootstrap callback navigates to another workspace, and ignores decodes that finish after a visit closes or the same channel is reopened. The metrics consumer was unchanged.
-
-Visible checks passed for initial presence, later updates, navigation, hiding the panel, same-channel reuse, and stale async decoding.

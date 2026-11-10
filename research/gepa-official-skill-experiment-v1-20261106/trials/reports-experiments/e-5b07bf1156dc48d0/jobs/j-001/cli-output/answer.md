@@ -1,3 +1,0 @@
-Restored the initial progress update by registering the panel listener before the feed starts. Decoded frames still enter progress history, while the panel ignores older frames that finish later or belong to a replaced attempt. The new handle is available during a synchronous initial callback, so closing the panel can clean it up.
-
-Node checks passed for initial progress, out-of-order decoding, retry, same-file revisit, telemetry, and closing during the initial callback. The workspace has no configured test suite.

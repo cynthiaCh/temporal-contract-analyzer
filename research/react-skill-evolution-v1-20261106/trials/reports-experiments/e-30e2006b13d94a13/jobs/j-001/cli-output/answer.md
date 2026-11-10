@@ -1,3 +1,0 @@
-Draft edits now use the existing trailing task: each burst saves only its latest text after 120 ms of quiet. Pending edits flush before close, navigation, or submit, preserving synchronous store reads and receipt snapshots. Store callbacks that navigate during a flush cannot restore an older editor visit or show its submission notice. The search preview was untouched.
-
-Controlled lifecycle checks passed for repeated bursts, close, submit, callback reentry, and navigation. `git diff --check` could not run because this workspace is not a Git repository.

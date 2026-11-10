@@ -1,3 +1,0 @@
-Updated [src/progress.js](/workspace/src/progress.js) so the panel listener receives a synchronously emitted warm packet. It now uses packet arrival order to prevent a late decoded frame from moving the display backward, while still recording every decoded frame.
-
-Visible checks passed for the warm update, reversed decode completion, retry, same-file revisit, telemetry, queue-record shape, and cleanup during a reentrant callback. The workspace has no Git repository, so I could not run a Git diff check.

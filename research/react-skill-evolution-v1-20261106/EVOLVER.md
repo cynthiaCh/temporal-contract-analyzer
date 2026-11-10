@@ -1,9 +1,0 @@
-Produce one candidate temporal-contract skill from this development-only packet. This is a skill evolution call, not a code repair. Read K0, original visible development tasks/source, actual commands/output and patches, controller observations and sanitized development scoring feedback. Scores are bounded evidence; visible requirements and source remain authoritative. Distinguish missing evidence, incorrect contract interpretation, unimplemented judgment and weak verification. Do not infer business requirements from anonymous score fields.
-
-Write /workspace/proposal.json with exactly these fields:
-- skill: the complete replacement skill text, maximum 5000 Unicode characters;
-- parent: "K0";
-- changes: a nonempty list, each with failure_evidence (packet trace/patch reference), step_changed (S1...S6), observable_action_change, preserved_behavior_risk.
-Return the same JSON as the final answer. The skill must retain applicability, source evidence, concrete order checks, non-applicability, the original maintenance objective, and repair/verification requirements. Keep the narrow focus on result ownership and effect-specific validity. Improve a specific step based on observed actions; generic "be careful" reminders are insufficient.
-
-The skill must be reusable and contain no case/task identifiers, source paths or filenames, project-specific symbols or values, score/check/oracle identifiers, expected hidden outputs, code examples, reference repairs, or task-specific patch steps. Failure references belong only in changes metadata, not in skill. Do not change BASE, controller code, model, reasoning effort, tools, retrieval, AST, question bank, scoring, budgets, or original tasks. Preserve uncertainty where evidence is absent. Do not inspect outside the supplied packet, run experiments or install anything. Only one candidate is allowed; rejection is a valid outcome.

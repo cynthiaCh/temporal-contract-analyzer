@@ -1,3 +1,4 @@
+import shutil
 import importlib.util
 import json
 from pathlib import Path
@@ -10,7 +11,7 @@ SCRIPT = ROOT/'tools/temporal-behavior-probe/probe.py'
 spec = importlib.util.spec_from_file_location('behavior_probe', SCRIPT)
 probe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(probe)
-NODE = '/Applications/Visual Studio Code.app/Contents/MacOS/Code'
+NODE = shutil.which('node') or 'node'
 
 
 class BehaviorProbeTests(unittest.TestCase):

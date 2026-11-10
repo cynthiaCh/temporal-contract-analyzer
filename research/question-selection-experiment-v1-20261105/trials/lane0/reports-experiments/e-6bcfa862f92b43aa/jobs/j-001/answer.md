@@ -1,3 +1,0 @@
-Fixed the presence panel’s missing initial state. The listener now attaches before the channel connects, so it receives synchronous bootstrap events. The panel also ignores callbacks from a closed or replaced selection, preserving workspace navigation during a bootstrap callback.
-
-Verified synchronous and deferred bootstrap, later updates, room switching, hiding, reused channels, and delayed decoding. The metrics consumer was not changed and still receives updates only.

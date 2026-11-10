@@ -1,1 +1,0 @@
-只修direct profile saving。commit失败不得显示success或导航，成功结果应在commit之后。保留公开run结果形态以及outbox现有enqueue acknowledgement策略，不将它改成等待delivery。

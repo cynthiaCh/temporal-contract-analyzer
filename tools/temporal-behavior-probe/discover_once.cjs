@@ -2,7 +2,7 @@
 // Inspect supplied source text only; never import the subject module.
 const {createRequire} = require('node:module');
 const path = require('node:path');
-const parserRequire = createRequire(path.join(__dirname, '../temporal-contract-analyzer/package.json'));
+const parserRequire = createRequire(path.join(__dirname, '../../temporal_contract_analyzer/javascript/package.json'));
 const parser = parserRequire('@babel/parser');
 const functionTypes = new Set(['FunctionExpression', 'FunctionDeclaration', 'ArrowFunctionExpression']);
 const isFunction = node => functionTypes.has(node?.type);

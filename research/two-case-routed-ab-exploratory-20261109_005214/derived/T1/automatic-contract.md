@@ -1,1 +1,0 @@
-候选自动 Contract：对同一 key 的在线模式查询，若首次订阅时离线，首次执行应暂停；若该观察者在重连前退订，且该次执行尚未实际开始，重连不应让已离开的观察者触发 queryFn，也不应向该次执行交付可用 signal。此要求独立于 refetchOnReconnect。保留共享缓存、观察者接口及受当前条件约束的暂停、重试和取消语义。当前源码中，离线首次订阅创建未结算的 attempt；退订仅设置 retry_cancelled；online 事件仍可将该 attempt 排入续行并调用 request。

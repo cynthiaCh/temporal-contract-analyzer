@@ -1,3 +1,0 @@
-Fixed the premium action in [temporal-flow.js](/workspace/src/temporal-flow.js:3). It now checks entitlement after readiness, so an entitled user’s first click works even when it arrives early. The emergency control is unchanged.
-
-Node checks passed for early and late clicks, both entitlement states, and emergency behavior. `git diff --check` was unavailable because this workspace is not a Git repository.

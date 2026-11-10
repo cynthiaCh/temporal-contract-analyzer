@@ -14,7 +14,7 @@ from temporal_contract_analyzer.workbench import Workbench
 CASES = ROOT/'case-clusters/listener-registration-order/arms'
 BOOTSTRAP = 'listener-bootstrap-reentrancy-vanilla'
 DECODE = 'listener-decode-retirement-vanilla'
-NODE = '/usr/local/bin/node'
+NODE = shutil.which('node') or 'node'
 
 
 class ListenerSplitTests(unittest.TestCase):

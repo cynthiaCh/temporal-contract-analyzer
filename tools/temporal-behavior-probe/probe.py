@@ -191,7 +191,7 @@ def compare_plan(plan, node, base, only_scenario=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('plan', type=Path)
-    parser.add_argument('--node', default='/Applications/Visual Studio Code.app/Contents/MacOS/Code')
+    parser.add_argument('--node', default=shutil.which('node') or 'node')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--scenario', help='Replay one generated scenario by its reported id')
     args = parser.parse_args()

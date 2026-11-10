@@ -1,3 +1,0 @@
-The panel now subscribes before the feed starts, so a warm source’s initial progress appears immediately. Decoded frames still enter history, while older frames that finish decoding late cannot move the display backward. A previous retry attempt also cannot repaint the current attempt.
-
-Node checks passed for the initial update, streaming, out-of-order decoding, retry, navigation, synchronous hide or switch, cleanup, telemetry, and queue-record shape. `git diff --check` could not run because this workspace is not a Git repository.

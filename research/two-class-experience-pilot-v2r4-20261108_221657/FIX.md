@@ -1,7 +1,0 @@
-# v2r4 accepted uncertainty interpretation
-
-Retains typed output schemas, three explicit role bindings,80-char evidence quotes, null-safe archival and exact safe read grammar.49 offline checks pass, including actual historical read inputs, both failed response replays, full fixture lifecycle, source-bound conflict veto and immutable library-before-test-extraction stage.44 source/task/oracle-matched calibrations remain reused. No model probes, installs or production/global changes.
-
-A structurally complete D1 object was rejected by the preceding revision only because any model uncertainty was treated as core conflict. Its two statements concern non-exhaustive dynamic schedules (extraction is read-only) and a warning against inferring owner from an unused field. They are not an incompatible business requirement. Preserve both statements verbatim. Explicit model conflicts still reject; a source-bound executing-agent veto must reject core unresolved policy. No manual editing of the automatic output/class/Contract, no extra D1 model call.
-
-Three v2-family extraction sessions already spent7 actual requests. This revision may extract T1 once (total4 authorized extractions), run two D1 AUTO, optionally one reflection/two validations, then fixed8 test repairs. Scoped maxima14 sessions/312 requests, with historical actual requests at most319. Library locked before test extraction; no learning after lock. First actual infrastructure anomaly or core material conflict stops. No retries or replacement cases.

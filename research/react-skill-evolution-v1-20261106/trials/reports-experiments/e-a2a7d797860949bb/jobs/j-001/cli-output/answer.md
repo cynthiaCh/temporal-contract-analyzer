@@ -1,1 +1,0 @@
-The repair is in [usePreparation.js](/workspace/src/usePreparation.js:36), and I updated [/stage/checkpoint.json](/stage/checkpoint.json) with the completion record. Post-edit syntax validation and the controlled pending-to-ready, reuse, stale-result, and cleanup checks all passed. A rendered integration check remains unrun because React is absent from the workspace.

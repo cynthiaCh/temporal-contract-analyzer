@@ -1,3 +1,0 @@
-Updated [src/progress.js](/workspace/src/progress.js) so the panel listener is active when a warm source emits its initial frame. Decoded frames still enter progress history, while packet arrival order prevents a late decode from moving the display backward.
-
-Targeted Node checks passed for warm and streaming updates, out-of-order decoding, telemetry, reentrant selection and listener cleanup. `git diff --check` could not run because `/workspace` is not a Git repository.

@@ -1,3 +1,0 @@
-The draft editor now uses the existing trailing task to save only the latest text after 120 ms of quiet. Later editing bursts continue to save. Close and open flush pending edits before returning, and submit flushes before capturing its receipt. Save callbacks that navigate cannot restore an older editor visit or show its submission notice.
-
-Deterministic timer checks and JavaScript syntax checks passed. The search preview was unchanged.

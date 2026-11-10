@@ -1,3 +1,0 @@
-Updated [usePreparation.js](/workspace/src/usePreparation.js) so the download dialog keeps checking while preparation is pending and records the file as completed only after a ready result. Closing, reopening, or unmounting cancels a scheduled retry and prevents an earlier result from completing the current visit.
-
-A focused Node probe passed for pending → ready, close and reopen, stale results, and cleanup. Syntax checking passed. React was unavailable in the workspace, so I could not run a mounted dialog test.

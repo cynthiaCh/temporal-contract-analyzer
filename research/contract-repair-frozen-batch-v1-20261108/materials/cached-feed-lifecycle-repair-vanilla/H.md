@@ -1,1 +1,0 @@
-接收warm cache首批和后续增量。更换选择或hide后旧visit不再产生可见输出，同feed重用仍是新visit，当前监听继续工作。paintRows可同步导航或返回layout Promise；count只在paint完成且visit仍当前时显示，普通live count仍需保留。已接纳batch解码完成后history仍记录；移除监听不撤销已开始解码/绘制。metrics只看增量，保持其现有策略、API和payload。

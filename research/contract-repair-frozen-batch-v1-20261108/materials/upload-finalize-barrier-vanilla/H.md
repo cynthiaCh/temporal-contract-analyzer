@@ -1,1 +1,0 @@
-只修application submission。提交record时应已包含所选文件附件；不能先提交metadata再补上传。保留公开接口及相邻telemetry原有metadata flushing时序，不迁移telemetry。

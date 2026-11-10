@@ -1,1 +1,0 @@
-I couldn’t update the candidate files. The workspace tool failed before I could inspect or edit them (`failed to spawn code-mode host`), so no checks ran. The supplied excerpt shows that `usePreparation` currently treats a truthy status as completion and has no pending retry path. I can make and verify the change once workspace access is restored.

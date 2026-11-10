@@ -1,1 +1,0 @@
-只修premium action，使已entitled用户在flag尚未就绪时的首次click于就绪后得到处理；保留已经就绪路径和普通界面API。不得迁移emergency control现有早期行为；不增加额外权限或输入字段。

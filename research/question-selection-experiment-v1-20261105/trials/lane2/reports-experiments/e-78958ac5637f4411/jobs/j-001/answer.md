@@ -1,3 +1,0 @@
-Draft edits now use the existing trailing-task utility: each 120 ms quiet interval saves only the latest text, and later editing bursts continue to save. Closing or navigating flushes a pending edit; submitting persists the selected text before capturing its receipt.
-
-I verified burst timing, repeated saves, close and submit behavior, and navigation triggered by save callbacks. The search preview was untouched.

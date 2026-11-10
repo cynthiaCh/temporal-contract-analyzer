@@ -1,1 +1,0 @@
-The museum accession notes currently writes on every edit. Coalesce edits using the existing trailing utility: after a 120 ms quiet interval, write only the latest text in that burst. Subsequent bursts must continue to save. Preserve other behavior and public interfaces. The adjacent preview is outside this change.
