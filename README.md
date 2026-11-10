@@ -6,6 +6,8 @@
 
 经验研究的统一主控入口为根目录 [MASTER_PROMPT.md](MASTER_PROMPT.md)。它固定“输出接口 → 经验表示 → 检索投放 → 同类 Prompt 优化”的研究顺序、阶段准入、材料边界和停止规则，供协调 Agent 读取；维护模型只接收对应角色的允许材料。该文件是英文流程规范，尚不代表运行器已自动加载或强制执行，也不会自行启动实验。
 
+The shared research experience store is [experience-memory/](experience-memory/README.md). The offline `experience-memory` CLI supports immutable rule bundles, provenance, lexical discovery and conservative source-bound delivery. The three initial legacy T1/T3/T4 English versions remain searchable under their original taxonomy; they are not automatically recoded or injected into current seven-label experiments. See [format and commands](docs/EXPERIENCE_MEMORY.md).
+
 当前统一使用 **R / O / B / L / I / F / A 七类时序义务标签**，一个案例可同时涉及多类。分类、经验检索接口及“经验开发”页面共用一个版本化 codebook；过去的 T1–T4 路由分组、五组提示模板与五条题库问题分别保留为历史分组、模板和条目，不再混作当前分类。定义、迁移边界和离线使用方法见[七类分类与经验路由](docs/CONTRACT_TAXONOMY.md)。旧实验保持原样，本次升级不启动模型。
 
 七类通用提醒保存在 `contract-reminders.json`，`maintenance-prompt` 可按当前分析支持的标签生成维护提示，仅追加命中类别的核查问题。固定提醒与学习得到的冻结经验单独保存；比较经验增量时，两组使用相同提醒，经验组再追加经验正文。
