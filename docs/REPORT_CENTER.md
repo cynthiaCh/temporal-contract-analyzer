@@ -8,7 +8,7 @@
 
 ```sh
 /usr/bin/python3 -B -m temporal_contract_analyzer reports init \
-  --store /Volumes/Extreme/paper+survey/temporal-contract-reports \
+  --store "$HOME/.temporal-contract-analyzer/reports" \
   --node /usr/local/bin/node
 /usr/bin/python3 -B -m temporal_contract_analyzer reports open
 ```
@@ -49,7 +49,7 @@ Codex 通过本地 MCP 调用同一分析器，不需要操纵另一个插件的
 
 ```sh
 codex mcp add temporal_contracts -- /usr/bin/python3 -I -S -B -X utf8 \
-  /Volumes/Extreme/paper+survey/temporal-contract-analyzer/temporal_contract_analyzer/hub_entry.py \
+  /absolute/path/to/temporal-contract-analyzer/temporal_contract_analyzer/hub_entry.py \
   reports mcp
 ```
 
