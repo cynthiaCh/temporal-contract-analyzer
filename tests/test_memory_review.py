@@ -55,6 +55,8 @@ class MemoryReviewTests(unittest.TestCase):
             data = json.load(response)
         self.assertEqual(len(data['records']), 1)
         self.assertFalse(data['records'][0]['active'])
+        self.assertFalse(data['records'][0]['reviewed'])
+        self.assertIsNone(data['records'][0]['last_decision'])
         with self.call(self.base) as response:
             self.assertEqual(json.load(response)['bundle'], self.bundle)
         source = self.bundle['audit']['sources'][0]['sha256']
@@ -110,6 +112,38 @@ class MemoryReviewTests(unittest.TestCase):
             self.assertFalse(json.load(response)['active'])
         self.assertEqual(approval.active(self.store), [])
         self.assertEqual(len(approval.decisions(self.store)), 1)
+
+    def test_review_status_tracks_exact_version_and_latest_decision(self):
+        from copy import deepcopy
+        with self.call(self.base+'/decision', self.decision()):
+            pass
+        child = deepcopy(self.fixture.payload)
+        child.update(version='v2', parent_sha256=self.bundle['sha256'])
+        child['review']['status'] = 'candidate'
+        second = memory.add(self.store, child, [self.fixture.source])
+        with self.call('/api/library') as response:
+            records = {r['sha256']: r for r in json.load(response)['records']}
+        parent = records[self.bundle['sha256']]
+        self.assertTrue(parent['reviewed'])
+        self.assertTrue(parent['active'])
+        self.assertEqual(parent['last_decision']['decision'], 'accept')
+        self.assertFalse(records[second['sha256']]['reviewed'])
+        self.assertIsNone(records[second['sha256']]['last_decision'])
+        body = self.decision('revise')
+        with self.call('/api/records/'+second['sha256']+'/decision', body):
+            pass
+        body['decision'].update(decision='reject', reviewer='SYNTHETIC_SECOND_REVIEWER')
+        with self.call('/api/records/'+second['sha256']+'/decision', body):
+            pass
+        with self.call('/api/library') as response:
+            records = {r['sha256']: r for r in json.load(response)['records']}
+        reviewed = records[second['sha256']]
+        self.assertTrue(reviewed['reviewed'])
+        self.assertFalse(reviewed['active'])
+        self.assertEqual(reviewed['last_decision']['decision'], 'reject')
+        self.assertEqual(reviewed['last_decision']['reviewer'], 'SYNTHETIC_SECOND_REVIEWER')
+        self.assertEqual(reviewed['last_decision']['sequence'], 3)
+        self.assertTrue(records[self.bundle['sha256']]['active'])
 
     def test_same_origin_and_local_header_required(self):
         for headers in ({'Origin':'https://example.invalid'}, {'X-TCA-Request':''}, {'Host':'evil.invalid'}):

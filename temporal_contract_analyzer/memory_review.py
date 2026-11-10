@@ -45,12 +45,17 @@ class ReviewHandler(Handler):
             self.send((WEB/name).read_bytes(), content_type=kind+'; charset=utf-8')
         elif parts == ['api', 'library']:
             bundles = memory.records(self.server.store)
+            decisions = {d['candidate_sha256']: d for d in approval.decisions(self.server.store)}
             active = {r['bundle']['sha256'] for r in approval.active(self.server.store)}
             tips = {r['sha256'] for r in memory.tips(bundles)}
             self.send(dict(store=str(self.server.store), records=[dict(
                 id=b['id'], version=b['version'], sha256=b['sha256'], labels=b['labels'],
                 status=b['review']['status'], active=b['sha256'] in active,
-                latest=b['sha256'] in tips, rules=len(b['rules'])) for b in bundles]))
+                latest=b['sha256'] in tips, rules=len(b['rules']),
+                reviewed=b['sha256'] in decisions,
+                last_decision=None if b['sha256'] not in decisions else {
+                    key: decisions[b['sha256']][key] for key in ('decision', 'reviewer', 'at', 'sequence')}
+                ) for b in bundles]))
         elif len(parts) >= 3 and parts[:2] == ['api', 'records']:
             bundle = record(self.server.store, parts[2])
             if len(parts) == 3:

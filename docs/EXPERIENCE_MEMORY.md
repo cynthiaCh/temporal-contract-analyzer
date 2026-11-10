@@ -22,10 +22,22 @@ python3 -B -m temporal_contract_analyzer experience-memory review --store experi
 ```
 
 The command opens a loopback-only page and keeps its server running until Ctrl+C.
+The review interface uses English for demonstration and international use.
+Mechanism descriptions are display translations; the versioned taxonomy,
+experience bodies, source quotations and operator-authored decisions are not
+rewritten or reapproved by this UI language change.
 Use `--no-browser` to print the address without opening a browser, or supply an
 exact record digest after `review` to open that version. The page lists immutable
 records, shows rules and prerequisites, and reads only the selected record's
 retained `sources/` evidence. It does not depend on historical research paths.
+
+The list groups all versions into pending and reviewed entries, with counts and
+filters for all/pending/reviewed. A version is reviewed only when an explicit
+operator decision exists for that exact digest; historical AI admission does not
+count, and a new child does not inherit its parent's review. Reviewed entries
+show the latest decision, reviewer and time, independently of whether they are
+currently active. Opening one displays saved findings; an explicit re-review
+button opens a new blank form. Submission refreshes the list and saved findings.
 
 Choose a finding for every rule, optionally write review reasons, enter your actual name and
 overall decision, then confirm review of the exact rules, labels, applicability
