@@ -33,7 +33,8 @@ python3 -B -m temporal_contract_analyzer experience-memory show RECORD_SHA256 --
 ```
 
 Search is **discovery**, not admission or automatic delivery. Results include
-their taxonomy and review status. Candidate/rejected records may be inspected;
+their taxonomy, original review status and current `expert_active` flag. Active
+versions remain discoverable alongside new lineage tips. Candidate/rejected records may be inspected;
 they cannot be delivered by `retrieve`. Search does not index IDs, provenance,
 historical scores, outcome records or source directory names. Rankings are lexical
 scores, not predicted repair benefit. The whole bundle is returned to preserve
@@ -84,15 +85,30 @@ python3 -B -m temporal_contract_analyzer experience-memory add new-bundle.json -
 ```
 
 Existing `(id, version)` records cannot be overwritten. A new version of an
-existing identity must reference its parent record digest. Default discovery and
-delivery use lineage tips. A candidate or rejected child conservatively retires
-its parent from default use; it does not silently reactivate the parent. Branches
-are retained; multiple eligible tips remain a delivery conflict.
+existing identity must reference its parent record digest. Discovery uses lineage
+tips; delivery uses a separate expert-activated view. An unapproved or rejected
+child does not replace the active parent. Only explicit expert acceptance selects
+an active version. Rejection of the exact active version disables it without
+implicitly restoring an older version. Multiple eligible identities remain a
+delivery conflict; lexical score cannot settle a policy conflict.
 
-There is no automatic reflection, learning, ranking update, taxonomy recoding or
-class-prompt evolution. New knowledge is prepared and reviewed under a separate
-bounded development protocol, then explicitly added as a version. Research
-admission may be exploratory and is not production admission or proof of benefit.
+The library itself does not launch models or evolve ranking, taxonomy or prompts.
+The separate [expert-gated controller](EXPERIENCE_EVOLUTION.md) can automatically
+develop and validate candidates, then pause for a named operator's expert review.
+`research_admitted` metadata alone does not activate delivery. Research activation
+may be exploratory and is not production admission or proof of benefit.
+
+To inspect or review an exact version without launching models:
+
+```bash
+python3 -B -m temporal_contract_analyzer experience-memory active --store experience-memory
+python3 -B -m temporal_contract_analyzer experience-memory review-template RECORD_SHA256 --store experience-memory --output /tmp/review-template.json
+python3 -B -m temporal_contract_analyzer experience-memory expert-review RECORD_SHA256 --decision /tmp/completed-expert-decision.json --store experience-memory
+```
+
+The template has empty reviewer/reasons, false support findings and a revision
+default. It is not approval. The operator must supply findings for every rule.
+The automated controller never calls this approval action on its own.
 
 ## Source-bound delivery for current seven-label analyses
 
@@ -107,9 +123,11 @@ python3 -B -m temporal_contract_analyzer experience-memory freeze --store experi
 python3 -B -m temporal_contract_analyzer experience-memory retrieve visible-input.json --store experience-memory --output /tmp/experience-delivery.json
 ```
 
-For a frozen experiment, read `sha256` from the snapshot and pass it as
-`--expected-snapshot SHA256`. Store changes then reject retrieval. Output paths
-must be new files outside the store. No command starts a model or repairs code.
+For a frozen experiment, pass both `--snapshot /tmp/memory-snapshot.json` and
+`--expected-snapshot SHA256`, reading the digest from that snapshot. Later active
+updates do not change its selected versions. Without `--snapshot`, retrieval uses
+the current active view and the expected digest rejects activation drift. Output
+paths must be new files outside the store. These commands never start a model.
 
 The router checks source citations, source-bound semantic review, compatible
 labels, known required premises and explicitly contradicted exclusions. Unknown
@@ -141,8 +159,10 @@ Initial provenance is recorded in
 [`IMPORT.json`](../implement-stage/experience-memory-v1/IMPORT.json).
 
 They are searchable now. **They are not relabeled into the current seven-class
-taxonomy and are not automatically delivered by its router.** A valid current
-query with only these entries returns an explicit recoding-needed fallback.
+taxonomy and are not automatically delivered by its router.** No named expert
+has activated these imports. A valid current query therefore returns
+`no_expert_activated_experience`; even expert-activated legacy entries require
+evidence-backed recoding before the seven-label router can deliver them.
 Evidence-backed recoding must create reviewed new versions; it is not a class-name
 lookup or an extra hidden classification call. No such recoding is performed here.
 

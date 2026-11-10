@@ -3,13 +3,15 @@ import json
 from pathlib import Path
 
 from . import experience_memory as memory
+from . import experience_approval as approval
 from .core import EvidenceError
 
 
 def register(sub):
     parser = sub.add_parser('experience-memory', help='Offline research experience library; no model calls')
     actions = parser.add_subparsers(dest='memory_action', required=True)
-    for name in ('init', 'list', 'verify', 'freeze', 'add', 'show', 'search', 'retrieve', 'import-legacy'):
+    for name in ('init', 'list', 'verify', 'freeze', 'add', 'show', 'search', 'retrieve', 'import-legacy',
+                 'active', 'review-template', 'expert-review'):
         action = actions.add_parser(name)
         action.add_argument('--store', type=Path, required=True)
         action.add_argument('--output', type=Path, help='New file only; default is standard output')
@@ -26,6 +28,11 @@ def register(sub):
             action.add_argument('--limit', type=int, default=8)
         if name == 'retrieve':
             action.add_argument('--expected-snapshot')
+            action.add_argument('--snapshot', type=Path)
+        if name in ('review-template', 'expert-review'):
+            action.add_argument('sha256')
+        if name == 'expert-review':
+            action.add_argument('--decision', type=Path, required=True)
         if name == 'import-legacy':
             action.add_argument('--entry-sha256', required=True)
             action.add_argument('--id', required=True)
@@ -50,7 +57,12 @@ def run(args):
         value = memory.search(args.store, args.query, args.taxonomy, args.limit)
     elif action == 'retrieve':
         value = memory.retrieve(args.store, json.loads(args.input.read_text(encoding='utf-8')),
-                                args.expected_snapshot)
+                                args.expected_snapshot, None if args.snapshot is None else
+                                json.loads(args.snapshot.read_text(encoding='utf-8')))
+    elif action == 'active':
+        value = approval.active(args.store)
+    elif action == 'expert-review':
+        value = approval.decide(args.store, args.sha256, json.loads(args.decision.read_text(encoding='utf-8')))
     elif action == 'import-legacy':
         registry = json.loads(args.input.read_text(encoding='utf-8'))
         if not isinstance(registry, list):
@@ -64,21 +76,26 @@ def run(args):
     else:
         bundles = memory.records(args.store)
         if action == 'freeze':
-            value = memory.snapshot(bundles)
+            value = approval.freeze(args.store)
         elif action == 'verify':
             value = dict(verified=True, records=len(bundles), lineage_tips=len(memory.tips(bundles)),
                          snapshot=memory.snapshot(bundles), semantic_validity='not_checked')
-        elif action == 'show':
+        elif action in ('show', 'review-template'):
             value = next((b for b in bundles if b['sha256'] == args.sha256), None)
             if value is None:
                 raise EvidenceError('Unknown experience digest')
-            if args.format == 'md':
+            if action == 'review-template':
+                value = dict(reviewer='', decision='revise', reason='', scope='exploratory',
+                    rules=[dict(rule_id=r['id'], supported=False, reason='') for r in value['rules']])
+            elif args.format == 'md':
                 value = memory.render(value)
         else:
             tips = {b['sha256'] for b in memory.tips(bundles)}
+            activated={row['bundle']['sha256'] for row in approval.active(args.store)}
             value = [dict(id=b['id'], version=b['version'], sha256=b['sha256'],
                 taxonomy_version=b['taxonomy_version'], labels=b['labels'],
-                status=b['review']['status'], is_lineage_tip=b['sha256'] in tips) for b in bundles]
+                status=b['review']['status'], expert_active=b['sha256'] in activated,
+                is_lineage_tip=b['sha256'] in tips) for b in bundles]
     content = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2)+'\n'
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

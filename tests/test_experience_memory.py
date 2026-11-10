@@ -10,6 +10,7 @@ import unittest
 from temporal_contract_analyzer.core import EvidenceError, sha
 from temporal_contract_analyzer import experience_memory as memory, taxonomy
 from temporal_contract_analyzer import experience_routing as routing
+from temporal_contract_analyzer import experience_approval as approval
 
 
 class MemoryTests(unittest.TestCase):
@@ -40,7 +41,13 @@ class MemoryTests(unittest.TestCase):
                             for i in range(1,6)], notes=['Synthetic fixture.'], outcome_refs=[]))
 
     def add(self, payload=None):
-        return memory.add(self.store, self.payload if payload is None else payload, [self.source])
+        bundle = memory.add(self.store, self.payload if payload is None else payload, [self.source])
+        if bundle['review']['status'] == 'research_admitted':
+            approval.decide(self.store, bundle['sha256'], dict(reviewer='SYNTHETIC_EXPERT_FIXTURE',
+                decision='accept', reason='Synthetic operator-action fixture, not real expert approval.',
+                scope='exploratory', rules=[dict(rule_id=r['id'], supported=True,
+                    reason='Synthetic fixture.') for r in bundle['rules']]))
+        return bundle
 
     def test_storage_preserves_single_source_body_and_evidence(self):
         bundle = self.add()
@@ -166,11 +173,11 @@ class MemoryTests(unittest.TestCase):
 
     def test_snapshot_guard_and_empty_library(self):
         self.assertEqual(memory.retrieve(self.store, self.visible())['route']['condition'], 'AUTO')
-        empty = memory.snapshot(memory.records(self.store))['sha256']
+        empty = approval.freeze(self.store)['sha256']
         self.add()
         with self.assertRaises(EvidenceError):
             memory.retrieve(self.store, self.visible(), empty)
-        state = memory.snapshot(memory.records(self.store))['sha256']
+        state = approval.freeze(self.store)['sha256']
         self.assertEqual(memory.retrieve(self.store, self.visible(), state)['route']['condition'], 'ROUTED')
 
     def test_rejected_and_candidate_records_are_discoverable_but_not_delivered(self):
@@ -217,14 +224,16 @@ class MemoryTests(unittest.TestCase):
         with self.assertRaises(EvidenceError):self.add(bad)
         self.assertEqual(memory.records(self.store), [])
 
-    def test_new_candidate_does_not_silently_reactivate_parent(self):
+    def test_new_candidate_does_not_replace_active_parent(self):
         parent = self.add()
         child = deepcopy(self.payload)
         child.update(version='v2', parent_sha256=parent['sha256'])
         child['review']['status'] = 'candidate'
         self.add(child)
-        self.assertIsNone(memory.retrieve(self.store, self.visible())['experience_text'])
-        self.assertEqual([b['version'] for b in memory.search(self.store, 'entry')['results']], ['v2'])
+        self.assertEqual(memory.retrieve(self.store, self.visible())['selected_memory_record']['sha256'], parent['sha256'])
+        self.assertEqual({b['version'] for b in memory.search(self.store, 'entry')['results']}, {'v1','v2'})
+        active_hits=[b['version'] for b in memory.search(self.store,'entry')['results'] if b['expert_active']]
+        self.assertEqual(active_hits,['v1'])
 
     def test_cli_full_path_and_no_overwrites(self):
         from temporal_contract_analyzer.cli import main

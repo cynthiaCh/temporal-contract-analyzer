@@ -17,6 +17,8 @@ def main(argv=None):
     taxonomy_cli.register(sub)
     from . import experience_memory_cli
     experience_memory_cli.register(sub)
+    from . import evolution_cli
+    evolution_cli.register(sub)
     s=sub.add_parser('scan',help='Analyze an explicit candidate root, e.g. case/base')
     s.add_argument('candidate',type=Path)
     c=sub.add_parser('compare',help='Compare two candidate roots; never apply or execute patches')
@@ -40,6 +42,8 @@ def main(argv=None):
         cmd.add_argument('--output',type=Path,help='New file only; refuses overwrites')
     args=p.parse_args(argv)
     try:
+        if args.command == 'experience-evolution':
+            return evolution_cli.run(args)
         if args.command == 'experience-memory':
             return experience_memory_cli.run(args)
         if args.command in taxonomy_cli.COMMANDS:

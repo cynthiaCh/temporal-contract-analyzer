@@ -249,13 +249,13 @@ def snapshot(bundles):
                 sha256=digest(canonical(hashes)), scope='research_only')
 
 
-def search_records(bundles, query, namespace=None, limit=8):
+def search_records(bundles, query, namespace=None, limit=8, include_all=False):
     from .rag import terms
     if not text(query) or type(limit) is not int or not 1 <= limit <= 100:
         raise EvidenceError('Search requires nonempty text and a limit from 1 to 100')
     if namespace is not None and namespace not in (taxonomy.VERSION, LEGACY_TAXONOMY):
         raise EvidenceError('Unsupported search taxonomy')
-    corpus = [b for b in tips(bundles) if namespace is None or b['taxonomy_version'] == namespace]
+    corpus = [b for b in (bundles if include_all else tips(bundles)) if namespace is None or b['taxonomy_version'] == namespace]
     # Audit provenance, outcome records, IDs and version names never enter the index.
     counts = [Counter(terms(render(b)+'\n'+' '.join(b['requires']+b['excludes']))) for b in corpus]
     average = sum(sum(c.values()) for c in counts)/max(1, len(counts)) or 1
@@ -281,7 +281,17 @@ def search_records(bundles, query, namespace=None, limit=8):
 
 
 def search(store, query, namespace=None, limit=8):
-    return search_records(records(store), query, namespace, limit)
+    from . import experience_approval as approval
+    bundles=records(store)
+    active_hashes={row['bundle']['sha256'] for row in approval.active(store)}
+    parent_hashes={b['parent_sha256'] for b in bundles}
+    # Discovery includes active parents as well as new candidate tips. The index
+    # still excludes audit data; this flag is display metadata, not a rank feature.
+    visible=[b for b in bundles if b['sha256'] in active_hashes or b['sha256'] not in parent_hashes]
+    result=search_records(visible,query,namespace,limit,include_all=True)
+    result['memory_sha256']=snapshot(bundles)['sha256']
+    for row in result['results']:row['expert_active']=row['sha256'] in active_hashes
+    return result
 
 
 def legacy_payload(entry, identifier, registry_path, review_path, extra_sources=(),
@@ -321,19 +331,19 @@ def legacy_payload(entry, identifier, registry_path, review_path, extra_sources=
                    notes=list(notes)+['Exact historical body and applicability retained; no new model output.']))
 
 
-def retrieve(store, visible, expected_snapshot=None):
+def retrieve(store, visible, expected_snapshot=None, frozen_snapshot=None):
     """Reuse the current conservative seven-label router; no taxonomy guessing."""
     from . import experience_routing as routing
+    from . import experience_approval as approval
     if not isinstance(visible, dict) or not {'task', 'sources', 'analysis'} <= set(visible) \
             or set(visible) - {'task', 'sources', 'analysis', 'review'}:
         raise EvidenceError('Only task, candidate sources, analysis and optional visible-input review are allowed')
     routing.source_inputs(visible['task'], visible['sources'])
-    bundles = records(store)
-    state = snapshot(bundles)
+    state = approval.freeze(store) if frozen_snapshot is None else approval.validate_snapshot(store, frozen_snapshot)
+    bundles = [entry['bundle'] for entry in state['entries']]
     if expected_snapshot is not None and expected_snapshot != state['sha256']:
         raise EvidenceError('Frozen experience memory changed')
-    eligible = [b for b in tips(bundles) if b['taxonomy_version'] == taxonomy.VERSION
-                and b['review']['status'] == 'research_admitted']
+    eligible = [b for b in bundles if b['taxonomy_version'] == taxonomy.VERSION]
     entries = [(routing.freeze_entry(render(b), b['labels'], b['requires'], b['excludes'], b['version']), b)
                for b in eligible]
     decision = routing.route(visible['analysis'], visible['sources'], [entry for entry, _ in entries],
@@ -348,8 +358,10 @@ def retrieve(store, visible, expected_snapshot=None):
         if digest(render(selected)) != decision['selected']['text_sha256']:
             raise EvidenceError('Selected body digest mismatch')
     if decision['reason'] == 'empty_or_inapplicable_library' and not eligible \
-            and any(b['taxonomy_version'] == LEGACY_TAXONOMY for b in tips(bundles)):
+            and any(b['taxonomy_version'] == LEGACY_TAXONOMY for b in bundles):
         decision['reason'] = 'legacy_entries_require_explicit_evidence_backed_recoding'
+    elif decision['reason'] == 'empty_or_inapplicable_library' and not bundles:
+        decision['reason'] = 'no_expert_activated_experience'
     return dict(schema_version='experience-delivery-v1', memory_snapshot=state, route=decision,
                 selected_memory_record=None if selected is None else dict(id=selected['id'],
                     version=selected['version'], sha256=selected['sha256'], body_sha256=selected['body_sha256']),

@@ -1,6 +1,6 @@
 # Experience Research Controller — Master Prompt
 
-Version: `experience-research-controller-v1`
+Version: `experience-research-controller-v2`
 
 This is the canonical top-level instruction for coordinating experience research
 in this repository. Load it into the coordinating agent, then load the active
@@ -32,6 +32,15 @@ production updates or additional evolution rounds from this prompt alone.
 
 Keep new prompts, schemas and research documentation in English. Preserve raw
 historical outputs verbatim, including their original language and errors.
+
+The expert-gated automation entry point is `experience-evolution`; see
+`docs/EXPERIENCE_EVOLUTION.md`. Candidate storage and development validation may
+be automatic within a prepared budget. Activating a version requires an explicit
+named operator's expert decision on the exact rules and complete outcome report.
+Do not manufacture this action or translate AI-assisted checking into human
+approval. Keep active-version decisions separate from candidate lineage: adding
+or rejecting a child does not displace an accepted parent. Freeze the active
+snapshot for evaluation. No paid execution follows from reading this document.
 
 ## 2. Establish the batch contract before execution
 
@@ -260,10 +269,15 @@ expand cases, budgets, evolution rounds or production memory.
 
 ## 7. Entry point for the current foundational work
 
-Start at Stage 1. Use
+For an unscoped research study, start at Stage 1. Use
 `research/experience-system-interface-study-20261110_004239/OUTPUTS.md` and its
 hashed historical sources as an initial inventory. Its 13 projections are not a
 completed cross-version acceptance suite. Stages 2–4 remain unvalidated proposals.
+
+The bounded evolution controller is an implemented workflow, not evidence that
+the representation, retrieval policy or class prompts have been shown effective.
+Its operational entry point requires explicit, already reviewed case inputs;
+it does not silently restart all historical studies or approve its own analysis.
 
 First establish and verify the output contracts. Then study the representation,
 then retrieval, then shared class-prompt evolution. Reading this prompt is not an

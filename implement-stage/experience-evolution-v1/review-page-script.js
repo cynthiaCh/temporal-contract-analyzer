@@ -1,0 +1,7 @@
+const request={"candidate_sha256": "13e83645c76e212abf94429d0e62c93d760c175eb2f8f5c902bb66890c30988e", "report_sha256": "6477875c2be46a3b06a02b76ca17caeb1b0d9f5fa8d8100c40a3ba1fc3a87b0d", "reviewed_outcomes": false, "decision": {"reviewer": "", "decision": "revise", "scope": "exploratory", "reason": "", "rules": [{"rule_id": "R01", "supported": false, "reason": ""}, {"rule_id": "R02", "supported": false, "reason": ""}, {"rule_id": "R03", "supported": false, "reason": ""}, {"rule_id": "R04", "supported": false, "reason": ""}, {"rule_id": "R05", "supported": false, "reason": ""}]}};
+document.querySelector('#review').addEventListener('submit',e=>{e.preventDefault();
+const d=structuredClone(request);d.reviewed_outcomes=document.querySelector('#outcomes').checked;
+d.decision.reviewer=document.querySelector('#name').value;d.decision.decision=document.querySelector('#decision').value;
+d.decision.scope=document.querySelector('#scope').value;d.decision.reason=document.querySelector('#overall').value;
+document.querySelectorAll('fieldset').forEach((f,i)=>{d.decision.rules[i].supported=f.querySelector('.supported').checked;d.decision.rules[i].reason=f.querySelector('.reason').value;});
+const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}));a.download='expert-decision.json';a.click();URL.revokeObjectURL(a.href);});

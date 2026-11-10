@@ -8,6 +8,8 @@
 
 The shared research experience store is [experience-memory/](experience-memory/README.md). The offline `experience-memory` CLI supports immutable rule bundles, provenance, lexical discovery and conservative source-bound delivery. The three initial legacy T1/T3/T4 English versions remain searchable under their original taxonomy; they are not automatically recoded or injected into current seven-label experiments. See [format and commands](docs/EXPERIENCE_MEMORY.md).
 
+The [expert-gated evolution controller](docs/EXPERIENCE_EVOLUTION.md) automates bounded development repairs, reflection and validation, then exports an expert review page and pauses. Only an explicit named expert decision activates an exact version. New candidates preserve the active parent; evaluation uses a frozen active snapshot and cannot learn. Preparation never calls models; live runs require `--execute` and valid runtime/calibration evidence.
+
 当前统一使用 **R / O / B / L / I / F / A 七类时序义务标签**，一个案例可同时涉及多类。分类、经验检索接口及“经验开发”页面共用一个版本化 codebook；过去的 T1–T4 路由分组、五组提示模板与五条题库问题分别保留为历史分组、模板和条目，不再混作当前分类。定义、迁移边界和离线使用方法见[七类分类与经验路由](docs/CONTRACT_TAXONOMY.md)。旧实验保持原样，本次升级不启动模型。
 
 七类通用提醒保存在 `contract-reminders.json`，`maintenance-prompt` 可按当前分析支持的标签生成维护提示，仅追加命中类别的核查问题。固定提醒与学习得到的冻结经验单独保存；比较经验增量时，两组使用相同提醒，经验组再追加经验正文。
