@@ -1,5 +1,4 @@
-"""Bounded development automation with a mandatory external expert checkpoint."""
-import html
+"""Bounded development automation with unified experience-memory review."""
 import fcntl
 import json
 from pathlib import Path
@@ -221,7 +220,7 @@ class Evolution:
     def _run(self,execute=False,backend=None):
         if not execute and getattr(backend,'kind',None)!='synthetic_fixture_not_model_or_effectiveness_evidence':
             raise EvidenceError('Live execution requires --execute; preparation never calls models')
-        protocol=self.verify();state=self.state()
+        protocol=self.verify();state=self.sync_review()
         if backend is None:
             if protocol.get('backend',{}).get('kind')=='docker':
                 from .docker_backend import DockerBackend
@@ -377,45 +376,30 @@ class Evolution:
                 outcome_refs=[dict(source_sha256=s['sha256'],pointer='') for s in sources[3:]]))
         bundle=memory.add(protocol['store'],payload,source_paths)
         if memory.render(bundle)!=body:raise EvidenceError('Candidate body changed during validation')
-        state=self.state();state.update(status='awaiting_expert',candidate_sha256=bundle['sha256'],comparisons=comparisons)
+        state=self.state();state.update(status='awaiting_review',candidate_sha256=bundle['sha256'],comparisons=comparisons)
         self.save(state);self.report();return state
 
-    def expert(self,request,execute=False,backend=None):
-        with (self.root/'expert.lock').open('a') as lock:
-            try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-            except BlockingIOError as error:raise EvidenceError('An expert action is already being applied') from error
-            return self._expert(request,execute,backend)
-
-    def _expert(self,request,execute=False,backend=None):
+    def sync_review(self):
+        """Read the single memory-review decision; never create an approval."""
         protocol=self.verify();state=self.state()
-        if protocol['kind']!='development' or state['status']!='awaiting_expert':
-            raise EvidenceError('Only a fully validated development candidate can enter expert review')
-        memory.object_fields(request,{'candidate_sha256','report_sha256','reviewed_outcomes','decision'},'expert submission')
-        report=self.root/f"round-{state['round']}"/'expert-packet.json'
-        if request['candidate_sha256']!=state['candidate_sha256'] or request['report_sha256']!=sha(report.read_bytes()) \
-                or request['reviewed_outcomes'] is not True:
-            raise EvidenceError('Expert must review the exact candidate and complete outcome report')
-        decision=request['decision']
-        if not isinstance(decision,dict):raise EvidenceError('Expert decision must be an object')
-        if decision.get('decision')=='accept' and not any(c['gained'] for c in state['comparisons']) \
-                and decision.get('scope')!='exploratory':
-            raise EvidenceError('No observed development gain: acceptance must explicitly be exploratory')
-        row=approval.decide(protocol['store'],state['candidate_sha256'],decision,request['report_sha256'])
-        self.pin(f"round-{state['round']}/expert-decision.json",row)
-        state=self.state();state['expert_feedback']=row
-        if row['decision']=='accept':
-            state['status']='accepted';self.save(state)
-            self.pin('accepted-active-snapshot.json',approval.freeze(protocol['store']))
+        if state['status'] not in ('awaiting_review','awaiting_expert','revision_requested',
+                                   'revision_budget_exhausted','accepted','rejected'):
+            return state
+        rows=[r for r in approval.decisions(protocol['store'])
+              if r['candidate_sha256']==state['candidate_sha256']]
+        if not rows:return state
+        row=rows[-1]
+        if state.get('expert_feedback',{}).get('sha256')==row['sha256']:return state
+        state['expert_feedback']=row
+        if row['decision']=='accept':state['status']='accepted'
         elif row['decision']=='revise':
             state['status']='revision_requested' if state['round']<protocol['max_rounds'] else 'revision_budget_exhausted'
-            self.save(state)
-        else:
-            state['status']='rejected';self.save(state)
-        self.report()
-        return self.run(execute=True,backend=backend) if execute and state['status']=='revision_requested' else self.state()
+        else:state['status']='rejected'
+        self.save(state)
+        return state
 
     def report(self):
-        state=self.state();protocol=load(self.root/'protocol.json')
+        state=self.sync_review();protocol=load(self.root/'protocol.json')
         jobs={j['slot']:j for j in state['jobs']}
         route=load(self.root/'initial-route.json') if (self.root/'initial-route.json').is_file() else None
         groups={}
@@ -458,52 +442,6 @@ class Evolution:
             usage=[dict(slot=j['slot'],usage=j['usage']) for j in jobs.values()],comparisons=state.get('comparisons',[]),
             no_generalization_claim=True,no_test_feedback_learning=protocol['kind']=='evaluation')
         archive.atomic_json(self.root/'summary.json',summary)
-        if state['status']=='awaiting_expert':
-            bundle=next(b for b in memory.records(protocol['store']) if b['sha256']==state['candidate_sha256'])
-            parent=next((b for b in memory.records(protocol['store']) if b['sha256']==bundle['parent_sha256']),None)
-            changes=dict(parent_sha256=bundle['parent_sha256'],parent_rules=[] if parent is None else parent['rules'],
-                candidate_rules=bundle['rules'],mechanisms={key:dict(before=None if parent is None else parent[key],after=bundle[key])
-                    for key in ('labels','requires','excludes')})
-            packet=dict(candidate=bundle,changes=changes,starting_route=load(self.root/'initial-route.json'),summary=summary,
-                original=load(self.root/'original-score.json'),expert_review_required=True,
-                claim='Mechanical checks and development observations do not establish semantic correctness or benefit.')
-            target=f"round-{state['round']}/expert-packet.json"
-            if not (self.root/target).exists():self.pin(target,packet)
-            request=dict(candidate_sha256=bundle['sha256'],report_sha256=sha((self.root/target).read_bytes()),
-                reviewed_outcomes=False,decision=dict(reviewer='',decision='revise',scope='exploratory',reason='',
-                    rules=[dict(rule_id=r['id'],supported=False,reason='') for r in bundle['rules']]))
-            archive.atomic_json(self.root/f"round-{state['round']}/decision-template.json",request)
-            self.review_html(packet,request)
-        (self.root/'REPORT.md').write_text('# Expert-gated evolution\n\n'+
-            'This is a bounded development/evaluation execution record. Expert activation is a separate operator action.\n\n'+
+        (self.root/'REPORT.md').write_text('# Experience evolution\n\n'+
+            'This is a bounded development/evaluation execution record. Review and activation use the experience-memory review page.\n\n'+
             '```json\n'+json.dumps(summary,ensure_ascii=False,indent=2)+'\n```\n',encoding='utf-8')
-
-    def review_html(self,packet,request):
-        number=self.state()['round'];directory=self.root/f'round-{number}'
-        data=json.dumps(request,ensure_ascii=False).replace('<','\\u003c')
-        rows=''.join('<fieldset><legend>'+html.escape(r['id'])+'</legend><p>'+html.escape(r['body'])+
-            '</p><label><input type="checkbox" class="supported">Evidence supports this rule and its bounds</label>'+
-            '<p><textarea class="reason" placeholder="Optional: evidence, preservation obligations and counterexamples"></textarea></p></fieldset>'
-            for r in packet['candidate']['rules'])
-        body='''<!doctype html><html lang="en"><meta charset="utf-8"><title>Expert experience review</title>
-<style>body{max-width:960px;margin:2rem auto;font:16px system-ui}pre{white-space:pre-wrap}textarea{width:95%;min-height:5rem}fieldset{margin:1rem 0}</style>
-'''+('''<p><strong>SYNTHETIC FIXTURE — no model executed. These are not real repair results or actual expert approval.</strong></p>'''
-        if packet['summary']['backend_kind']=='synthetic_fixture_not_model_or_effectiveness_evidence' else '')+'''
-<h1>Expert review — no automatic activation</h1><p>Read the full evidence and outcomes, then download your decision.
-Apply it with the explicit evolution expert command. This page never calls a model or changes the library.</p>
-<p><a href="reflection-input.json">Task, source, actual patches and full feedback</a> ·
-<a href="raw-reflection.json">Original model object</a> · <a href="expert-packet.json">Exact candidate and outcome packet</a></p>
-<details><summary>Exact parent rules and candidate changes</summary><pre>'''+html.escape(json.dumps(packet['changes'],ensure_ascii=False,indent=2))+'''</pre></details>
-<details open><summary>Complete outcomes, regressions and costs</summary><pre>'''+html.escape(json.dumps(packet['summary'],ensure_ascii=False,indent=2))+'''</pre></details>
-<form id="review"><label>Your name <input id="name" required></label> <label>Decision <select id="decision"><option>revise</option><option>reject</option><option>accept</option></select></label>
-<label>Scope <select id="scope"><option>exploratory</option><option>research</option></select></label>'''+rows+'''
-<label>Overall reason (optional)<textarea id="overall"></textarea></label>
-<p><label><input id="outcomes" type="checkbox" required>I reviewed all successes, losses, unknowns and costs.</label></p>
-<button>Download decision JSON</button></form><script>const request='''+data+''';
-document.querySelector('#review').addEventListener('submit',e=>{e.preventDefault();
-const d=structuredClone(request);d.reviewed_outcomes=document.querySelector('#outcomes').checked;
-d.decision.reviewer=document.querySelector('#name').value;d.decision.decision=document.querySelector('#decision').value;
-d.decision.scope=document.querySelector('#scope').value;d.decision.reason=document.querySelector('#overall').value;
-document.querySelectorAll('fieldset').forEach((f,i)=>{d.decision.rules[i].supported=f.querySelector('.supported').checked;d.decision.rules[i].reason=f.querySelector('.reason').value;});
-const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}));a.download='expert-decision.json';a.click();URL.revokeObjectURL(a.href);});</script></html>'''
-        (directory/'expert-review.html').write_text(body,encoding='utf-8')

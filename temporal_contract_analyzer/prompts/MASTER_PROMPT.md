@@ -48,7 +48,7 @@ historical outputs verbatim, including their original language and errors.
 The expert-gated automation entry point is `experience-evolution`; see
 `docs/EXPERIENCE_EVOLUTION.md`. Candidate storage and development validation may
 be automatic within a prepared budget. Activating a version requires an explicit
-named operator's expert decision on the exact rules and complete outcome report.
+named operator's decision in the experience-memory review page on the exact rules and retained outcomes.
 Do not manufacture this action or translate AI-assisted checking into human
 approval. Keep active-version decisions separate from candidate lineage: adding
 or rejecting a child does not displace an accepted parent. Freeze the active

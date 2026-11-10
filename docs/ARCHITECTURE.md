@@ -35,7 +35,7 @@ retrieval](EXPERIENCE_MEMORY.md), and [execution protocol](EXPERIENCE_EVOLUTION.
 | Analysis materials and offline routing | `taxonomy`, `experience-prompt`, `experience-review-template`, `route-experience`, `maintenance-prompt` | `taxonomy_cli.py`, `experience_routing.py` |
 | Unified memory and activation | `experience-memory …` | `experience_memory.py`, `experience_approval.py`, `experience_memory_cli.py` |
 | Human review queue | `experience-memory review --store PATH` | `memory_review.py`, `web/memory-review.*` |
-| Bounded development / frozen testing | `experience-evolution prepare/run/review-analysis/status/report/expert` | `experience_evolution.py`, `evolution_cli.py` |
+| Bounded development / frozen testing | `experience-evolution prepare/run/review-analysis/status/report` | `experience_evolution.py`, `evolution_cli.py` |
 
 Opening a browser, reading memory, preparing prompts and preparing an evolution
 batch do not call a model. Live execution requires the explicit execution switch

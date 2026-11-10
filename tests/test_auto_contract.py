@@ -114,7 +114,7 @@ class AutoContractTests(unittest.TestCase):
             self.assertEqual(main(['experience-evolution','review-analysis',str(review),
                                    '--root',str(loop.root)]),0)
         self.assertEqual(loop.state()['status'],'prepared')
-        self.assertEqual(loop.run(backend=backend)['status'],'awaiting_expert')
+        self.assertEqual(loop.run(backend=backend)['status'],'awaiting_review')
         self.assertEqual([name for name,_,_ in backend.calls],
                          ['ANALYSIS','BASE-1','BASE-2','R1-reflection','R1-DEV-1','R1-DEV-2'])
         for _,role,prompt in backend.calls:
