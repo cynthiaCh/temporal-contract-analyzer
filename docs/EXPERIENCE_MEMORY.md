@@ -21,7 +21,7 @@ Run from the repository root:
 python3 -B -m temporal_contract_analyzer experience-memory list --store experience-memory
 python3 -B -m temporal_contract_analyzer experience-memory verify --store experience-memory
 python3 -B -m temporal_contract_analyzer experience-memory search --store experience-memory --query 'shared cache observers cancellation signal reconnect'
-python3 -B -m temporal_contract_analyzer experience-memory search --store experience-memory --query 'deferred edits submission entry snapshot' --taxonomy legacy-toolflow-t1-t4-v1
+python3 -B -m temporal_contract_analyzer experience-memory search --store experience-memory --query 'deferred edits submission entry snapshot' --taxonomy temporal-obligation-taxonomy-7-v1 --label B --label I
 ```
 
 `list` returns record digests. Use one of those digests to inspect the canonical
@@ -39,6 +39,12 @@ they cannot be delivered by `retrieve`. Search does not index IDs, provenance,
 historical scores, outcome records or source directory names. Rankings are lexical
 scores, not predicted repair benefit. The whole bundle is returned to preserve
 conditions, verification actions and counterexamples.
+
+Use one shared store with multi-label R/O/B/L/I/F/A metadata, not seven separate
+libraries. `list` and `search` accept repeated `--label` filters; all requested
+labels must be present. Filtering is an organization step, never an applicability
+or expert-admission shortcut. A lifecycle label does not prescribe cancellation:
+some mechanisms retain accepted background work while others reject new work.
 
 ## Canonical format
 
@@ -144,7 +150,8 @@ automatically consume this new library; integration is a separate intervention.
 
 ## Initial inventory and explicit limitation
 
-The store contains three exact historical English bodies:
+The store contains three exact historical English bodies, retaining their old
+versions alongside three source-reviewed native-taxonomy child candidates:
 
 - `subscription-retirement`: T1 translation, seven rules; English wording not
   directly effect-validated.
@@ -158,13 +165,34 @@ lineage and available evidence/outcomes are preserved as hashed audit copies.
 Initial provenance is recorded in
 [`IMPORT.json`](../implement-stage/experience-memory-v1/IMPORT.json).
 
-They are searchable now. **They are not relabeled into the current seven-class
-taxonomy and are not automatically delivered by its router.** No named expert
-has activated these imports. A valid current query therefore returns
-`no_expert_activated_experience`; even expert-activated legacy entries require
-evidence-backed recoding before the seven-label router can deliver them.
-Evidence-backed recoding must create reviewed new versions; it is not a class-name
-lookup or an extra hidden classification call. No such recoding is performed here.
+The original legacy versions remain inspectable by digest and `list`; they are
+not overwritten. New native candidates carry explicit per-rule source annotations
+and parent linkage, preserving all rule text and requires/excludes. These are
+AI-assisted executor annotations, not fresh automatic model extraction, expert
+approval, classifier ground truth or new behavior evidence.
+
+The candidate labels are O/L/I/A (subscription retirement), R/L/I/A (paused shared
+work), and O/B/L/I/A (deferred boundary binding). No F label was forced into the
+inventory. Some B grounds are explicitly preserved-behavior inferences, not
+literal README deadlines. See the full
+[recoding audit](../research/unified-seven-label-recoding-20261110_112750/REPORT.md).
+
+No named expert has activated these versions. A valid current retrieval therefore
+returns `no_expert_activated_experience`; searching a native candidate does not
+permit delivery. New native versions require a genuine expert decision and a
+separately bounded development replay before repair-benefit claims.
+
+The explicit recoding interface consumes an annotation sheet, never a legacy
+class-name lookup:
+
+```bash
+python3 -B -m temporal_contract_analyzer experience-memory recode label-review.json --parent PARENT_SHA256 --version NEW_VERSION --store experience-memory
+python3 -B -m temporal_contract_analyzer experience-memory list --label B --label I --store experience-memory
+```
+
+The interface validates scope, codebook version, per-rule body identity and source
+anchors; derives the bundle label union; then copies the parent guidance into an
+unactivated child. ID/quote validity alone does not establish semantic support.
 
 ## Verification scope
 

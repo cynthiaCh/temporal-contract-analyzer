@@ -11,11 +11,11 @@ def register(sub):
     parser = sub.add_parser('experience-memory', help='Offline research experience library; no model calls')
     actions = parser.add_subparsers(dest='memory_action', required=True)
     for name in ('init', 'list', 'verify', 'freeze', 'add', 'show', 'search', 'retrieve', 'import-legacy',
-                 'active', 'review-template', 'expert-review'):
+                 'active', 'review-template', 'expert-review', 'recode'):
         action = actions.add_parser(name)
         action.add_argument('--store', type=Path, required=True)
         action.add_argument('--output', type=Path, help='New file only; default is standard output')
-        if name in ('add', 'retrieve', 'import-legacy'):
+        if name in ('add', 'retrieve', 'import-legacy','recode'):
             action.add_argument('input', type=Path)
         if name == 'add':
             action.add_argument('--source', type=Path, action='append', default=[])
@@ -26,6 +26,8 @@ def register(sub):
             action.add_argument('--query', required=True)
             action.add_argument('--taxonomy')
             action.add_argument('--limit', type=int, default=8)
+        if name in ('list','search'):
+            action.add_argument('--label',action='append',default=[],help='Native obligation label; repeat to require all')
         if name == 'retrieve':
             action.add_argument('--expected-snapshot')
             action.add_argument('--snapshot', type=Path)
@@ -33,6 +35,9 @@ def register(sub):
             action.add_argument('sha256')
         if name == 'expert-review':
             action.add_argument('--decision', type=Path, required=True)
+        if name == 'recode':
+            action.add_argument('--parent',required=True)
+            action.add_argument('--version',required=True)
         if name == 'import-legacy':
             action.add_argument('--entry-sha256', required=True)
             action.add_argument('--id', required=True)
@@ -54,7 +59,7 @@ def run(args):
     elif action == 'add':
         value = memory.add(args.store, json.loads(args.input.read_text(encoding='utf-8')), args.source)
     elif action == 'search':
-        value = memory.search(args.store, args.query, args.taxonomy, args.limit)
+        value = memory.search(args.store, args.query, args.taxonomy, args.limit,args.label)
     elif action == 'retrieve':
         value = memory.retrieve(args.store, json.loads(args.input.read_text(encoding='utf-8')),
                                 args.expected_snapshot, None if args.snapshot is None else
@@ -63,6 +68,9 @@ def run(args):
         value = approval.active(args.store)
     elif action == 'expert-review':
         value = approval.decide(args.store, args.sha256, json.loads(args.decision.read_text(encoding='utf-8')))
+    elif action == 'recode':
+        from .experience_recoding import candidate
+        value=candidate(args.store,args.parent,args.input,args.version)
     elif action == 'import-legacy':
         registry = json.loads(args.input.read_text(encoding='utf-8'))
         if not isinstance(registry, list):
@@ -90,7 +98,10 @@ def run(args):
             elif args.format == 'md':
                 value = memory.render(value)
         else:
+            from . import taxonomy
             tips = {b['sha256'] for b in memory.tips(bundles)}
+            required=taxonomy.labels(args.label)
+            bundles=[b for b in bundles if set(required)<=set(b['labels'])]
             activated={row['bundle']['sha256'] for row in approval.active(args.store)}
             value = [dict(id=b['id'], version=b['version'], sha256=b['sha256'],
                 taxonomy_version=b['taxonomy_version'], labels=b['labels'],

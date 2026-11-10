@@ -6,7 +6,7 @@
 
 经验研究的统一主控入口为根目录 [MASTER_PROMPT.md](MASTER_PROMPT.md)。它固定“输出接口 → 经验表示 → 检索投放 → 同类 Prompt 优化”的研究顺序、阶段准入、材料边界和停止规则，供协调 Agent 读取；维护模型只接收对应角色的允许材料。该文件是英文流程规范，尚不代表运行器已自动加载或强制执行，也不会自行启动实验。
 
-The shared research experience store is [experience-memory/](experience-memory/README.md). The offline `experience-memory` CLI supports immutable rule bundles, provenance, lexical discovery and conservative source-bound delivery. The three initial legacy T1/T3/T4 English versions remain searchable under their original taxonomy; they are not automatically recoded or injected into current seven-label experiments. See [format and commands](docs/EXPERIENCE_MEMORY.md).
+The shared research experience store is [experience-memory/](experience-memory/README.md). One collection organizes mechanism experience with multi-label R/O/B/L/I/F/A metadata, applicability and provenance. Three source-reviewed native candidates coexist with their preserved legacy English versions; all bodies and prerequisites are unchanged, and no expert activation or new repair benefit is inferred. The CLI supports intersecting label filters, lexical discovery and source-bound delivery. See [format and commands](docs/EXPERIENCE_MEMORY.md).
 
 The [expert-gated evolution controller](docs/EXPERIENCE_EVOLUTION.md) automates bounded development repairs, reflection and validation, then exports an expert review page and pauses. Only an explicit named expert decision activates an exact version. New candidates preserve the active parent; evaluation uses a frozen active snapshot and cannot learn. Preparation never calls models; live runs require `--execute` and valid runtime/calibration evidence.
 

@@ -145,6 +145,13 @@ Use compatible frozen taxonomy and memory versions. Historical T1–T4 groupings
 the current R/O/B/L/I/F/A obligation labels are distinct; do not map them by an
 unverified lookup rule.
 
+Maintain one unified experience memory with multi-label obligation metadata, not
+seven disconnected stores. Labels organize and filter; concrete mechanism
+prerequisites and exclusions govern applicability. Record source-case/evaluation
+lineage separately. Taxonomy-only recoding must be explicit, per-rule and
+source-reviewed, preserve the parent guidance, and remain unactivated pending
+the expert gate. Do not fill missing label families with generic reminders.
+
 Retrieve candidates, then check required premises, exclusions, preservation
 obligations and conflicts against current-source evidence. Unknown remains
 unknown. Do not weaken conditions to increase hit rate. The initial delivery

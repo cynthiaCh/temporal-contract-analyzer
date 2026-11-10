@@ -280,16 +280,19 @@ def search_records(bundles, query, namespace=None, limit=8, include_all=False):
                 results=ranked[:limit])
 
 
-def search(store, query, namespace=None, limit=8):
+def search(store, query, namespace=None, limit=8, required_labels=None):
     from . import experience_approval as approval
     bundles=records(store)
+    requested=taxonomy.labels([] if required_labels is None else required_labels)
     active_hashes={row['bundle']['sha256'] for row in approval.active(store)}
     parent_hashes={b['parent_sha256'] for b in bundles}
     # Discovery includes active parents as well as new candidate tips. The index
     # still excludes audit data; this flag is display metadata, not a rank feature.
-    visible=[b for b in bundles if b['sha256'] in active_hashes or b['sha256'] not in parent_hashes]
+    visible=[b for b in bundles if (b['sha256'] in active_hashes or b['sha256'] not in parent_hashes)
+             and set(requested)<=set(b['labels'])]
     result=search_records(visible,query,namespace,limit,include_all=True)
     result['memory_sha256']=snapshot(bundles)['sha256']
+    result['label_filter']=requested
     for row in result['results']:row['expert_active']=row['sha256'] in active_hashes
     return result
 
