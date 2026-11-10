@@ -1,7 +1,7 @@
-# Bounded experience evolution with expert activation
+# Bounded experience evolution with unified memory review
 
 The controller connects retrieval, independent development repairs, complete
-feedback, reflection, candidate validation and an external expert checkpoint.
+feedback, reflection, candidate validation and the experience-memory review page.
 It never auto-approves itself. The library and model weights do not autonomously
 change in the background. Opening a report, preparing a batch or searching never
 launches a model.
@@ -13,8 +13,8 @@ Approved visible analysis + original source + frozen active snapshot
   -> one reflection candidate
   -> mechanical/source-link checks (not semantic expert approval)
   -> two independent candidate-guided repairs and full scores
-  -> export expert report; PAUSE
-       accept -> activate exact version -> usable by the next prepared task
+  -> save candidate in experience memory; PAUSE for memory review
+       accept in memory review -> activate exact version -> usable by the next prepared task
        revise -> one more round only if budgeted and explicitly executed
        reject -> preserve evidence, stop; active parent remains available
 ```
@@ -168,45 +168,46 @@ candidate is scored once per prepared batch; every admissible final candidate is
 scored once. Full outcomes and actual/expected/event traces are retained. The
 model sees neither the scorer/reference source nor the hidden failure list.
 
-## Expert review interface
+## One review interface
 
-After development, open `round-N/expert-review.html`. It displays all outcome
-groups and costs and links to the complete source/patch/feedback and raw model
-object. Review every rule, preservation duty, exclusion and counterexample.
-Enter your actual name and reasoning, confirm complete outcomes, and download a
-decision JSON. The page performs no network/model/library action.
+Development saves its candidate to the configured experience store and stops at
+`awaiting_review`. Open the existing memory review page:
 
 ```bash
-python3 -B -m temporal_contract_analyzer experience-evolution expert /path/to/expert-decision.json --root research/NEW_BATCH
+python3 -B -m temporal_contract_analyzer experience-memory review --store /path/to/memory
 ```
 
-The submission binds the exact candidate and expert-packet digest, confirms full
-outcome review, and provides each rule's supported/unsupported finding. Overall
-and per-rule reasons are optional text and may remain empty.
-No default name, auto-checked approval or generated expert signature is supplied.
-This records the named local operator's review; it does not independently verify
-their professional qualifications or imply an independent external review.
+Review the exact candidate's rules, applicability and retained evidence. The
+"All retained sources" section includes `reflection-input.json` (task, source,
+actual patches and complete job feedback), `raw-reflection.json`,
+`mechanical-review.json`, `comparisons.json` and validation scores. All successes,
+regressions and unknowns remain available. Supply your actual name and a finding
+for every rule, then accept, request revision or reject directly in this page.
+Acceptance activates the exact version; unsupported rules cannot be accepted.
+Without observed gained relations, acceptance requires `exploratory` scope.
+Acceptance does not require both validation repairs to pass or zero regressions.
 
-Acceptance requires all rules be supported. It does **not** require both repairs
-to pass or zero regressions. All losses remain visible. With no observed gained
-relation, acceptance must explicitly choose `exploratory`; content admission is
-separate from demonstrated effectiveness. Unsupported rules cannot be accepted.
+There is no separate batch expert HTML, packet, decision template or
+`experience-evolution expert` submission. `summary.json` and `REPORT.md` remain
+execution records. The memory-review decision is the single source of truth;
+`status`, `report` and `run` synchronize it into the batch state. Reading status
+never launches a model. The same memory decision can also be submitted using
+`experience-memory expert-review`.
 
-For a requested revision, execute a remaining prepared round explicitly:
+A requested revision runs only when another prepared round remains and the
+operator explicitly executes it:
 
 ```bash
 python3 -B -m temporal_contract_analyzer experience-evolution run --root research/NEW_BATCH --execute
 ```
 
-Or pass `--execute` with the revision decision to continue immediately. New rules
-receive new immutable versions with parent linkage; old raw objects, reports,
-patches and scores remain. Rejecting a child preserves the active parent.
-Rejecting the exact active version disables it, without implicit rollback.
+Each revision creates an immutable child version; original rules, patches and
+scores remain. Rejecting a child preserves the active parent. Rejecting the exact
+active version disables it without implicit rollback.
 
-After acceptance, prepare a new development task using the same store. It
-retrieves the accepted version at preparation and feeds its actual repairs into
-that task's bounded development process. Selecting/preparing new cases remains
-explicit; the controller does not autonomously expand the case cohort.
+After acceptance, prepare a new task with the same store to retrieve the accepted
+version. Existing prepared tasks keep their frozen snapshots. Case selection and
+execution remain explicit; the controller does not expand the cohort itself.
 
 ## Evaluation and failure boundaries
 

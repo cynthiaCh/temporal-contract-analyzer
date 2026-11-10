@@ -7,13 +7,13 @@ from .experience_evolution import Evolution
 
 
 def register(sub):
-    parser=sub.add_parser('experience-evolution',help='Bounded automation with an external expert activation gate')
+    parser=sub.add_parser('experience-evolution',help='Bounded automation with unified memory review')
     actions=parser.add_subparsers(dest='evolution_action',required=True)
-    for name in ('prepare','run','status','report','review-analysis','expert','docker-check','docker-calibrate'):
+    for name in ('prepare','run','status','report','review-analysis','docker-check','docker-calibrate'):
         action=actions.add_parser(name)
         action.add_argument('--root',type=Path,required=True)
-        if name in ('prepare','review-analysis','expert','docker-check','docker-calibrate'):action.add_argument('input',type=Path)
-        if name in ('run','expert'):action.add_argument('--execute',action='store_true')
+        if name in ('prepare','review-analysis','docker-check','docker-calibrate'):action.add_argument('input',type=Path)
+        if name == 'run':action.add_argument('--execute',action='store_true')
 
 
 def run(args):
@@ -32,10 +32,9 @@ def run(args):
                        calibrate=action=='docker-calibrate')
     elif action=='run':result=loop.run(execute=args.execute)
     elif action=='review-analysis':result=loop.review_analysis(json.loads(args.input.read_text(encoding='utf-8')))
-    elif action=='expert':result=loop.expert(json.loads(args.input.read_text(encoding='utf-8')),execute=args.execute)
     else:
         loop.verify()
         if action=='report':loop.report()
-        result=loop.state()
+        result=loop.sync_review()
     print(json.dumps(result,ensure_ascii=False,indent=2))
     return 1 if result['status'] in ('stopped','cancelled') else 0

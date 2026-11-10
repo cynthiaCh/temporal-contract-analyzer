@@ -43,7 +43,7 @@ python3 -B -m temporal_contract_analyzer experience-memory verify --store /path/
 python3 -B -m temporal_contract_analyzer experience-memory review --store /path/to/memory
 ```
 
-[Architecture and source map](docs/ARCHITECTURE.md), [memory format and retrieval](docs/EXPERIENCE_MEMORY.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [bounded evolution](docs/EXPERIENCE_EVOLUTION.md) document the interfaces. Pending candidates require a named expert's decision on exact rules and outcomes before activation. Evaluation uses a frozen snapshot and cannot learn. No paid calls are authorized by reading this README.
+[Architecture and source map](docs/ARCHITECTURE.md), [memory format and retrieval](docs/EXPERIENCE_MEMORY.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [bounded evolution](docs/EXPERIENCE_EVOLUTION.md) document the interfaces. Candidates are reviewed and activated in the single `experience-memory review` page, with rules and retained outcomes available together. Evaluation uses a frozen snapshot and cannot learn. No paid calls are authorized by reading this README.
 
 ## Optional integrations
 

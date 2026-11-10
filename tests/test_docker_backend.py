@@ -47,7 +47,7 @@ class DockerTests(unittest.TestCase):
         with patch('temporal_contract_analyzer.docker_backend.DockerBackend',return_value=backend) as selected:
             result=loop.run(execute=True)
         self.assertEqual(selected.call_count,1)
-        self.assertEqual(result['status'],'awaiting_expert')
+        self.assertEqual(result['status'],'awaiting_review')
         self.assertEqual(len(backend.calls),5)
 
     def test_backend_freeze_and_live_execution_gate(self):

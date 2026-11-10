@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import threading
+from urllib.request import build_opener, ProxyHandler, Request
 import unittest
 from unittest.mock import patch
 
@@ -94,28 +96,31 @@ class EvolutionTests(unittest.TestCase):
         return loop
 
     def decision(self,loop,action='accept',scope='research'):
-        number=loop.state()['round']
-        request=load(loop.root/f'round-{number}/decision-template.json')
-        request['reviewed_outcomes']=True
-        request['decision'].update(reviewer='SYNTHETIC_EXPERT_FIXTURE',decision=action,scope=scope,
-                                   reason='Synthetic external operator action, not actual expert approval.')
-        for rule in request['decision']['rules']:rule.update(supported=True,reason='Synthetic fixture finding.')
-        return request
+        bundle=next(b for b in memory.records(self.store) if b['sha256']==loop.state()['candidate_sha256'])
+        return dict(reviewer='SYNTHETIC_OPERATOR_FIXTURE',decision=action,scope=scope,
+                    reason='Synthetic operator action, not actual expert approval.',
+                    rules=[dict(rule_id=r['id'],supported=True,reason='Synthetic fixture finding.')
+                           for r in bundle['rules']])
+
+    def review(self,loop,request):
+        approval.decide(self.store,loop.state()['candidate_sha256'],request)
+        return loop.sync_review()
 
     def test_complete_develop_review_activate_and_next_task_retrieval(self):
         loop=self.prepare();backend=SyntheticBackend()
         result=loop.run(backend=backend)
-        self.assertEqual(result['status'],'awaiting_expert',result.get('error'))
+        self.assertEqual(result['status'],'awaiting_review',result.get('error'))
         self.assertEqual(len(backend.calls),5)
         self.assertEqual(len(backend.scores),5)
         self.assertEqual(approval.active(self.store),[])
-        self.assertTrue((loop.root/'round-1/expert-review.html').is_file())
-        self.assertFalse(load(loop.root/'round-1/decision-template.json')['reviewed_outcomes'])
+        for name in ('expert-review.html','expert-packet.json','decision-template.json'):
+            self.assertFalse((loop.root/'round-1'/name).exists())
+        self.assertEqual(loop.sync_review()['status'],'awaiting_review')
         for name,role,prompt in backend.calls:
             if role=='repair':
                 for forbidden in ('missing_required_effects','SYNTHETIC_EXPERT','O-BASE','reflection-input.json'):
                     self.assertNotIn(forbidden,prompt)
-        result=loop.expert(self.decision(loop))
+        result=self.review(loop,self.decision(loop))
         self.assertEqual(result['status'],'accepted')
         self.assertEqual(len(approval.active(self.store)),1)
         next_loop=self.prepare('next-loop',case='test')
@@ -132,14 +137,14 @@ class EvolutionTests(unittest.TestCase):
         loop=self.prepare(rounds=2);backend=SyntheticBackend();loop.run(backend=backend)
         parent=loop.state()['candidate_sha256']
         old=(loop.root/'round-1/raw-reflection.json').read_bytes()
-        self.assertEqual(loop.expert(self.decision(loop,'revise'))['status'],'revision_requested')
+        self.assertEqual(self.review(loop,self.decision(loop,'revise'))['status'],'revision_requested')
         loop.run(backend=backend)
-        self.assertEqual(loop.state()['status'],'awaiting_expert')
+        self.assertEqual(loop.state()['status'],'awaiting_review')
         self.assertEqual(len(backend.calls),8)
         self.assertEqual((loop.root/'round-1/raw-reflection.json').read_bytes(),old)
         child=next(b for b in memory.records(self.store) if b['sha256']==loop.state()['candidate_sha256'])
         self.assertEqual(child['parent_sha256'],parent)
-        self.assertEqual(loop.expert(self.decision(loop,'revise'))['status'],'revision_budget_exhausted')
+        self.assertEqual(self.review(loop,self.decision(loop,'revise'))['status'],'revision_budget_exhausted')
         with self.assertRaises(EvidenceError):loop.run(backend=backend)
 
     def test_old_implementation_metadata_allows_development_and_revision(self):
@@ -153,9 +158,9 @@ class EvolutionTests(unittest.TestCase):
         path.write_text(json.dumps(protocol))
         state=loop.state();state['pinned']['protocol.json']=sha(path.read_bytes());loop.save(state)
         backend=SyntheticBackend()
-        self.assertEqual(loop.run(backend=backend)['status'],'awaiting_expert')
-        loop.expert(self.decision(loop,'revise'))
-        self.assertEqual(loop.run(backend=backend)['status'],'awaiting_expert')
+        self.assertEqual(loop.run(backend=backend)['status'],'awaiting_review')
+        self.review(loop,self.decision(loop,'revise'))
+        self.assertEqual(loop.run(backend=backend)['status'],'awaiting_review')
         self.assertEqual(len(backend.calls),8)
 
     def test_failure_archives_partial_unknown_usage_and_stops_without_scoring(self):
@@ -172,9 +177,9 @@ class EvolutionTests(unittest.TestCase):
 
     def test_no_gain_is_not_discarded_but_requires_exploratory_acceptance(self):
         loop=self.prepare();loop.run(backend=SyntheticBackend(no_gain=True))
-        self.assertEqual(loop.state()['status'],'awaiting_expert')
-        with self.assertRaises(EvidenceError):loop.expert(self.decision(loop))
-        self.assertEqual(loop.expert(self.decision(loop,scope='exploratory'))['status'],'accepted')
+        self.assertEqual(loop.state()['status'],'awaiting_review')
+        with self.assertRaises(EvidenceError):self.review(loop,self.decision(loop))
+        self.assertEqual(self.review(loop,self.decision(loop,scope='exploratory'))['status'],'accepted')
 
     def test_target_gain_and_regression_are_both_kept_without_all_pass_gate(self):
         class RegressingBackend(SyntheticBackend):
@@ -186,12 +191,12 @@ class EvolutionTests(unittest.TestCase):
                     outcome['missing_required_effects']=['preserved']
                 return outcome
         loop=self.prepare();loop.run(backend=RegressingBackend())
-        self.assertEqual(loop.state()['status'],'awaiting_expert')
+        self.assertEqual(loop.state()['status'],'awaiting_review')
         comparison=loop.state()['comparisons'][0]
         self.assertEqual(comparison['gained'],['retirement'])
         self.assertEqual(comparison['lost'],['preserved'])
         self.assertEqual(load(loop.root/'summary.json')['groups']['R1-candidate']['whole_passes'],0)
-        self.assertEqual(loop.expert(self.decision(loop))['status'],'accepted')
+        self.assertEqual(self.review(loop,self.decision(loop))['status'],'accepted')
 
     def test_invalid_candidate_stops_before_validation_or_library_write(self):
         loop=self.prepare();backend=SyntheticBackend(invalid_rule=True)
@@ -202,7 +207,7 @@ class EvolutionTests(unittest.TestCase):
         self.assertTrue((loop.root/'round-1/raw-reflection.json').exists())
 
     def test_evaluation_is_frozen_and_never_reflects_or_updates_memory(self):
-        development=self.prepare();development.run(backend=SyntheticBackend());development.expert(self.decision(development))
+        development=self.prepare();development.run(backend=SyntheticBackend());self.review(development,self.decision(development))
         evaluation=self.prepare('evaluation',kind='evaluation',case='test')
         before=[b['sha256'] for b in memory.records(self.store)]
         backend=SyntheticBackend();result=evaluation.run(backend=backend)
@@ -210,20 +215,20 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual([c[0] for c in backend.calls],['B1','A1','A2','B2'])
         self.assertTrue(all(c[1]=='repair' for c in backend.calls))
         self.assertEqual([b['sha256'] for b in memory.records(self.store)],before)
-        with self.assertRaises(EvidenceError):evaluation.expert(self.decision(development))
+        self.assertEqual(evaluation.sync_review()['status'],'evaluation_complete')
 
     def test_fallback_evaluation_prompts_identical(self):
         loop=self.prepare(kind='evaluation',case='test');loop.run(backend=SyntheticBackend())
         self.assertTrue(load(loop.root/'evaluation-prompts.json')['identical'])
         self.assertEqual(memory.records(self.store),[])
 
-    def test_operator_must_review_exact_frozen_candidate_and_complete_outcomes(self):
+    def test_unsupported_review_cannot_activate_and_rejection_stops(self):
         loop=self.prepare();loop.run(backend=SyntheticBackend())
-        request=self.decision(loop);request['report_sha256']='0'*64
-        with self.assertRaises(EvidenceError):loop.expert(request)
-        request=self.decision(loop);request['reviewed_outcomes']=False
-        with self.assertRaises(EvidenceError):loop.expert(request)
+        request=self.decision(loop);request['rules'][0]['supported']=False
+        with self.assertRaises(EvidenceError):self.review(loop,request)
         self.assertEqual(approval.active(self.store),[])
+        self.assertEqual(self.review(loop,self.decision(loop,'reject'))['status'],'rejected')
+        with self.assertRaises(EvidenceError):loop.run(backend=SyntheticBackend())
 
     def test_live_execution_opt_in_and_preflight_block_before_calls(self):
         loop=self.prepare()
@@ -232,21 +237,42 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual(result['status'],'stopped')
         self.assertEqual(result['jobs'],[])
 
-    def test_cli_requires_explicit_execution_and_unfilled_review_never_approves(self):
+    def test_cli_requires_explicit_execution_and_reads_memory_review(self):
         from temporal_contract_analyzer.cli import main
         loop=self.prepare()
         with redirect_stdout(StringIO()),redirect_stderr(StringIO()):
             self.assertEqual(main(['experience-evolution','run','--root',str(loop.root)]),1)
         self.assertEqual(loop.state()['status'],'prepared')
         loop.run(backend=SyntheticBackend())
-        template=loop.root/'round-1/decision-template.json'
+        approval.decide(self.store,loop.state()['candidate_sha256'],self.decision(loop))
         with redirect_stdout(StringIO()),redirect_stderr(StringIO()):
-            self.assertEqual(main(['experience-evolution','expert',str(template),'--root',str(loop.root)]),1)
-        self.assertEqual(approval.active(self.store),[])
-        path=self.root/'synthetic-operator-decision.json';path.write_text(json.dumps(self.decision(loop)))
-        with redirect_stdout(StringIO()),redirect_stderr(StringIO()):
-            self.assertEqual(main(['experience-evolution','expert',str(path),'--root',str(loop.root)]),0)
+            self.assertEqual(main(['experience-evolution','status','--root',str(loop.root)]),0)
         self.assertEqual(loop.state()['status'],'accepted')
+
+    def test_latest_memory_review_can_replace_a_pending_revision(self):
+        loop=self.prepare(rounds=2);backend=SyntheticBackend();loop.run(backend=backend)
+        self.assertEqual(self.review(loop,self.decision(loop,'revise'))['status'],'revision_requested')
+        approval.decide(self.store,loop.state()['candidate_sha256'],self.decision(loop,'accept'))
+        with self.assertRaises(EvidenceError):loop.run(backend=backend)
+        self.assertEqual(loop.state()['status'],'accepted')
+        self.assertEqual(len(backend.calls),5)
+
+    def test_run_reads_memory_revision_without_separate_submission(self):
+        loop=self.prepare(rounds=2);backend=SyntheticBackend();loop.run(backend=backend)
+        from temporal_contract_analyzer.memory_review import ReviewServer
+        server=ReviewServer(self.store)
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        try:
+            request=Request(server.url+'/api/records/'+loop.state()['candidate_sha256']+'/decision',
+                data=json.dumps(dict(reviewed=True,decision=self.decision(loop,'revise'))).encode(),
+                headers={'Content-Type':'application/json','X-TCA-Request':'local'})
+            with redirect_stderr(StringIO()),build_opener(ProxyHandler({})).open(request,timeout=5) as response:
+                self.assertEqual(response.status,201)
+        finally:
+            server.shutdown();server.server_close();thread.join(3)
+        self.assertEqual(loop.run(backend=backend)['status'],'awaiting_review')
+        self.assertEqual(len(backend.calls),8)
+
 
 
 if __name__=='__main__':unittest.main()

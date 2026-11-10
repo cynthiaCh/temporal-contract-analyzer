@@ -81,7 +81,7 @@ visible task/source/Contract/labels/facts are still required. Automatic analysis
 was not added. The controller's declared deployment requirement remains Python
 >=3.9; case code and grading use the checked container runtimes.
 
-Normal `prepare`, `run --execute`, `status`, `report` and `expert` commands then
+Normal `prepare`, `run --execute`, `status` and `report` commands then
 apply. Omitting `backend` retains native execution. Backend/image/runtime choices
 are frozen before any session; do not change old prepared protocols or switch
 backends after a failure. Code and transport changes invalidate old preparations.

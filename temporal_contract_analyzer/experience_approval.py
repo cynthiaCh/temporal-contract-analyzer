@@ -58,6 +58,13 @@ def decide(store, candidate_sha256, request, report_sha256=None):
         bundles = {b['sha256']:b for b in memory.records(store)}
         if candidate_sha256 not in bundles:
             raise EvidenceError('Unknown expert-review candidate')
+        # The same admission rule applies to the browser and CLI.
+        if request.get('decision') == 'accept' and request.get('scope') != 'exploratory':
+            for source in bundles[candidate_sha256]['audit']['sources']:
+                if Path(source['path']).name == 'comparisons.json':
+                    comparisons = json.loads((store/'sources'/source['sha256']).read_text())
+                    if not any(c['gained'] for c in comparisons):
+                        raise EvidenceError('No observed development gain: acceptance must explicitly be exploratory')
         prior = decisions(store)
         row = dict(deepcopy(request), schema_version='experience-expert-decision-v1',
                    actor='named_operator', candidate_sha256=candidate_sha256,
