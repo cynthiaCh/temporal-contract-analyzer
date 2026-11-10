@@ -58,8 +58,12 @@ R/O/B/L/I/F/A is the native taxonomy. Historical T1–T4 imports are not recoded
 
 The packaged `prompts/MASTER_PROMPT.md` (also linked at the repository root) is
 copied and pinned as `controller-prompt.md`. The protocol pins source, analysis,
-model roles, code, evaluator, calibration,
+model roles, evaluator, calibration,
 retrieval snapshot, slot list, budgets and constraints before execution.
+Analyzer code, runner source and executable contents are not locked by
+preparation-time hashes. Code or prompt edits do not require a new batch;
+legacy implementation hashes are ignored. Input/artifact integrity, calibration
+and batch-state checks still apply, including the existing no-retry rule.
 
 ## Fixed budgets and isolated native execution
 

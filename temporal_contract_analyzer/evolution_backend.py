@@ -58,11 +58,6 @@ def stop_tree(process):
             except ProcessLookupError:pass
 
 
-def source_hashes():
-    return {str(SOURCE/name):sha((SOURCE/name).read_bytes()) for name in DEPENDENCIES}
-
-
-
 def validate_calibration(protocol, observed_runtime):
     if scoring_inputs(protocol['case']) != protocol['scoring_inputs']:
         raise EvidenceError('Evaluator or original candidate changed')
@@ -98,15 +93,9 @@ class NativeBackend:
     def preflight(self, protocol):
         from .case_catalog import case_root, inside, read
         from .case_evaluation import runtime
-        for path, expected in protocol['backend_sources'].items():
-            if sha(Path(path).read_bytes()) != expected:
-                raise EvidenceError('Research runner source changed')
         if not shutil.which('bwrap') or not Path(protocol['binary']).is_file() \
                 or not Path(protocol['node']).is_file():
             raise EvidenceError('Native execution requires the explicit Codex binary, node and bwrap')
-        for path,expected in protocol['executable_sha256'].items():
-            if expected is None or sha(Path(path).read_bytes())!=expected:
-                raise EvidenceError('Prepared executable changed or was unavailable at preparation')
         manifest = read(inside(case_root(protocol['case']), protocol['case']['manifest']))
         observed_runtime=runtime(manifest, protocol['case']['adapter'], protocol['node'])
         validate_calibration(protocol, observed_runtime)

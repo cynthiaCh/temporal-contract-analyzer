@@ -13,7 +13,7 @@ from temporal_contract_analyzer import case_evaluation
 from temporal_contract_analyzer.case_catalog import case_input
 from temporal_contract_analyzer.core import canonical, sha, EvidenceError
 from temporal_contract_analyzer.case_evaluation import scoring_inputs
-from temporal_contract_analyzer.evolution_backend import NativeBackend, source_hashes
+from temporal_contract_analyzer.evolution_backend import NativeBackend
 
 
 class BackendTests(unittest.TestCase):
@@ -40,10 +40,8 @@ class BackendTests(unittest.TestCase):
                 verdict=verdict,origin='synthetic_fixture_not_real_calibration')))
             evidence[role]=dict(path=str(source),sha256=sha(source.read_bytes()))
         scoring=scoring_inputs(record)
-        self.protocol=dict(case=record,backend_sources=source_hashes(),binary=sys.executable,
+        self.protocol=dict(case=record,binary=sys.executable,
             node=shutil.which('node') or sys.executable,scoring_inputs=scoring,candidate_sha256='a'*64,
-            executable_sha256={str(Path(p).resolve()):sha(Path(p).read_bytes())
-                               for p in (sys.executable,shutil.which('node') or sys.executable)},
             calibration=dict(case_id='development',candidate_sha256='a'*64,
                 scoring_inputs_sha256=sha(canonical(scoring).encode()),runtime=native_runtime,evidence=evidence),
             visible=dict(task=inputs['task']),input_path=inputs['candidate'])
@@ -60,6 +58,11 @@ class BackendTests(unittest.TestCase):
     def test_calibration_cannot_be_only_a_boolean_approval_or_wrong_runtime(self):
         backend=NativeBackend();self.protocol['calibration']['runtime']['version']='0.0'
         with self.assertRaises(EvidenceError):backend.preflight(self.protocol)
+
+    def test_old_runner_and_executable_hashes_do_not_block_execution(self):
+        self.protocol.update(backend_sources={'/old/runner.py':'old-hash'},
+                             executable_sha256={sys.executable:'old-hash'})
+        NativeBackend().preflight(self.protocol)
 
     def test_missing_isolation_blocks_before_native_execution(self):
         with patch('temporal_contract_analyzer.evolution_backend.shutil.which', return_value=None):

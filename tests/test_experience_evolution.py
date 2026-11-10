@@ -142,6 +142,22 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual(loop.expert(self.decision(loop,'revise'))['status'],'revision_budget_exhausted')
         with self.assertRaises(EvidenceError):loop.run(backend=backend)
 
+    def test_old_implementation_metadata_allows_development_and_revision(self):
+        loop=self.prepare(rounds=2)
+        # Simulate a batch prepared by an older implementation, retaining its
+        # unchanged protocol bytes and their artifact digest after preparation.
+        path=loop.root/'protocol.json';protocol=load(path)
+        protocol.update(implementation={'experience_routing.py':'old-hash'},
+                        taxonomy_sha256='old-hash',backend_sources={'/old/runner.py':'old-hash'},
+                        executable_sha256={'/old/codex':'old-hash'})
+        path.write_text(json.dumps(protocol))
+        state=loop.state();state['pinned']['protocol.json']=sha(path.read_bytes());loop.save(state)
+        backend=SyntheticBackend()
+        self.assertEqual(loop.run(backend=backend)['status'],'awaiting_expert')
+        loop.expert(self.decision(loop,'revise'))
+        self.assertEqual(loop.run(backend=backend)['status'],'awaiting_expert')
+        self.assertEqual(len(backend.calls),8)
+
     def test_failure_archives_partial_unknown_usage_and_stops_without_scoring(self):
         loop=self.prepare();backend=SyntheticBackend(fail='BASE-1')
         result=loop.run(backend=backend)

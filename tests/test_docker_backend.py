@@ -81,9 +81,11 @@ class DockerTests(unittest.TestCase):
     def test_runtime_mismatch_cannot_be_credited_as_a_behavior_score(self):
         protocol=load(self.prepared().root/'protocol.json')
         protocol['binary']=__import__('sys').executable
-        from temporal_contract_analyzer.core import sha
-        protocol['executable_sha256']={protocol['binary']:sha(Path(protocol['binary']).read_bytes())}
-        with patch('temporal_contract_analyzer.docker_backend.subprocess.check_output',
+        # Legacy version hashes are ignored; runtime mismatches still fail.
+        protocol['executable_sha256']={protocol['binary']:'old-hash'}
+        protocol['backend_sources']={'/old/runner.py':'old-hash'}
+        with patch('temporal_contract_analyzer.docker_backend.shutil.which',return_value='/synthetic/docker'), \
+             patch('temporal_contract_analyzer.docker_backend.subprocess.check_output',
                    side_effect=[CONFIG['solver_image']+'\n',CONFIG['grader_image']+'\n']), \
              patch('temporal_contract_analyzer.docker_backend.captured',side_effect=[
                  dict(python='3.9.20',node='v16.20.2',codex='SYNTHETIC'),
@@ -93,12 +95,11 @@ class DockerTests(unittest.TestCase):
     def test_unvalidated_frontend_dependencies_block_before_solver_dispatch(self):
         protocol=load(self.prepared().root/'protocol.json')
         import sys
-        from temporal_contract_analyzer.core import sha
         protocol['binary']=sys.executable
-        protocol['executable_sha256']={sys.executable:sha(Path(sys.executable).read_bytes())}
         protocol['case']['adapter']='legacy-js'
         backend=DockerBackend()
-        with patch('temporal_contract_analyzer.docker_backend.scoring_inputs',return_value=protocol['scoring_inputs']), \
+        with patch('temporal_contract_analyzer.docker_backend.shutil.which',return_value='/synthetic/docker'), \
+             patch('temporal_contract_analyzer.docker_backend.scoring_inputs',return_value=protocol['scoring_inputs']), \
              patch('temporal_contract_analyzer.docker_backend.subprocess.check_output',side_effect=[CONFIG['solver_image']+'\n',CONFIG['grader_image']+'\n']), \
              patch.object(backend,'_case',return_value=(dict(framework=dict(runtime='react18')),'/fixture',[])), \
              patch('temporal_contract_analyzer.docker_backend.captured') as launched:

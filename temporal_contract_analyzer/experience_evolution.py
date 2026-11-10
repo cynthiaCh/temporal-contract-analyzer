@@ -11,18 +11,11 @@ from . import experience_routing as routing
 from .core import EvidenceError, canonical, sha
 from .candidate_files import capture, inventory, file_modes, write_files
 from .case_evaluation import delta, relation_states, scoring_inputs
-from .evolution_backend import NativeBackend, ROLES, source_hashes
+from .evolution_backend import NativeBackend, ROLES
 
 
 def load(path):
     return json.loads(Path(path).read_text(encoding='utf-8'))
-
-
-def implementation():
-    names=('experience_evolution.py','evolution_backend.py','docker_backend.py','experience_approval.py',
-           'experience_memory.py','experience_routing.py','taxonomy.py','case_evaluation.py',
-           'case_catalog.py','candidate_files.py','archive.py','core.py')
-    return {name:sha(Path(__file__).with_name(name).read_bytes()) for name in names}
 
 
 def reflection_schema(visible, ids):
@@ -117,10 +110,7 @@ class Evolution:
             input_path=str(self.root/'input'),candidate_files=inventory(files),
             candidate_sha256=sha(canonical(sources).encode()),file_modes=file_modes(Path(inputs['candidate']),files),
             store=str(Path(store).resolve()),binary=str(Path(binary).resolve()),node=str(Path(node).resolve()),
-            executable_sha256={str(Path(p).resolve()):sha(Path(p).read_bytes()) if Path(p).is_file() else None
-                               for p in (binary,node)},
             calibration=calibration,scoring_inputs=scoring_inputs(inputs['case_record']),
-            backend_sources=source_hashes(),implementation=implementation(),taxonomy_sha256=taxonomy.fingerprint(),
             roles=ROLES,slots=[dict(name=name,role=role,requests=ROLES[role]['requests']) for name,role in slots],
             total_request_cap=sum(ROLES[role]['requests'] for _,role in slots),
             active_snapshot_sha256=frozen['sha256'],no_retry=True,concurrency=1)
@@ -140,8 +130,6 @@ class Evolution:
         files,_=capture(self.root/'input')
         if inventory(files)!=protocol['candidate_files'] or file_modes(self.root/'input',files)!=protocol['file_modes']:
             raise EvidenceError('Original candidate drift')
-        if protocol['implementation']!=implementation() or protocol['taxonomy_sha256']!=taxonomy.fingerprint():
-            raise EvidenceError('Evolution implementation or taxonomy changed')
         return protocol
 
     def common(self,protocol,body=None):

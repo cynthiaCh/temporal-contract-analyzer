@@ -13,7 +13,7 @@ from .core import EvidenceError, canonical, sha
 from .candidate_files import capture, inventory, file_modes, write_files
 from .case_catalog import case_input, case_root, inside, read
 from .case_evaluation import scoring_inputs, invoke, terminate, relation_states
-from .evolution_backend import NativeBackend, source_hashes, validate_calibration
+from .evolution_backend import NativeBackend, validate_calibration
 from ._session_runtime.docker_transport import stop
 
 
@@ -115,10 +115,8 @@ class DockerBackend(NativeBackend):
                                              text=True,timeout=20).strip()
             if observed!=config[key]:raise EvidenceError('Pinned Docker image mismatch')
         binary=Path(protocol['binary'])
-        if not binary.is_file() or protocol['executable_sha256'].get(str(binary))!=sha(binary.read_bytes()):
-            raise EvidenceError('Prepared public Codex executable changed')
-        for path,code in protocol['backend_sources'].items():
-            if sha(Path(path).read_bytes())!=code:raise EvidenceError('Runner changed')
+        if not binary.is_file():
+            raise EvidenceError('Public Codex executable is unavailable')
         if scoring_inputs(protocol['case'])!=protocol['scoring_inputs']:
             raise EvidenceError('Original candidate, manifest or scorer changed')
         manifest, case, mounts=self._case(protocol)
@@ -214,7 +212,6 @@ def offline(config, root, calibrate=False):
     files,_=capture(Path(inputs['candidate']));sources={k:v.decode('utf-8') for k,v in files.items()}
     binary=str(Path(config['binary']).resolve())
     protocol=dict(case=inputs['case_record'],binary=binary,node=config['node'],backend=backend,
-                  backend_sources=source_hashes(),executable_sha256={binary:sha(Path(binary).read_bytes())},
                   candidate_sha256=sha(canonical(sources).encode()),scoring_inputs=scoring_inputs(inputs['case_record']))
     root.mkdir(parents=True)
     archive.atomic_json(root/'check-input.json',config)

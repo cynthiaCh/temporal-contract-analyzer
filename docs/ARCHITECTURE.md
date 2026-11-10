@@ -82,9 +82,10 @@ delivery remain supported. Research history and frozen result files are not
 rewritten. Reproducing an old workflow requires its matching Git revision and
 environment.
 
-Existing evolution protocols pin implementation hashes. A prepared batch from
-before this refactor must not be resumed under the changed implementation; use
-the matching revision or prepare a new batch with declared provenance.
+Prepared evolution batches do not lock the analyzer implementation, runner source
+or executable contents to preparation-time hashes. Code and prompt edits do not
+require preparing a new batch; legacy implementation hashes are ignored. Input
+and saved-artifact integrity, scoring calibration and batch-state checks remain.
 
 Multi-case consolidation and automatic old-case replay are not implemented by
 this refactor. Current development updates shared experience through bounded
