@@ -87,20 +87,35 @@ class Evolution:
             backend=validate_config(backend)
         files,skipped=capture(Path(inputs['candidate']))
         sources={name:raw.decode('utf-8') for name,raw in files.items()}
-        if set(visible)!={'task','sources','analysis','review'} or visible['task']!=inputs['task'] or visible['sources']!=sources:
+        automatic_analysis=visible is None
+        if automatic_analysis:
+            visible=dict(task=inputs['task'],sources=sources)
+        else:
+            if set(visible)!={'task','sources','analysis','review'}:
+                raise EvidenceError('Provide reviewed visible input or omit visible for automatic analysis')
+        if visible['task']!=inputs['task'] or visible['sources']!=sources:
             raise EvidenceError('Visible input must match the complete original candidate and task')
-        routing.validate_analysis(visible['analysis'],visible['task'],sources)
+        if not automatic_analysis:
+            routing.validate_analysis(visible['analysis'],visible['task'],sources)
         frozen=approval.freeze(store)
-        routed=memory.retrieve(store,visible,frozen['sha256'],frozen)
-        if routed['route']['reason'] in ('missing_or_drifted_semantic_review','unresolved_semantic_review'):
-            raise EvidenceError('Provide a genuine source-bound analysis review before automation')
-        if kind=='development' and not any(f['state']=='known' for f in visible['analysis']['facts']):
-            raise EvidenceError('No established mechanism premises for development')
+        if not automatic_analysis:
+            routed=memory.retrieve(store,visible,frozen['sha256'],frozen)
+            if routed['route']['reason'] in ('missing_or_drifted_semantic_review','unresolved_semantic_review'):
+                raise EvidenceError('Provide a genuine source-bound analysis review before automation')
+            if kind=='development' and not any(f['state']=='known' for f in visible['analysis']['facts']):
+                raise EvidenceError('No established mechanism premises for development')
+            if kind=='development' and not visible['analysis']['obligation_labels']:
+                raise EvidenceError('Development requires at least one evidence-supported obligation label')
+        else:
+            from .preanalysis import analyze_candidate
+            ast_report,ast_evidence=analyze_candidate(sources,node=None if backend else node)
         self.root.mkdir(parents=True)
         (self.root/'controller-prompt.md').write_bytes((Path(__file__).resolve().parent/'prompts/MASTER_PROMPT.md').read_bytes())
         write_files(self.root/'input',files,file_modes(Path(inputs['candidate']),files))
         slots = [(f'BASE-{n}','repair') for n in (1,2)] if kind=='development' else [
             (name,'repair') for name in ('B1','A1','A2','B2')]
+        if automatic_analysis:
+            slots.insert(0,('ANALYSIS','analysis'))
         if kind=='development':
             for round_number in range(1,max_rounds+1):
                 slots += [(f'R{round_number}-reflection','reflect')]+[(f'R{round_number}-DEV-{n}','repair') for n in (1,2)]
@@ -117,9 +132,18 @@ class Evolution:
         if backend is not None:protocol['backend']=backend
         archive.atomic_json(self.root/'protocol.json',protocol)
         archive.atomic_json(self.root/'active-snapshot.json',frozen)
-        archive.atomic_json(self.root/'initial-route.json',routed)
-        self.save(dict(status='prepared',round=0,jobs=[],pinned={name:sha((self.root/name).read_bytes())
-            for name in ('protocol.json','active-snapshot.json','initial-route.json','controller-prompt.md')},candidate_sha256=None))
+        pinned=['protocol.json','active-snapshot.json','controller-prompt.md']
+        if not automatic_analysis:
+            archive.atomic_json(self.root/'initial-route.json',routed)
+            pinned.append('initial-route.json')
+        else:
+            archive.atomic_json(self.root/'analysis/ast-report.json',ast_report)
+            archive.atomic_json(self.root/'analysis/ast-evidence.json',ast_evidence)
+            path=self.root/'analysis/prompt.md'
+            path.write_text(routing.analysis_prompt(visible['task'],sources,ast_evidence),encoding='utf-8')
+            pinned+=['analysis/ast-report.json','analysis/ast-evidence.json','analysis/prompt.md']
+        self.save(dict(status='analysis_prepared' if automatic_analysis else 'prepared',round=0,jobs=[],
+            pinned={name:sha((self.root/name).read_bytes()) for name in pinned},candidate_sha256=None))
         return self.state()
 
     def verify(self):
@@ -130,6 +154,9 @@ class Evolution:
         files,_=capture(self.root/'input')
         if inventory(files)!=protocol['candidate_files'] or file_modes(self.root/'input',files)!=protocol['file_modes']:
             raise EvidenceError('Original candidate drift')
+        approved=self.root/'analysis/approved-visible.json'
+        if approved.is_file():
+            protocol['visible']=load(approved)
         return protocol
 
     def common(self,protocol,body=None):
@@ -164,6 +191,9 @@ class Evolution:
             if result.get('completed') is not True or result.get('infrastructure_valid') is not True \
                     or (role=='repair' and result.get('scoring_admissible') is not True):
                 raise EvidenceError('Incomplete or infrastructure-invalid session; no retry or behavioral failure')
+            if role=='analysis':
+                from ._session_runtime.schema_validator import validate
+                validate(result['output'],schema)
             job['status']='valid'
             if role=='repair':
                 self.verify()
@@ -197,13 +227,16 @@ class Evolution:
                 from .docker_backend import DockerBackend
                 backend=DockerBackend()
             else:backend=NativeBackend()
-        if state['status'] not in ('prepared','revision_requested'):
+        if state['status'] not in ('analysis_prepared','prepared','revision_requested'):
             raise EvidenceError('Only a fresh or explicitly revised batch can run; no implicit resume')
         state['status']='running';state['backend_kind']=backend.kind;self.save(state)
         try:
             backend.preflight(protocol)
+            if 'analysis' in {s['role'] for s in protocol['slots']} \
+                    and not any(job['role']=='analysis' for job in state['jobs']):
+                return self.analyze(backend,protocol)
             route=load(self.root/'initial-route.json')
-            if not state['jobs']:
+            if not any(job['role']=='repair' for job in state['jobs']):
                 self.pin('original-score.json',backend.score(protocol,self.root/'input',self.root/'original'))
                 if protocol['kind']=='evaluation':
                     prompts={arm:self.common(protocol,route['experience_text'] if arm=='B' else None) for arm in ('A','B')}
@@ -215,13 +248,58 @@ class Evolution:
                 for n in (1,2):
                     self.session(backend,protocol,f'BASE-{n}','repair',self.common(protocol,route['experience_text']))
                 state=self.state()
-                if all(j['outcome']['verdict']=='PASS' for j in state['jobs']):
+                if all(j['outcome']['verdict']=='PASS' for j in state['jobs'] if j['role']=='repair'):
                     state['status']='starting_repairs_passed';self.save(state);self.report();return state
             return self.develop(backend,protocol)
         except (Exception,KeyboardInterrupt) as error:
             state=self.state();state.update(status='cancelled' if isinstance(error,KeyboardInterrupt) else 'stopped',
                                            error=repr(error),no_retry=True)
             self.save(state);self.report();return state
+
+    def analyze(self,backend,protocol):
+        prompt=(self.root/'analysis/prompt.md').read_text(encoding='utf-8')
+        result=self.session(backend,protocol,'ANALYSIS','analysis',prompt,taxonomy.analysis_schema())
+        raw=result['output'];self.pin('analysis/raw-analysis.json',raw)
+        issues=[];validation_issues=[]
+        try:routing.validate_analysis(raw,protocol['visible']['task'],protocol['visible']['sources'])
+        except routing.CitationError as error:issues=error.issues
+        except EvidenceError as error:validation_issues=[str(error)]
+        self.pin('analysis/citation-issues.json',issues)
+        self.pin('analysis/validation-issues.json',validation_issues)
+        # The operator supplies the actual reviewer identity and source evidence.
+        request=dict(analysis=raw,reviewer=None,approved=None,blocking_issues=validation_issues,
+                     scope_unknowns=[],evidence=[],reason='')
+        archive.atomic_json(self.root/'analysis/review-input.json',request)
+        state=self.state();state['status']='analysis_citation_review' if issues else 'analysis_review'
+        self.save(state);self.report();return state
+
+    def review_analysis(self,request):
+        protocol=self.verify();state=self.state()
+        if state['status'] not in ('analysis_review','analysis_citation_review'):
+            raise EvidenceError('Only a completed automatic analysis can be reviewed')
+        memory.object_fields(request,{'analysis','reviewer','approved','blocking_issues',
+                                     'scope_unknowns','evidence','reason'},'analysis review')
+        visible=protocol['visible']
+        analysis=request['analysis']
+        from ._session_runtime.schema_validator import validate
+        try:validate(analysis,taxonomy.analysis_schema())
+        except ValueError as error:raise EvidenceError(str(error)) from error
+        routing.validate_analysis(analysis,visible['task'],visible['sources'])
+        review=routing.review_template(analysis,visible['task'],visible['sources'])
+        review.update({key:value for key,value in request.items() if key!='analysis'})
+        visible=dict(visible,analysis=analysis,review=review)
+        frozen=load(self.root/'active-snapshot.json')
+        routed=memory.retrieve(protocol['store'],visible,frozen['sha256'],frozen)
+        if routed['route']['reason'] in ('missing_or_drifted_semantic_review','unresolved_semantic_review'):
+            raise EvidenceError('Provide a genuine source-bound analysis review before training')
+        if protocol['kind']=='development' and not any(f['state']=='known' for f in analysis['facts']):
+            raise EvidenceError('No established mechanism premises for development')
+        if protocol['kind']=='development' and not analysis['obligation_labels']:
+            raise EvidenceError('Development requires at least one evidence-supported obligation label')
+        self.pin('analysis/approved-visible.json',visible)
+        self.pin('initial-route.json',routed)
+        state=self.state();state['status']='prepared';self.save(state)
+        self.report();return state
 
     def develop(self,backend,protocol):
         state=self.state();number=state['round']+1
@@ -339,12 +417,13 @@ class Evolution:
     def report(self):
         state=self.state();protocol=load(self.root/'protocol.json')
         jobs={j['slot']:j for j in state['jobs']}
+        route=load(self.root/'initial-route.json') if (self.root/'initial-route.json').is_file() else None
         groups={}
         for slot in protocol['slots']:
             if slot['role']!='repair':continue
             name=slot['name']
             group=name[0] if protocol['kind']=='evaluation' else (
-                'starting_'+load(self.root/'initial-route.json')['route']['condition'] if name.startswith('BASE-') else name.split('-DEV')[0]+'-candidate')
+                'starting_'+(route['route']['condition'] if route else 'pending_analysis') if name.startswith('BASE-') else name.split('-DEV')[0]+'-candidate')
             row=groups.setdefault(group,dict(planned=0,started=0,valid_scores=0,invalid=0,unstarted=0,whole_passes=0))
             row['planned']+=1
             if name not in jobs:row['unstarted']+=1;continue

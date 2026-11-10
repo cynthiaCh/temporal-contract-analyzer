@@ -36,7 +36,7 @@ def evidence_schema():
 
 
 def analysis_schema():
-    """Output schema for a future source-only preanalysis call; never executes it."""
+    """Output schema for source-only Auto Contract analysis; never executes it."""
     predicates = list(definition()['mechanism_predicates'])
     return dict(type='object', properties=dict(
         taxonomy_version=dict(type='string', enum=[VERSION]),

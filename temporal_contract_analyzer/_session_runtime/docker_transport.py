@@ -69,7 +69,8 @@ class Launcher:
         if (public/'rg').is_file():mount(public/'rg', '/opt/rg')
         mount(home, '/home/agent')
         mount(profile, '/home/agent/.codex', False)
-        mount(Path(folder)/'workspace', '/workspace', False)
+        readonly=namespace[namespace.index('/workspace') - 2]=='--ro-bind'
+        mount(Path(folder)/'workspace', '/workspace', readonly)
         mount(namespace[namespace.index('/format.json') - 1], '/format.json')
         for name in ('guard_client.py', 'request_guard.py', 'read_policy.py'):
             mount(Path(__file__).parent/name, '/' + name)

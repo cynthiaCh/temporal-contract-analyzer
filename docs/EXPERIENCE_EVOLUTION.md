@@ -39,22 +39,73 @@ An optional `backend` object selects the [SWE-TempoC Docker adapter](DOCKER_BACK
 `docker-check` and `docker-calibrate` are explicit zero-model environment/scorer
 commands. Without that object, execution uses the existing native backend.
 
-`config.json` must contain exactly these required fields, with optional `kind`
+`config.json` requires the fields below except `visible`, with optional `kind`
 (`development` or `evaluation`) and `max_rounds` (1 or 2):
 
 | Field | Meaning |
 |---|---|
 | `case_id` | Registered case, management only; never a retrieval feature |
-| `visible` | Original task, complete candidate `sources`, fixed seven-label `analysis`, source-bound `review` |
+| `visible` (optional) | Original task, complete candidate `sources`, fixed seven-label `analysis`, source-bound `review`; omit for automatic AST-assisted analysis |
 | `store` | Explicit unified research memory directory |
 | `binary`, `node` | Explicit native Codex and Node executable paths |
 | `calibration` | Reusable version/runtime-bound original/reference/degenerate evidence below |
 | `source_relationship` | Source-unit/cluster relationship, exposure and interpretation limits; audit only |
 
-The visible task/source must exactly match the registered original candidate.
-The source-bound analysis review must already be supplied genuinely; this entry
-point does not silently approve an analysis or make an extra classifier call.
+When supplied, the visible task/source must exactly match the registered original
+candidate and include a genuine source-bound analysis review. When omitted,
+preparation captures those inputs automatically and generates AST materials.
 R/O/B/L/I/F/A is the native taxonomy. Historical T1–T4 imports are not recoded.
+
+### Automatic AST-assisted Auto Contract
+
+Omit `visible` from the existing configuration to use this path:
+
+```text
+prepare: registered task/source → local AST scan → selected evidence + prompt
+run --execute: one analysis LLM session → analysis_review (no repair or scoring)
+review-analysis: explicitly supplied review → experience retrieval → prepared
+run --execute: existing repair/reflection/validation workflow
+```
+
+```bash
+python3 -B -m temporal_contract_analyzer experience-evolution prepare config.json --root research/NEW_BATCH
+python3 -B -m temporal_contract_analyzer experience-evolution run --root research/NEW_BATCH --execute
+# Read the analysis and fill analysis/review-input.json with an actual review.
+python3 -B -m temporal_contract_analyzer experience-evolution review-analysis research/NEW_BATCH/analysis/review-input.json --root research/NEW_BATCH
+python3 -B -m temporal_contract_analyzer experience-evolution run --root research/NEW_BATCH --execute
+```
+
+The review input contains `analysis`, `reviewer`, `approved`, `blocking_issues`,
+`scope_unknowns`, `evidence`, and `reason`. Initially the reviewer and approval are
+null. Supply the actual `human_visible_input_only` or
+`execution_agent_visible_input_only` review, `approved: true`, no unresolved
+blocking issues, a reason, and source/task citations. AI-assisted review is not
+the separate named expert's experience activation. Corrections to analysis are
+explicitly supplied in this file; the raw model result is preserved. Invalid
+citations produce `analysis_citation_review` and must be corrected before review.
+Other schema-valid analysis errors remain reviewable with explicit
+`blocking_issues`; correct the analysis and clear resolved issues before approval.
+Development needs at least one evidence-supported obligation label and one known
+mechanism premise; unresolved labels remain reviewable rather than failing after
+repair sessions. Evaluation may keep empty labels and fall back to AUTO.
+
+Artifacts under `analysis/` include:
+
+- `ast-report.json`: the complete local scan.
+- `ast-evidence.json`: finding evidence events, conditions, selected relations,
+  candidate call links/target locations, coverage, and limitations; raw trees and
+  provenance hashes are omitted from this model-facing projection.
+- `prompt.md`: the exact analysis prompt, including full numbered candidate
+  source, task, selected AST evidence, and the taxonomy.
+- `raw-analysis.json`, `citation-issues.json`, `validation-issues.json`, and `review-input.json`.
+- `approved-visible.json`: the explicitly reviewed input used by training.
+
+Evidence selection is rule-based, not LLM ranking. No findings does not mean no
+risk. Partial or unavailable parser coverage remains visible; analysis can still
+use the full source. Native preparation uses the configured Node executable;
+Docker preparation uses the host Node for AST parsing, separately from the solver
+runtime. No subject code is executed during AST preparation. Large source inputs
+retain the existing full-source prompt behavior without silent truncation.
 
 The packaged `prompts/MASTER_PROMPT.md` (also linked at the repository root) is
 copied and pinned as `controller-prompt.md`. The protocol pins source, analysis,
@@ -72,6 +123,11 @@ and batch-state checks still apply, including the existing no-retry rule.
 - One round: 2 starting repairs + 1 reflection + 2 validations = 5 sessions, up to 108 requests.
 - Two preauthorized rounds: same 2 starting repairs + two reflection/validation rounds = 8 sessions, up to 168 requests.
 - Evaluation: B1/A1/A2/B2, 4 sessions, up to 96 requests, no reflection or library update.
+- Omitting `visible` adds one analysis session: `gpt-6-sol / low`, at most 12
+  requests and 600 seconds. Thus one-round development plans 6 sessions / 120
+  requests, two rounds plan 9 / 180, and evaluation plans 5 / 108. Analysis usage
+  is archived and included in the batch totals. Evaluation generates one common
+  analysis before A/B repairs and never learns from evaluation feedback.
 
 All slots are serial. A store execution lock prevents concurrent evolution
 batches. There are no retries, replacement cases, hidden judges or automatic

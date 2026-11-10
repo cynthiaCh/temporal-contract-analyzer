@@ -295,8 +295,10 @@ cross-version acceptance suite. Stages 2–4 remain unvalidated proposals.
 
 The bounded evolution controller is an implemented workflow, not evidence that
 the representation, retrieval policy or class prompts have been shown effective.
-Its operational entry point requires explicit, already reviewed case inputs;
-it does not silently restart all historical studies or approve its own analysis.
+Its operational entry point accepts reviewed case inputs or prepares AST-assisted
+analysis when `visible` is omitted. The first explicit run then performs one
+analysis call and pauses for `review-analysis` before any repairs. It does not
+silently restart historical studies or approve its own analysis.
 
 First establish and verify the output contracts. Then study the representation,
 then retrieval, then shared class-prompt evolution. Reading this prompt is not an

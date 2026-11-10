@@ -26,5 +26,5 @@ def validate(value,schema,path='$'):
 
 def parse_response(phase,raw):
  value=json.loads(raw)
- filename={'extract':'extraction.schema.json','reflect':'reflection.schema.json','repair':'maintenance.schema.json'}[phase]
+ filename={'analysis':'analysis.schema.json','extract':'extraction.schema.json','reflect':'reflection.schema.json','repair':'maintenance.schema.json'}[phase]
  return validate(value,json.loads((A/filename).read_text()))

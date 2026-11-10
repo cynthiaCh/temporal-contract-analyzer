@@ -34,13 +34,13 @@ class ClassReminderTests(unittest.TestCase):
     def test_experience_comparison_shares_exact_classified_prefix(self):
         a = maintenance_prompt('Repair task', 'Candidate Contract', obligation_labels=['L', 'A'])
         b = maintenance_prompt('Repair task', 'Candidate Contract', 'Frozen experience', obligation_labels=['L', 'A'])
-        self.assertEqual(b, a+'\n\n冻结经验正文：按当前证据核对适用条件。\nFrozen experience')
+        self.assertEqual(b, a+'\n\nFrozen experience guidance: verify applicability against the current evidence.\nFrozen experience')
         self.assertIn(reminders.definition()['by_label']['L'], a)
         self.assertIn(reminders.definition()['by_label']['A'], a)
         self.assertNotIn(reminders.definition()['by_label']['F'], a)
 
-    def test_existing_unclassified_call_preserves_prior_prompt_bytes(self):
-        expected = ('Task\n\n候选自动Contract：请结合当前源码核查依据，不盲从无据政策。\nContract'
+    def test_unclassified_call_keeps_common_reminder_without_label_reminders(self):
+        expected = ('Task\n\nCandidate automatic Contract: verify its basis against the current source; do not blindly follow unsupported policies.\nContract'
                     '\n\n完成维护任务，保留有依据的既有行为；分别核查启动、接纳、完成、取消及副作用归属。')
         self.assertEqual(maintenance_prompt('Task', 'Contract'), expected)
         self.assertNotIn('七类通用核查提醒', expected)

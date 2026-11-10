@@ -12,7 +12,7 @@ from structured import parse_response
 O=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('archive_native',O/'native_backend.py')
 backend=importlib.util.module_from_spec(spec);spec.loader.exec_module(backend);backend.OUT=O
-ROLE={'extract':('gpt-6-sol','low',12,'extraction'),'repair':('gpt-5.6-terra','low',24,'maintenance'),'reflect':('gpt-5.6-terra','medium',12,'reflection')}
+ROLE={'analysis':('gpt-6-sol','low',12,'extraction'),'extract':('gpt-6-sol','low',12,'extraction'),'repair':('gpt-5.6-terra','low',24,'maintenance'),'reflect':('gpt-5.6-terra','medium',12,'reflection')}
 
 def command(call,folder,phase,case,*,runtime,socket_dir,copy_auth=True):
     """Original autonomous Codex CLI and role flags, no host archive bind mounts."""
@@ -23,7 +23,7 @@ def command(call,folder,phase,case,*,runtime,socket_dir,copy_auth=True):
         cmd=[s.replace('model_reasoning_effort="low"','model_reasoning_effort="'+ROLE[phase][1]+'"') for s in cmd]
     # Native role permissions and output schema are separate decisions.
     old_schema=str(O/('reflection.schema.json' if phase=='reflect' else 'extraction.schema.json'))
-    role_schema=str(Path(case['extraction_schema'])) if phase=='extract' and case.get('extraction_schema') else str(O/{'extract':'extraction.schema.json','repair':'maintenance.schema.json','reflect':'reflection.schema.json'}[phase])
+    role_schema=str(Path(case['extraction_schema'])) if phase=='extract' and case.get('extraction_schema') else str(O/{'analysis':'analysis.schema.json','extract':'extraction.schema.json','repair':'maintenance.schema.json','reflect':'reflection.schema.json'}[phase])
     cmd=[role_schema if x==old_schema else x for x in cmd]
     i=cmd.index('--chdir');cmd[i:i]=['--ro-bind',case['node'],'/runtime/node']
     if case.get('public_dependencies'):
@@ -163,7 +163,7 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
         format_ok=True
     except (ValueError,TypeError,AttributeError) as exc:
         ans={};format_ok=False;parse_error=repr(exc)
-    schema_path=Path(case['extraction_schema']) if phase=='extract' and case.get('extraction_schema') else O/{'extract':'extraction.schema.json','repair':'maintenance.schema.json','reflect':'reflection.schema.json'}[phase]
+    schema_path=Path(case['extraction_schema']) if phase=='extract' and case.get('extraction_schema') else O/{'analysis':'analysis.schema.json','extract':'extraction.schema.json','repair':'maintenance.schema.json','reflect':'reflection.schema.json'}[phase]
     save(a.root/'response-validation.json',{'phase':phase,'valid':format_ok,'error':parse_error,'schema_sha256':sha(schema_path)})
     try:ledger=json.loads((a.root/'meter/ledger.json').read_text())
     except (OSError,ValueError):ledger={}
@@ -189,7 +189,13 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
         after=inventory(a.final);save(a.root/'score-after-manifest.json',after)
         rec['scored_candidate_sha256']=digest(before);rec['scored_candidate_unchanged']=before==after
     elif score_fn is not None:rec['scoring_status']='NOT_ADMITTED_INCOMPLETE_OR_INVALID_CANDIDATE'
-    if phase=='extract':
+    if phase=='analysis':
+        save(a.root/'analysis.json',ans)
+        if format_ok:(a.root/'contract.md').write_text(ans['contract'])
+        if not a.final.is_dir() or inventory(a.final)!=inventory(a.original):
+            rec.update(candidate_complete=False,infrastructure_valid=False,
+                       preanalysis_error='Read-only analysis changed candidate files')
+    elif phase=='extract':
         from toolflow import validate_analysis
         full=raw;(a.root/'preanalysis-raw.txt').write_text(full)
         try:

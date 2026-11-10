@@ -7,8 +7,9 @@ development or frozen evaluation protocol.
 
 ```text
 Task + original candidate source
-  ├─ optional AST report / archived source context
-  └─ supplied automatic Contract + labels + facts + analysis review
+  ├─ omit visible: AST scan → selected evidence → explicit analysis LLM call
+  │     → source-bound analysis review
+  └─ or supply reviewed automatic Contract + labels + facts
        → frozen active experience snapshot
        → source-bound retrieval: zero or one experience
        ├─ development: starting repairs → feedback → reflection
@@ -16,9 +17,11 @@ Task + original candidate source
        └─ evaluation: B1/A1/A2/B2 from original source; no memory updates
 ```
 
-The controller requires the visible analysis as input. It does not silently run
-AST analysis, source retrieval or a classifier. `experience-prompt` prepares
-analysis material; callers supply the resulting reviewed analysis explicitly.
+When `visible` is omitted from preparation, the controller captures the registered
+task/source and generates AST evidence locally. The first explicit `run --execute`
+calls the analysis LLM once and pauses for `review-analysis`; no repairs start
+before that review. Existing configs may instead supply reviewed visible analysis.
+`experience-prompt` remains an offline prompt generator and never calls a model.
 See [taxonomy and analysis](CONTRACT_TAXONOMY.md), [experience storage and
 retrieval](EXPERIENCE_MEMORY.md), and [execution protocol](EXPERIENCE_EVOLUTION.md).
 
@@ -32,7 +35,7 @@ retrieval](EXPERIENCE_MEMORY.md), and [execution protocol](EXPERIENCE_EVOLUTION.
 | Analysis materials and offline routing | `taxonomy`, `experience-prompt`, `experience-review-template`, `route-experience`, `maintenance-prompt` | `taxonomy_cli.py`, `experience_routing.py` |
 | Unified memory and activation | `experience-memory …` | `experience_memory.py`, `experience_approval.py`, `experience_memory_cli.py` |
 | Human review queue | `experience-memory review --store PATH` | `memory_review.py`, `web/memory-review.*` |
-| Bounded development / frozen testing | `experience-evolution prepare/run/status/report/expert` | `experience_evolution.py`, `evolution_cli.py` |
+| Bounded development / frozen testing | `experience-evolution prepare/run/review-analysis/status/report/expert` | `experience_evolution.py`, `evolution_cli.py` |
 
 Opening a browser, reading memory, preparing prompts and preparing an evolution
 batch do not call a model. Live execution requires the explicit execution switch
@@ -49,7 +52,7 @@ and the native backend's prerequisites.
 | Vocabulary and static reminders | `taxonomy.py`, `taxonomy_cli.py`, `reminders.py` | Seven-label definitions, material commands and authored checklists; reminders are not learned experience |
 | Shared knowledge | `experience_memory.py`, `experience_memory_cli.py`, `experience_recoding.py`, `experience_routing.py` | Immutable records, evidence closure, label recoding, discovery and conditional delivery |
 | Expert decisions | `experience_approval.py`, `memory_review.py` | Exact-version decisions, active snapshots and pending/reviewed queue |
-| Evolution | `experience_evolution.py`, `evolution_cli.py`, `evolution_backend.py` | Bounded sessions, candidate creation, validation, expert checkpoint and frozen evaluation |
+| Evolution | `experience_evolution.py`, `evolution_cli.py`, `evolution_backend.py`, `preanalysis.py` | AST-assisted analysis, bounded sessions, candidate creation, validation, expert checkpoint and frozen evaluation |
 | Candidate snapshots | `candidate_files.py` | Candidate-visible file capture, hashes, modes and independent workspace copies |
 | Trusted scoring | `case_catalog.py`, `case_evaluation.py` | Registered task inputs, scorer binding, runtime checks, oracle invocation, effect-vector comparisons and process termination |
 | Shared HTTP transport | `http_common.py` | Loopback origin checks, JSON validation and security headers for both browsers |

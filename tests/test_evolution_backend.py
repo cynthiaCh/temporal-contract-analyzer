@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 import evolution_fixtures as fixtures
-from temporal_contract_analyzer import case_evaluation
+from temporal_contract_analyzer import case_evaluation, taxonomy
 from temporal_contract_analyzer.case_catalog import case_input
 from temporal_contract_analyzer.core import canonical, sha, EvidenceError
 from temporal_contract_analyzer.case_evaluation import scoring_inputs
@@ -110,6 +110,28 @@ class BackendTests(unittest.TestCase):
         request=json.loads((directory/'native-request.json').read_text())
         self.assertEqual(request['slot']['phase'],'reflect')
         self.assertEqual(request['config']['seconds_per_session'],600)
+
+    def test_analysis_bridge_supplies_its_schema_to_the_packaged_runner(self):
+        directory=self.root/'analysis-session';directory.mkdir()
+        analysis=dict(taxonomy_version=taxonomy.VERSION,contract='Synthetic Contract.',
+                      obligation_labels=[],facts=[],unknowns=[])
+        class FakeProcess:
+            returncode=0
+            def __init__(self,command,**kwargs):pass
+            def communicate(self,request,timeout):
+                data=json.loads(request)
+                backend=directory/'backend'
+                assert json.loads((backend/'analysis.schema.json').read_text())==taxonomy.analysis_schema()
+                assert data['slot']['phase']=='analysis'
+                archive=Path(data['run_dir'])/'archive';archive.mkdir(parents=True)
+                (archive/'raw-answer.txt').write_text(json.dumps(analysis))
+                return json.dumps(dict(candidate_complete=True,infrastructure_valid=True)),''
+        with patch('temporal_contract_analyzer.evolution_backend.subprocess.Popen',FakeProcess), \
+             patch.object(NativeBackend,'preflight',return_value=None):
+            result=NativeBackend().execute(self.protocol,'analysis','Synthetic analysis prompt',
+                                           taxonomy.analysis_schema(),directory)
+        self.assertTrue(result['completed'])
+        self.assertEqual(result['output'],analysis)
 
 
 if __name__=='__main__':unittest.main()

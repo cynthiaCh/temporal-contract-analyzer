@@ -22,6 +22,7 @@ DEPENDENCIES = ('runner.py','native_backend.py','archive.py','guard_server.py','
                 'request_guard.py','read_policy.py','usage.py','structured.py','schema_validator.py','docker_transport.py',
                 'research-config.toml','maintenance.schema.json','extraction.schema.json')
 ROLES = {
+    'analysis':dict(model='gpt-6-sol', effort='low', requests=12, seconds=600),
     'repair':dict(model='gpt-5.6-terra', effort='low', requests=24, seconds=600),
     'reflect':dict(model='gpt-5.6-terra', effort='medium', requests=12, seconds=600)}
 DRIVER = '''import json,sys
@@ -113,7 +114,8 @@ class NativeBackend:
         backend.mkdir()
         for name in DEPENDENCIES:
             shutil.copyfile(SOURCE/name, backend/name)
-        archive.atomic_json(backend/'reflection.schema.json', schema or dict(type='object'))
+        schema_name='analysis.schema.json' if role=='analysis' else 'reflection.schema.json'
+        archive.atomic_json(backend/schema_name, schema or dict(type='object'))
         (backend/'driver.py').write_text(DRIVER, encoding='utf-8')
         frozen = {str(p.resolve()):sha(p.read_bytes()) for p in backend.iterdir() if p.is_file()}
         task_path=directory/'task.md'

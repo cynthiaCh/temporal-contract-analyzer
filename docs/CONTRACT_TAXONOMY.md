@@ -82,6 +82,11 @@ python3 -B -m temporal_contract_analyzer route-experience route-input.json --out
 
 `public-input.json` 仅含 `task`、`sources`（候选内相对路径到源码正文的对象）及可选 `AST`。`experience-prompt` 的输出须与 `taxonomy --format schema` 配套提供给既有结构化输出后端；本接口不替调用者发请求。
 
+The integrated alternative is `experience-evolution prepare` with `visible`
+omitted: it builds AST evidence automatically, and the first `run --execute`
+performs the analysis model call. `review-analysis` supplies source-bound review
+before a subsequent run starts repairs. See [the execution flow](EXPERIENCE_EVOLUTION.md).
+
 模型分析对象必须包含 `taxonomy_version`、`contract`、`obligation_labels`、`facts`、`unknowns`。标签逐条包含 `code`、义务 `statement` 和 `evidence`；机制事实包含 `predicate`、`state` 和 `evidence`。状态为 `known`／`unknown`／`contradicted`。引用为 `{file, line, quote}`，行号从 1 开始，`TASK` 表示原任务；文本必须出现在该行。源码中的现象不自动成为应保留的政策，AST 也不证明完整可达性。
 
 `analyzed-input.json` 仅含 `task`、`sources`、`analysis`。生成的审查模板默认 `approved: null`，审查当前义务方向、前提和未知范围后才填写。`reviewer` 须如实选 `execution_agent_visible_input_only` 或 `human_visible_input_only`，并给 `reason`、当前 `evidence`；AI 自查不算独立人工复核。路由绑定整个输入及 codebook 摘要，任意内容变化后旧审查失效。存在引用不等于语义正确，这一步仍依赖实际审查。
