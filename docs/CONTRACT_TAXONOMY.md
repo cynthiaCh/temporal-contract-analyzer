@@ -1,6 +1,6 @@
 # 七类时序义务与经验路由
 
-Web 执行入口现位于 **七类训练与测试**（`/experience`），支持显式发起分析、开发反思、人工审核、回验冻结和经验 A/B 测试，见 [Web v2 流程](EXPERIENCE_WEB_V2.md)。下述纯材料接口继续不直接调用模型，旧实验也不会自动切换。
+当前开发／冻结测试入口为 `experience-evolution` CLI，见 [进化流程](EXPERIENCE_EVOLUTION.md)。统一经验库通过 `experience-memory review` 打开审核页面；离线材料命令不调用模型。旧 Web v2、A/D 路由与单题失败学习入口已移除。
 
 自 2026-11-09 起，当前工具接口统一采用 `temporal-obligation-taxonomy-7-v1`。它沿用 bench 论文覆盖审计的七类义务，作为分类、经验检索和展示的共同词汇。这里选择的是有既有定义与覆盖记录的工程口径，尚未比较不同分类方案的准确率或修复收益。
 
@@ -31,25 +31,25 @@ Web 执行入口现位于 **七类训练与测试**（`/experience`），支持�
 | 记录 | 现在的含义 | 处理方式 |
 |---|---|---|
 | `refine-logs/experience-toolflow-v1-20261108` 的 T1–T4 | 旧版四组机制路由 | 历史保留，不再作为当前分类定义 |
-| `repair.py:FAMILIES` 的五组 | 开发侧失败假设提示模板 | 保留提示行为，不能当作隐藏测试输入的分类器 |
+| 旧版 `repair.py:FAMILIES` 的五组 | 开发侧失败假设提示模板 | 实现已移除；历史含义不能作为当前分类定义 |
 | 原题库五条问题 | 五条可检索材料 | 条目数与类别数无须相同，原文不改 |
 | D1/D2、Test-1/Test-2 | 开发／测试案例别名 | 不是义务标签，也不是独立来源定义 |
 
-T4 不能直接改名为 L，T3 也不能直接改名为 B。旧分组可能同时涉及多类。重新使用某条旧经验时，另建带引用的七类元数据；不改原正文、冻结摘要、分母或历史分类。页面明确显示“历史四类路由”，不假装原实验已用七类执行。
+T4 不能直接改名为 L，T3 也不能直接改名为 B。旧分组可能同时涉及多类。重新使用某条旧经验时，另建带引用的七类元数据；不改原正文、冻结摘要、分母或历史分类。旧记录仍保留历史分类，不假装原实验已用七类执行。
 
 语言、框架、来源 cluster 和义务分类分开记录。训练／测试的来源隔离不能靠标签不同来证明；同一 cluster 的变体仍须说明历史暴露。
 
 ## 新接口怎样走完整流程
 
 1. **开发**：Agent 读取任务、候选源码及可选 AST，提取候选 Contract、七类多标签和机制前提。标准 Contract 留在开发评价侧。
-2. **比较与反思**：运行器整理标准要求、实际结果、改善、退步及未知原因，交给反思器修订通用经验。这里没有替换既有反思函数，也没有新增模型调用。
+2. **比较与反思**：运行器整理任务／源码证据、实际结果、改善、退步及未知原因，按有界协议调用反思器产生候选经验；维护 Agent 不读取隐藏评分器。
 3. **冻结**：经验正文与七类标签、适用／排除条件一起绑定摘要。摘要一致只说明内容未变，不说明规则正确或已获接纳。
 4. **测试**：只用当前可见输入提取多标签。先按标签取候选，再核对机制前提、排除条件和语义审查。选零至一条冻结经验；未知、空库或候选冲突回退 AUTO。
 5. **交付与评分**：A 为原任务＋同一候选自动 Contract；B 仅追加命中经验正文。工具、模型、effort、预算及评分版本另行冻结。测试期间不改经验，不把标准答案交给维护 Agent。
 
-七类用于组织义务，不代表七条经验已经学好。新接口的机制前提词典沿用现有试验的可见机制，并不声称覆盖七类全部实现。当前 v2 注册表为空，旧经验待逐条重新标注；未投放经验时 A/B 相同，差异不能归因于经验。
+七类用于组织义务，不代表每类都有有效经验。机制前提词典并不覆盖七类的全部实现。实际经验与激活状态从指定统一库读取；未投放经验时 A/B 相同，差异不能归因于经验。
 
-实现位于 [taxonomy.py](../temporal_contract_analyzer/taxonomy.py) 与 [experience_routing.py](../temporal_contract_analyzer/experience_routing.py)。这是可运行的离线接口；旧研究运行器仍按冻结版本复现，不会被自动切换。本次未执行新的七类训练／测试，也未把一次 Reflection 改称官方 GEPA。
+实现位于 [taxonomy.py](../temporal_contract_analyzer/taxonomy.py) 与 [experience_routing.py](../temporal_contract_analyzer/experience_routing.py)。这些模块提供离线材料和路由校验；`experience_evolution.py` 调度开发与冻结测试。历史复现需要匹配的旧代码与环境。
 
 ## 根据分类追加通用提醒
 
@@ -65,7 +65,7 @@ python3 -B -m temporal_contract_analyzer maintenance-prompt analyzed-input.json 
 
 比较经验增量时，A/B 必须使用同一自动 Contract、同一组标签与同一版提醒；B 仅追加冻结经验正文。Python 调用为 `maintenance_prompt(task, contract, obligation_labels=codes)` 和 `maintenance_prompt(task, contract, experience_text, obligation_labels=codes)`。提醒版本和摘要可通过 `reminders.material(codes)` 归档。只比较类别提醒本身的效果时，应另立对照，不与经验增量混算。
 
-原有调用若不传 `obligation_labels`，保持此前共同提示正文；旧归档、冻结脚本与历史 E/F 固定提醒不改。新命令及参数是显式接入点，既有服务器运行器需要调用它们才会使用七类提醒，不会自动改写旧实验。
+原有调用若不传 `obligation_labels`，保持此前共同提示正文；旧归档、冻结脚本与历史 E/F 固定提醒不改。新命令及参数是显式接入点，有界进化控制器目前使用自己的 `common()` 提示，不会隐式追加这些静态提醒，也不会改写旧实验。
 
 ## 离线命令
 
@@ -90,4 +90,4 @@ python3 -B -m temporal_contract_analyzer route-experience route-input.json --out
 
 Python 调用者可用 `freeze_entry(text, obligation_labels, requires, excludes, version)` 生成完整性绑定对象，交给 `route(...)`；它不会批准或写入经验。使用 `maintenance_prompt(task, contract)` 构造 A，使用同一函数仅增加选中条目的 `text` 构造 B。该公共提示模板属于新版本，不能冒充旧实验 prompt 的逐字复现。
 
-当前流程入口为 [archived v2 METHOD](ARCHIVE.md) (`refine-logs/experience-toolflow-v2-20261109/METHOD.md`)。经验重新标注、语义核查与行为接纳必须分别记录，不能靠修改类别名称跳过。
+当前流程入口为 [EXPERIENCE_EVOLUTION.md](EXPERIENCE_EVOLUTION.md)。旧方法说明位于 [研究归档](ARCHIVE.md)。经验重新标注、语义核查与行为接纳必须分别记录，不能靠修改类别名称跳过。

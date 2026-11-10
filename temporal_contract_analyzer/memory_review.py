@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from . import experience_memory as memory, experience_approval as approval, taxonomy
 from .core import EvidenceError
-from .hub import Handler, WEB
+from .http_common import LocalHandler, WEB
 
 
 def record(store, code):
@@ -32,7 +32,7 @@ class ReviewServer(ThreadingHTTPServer):
         self.url = 'http://127.0.0.1:' + str(self.server_address[1])
 
 
-class ReviewHandler(Handler):
+class ReviewHandler(LocalHandler):
     def get(self):
         url = urlsplit(self.path)
         parts = url.path.strip('/').split('/')

@@ -43,12 +43,11 @@ python3 -B -m temporal_contract_analyzer experience-memory verify --store /path/
 python3 -B -m temporal_contract_analyzer experience-memory review --store /path/to/memory
 ```
 
-[Memory format and retrieval](docs/EXPERIENCE_MEMORY.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [bounded evolution](docs/EXPERIENCE_EVOLUTION.md) document the interfaces. Pending candidates require a named expert's decision on exact rules and outcomes before activation. Evaluation uses a frozen snapshot and cannot learn. No paid calls are authorized by reading this README.
+[Architecture and source map](docs/ARCHITECTURE.md), [memory format and retrieval](docs/EXPERIENCE_MEMORY.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [bounded evolution](docs/EXPERIENCE_EVOLUTION.md) document the interfaces. Pending candidates require a named expert's decision on exact rules and outcomes before activation. Evaluation uses a frozen snapshot and cannot learn. No paid calls are authorized by reading this README.
 
 ## Optional integrations
 
 - The report UI can be opened with `python3 -B -m temporal_contract_analyzer reports open`.
-- Historical development browsing uses `TCA_DEVELOPMENT_ROOT=/absolute/path/to/archive/research`; an empty history is valid.
 - Benchmark execution requires the separately provisioned benchmark, matching scoring runtime and calibration. Set `TCA_BENCH_ROOT` explicitly for reproducible use; checkout-based sibling discovery remains a compatibility convenience.
 - The native evolution runner requires explicit executables, isolation tools and version-bound evidence; importing it cannot start a historical scheduler.
 

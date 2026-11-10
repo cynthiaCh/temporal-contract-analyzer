@@ -31,10 +31,6 @@ def main(argv=None):
     f.add_argument('--max-chars',type=int,help='Reject bundle if any layer exceeds this length; never truncate')
     b=sub.add_parser('verify-bundle',help='Verify frozen files, hashes and deterministic rendering')
     b.add_argument('bundle',type=Path);b.add_argument('--candidate',type=Path)
-    pe=sub.add_parser('profile',help='Freeze researcher-side profile evidence from a review packet; never an agent input')
-    pe.add_argument('packet',type=Path);pe.add_argument('--output',type=Path,required=True)
-    pv=sub.add_parser('verify-profile',help='Verify profile sidecar against frozen review packet bytes and metadata')
-    pv.add_argument('evidence',type=Path);pv.add_argument('packet',type=Path)
     for cmd in (s,c):
         cmd.add_argument('--node',help='Node executable for JS/TS/Vue')
         cmd.add_argument('--view',choices=['focused','exploratory'],default='focused',help='Human-readable report view; JSON always retains raw evidence')
@@ -50,17 +46,6 @@ def main(argv=None):
             return taxonomy_cli.run(args)
         if args.command == 'reports':
             return archive_cli.run(args)
-        if args.command in {'profile','verify-profile'}:
-            from .profile import build_profile_evidence, verify_profile_evidence
-            packet=json.loads(args.packet.read_text(encoding='utf-8'))
-            if args.command=='verify-profile':
-                evidence=json.loads(args.evidence.read_text(encoding='utf-8'))
-                print(json.dumps(verify_profile_evidence(packet,evidence),ensure_ascii=False));return 0
-            if args.output.exists():raise EvidenceError('输出已存在，请使用新路径，保留旧证据卡')
-            evidence=build_profile_evidence(packet)
-            args.output.parent.mkdir(parents=True,exist_ok=True)
-            with args.output.open('x',encoding='utf-8') as target:target.write(json.dumps(evidence,ensure_ascii=False,indent=2)+'\n')
-            print(json.dumps(dict(output=str(args.output),evidence_hash=evidence['evidence_hash'],coverage=evidence['coverage'],semantic_validity='not_checked'),ensure_ascii=False));return 0
         if args.command=='verify-bundle':
             from .layers import verify_bundle
             from .core import sha

@@ -43,36 +43,6 @@ def registered_cases():
     return entries
 
 
-def local_models():
-    home = Path(os.environ.get('CODEX_HOME', str(Path.home()/'.codex'))).expanduser()
-    cache = home/'models_cache.json'
-    try:
-        data = read(cache)
-        rows = data.get('models', [])
-        if not isinstance(rows, list):
-            rows = []
-    except (OSError, ValueError, AttributeError):
-        data, rows = {}, []
-    choices, seen = [], set()
-    for row in rows:
-        if not isinstance(row, dict) or row.get('visibility') != 'list':
-            continue
-        name = row.get('slug')
-        if not isinstance(name, str) or not name.strip() or len(name) > 200 or name in seen:
-            continue
-        seen.add(name)
-        efforts = [r['effort'] for r in row.get('supported_reasoning_levels', [])
-                   if isinstance(r, dict) and r.get('effort') in ('low','medium','high','xhigh','max','ultra')]
-        default = row.get('default_reasoning_level')
-        if default not in efforts:
-            default = efforts[0] if efforts else None
-        choices.append(dict(id=name, label=row.get('display_name') or name, efforts=efforts,
-                            default_effort=default, earlier=name.startswith('gpt-5.')))
-    choices.sort(key=lambda r:(not r['earlier'], r['id']))
-    return dict(models=[r['id'] for r in choices], model_choices=choices, default_model='',
-                model_source='local_codex_cache', models_fetched_at=data.get('fetched_at'))
-
-
 def catalog():
     root = bench_root()
     exclusion_file = root/'studies/case-admission-exclusions-v1/registry.json'
@@ -99,7 +69,7 @@ def catalog():
         cases.append(dict(id=case_id, title=manifest.get('title',case_id), language=row.get('language',''),
                           mechanism=row.get('mechanism',''), source=source,
                           supported=not reason, unavailable_reason=reason))
-    return dict(cases=cases, source=str(root), task_condition='latent-maintenance', **local_models())
+    return dict(cases=cases, source=str(root), task_condition='latent-maintenance')
 
 
 def case_input(case_id):

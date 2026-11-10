@@ -8,11 +8,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import test_experience_workbench as fixtures
+import evolution_fixtures as fixtures
 from temporal_contract_analyzer import case_evaluation
 from temporal_contract_analyzer.case_catalog import case_input
 from temporal_contract_analyzer.core import canonical, sha, EvidenceError
-from temporal_contract_analyzer.experience_workbench import scoring_inputs
+from temporal_contract_analyzer.case_evaluation import scoring_inputs
 from temporal_contract_analyzer.evolution_backend import NativeBackend, source_hashes
 
 
@@ -22,6 +22,12 @@ class BackendTests(unittest.TestCase):
         self.root=Path(self.tmp.name);fixtures.synthetic_bench(self.root/'bench')
         self.env=patch.dict(os.environ,{'TCA_BENCH_ROOT':str(self.root/'bench'),'TCA_CONFIG':str(self.root/'config')})
         self.env.start();self.addCleanup(self.env.stop)
+        # These tests exercise scoring and calibration on a synthetic candidate.
+        # No native session is launched; test the isolation prerequisite separately.
+        which = shutil.which
+        availability = patch('temporal_contract_analyzer.evolution_backend.shutil.which',
+            side_effect=lambda name: '/synthetic/bwrap' if name == 'bwrap' else which(name))
+        availability.start();self.addCleanup(availability.stop)
         path=self.root/'bench/cases/development/case.json'
         manifest=json.loads(path.read_text())
         manifest['runtime']={'minimum_version':'.'.join(map(str,sys.version_info[:2]))}
@@ -54,6 +60,11 @@ class BackendTests(unittest.TestCase):
     def test_calibration_cannot_be_only_a_boolean_approval_or_wrong_runtime(self):
         backend=NativeBackend();self.protocol['calibration']['runtime']['version']='0.0'
         with self.assertRaises(EvidenceError):backend.preflight(self.protocol)
+
+    def test_missing_isolation_blocks_before_native_execution(self):
+        with patch('temporal_contract_analyzer.evolution_backend.shutil.which', return_value=None):
+            with self.assertRaisesRegex(EvidenceError, 'requires the explicit Codex binary, node and bwrap'):
+                NativeBackend().preflight(self.protocol)
 
     def test_runtime_error_is_not_a_credible_degenerate_failure(self):
         source=self.protocol['calibration']['evidence']['degenerate']

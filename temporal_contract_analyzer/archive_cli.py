@@ -1,4 +1,4 @@
-"""CLI registration kept separate from the original research commands."""
+"""Commands for archived source reports, context, the report browser and MCP."""
 import json
 from pathlib import Path
 import webbrowser
@@ -37,21 +37,6 @@ def register(sub):
     show.add_argument('--format', choices=['json', 'md'], default='md')
     check = commands.add_parser('verify', help='Verify archived bytes and snapshot binding')
     check.add_argument('report_id')
-    learn = commands.add_parser('learn', help='Extract candidate lessons from a calibrated failed experiment; never calls a model')
-    learn.add_argument('experiment_id')
-    lessons = commands.add_parser('lessons', help='List candidate failure-feedback lessons')
-    lessons.add_argument('--case-id')
-    repair = commands.add_parser('repair', help='Prepare a same-patch D versus failure-hypothesis repair pair')
-    repair.add_argument('experiment_id'); repair.add_argument('--job', required=True)
-    repair.add_argument('--node')
-    repair.add_argument('--run', action='store_true', help='Run both arms and wait for evaluation; otherwise only prepare')
-    route = commands.add_parser('route', help='Candidate A/D decision from task and optional frozen source report; no model call')
-    route.add_argument('--task-file',required=True);route.add_argument('--report-id');route.add_argument('--node')
-    selective = commands.add_parser('selective', help='Prepare one case with opt-in candidate A/D routing')
-    selective.add_argument('--case-id',required=True);selective.add_argument('--model')
-    selective.add_argument('--effort',default='medium',choices=['low','medium','high','xhigh','max','ultra'])
-    selective.add_argument('--timeout',type=int,default=600);selective.add_argument('--node')
-    selective.add_argument('--run',action='store_true',help='Call the model once with the selected A or D prompt')
     context = commands.add_parser('context', help='Enrich finding evidence with definitions from the archived source snapshot')
     context.add_argument('report_id')
     context.add_argument('--finding-id')
@@ -68,47 +53,15 @@ def register(sub):
     server.add_argument('--port', type=int, default=0)
     server.add_argument('--node')
     opening = commands.add_parser('open', help='Start/reuse the local browser and open it')
-    destination = opening.add_mutually_exclusive_group()
-    destination.add_argument('--report-id')
-    destination.add_argument('--experiments', action='store_true', help='Open the local Codex experiment workbench')
+    opening.add_argument('--report-id')
     opening.add_argument('--no-browser', action='store_true')
     stop = commands.add_parser('stop', help='Stop the report browser')
     mcp = commands.add_parser('mcp', help='Serve MCP over stdio for Codex')
     mcp.add_argument('--node')
     mcp.add_argument('--report-id', help='Restrict this research session to one frozen report')
     mcp.add_argument('--layer', help='The only frozen layer exposed in a restricted research session')
-    mt = commands.add_parser('measurement-template', help='Create a source-bound semantic measurement draft')
-    mt.add_argument('report_id'); mt.add_argument('--finding-id'); mt.add_argument('--output', required=True)
-    ma = commands.add_parser('measurement-add', help='Validate and append a semantic measurement')
-    ma.add_argument('report_id'); ma.add_argument('document')
-    mrt = commands.add_parser('measurement-review-template', help='Create an independent review form')
-    mrt.add_argument('report_id'); mrt.add_argument('measurement_record_id'); mrt.add_argument('--reviewer', required=True); mrt.add_argument('--output', required=True)
-    mra = commands.add_parser('measurement-review-add', help='Validate and append an independent review')
-    mra.add_argument('report_id'); mra.add_argument('measurement_record_id'); mra.add_argument('review')
-    mi = commands.add_parser('measurement-import-v06', help='Append a read-only MeasurementBench 0.6 compatibility view')
-    mi.add_argument('report_id'); mi.add_argument('measurement_report')
-    for command in (init, scan, listing, show, check, learn, lessons, repair, route, selective, context, compare, server, opening, stop, mcp, mt, ma, mrt, mra, mi):
+    for command in (init, scan, listing, show, check, context, compare, server, opening, stop, mcp):
         command.add_argument('--store', help='Shared report directory (default: configured store)')
-
-
-def _read_json(path):
-    try:
-        value = json.loads(Path(path).read_text(encoding='utf-8'), object_pairs_hook=_json_object)
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise EvidenceError(str(path) + ': ' + str(error)) from error
-    if not isinstance(value, dict):
-        raise EvidenceError(str(path) + ': expected a JSON object')
-    return value
-
-
-def _write_new(path, value):
-    target = Path(path)
-    if target.exists():
-        raise EvidenceError('输出已存在，请使用新路径，保留旧记录')
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with target.open('x', encoding='utf-8') as handle:
-        json.dump(value, handle, ensure_ascii=False, sort_keys=True, indent=2)
-        handle.write('\n')
 
 
 def run(args):
@@ -129,39 +82,6 @@ def run(args):
         value = archive.read_report(args.report_id, store)
     elif name == 'verify':
         value = archive.verify(args.report_id, store)
-    elif name == 'learn':
-        from .learning import learn
-        from .workbench import Workbench
-        value = learn(Workbench(store), args.experiment_id)
-    elif name == 'lessons':
-        from .learning import list_lessons
-        value = dict(items=list_lessons(store, args.case_id))
-    elif name == 'repair':
-        from .workbench import Workbench
-        workbench = Workbench(store,node=args.node)
-        value = workbench.prepare_repair(args.experiment_id,args.job)
-        if args.run:
-            workbench.start(value['id']); workbench.thread.join()
-            value=workbench.read(value['id'])
-            status=0 if all(j.get('evaluation',{}).get('status') in {'passed','failed'} for j in value['jobs']) else 2
-    elif name == 'route':
-        from .routing import decide, prefilter
-        task=Path(args.task_file).read_text(encoding='utf-8')
-        report=sources=None
-        if args.report_id and prefilter(task)[1]:
-            archive.verify(args.report_id,store)
-            report=json.loads(archive.artifact(args.report_id,'report.json',store))
-            sources=archive.read_sources(args.report_id,store)
-        value=decide(task,report,sources,args.node)
-    elif name == 'selective':
-        from .workbench import Workbench
-        wb=Workbench(store,node=args.node)
-        data=dict(case_id=args.case_id,timeout=args.timeout)
-        if args.model:data.update(model=args.model,effort=args.effort,use_local_config=True)
-        value=wb.prepare_selective_case(data)
-        if args.run:
-            wb.start(value['id']);wb.thread.join();value=wb.read(value['id'])
-            status=0 if value['jobs'][0].get('evaluation',{}).get('status') in {'passed','failed'} else 2
     elif name == 'context':
         from .context import build_context, markdown
         aliases = json.loads(args.aliases, object_pairs_hook=_json_object)
@@ -197,8 +117,6 @@ def run(args):
         if args.report_id:
             archive.metadata(args.report_id, store)
             value['url'] += '/#report=' + args.report_id
-        elif args.experiments:
-            value['url'] += '/experiments'
         if not args.no_browser:
             webbrowser.open(value['url'])
     elif name == 'stop':
@@ -208,26 +126,6 @@ def run(args):
         from .mcp_server import serve
         serve(store, args.node, args.report_id, args.layer)
         return 0
-    elif name == 'measurement-template':
-        from .measurement import template
-        value = template(args.report_id, store, args.finding_id)
-        _write_new(args.output, value)
-        value = {'output': str(Path(args.output)), 'schema_version': value['schema_version'],
-                 'source_binding': value['source_binding'], 'workflow_status': 'draft'}
-    elif name == 'measurement-add':
-        value = archive.add_measurement(args.report_id, _read_json(args.document), store)
-    elif name == 'measurement-review-template':
-        from .measurement import review_template
-        item = archive.measurement_record(args.report_id, args.measurement_record_id, store)
-        value = review_template(item['measurement'], args.reviewer)
-        _write_new(args.output, value)
-        value = {'output': str(Path(args.output)), 'schema_version': value['schema_version'],
-                 'measurement_sha256': value['measurement_sha256'], 'reviewer_id': value['reviewer_id']}
-    elif name == 'measurement-review-add':
-        value = archive.add_measurement_review(args.report_id, args.measurement_record_id,
-                                               _read_json(args.review), store)
-    elif name == 'measurement-import-v06':
-        value = archive.add_legacy_measurement(args.report_id, args.measurement_report, store)
     else:
         raise EvidenceError('Unknown report command')
     print(json.dumps(value, ensure_ascii=False, indent=2))

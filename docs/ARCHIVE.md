@@ -6,7 +6,7 @@ The local checkout's `docs/CLEANUP.md` records the actual archive location and v
 
 Historical relative references are interpreted relative to that archive's root. Original absolute paths and code/input hashes inside frozen records remain unchanged; they describe the original execution environment. Moving a record does not make an old frozen campaign resumable. Reproduction requires explicitly restoring its layout and exact dependencies or preparing a new batch with declared differences.
 
-The optional history browser accepts `TCA_DEVELOPMENT_ROOT=/absolute/path/to/archive/research`. No archive path is embedded in the public tool. The research experience store remains unchanged in the development checkout and is also snapshotted with its source/parent closure in the archive. It is excluded from the public source export; initialize a new store explicitly. AI-assisted annotations do not imply expert activation.
+Historical browsing and experiment execution code have been removed from the maintained tool. Use the matching Git revision and archived environment to inspect or reproduce old workflows. The research experience store remains unchanged in the development checkout and is also snapshotted with its source/parent closure in the archive. It is excluded from the public source export; initialize a new store explicitly. AI-assisted annotations do not imply expert activation.
 
 The original import ledger is `implement-stage/experience-memory-v1/IMPORT.json`; the seven-label annotation audit is `research/unified-seven-label-recoding-20261110_112750/REPORT.md`; older methods remain under `refine-logs/`. These are archive-relative provenance locators, not required runtime imports.
 

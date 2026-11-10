@@ -107,26 +107,18 @@ class ReportHubTests(unittest.TestCase):
         with self.call('/api/reports/'+meta['report_id']) as response:
             self.assertIsNone(json.load(response)['report'])
 
-    def test_measurement_template_and_append_api_remain_human_authored(self):
-        meta = archive.scan_path(self.project, self.store)['archive']
-        base = '/api/reports/' + meta['report_id']
-        with self.call(base + '/measurement-template') as response:
-            draft = json.load(response)
-        self.assertEqual(draft['workflow_status'], 'draft')
-        self.assertEqual(draft['obligations'], [])
-        with self.call(base + '/measurements', draft) as response:
-            saved = json.load(response)
-        self.assertEqual(saved['measurement']['obligation_count'], 0)
-        with self.call(base + '/measurement-review-template?record_id=' + saved['record_id'] + '&reviewer=reviewer-a') as response:
-            review = json.load(response)
-        self.assertEqual(review['reviewer_id'], 'reviewer-a')
-        self.assertEqual(review['measurement_sha256'], saved['measurement']['measurement_sha256'])
-        with self.call(base) as response:
-            detail = json.load(response)
-        self.assertEqual(len(detail['measurements']), 1)
-        self.assertEqual(detail['measurements'][0]['document']['obligations'], [])
+    def test_retired_workflows_are_unavailable_without_constructing_schedulers(self):
+        self.assertFalse(hasattr(self.server, 'experiments'))
+        self.assertFalse(hasattr(self.server, 'experience'))
+        for path in ('/experiments', '/experience', '/development',
+                     '/api/experiments', '/api/experience', '/api/development'):
+            for body in (None, {}):
+                with self.subTest(path=path, body=body), self.assertRaises(HTTPError) as error:
+                    self.call(path, body)
+                self.assertEqual(error.exception.code, 404)
 
-    def test_boundary_cards_reuse_evidence_and_keep_review_separate_from_measurements(self):
+
+    def test_boundary_cards_reuse_evidence_and_keep_review_separate_from_analysis(self):
         meta = archive.scan_path(self.project, self.store)['archive']
         base = '/api/reports/' + meta['report_id']
         with self.call(base) as response:
@@ -148,7 +140,6 @@ class ReportHubTests(unittest.TestCase):
             refreshed = json.load(response)
         self.assertEqual(refreshed['report'], detail['report'])
         self.assertEqual(refreshed['boundary_cards'], detail['boundary_cards'])
-        self.assertEqual(refreshed['measurements'], [])
         self.assertEqual(refreshed['notes'][0]['boundary_review'], review)
         self.assertNotIn('boundary_review', refreshed['notes'][1])
         for malformed in ({}, dict(review, protection='passed'), dict(review, protection=[]),

@@ -1,54 +1,18 @@
 """Run trusted bench oracles after agent work, outside agent-visible inputs."""
-import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import time
-import uuid
 
 from . import archive
 from .case_catalog import bench_root, case_root, inside, read
 from .core import EvidenceError, sha
+from .candidate_files import capture
 
 VERDICTS = {'PASS', 'UNDERREACH', 'OVERREACH', 'UNDERREACH_AND_OVERREACH'}
-
-
-def scenario_progress(outcome):
-    """Describe explicit schedule outcomes, never infer success from missing names.
-
-    A schedule is a tested execution scenario, not an independent task or bug.
-    Whole-task verdicts (including forbidden effects) remain authoritative.
-    """
-    schedules = outcome.get('schedules')
-    if not isinstance(schedules, dict) or not schedules:
-        return None
-    items = []
-    for name, value in schedules.items():
-        row = value if isinstance(value, dict) else {}
-        assertions = row.get('assertions', [])
-        assertions = assertions if isinstance(assertions, list) else []
-        checks = [a for a in assertions if isinstance(a, dict)]
-        passed = sum(a.get('passed') is True for a in checks)
-        failed = sum(a.get('passed') is False for a in checks)
-        unknown = len(assertions)-passed-failed
-        explicit = row.get('passed') if isinstance(value, dict) else value
-        state = 'unknown'
-        if row.get('runtimeError'):
-            state = 'error'
-        elif type(explicit) is bool:
-            # Inconsistent producer fields cannot be counted as a pass.
-            state = 'unknown' if explicit and failed else 'passed' if explicit else 'failed'
-        elif failed:
-            state = 'failed'
-        elif assertions and unknown == 0:
-            state = 'passed'
-        items.append(dict(name=name, status=state,
-                          assertions=dict(total=len(assertions), passed=passed, failed=failed, unknown=unknown),
-                          failed_assertions=[str(a.get('id', 'unnamed')) for a in checks if a.get('passed') is False]))
-    counts = {state: sum(item['status']==state for item in items) for state in ('passed','failed','error','unknown')}
-    return dict(schema_version=1, unit='scenario', total=len(items), items=items, **counts)
 
 
 def runtime(manifest, adapter, node):
@@ -110,72 +74,49 @@ def invoke(command, directory, stop, terminate, expected_id):
     return report
 
 
-def evaluate(manifest, folder, node, stop, terminate):
-    from .workbench import capture, file_modes, inventory, write_files
-    evaluation_id = 'v-' + uuid.uuid4().hex[:16]
-    directory = folder/'evaluations'/evaluation_id
-    directory.mkdir(parents=True)
-    local = (manifest.get('case') or {}).get('source') == 'local'
-    provenance = 'current trusted analyzer-local oracle; post-run evaluation' if local else 'current trusted bench oracle; post-run evaluation'
-    summary = dict(id=evaluation_id, created_at=archive.now(), provenance=provenance, jobs={})
-    jobs = summary['jobs']
-    for job in manifest['jobs']:
-        jobs[job['id']] = dict(status='not_evaluated', reason='Codex 未正常完成')
-    completed = [j for j in manifest['jobs'] if j['status'] == 'completed']
+def terminate(process):
     try:
-        record = manifest.get('case')
-        if not record or record['adapter'] not in ('legacy-js', 'python'):
-            raise EvidenceError('该记录没有可用的 bench 行为验证器')
-        case_path = inside(case_root(record), record['manifest'])
-        case = read(case_path)
-        if case['id'] != record['id'] or record.get('authorization') != 'ungranted':
-            raise EvidenceError('案例或授权条件与运行记录不匹配')
-        root = case_path.parent
-        probe = inside(root, case['oracle']['probe'])
-        reference = inside(root, case['reference'] if record['adapter'] == 'python' else case['references']['bounded'])
-        oracle_dir = probe.parent
-        summary.update(case_id=case['id'], runtime=runtime(case, record['adapter'], node),
-                       manifest_sha256=sha(case_path.read_bytes()),
-                       oracle_files={str(p.relative_to(oracle_dir)):sha(p.read_bytes()) for p in sorted(oracle_dir.rglob('*'))
-                                     if p.is_file() and '__pycache__' not in p.parts})
-        def command(candidate):
-            return ([summary['runtime']['path'], '-B', str(probe), str(candidate)] if record['adapter'] == 'python'
-                    else [summary['runtime']['path'], str(probe), str(candidate), 'ungranted'])
-        # Calibrate the same environment on the benchmark's known passing repair.
-        reference_files, _ = capture(inside(root, 'base'))
-        reference_modes = file_modes(inside(root, 'base'), reference_files)
-        overlay_files, _ = capture(reference)
-        reference_files.update(overlay_files)
-        reference_modes.update(file_modes(reference, overlay_files))
-        reference_copy = directory/'reference'
-        write_files(reference_copy, reference_files, reference_modes)
-        calibration = invoke(command(reference_copy), directory/'calibration', stop, terminate, case['id'])
-        summary['calibration_verdict'] = calibration['verdict']
-        if calibration['verdict'] != 'PASS':
-            raise EvidenceError('参考修复未通过验证，当前环境无法判定修改成败')
-        for job in completed:
-            job_id = job['id']
-            try:
-                if stop.is_set():
-                    raise EvidenceError('行为验证已取消')
-                workspace = folder/'jobs'/job_id/'workspace'
-                files, skipped = capture(workspace)
-                subject = directory/job_id/'candidate'
-                write_files(subject, files, file_modes(workspace, files))
-                outcome = invoke(command(subject), directory/job_id/'oracle', stop, terminate, case['id'])
-                schedules = outcome.get('schedules', {})
-                jobs[job_id] = dict(status='passed' if outcome['verdict'] == 'PASS' else 'failed',
-                                   verdict=outcome['verdict'], missing_required_effects=outcome.get('missing_required_effects', []),
-                                   observed_forbidden_effects=outcome.get('observed_forbidden_effects', []),
-                                   schedules=len(schedules), candidate_files=inventory(files), excluded=skipped,
-                                   scenario_progress=scenario_progress(outcome),
-                                   result_path=str((directory/job_id/'oracle/stdout.json').relative_to(folder)))
-            except (OSError, ValueError, KeyError, TypeError, EvidenceError, subprocess.SubprocessError) as error:
-                jobs[job_id] = dict(status='error', reason=str(error))
-    except (OSError, ValueError, KeyError, TypeError, EvidenceError, subprocess.SubprocessError) as error:
-        summary['error'] = str(error)
-        for job in completed:
-            jobs[job['id']] = dict(status='error', reason=str(error))
-    summary['completed_at'] = archive.now()
-    archive.atomic_json(directory/'summary.json', summary)
-    return summary
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        pass
+    finally:
+        # The CLI may exit before descendants that ignore SIGTERM do.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    process.wait(timeout=3)
+
+
+def scoring_inputs(record):
+    manifest = inside(case_root(record), record['manifest'])
+    case = read(manifest)
+    root = manifest.parent
+    reference = case['reference'] if record['adapter'] == 'python' else case['references']['bounded']
+    files = {str(manifest): sha(manifest.read_bytes())}
+    for path in (inside(root, 'base'), inside(root, reference), inside(root, case['oracle']['probe']).parent):
+        content, _ = capture(path)
+        files.update({str(path/name): sha(raw) for name, raw in content.items()})
+    return files
+
+
+def relation_states(outcome):
+    effects = outcome.get('observed_effects')
+    if not isinstance(effects, dict) or not effects:
+        raise EvidenceError('评分器未提供完整 observed_effects，不能判定经验改善门槛')
+    failed = set(outcome.get('missing_required_effects', [])) | set(outcome.get('observed_forbidden_effects', []))
+    return {key: (key not in failed if type(value) is bool else None) for key, value in effects.items()}
+
+
+def delta(before, after):
+    left, right = relation_states(before), relation_states(after)
+    if set(left) != set(right):
+        raise EvidenceError('行为向量不一致，拒绝比较')
+    return dict(gained=[k for k in left if left[k] is False and right[k] is True],
+                lost=[k for k in left if left[k] is True and right[k] is False],
+                retained=[k for k in left if left[k] is True and right[k] is True],
+                unknown=[k for k in left if left[k] is None or right[k] is None])

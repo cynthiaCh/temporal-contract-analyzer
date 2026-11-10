@@ -1,5 +1,4 @@
 """Bounded development automation with a mandatory external expert checkpoint."""
-from copy import deepcopy
 import html
 import fcntl
 import json
@@ -9,9 +8,9 @@ import uuid
 
 from . import archive, taxonomy, experience_memory as memory, experience_approval as approval
 from . import experience_routing as routing
-from .core import EvidenceError, canonical, sha, ROOT
-from .workbench import capture, inventory, file_modes, write_files
-from .experience_workbench import delta, relation_states, scoring_inputs
+from .core import EvidenceError, canonical, sha
+from .candidate_files import capture, inventory, file_modes, write_files
+from .case_evaluation import delta, relation_states, scoring_inputs
 from .evolution_backend import NativeBackend, ROLES, source_hashes
 
 
@@ -22,7 +21,7 @@ def load(path):
 def implementation():
     names=('experience_evolution.py','evolution_backend.py','experience_approval.py',
            'experience_memory.py','experience_routing.py','taxonomy.py','case_evaluation.py',
-           'case_catalog.py','workbench.py','archive.py','core.py')
+           'case_catalog.py','candidate_files.py','archive.py','core.py')
     return {name:sha(Path(__file__).with_name(name).read_bytes()) for name in names}
 
 

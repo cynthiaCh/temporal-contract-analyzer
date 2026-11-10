@@ -1,4 +1,4 @@
-"""Loopback report browser with explicit, opt-in local Codex experiments."""
+"""Loopback browser for source reports, context and human annotations."""
 import json
 import os
 from pathlib import Path
@@ -7,27 +7,15 @@ import subprocess
 import sys
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 from urllib.request import build_opener, ProxyHandler, Request
 
 from . import archive
 from .core import EvidenceError, ROOT, VERSION
-from .development import DevelopmentArchive
-from .experience_workbench import ExperienceWorkbench
-from .workbench import Workbench
+from .http_common import LocalHandler, WEB, strict_object
 
-WEB = Path(__file__).parent/'web'
 _opener = build_opener(ProxyHandler({}))
-
-
-def strict_object(pairs):
-    value = {}
-    for key, item in pairs:
-        if key in value:
-            raise EvidenceError('JSON contains duplicate key: ' + key)
-        value[key] = item
-    return value
 
 
 class ReportServer(ThreadingHTTPServer):
@@ -36,59 +24,12 @@ class ReportServer(ThreadingHTTPServer):
     def __init__(self, store=None, port=0, node=None):
         self.store = archive.store_path(store)
         self.node = node
-        self.development = DevelopmentArchive()
         self.instance = secrets.token_hex(24)
-        self.experiments = Workbench(self.store, node)
-        self.experiments.recover()
-        self.experience = ExperienceWorkbench(self.experiments)
-        self.experience.recover()
         super().__init__(('127.0.0.1', port), Handler)
         self.url = 'http://127.0.0.1:' + str(self.server_address[1])
 
-    def server_close(self):
-        self.experiments.close()
-        super().server_close()
 
-
-class Handler(BaseHTTPRequestHandler):
-    server_version = 'TemporalReports/1'
-
-    def log_message(self, format, *args):
-        # Do not put source text or report content in service logs.
-        pass
-
-    def send(self, value, status=200, content_type='application/json; charset=utf-8', report=False):
-        data = value if isinstance(value, bytes) else json.dumps(value, ensure_ascii=False).encode('utf-8')
-        self.send_response(status)
-        self.send_header('Content-Type', content_type)
-        self.send_header('Content-Length', str(len(data)))
-        self.send_header('Cache-Control', 'no-store')
-        self.send_header('X-Content-Type-Options', 'nosniff')
-        self.send_header('Referrer-Policy', 'no-referrer')
-        self.send_header('X-Frame-Options', 'SAMEORIGIN')
-        policy = "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'" if report else \
-                 "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"
-        self.send_header('Content-Security-Policy', policy)
-        self.end_headers()
-        try:
-            self.wfile.write(data)
-        except (BrokenPipeError, ConnectionResetError):
-            pass
-
-    def allowed(self):
-        host = self.headers.get('Host', '')
-        expected = urlsplit(self.server.url).netloc
-        return host == expected and self.headers.get('Origin', self.server.url) == self.server.url
-
-    def do_GET(self):
-        if not self.allowed():
-            self.send({'error': 'Loopback origin required'}, 403)
-            return
-        try:
-            self.get()
-        except (EvidenceError, ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as error:
-            self.send({'error': str(error)}, 400)
-
+class Handler(LocalHandler):
     def get(self):
         url = urlsplit(self.path)
         query = {k: values[0] for k, values in parse_qs(url.query).items()}
@@ -96,10 +37,7 @@ class Handler(BaseHTTPRequestHandler):
         store = self.server.store
         if url.path == '/api/health':
             self.send(dict(store=str(store), instance=self.server.instance, version=VERSION,
-                           experiment_ui='local-codex-models-v1', context_enrichment='snapshot-definitions-v1',
-                           scenario_progress='explicit-schedules-v1', failure_learning='candidate-memory-v1',
-                           hypothesis_repair='matched-patch-v2', experience_development='archive-read-only-v1',
-                           experience_execution='seven-label-web-v2'))
+                           context_enrichment='snapshot-definitions-v1'))
         elif url.path == '/api/state':
             self.send(dict(store=str(store), version=VERSION, url=self.server.url))
         elif url.path == '/api/taxonomy':
@@ -110,29 +48,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send(archive.list_reports(store, **allowed))
         elif url.path == '/api/compare':
             self.send(archive.compare_reports(query['before'], query['after'], store))
-        elif parts == ['api', 'case-options']:
-            self.send(self.server.experiments.case_options())
-        elif parts == ['api', 'experiments']:
-            self.send(self.server.experiments.list())
-        elif parts == ['api', 'experience']:
-            self.send(self.server.experience.list())
-        elif len(parts) == 3 and parts[:2] == ['api', 'experience']:
-            self.send(self.server.experience.read(parts[2]))
-        elif len(parts) == 4 and parts[:2] == ['api', 'experience'] and parts[3] == 'artifact':
-            self.send(self.server.experience.artifact(parts[2], query['name']))
-        elif parts == ['api', 'development']:
-            self.send(self.server.development.list())
-        elif len(parts) == 3 and parts[:2] == ['api', 'development']:
-            self.send(self.server.development.read(parts[2]))
-        elif len(parts) == 4 and parts[:2] == ['api', 'development'] and parts[3] == 'artifact':
-            self.send(self.server.development.artifact(parts[2], query['name']))
-        elif len(parts) >= 3 and parts[:2] == ['api', 'experiments']:
-            if len(parts) == 3:
-                self.send(self.server.experiments.read(parts[2]))
-            elif len(parts) == 4 and parts[3] == 'artifact':
-                self.send(self.server.experiments.artifact(parts[2], query['job'], query['name']))
-            else:
-                self.send({'error': 'Not found'}, 404)
         elif len(parts) >= 3 and parts[:2] == ['api', 'reports']:
             report_id = parts[2]
             if len(parts) == 3:
@@ -151,39 +66,15 @@ class Handler(BaseHTTPRequestHandler):
                 data = archive.artifact(report_id, name, store)
                 kind = {'html': 'text/html', 'md': 'text/plain', 'json': 'application/json'}[name.rsplit('.', 1)[-1]]
                 self.send(data, content_type=kind+'; charset=utf-8', report=name.endswith('.html'))
-            elif len(parts) == 4 and parts[3] == 'measurement-template':
-                from .measurement import template
-                self.send(template(report_id, store, query.get('finding_id')))
-            elif len(parts) == 4 and parts[3] == 'measurement-review-template':
-                from .measurement import review_template
-                item = archive.measurement_record(report_id, query['record_id'], store)
-                self.send(review_template(item['measurement'], query['reviewer']))
             else:
                 self.send({'error': 'Not found'}, 404)
-        elif url.path in {'/', '/app.js', '/style.css', '/experiments', '/experiments.js',
-                          '/development', '/development.js', '/development.css',
-                          '/experience', '/experience.js', '/experience.css'}:
-            name = {'/': 'index.html', '/experiments': 'experiments.html',
-                    '/development': 'development.html', '/experience':'experience.html'}.get(url.path, url.path[1:])
+        elif url.path in {'/', '/app.js', '/style.css'}:
+            name = 'index.html' if url.path == '/' else url.path[1:]
             content_type = 'text/html' if name.endswith('.html') else ('text/javascript' if name.endswith('.js') else 'text/css')
             self.send((WEB/name).read_bytes(), content_type=content_type+'; charset=utf-8')
         else:
             self.send({'error': 'Not found'}, 404)
 
-    def do_POST(self):
-        if not self.allowed() or self.headers.get('X-TCA-Request') != 'local' or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
-            self.send({'error': 'Same-origin JSON request required'}, 403)
-            return
-        try:
-            size = int(self.headers.get('Content-Length', '0'))
-            if not 0 < size <= 1048576:
-                raise EvidenceError('Request size invalid')
-            data = json.loads(self.rfile.read(size), object_pairs_hook=strict_object)
-            if not isinstance(data, dict):
-                raise EvidenceError('Expected an object')
-            self.post(data)
-        except (EvidenceError, ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as error:
-            self.send({'error': str(error)}, 400)
 
     def post(self, data):
         parts = urlsplit(self.path).path.strip('/').split('/')
@@ -196,42 +87,12 @@ class Handler(BaseHTTPRequestHandler):
                 raise EvidenceError('请输入候选工程或源码文件的绝对路径')
             result = archive.scan_path(data['candidate'], store, self.server.node, 'web', **labels)
             self.send(result['archive'], 201)
-        elif parts == ['api', 'experience']:
-            self.send(self.server.experience.create(data), 201)
-        elif len(parts) == 4 and parts[:2] == ['api', 'experience']:
-            if parts[3] == 'cancel':
-                self.send(self.server.experiments.cancel(parts[2]), 202)
-            else:
-                self.send(self.server.experience.action(parts[2], parts[3], data), 202)
-        elif parts == ['api', 'experiments', 'selective']:
-            self.send(self.server.experiments.prepare_selective_case(data), 201)
-        elif parts == ['api', 'experiments']:
-            prepare = self.server.experiments.prepare_case if 'case_id' in data else self.server.experiments.prepare
-            self.send(prepare(data), 201)
-        elif len(parts) == 4 and parts[:2] == ['api', 'experiments']:
-            if parts[3] == 'start':
-                self.send(self.server.experiments.start(parts[2]), 202)
-            elif parts[3] == 'cancel':
-                self.send(self.server.experiments.cancel(parts[2]), 202)
-            elif parts[3] == 'evaluate':
-                self.send(self.server.experiments.evaluate(parts[2]))
-            elif parts[3] == 'learn':
-                from .learning import learn
-                self.send(learn(self.server.experiments, parts[2]))
-            elif parts[3] == 'repair':
-                self.send(self.server.experiments.prepare_repair(parts[2], data.get('job')), 201)
-            else:
-                self.send({'error': 'Not found'}, 404)
         elif len(parts) == 4 and parts[:2] == ['api', 'reports']:
             if parts[3] == 'verify':
                 self.send(archive.verify(parts[2], store))
             elif parts[3] == 'notes':
                 self.send(archive.annotate(parts[2], data['finding_id'], data['decision'], data.get('note', ''), store,
                                            boundary_review=data.get('boundary_review')), 201)
-            elif parts[3] == 'measurements':
-                self.send(archive.add_measurement(parts[2], data, store), 201)
-            elif parts[3] == 'measurement-reviews':
-                self.send(archive.add_measurement_review(parts[2], data['measurement_record_id'], data['review'], store), 201)
             else:
                 self.send({'error': 'Not found'}, 404)
         elif parts == ['api', 'shutdown']:

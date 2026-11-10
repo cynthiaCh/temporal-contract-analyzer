@@ -250,17 +250,16 @@ def snapshot(bundles):
 
 
 def search_records(bundles, query, namespace=None, limit=8, include_all=False):
-    from .rag import terms
     if not text(query) or type(limit) is not int or not 1 <= limit <= 100:
         raise EvidenceError('Search requires nonempty text and a limit from 1 to 100')
     if namespace is not None and namespace not in (taxonomy.VERSION, LEGACY_TAXONOMY):
         raise EvidenceError('Unsupported search taxonomy')
     corpus = [b for b in (bundles if include_all else tips(bundles)) if namespace is None or b['taxonomy_version'] == namespace]
     # Audit provenance, outcome records, IDs and version names never enter the index.
-    counts = [Counter(terms(render(b)+'\n'+' '.join(b['requires']+b['excludes']))) for b in corpus]
+    counts = [Counter(_terms(render(b)+'\n'+' '.join(b['requires']+b['excludes']))) for b in corpus]
     average = sum(sum(c.values()) for c in counts)/max(1, len(counts)) or 1
     frequencies = Counter(token for c in counts for token in c)
-    query_terms = set(terms(query))
+    query_terms = set(_terms(query))
     ranked = []
     for bundle, bag in zip(corpus, counts):
         score = 0.0
@@ -278,6 +277,12 @@ def search_records(bundles, query, namespace=None, limit=8, include_all=False):
     return dict(schema_version='experience-search-v1', purpose='discovery_only_not_delivery_or_semantic_admission',
                 memory_sha256=snapshot(bundles)['sha256'], taxonomy_filter=namespace,
                 results=ranked[:limit])
+
+
+def _terms(text):
+    stop = set('a an the to of and or in on with for is be by from that this it as'.split())
+    text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text).replace('_', ' ')
+    return [s for s in re.findall(r'[a-z][a-z0-9]*|[\u4e00-\u9fff]', text.lower()) if s not in stop]
 
 
 def search(store, query, namespace=None, limit=8, required_labels=None):

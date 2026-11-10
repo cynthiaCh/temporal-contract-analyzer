@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import test_experience_workbench as old_fixtures
+import evolution_fixtures as fixtures
 from temporal_contract_analyzer import experience_memory as memory, experience_approval as approval
 from temporal_contract_analyzer import experience_routing as routing, taxonomy
 from temporal_contract_analyzer.experience_evolution import Evolution, load
@@ -67,14 +67,14 @@ class EvolutionTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name)
-        old_fixtures.synthetic_bench(self.root/'bench')
+        fixtures.synthetic_bench(self.root/'bench')
         self.env=patch.dict(os.environ,{'TCA_BENCH_ROOT':str(self.root/'bench'),'TCA_CONFIG':str(self.root/'config.json')})
         self.env.start();self.addCleanup(self.env.stop)
         self.store=self.root/'memory';memory.initialize(self.store)
 
     def visible(self,case='development'):
         from temporal_contract_analyzer.case_catalog import case_input
-        from temporal_contract_analyzer.workbench import capture
+        from temporal_contract_analyzer.candidate_files import capture
         inputs=case_input(case)
         files,_=capture(Path(inputs['candidate']))
         sources={k:v.decode() for k,v in files.items()}

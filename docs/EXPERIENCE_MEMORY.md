@@ -10,8 +10,9 @@ It has three separate outputs:
 2. A derived BM25 discovery result, indexed from rule text and mechanism predicates.
 3. A source-checked optional repair body, with route/provenance kept separately.
 
-The existing `rag.py` retrieves the **current candidate's source**. This library
-retrieves **cross-case research experience**. They are separate corpora and APIs.
+`context.py` retrieves the **current candidate's source** from archived AST
+findings and definitions. This library retrieves **cross-case research
+experience**. They are separate corpora and APIs.
 
 ## Inspect and search the existing library
 
@@ -168,11 +169,11 @@ candidate-relative paths to actual text. It does not accept case/cluster identit
 expected labels, historical scores, evaluator data or reference patches.
 
 ```bash
-python3 -B -m temporal_contract_analyzer experience-memory freeze --store experience-memory --output /tmp/memory-snapshot.json
-python3 -B -m temporal_contract_analyzer experience-memory retrieve visible-input.json --store experience-memory --output /tmp/experience-delivery.json
+python3 -B -m temporal_contract_analyzer experience-memory freeze --store experience-memory --output review-drafts/memory-snapshot.json
+python3 -B -m temporal_contract_analyzer experience-memory retrieve visible-input.json --store experience-memory --output review-drafts/experience-delivery.json
 ```
 
-For a frozen experiment, pass both `--snapshot /tmp/memory-snapshot.json` and
+For a frozen experiment, pass both `--snapshot review-drafts/memory-snapshot.json` and
 `--expected-snapshot SHA256`, reading the digest from that snapshot. Later active
 updates do not change its selected versions. Without `--snapshot`, retrieval uses
 the current active view and the expected digest rejects activation drift. Output

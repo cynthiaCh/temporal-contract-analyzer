@@ -79,11 +79,9 @@ async function main() {
     const packet=await page.evaluate(()=>navigator.clipboard.readText());
     assert.match(packet,/Editor.vue:2/);assert.match(packet,/核查成立；保护：保护不足/);
     assert.match(packet,/不等于 oracle 判定/);
-    await page.getByRole('tab',{name:'高级测量 · E/T/L/H'}).click();
-    assert.match(await page.locator('#tab-content').innerText(),/可选的研究分析层/);
-    assert.match(await page.locator('#tab-content').innerText(),/还没有义务测量/);
-    await page.getByRole('tab',{name:'边界审查卡'}).click();
-    console.log('PASS: structured reviews and concise Agent handoff need no full measurement');
+    assert.equal(await page.getByRole('tab',{name:'高级测量 · E/T/L/H'}).count(),0);
+    assert.equal(await page.locator('a[href="/experience"], a[href="/development"], a[href="/experiments"]').count(),0);
+    console.log('PASS: structured review and Agent handoff remain available; retired UI is absent');
 
     await fs.writeFile(candidate,'<script setup>channel.addEventListener("ready", done); channel.connect();</script>');
     await page.getByRole('button',{name:'以此为基线扫描'}).click();

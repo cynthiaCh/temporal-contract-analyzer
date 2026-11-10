@@ -13,9 +13,9 @@ import sys
 import threading
 
 from . import archive
-from .core import EvidenceError, ROOT, sha, canonical
-from .workbench import capture, inventory, file_modes, write_files, Workbench
-from .experience_workbench import scoring_inputs
+from .core import EvidenceError, sha, canonical
+from .candidate_files import capture, inventory, file_modes, write_files
+from .case_evaluation import scoring_inputs, terminate
 
 SOURCE = Path(__file__).resolve().parent/'_session_runtime'
 DEPENDENCIES = ('runner.py','native_backend.py','archive.py','guard_server.py','guard_client.py',
@@ -180,7 +180,7 @@ class NativeBackend:
                  else [environment['path'],str(probe),str(subject),'ungranted'])
         archive.atomic_json(directory/'evaluation.json',dict(command=command,runtime=environment,
             calibration='reused_frozen_original_reference_degenerate_evidence',candidate_files=inventory(files)))
-        outcome=invoke(command,directory/'oracle',threading.Event(),Workbench.terminate,record['id'])
+        outcome=invoke(command,directory/'oracle',threading.Event(),terminate,record['id'])
         after,_=capture(subject)
         if inventory(after)!=inventory(files):raise EvidenceError('Scorer changed the frozen candidate')
         return outcome

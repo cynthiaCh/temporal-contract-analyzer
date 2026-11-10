@@ -12,7 +12,6 @@ function workbench_failed() {
 "$workbench_python" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else "需要 Python 3.9 或更新版本。")' || workbench_failed
 
 printf '\n打开边界审查工作台：扫描 → 四问卡片 → 人工核查。\n'
-printf '完整 E/T/L/H 位于「高级测量」，可按需展开。\n'
 printf '使用 CLI、VS Code 与 Codex 共用的已配置报告库。\n'
 printf '重新启动报告库服务以加载当前源码；已有报告和核查记录保留。\n'
 printf '请保留此终端窗口；关闭窗口或按 Ctrl+C 会停止服务。\n\n'

@@ -52,8 +52,9 @@ The source-bound analysis review must already be supplied genuinely; this entry
 point does not silently approve an analysis or make an extra classifier call.
 R/O/B/L/I/F/A is the native taxonomy. Historical T1–T4 imports are not recoded.
 
-The root master prompt is copied and pinned as `controller-prompt.md`. The
-protocol pins source, analysis, model roles, code, evaluator, calibration,
+The packaged `prompts/MASTER_PROMPT.md` (also linked at the repository root) is
+copied and pinned as `controller-prompt.md`. The protocol pins source, analysis,
+model roles, code, evaluator, calibration,
 retrieval snapshot, slot list, budgets and constraints before execution.
 
 ## Fixed budgets and isolated native execution
@@ -78,8 +79,9 @@ freeze guard. Real execution currently needs Linux/bwrap, the specified binary,
 valid credentials, runtime and calibration; missing prerequisites stop before
 model dispatch.
 
-The old Web v2 workbench is unchanged and has weaker request/read-isolation
-guarantees. The new CLI does not launch it as an alternate backend.
+The CLI is the maintained development/evaluation entry point. The old Web v2
+workbench, A/D experiments and single-case failure-learning commands have been
+removed; see the [source map](ARCHITECTURE.md).
 
 ## Reused calibration and scoring
 
@@ -97,7 +99,7 @@ approval. Synthetic fixture records are labeled as such and are not real-case
 calibration evidence. Live missing/conflicting evidence blocks execution.
 
 The controller reuses the existing trusted single-score `invoke` adapter. It does
-not use the wrapper that recalibrates a reference on every call. The original
+not recalibrate a reference on every call. The original
 candidate is scored once per prepared batch; every admissible final candidate is
 scored once. Full outcomes and actual/expected/event traces are retained. The
 model sees neither the scorer/reference source nor the hidden failure list.

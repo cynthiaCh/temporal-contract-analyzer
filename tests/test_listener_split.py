@@ -9,7 +9,8 @@ from unittest.mock import patch
 
 from temporal_contract_analyzer.core import ROOT
 from temporal_contract_analyzer.case_catalog import catalog, case_input
-from temporal_contract_analyzer.workbench import Workbench
+from temporal_contract_analyzer.candidate_files import capture
+from temporal_contract_analyzer.case_evaluation import scoring_inputs
 
 CASES = ROOT/'case-clusters/listener-registration-order/arms'
 BOOTSTRAP = 'listener-bootstrap-reentrancy-vanilla'
@@ -90,30 +91,18 @@ class ListenerSplitTests(unittest.TestCase):
                 self.assertEqual(result['verdict'], 'OVERREACH')
                 self.assertEqual(result['observed_forbidden_effects'], ['metrics-policy-changed'])
 
-    def test_local_catalog_preparation_and_behavior_evaluation_without_bench(self):
+    def test_local_catalog_exposes_candidate_only_and_binds_trusted_scoring_without_bench(self):
         with tempfile.TemporaryDirectory() as temporary, patch.dict('os.environ', {'TCA_BENCH_ROOT': temporary}):
             choices = {row['id']: row for row in catalog()['cases']}
-            workbench = Workbench(Path(temporary)/'reports', node=NODE, codex='/nonexistent')
             for case_id in (BOOTSTRAP, DECODE):
                 with self.subTest(case=case_id):
                     self.assertTrue(choices[case_id]['supported'])
                     self.assertEqual(choices[case_id]['source'], 'local')
                     selected = case_input(case_id)
                     self.assertEqual(selected['case_record']['source'], 'local')
-                    run = workbench.prepare_case(dict(case_id=case_id))
-                    self.assertTrue(run['jobs'][1]['report_characters'] > 0)
+                    files, _ = capture(Path(selected['candidate']))
                     self.assertFalse(any('oracle' in name or 'reference' in name or 'prompts' in name
-                                         for name in run['input_files']))
-                    # Synthetic completed transports: supplied base/reference snapshots,
-                    # never a model call or evidence of measured A/D performance.
-                    run['status'] = 'completed'
-                    for job in run['jobs']:
-                        job['status'] = 'completed'
-                        candidate = workbench.folder(run['id'])/'jobs'/job['id']/'workspace'
-                        shutil.copytree(CASES/case_id/'base', candidate)
-                        if job['condition'] == 'review':
-                            shutil.copytree(CASES/case_id/'reference/bounded', candidate, dirs_exist_ok=True)
-                    result = workbench.evaluate_manifest(run)
-                    self.assertEqual(result['calibration_verdict'], 'PASS', result)
-                    self.assertEqual(result['jobs']['j-001']['status'], 'failed', result)
-                    self.assertEqual(result['jobs']['j-002']['status'], 'passed', result)
+                                         for name in files))
+                    scoring = scoring_inputs(selected['case_record'])
+                    self.assertIn(str(CASES/case_id/'oracle/probe.cjs'), scoring)
+                    self.assertIn(str(CASES/case_id/'reference/bounded/src/subscription.js'), scoring)
