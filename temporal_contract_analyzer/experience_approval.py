@@ -24,9 +24,10 @@ def decisions(store):
 
 
 def validate_decision(row, bundle):
-    for key in ('reviewer', 'reason'):
-        if not memory.text(row.get(key)):
-            raise EvidenceError('A named operator and an explicit review reason are required')
+    if not memory.text(row.get('reviewer')):
+        raise EvidenceError('A named operator is required')
+    if not isinstance(row.get('reason'), str):
+        raise EvidenceError('Review reason must be text; it may be empty')
     if row.get('decision') not in ('accept', 'reject', 'revise') or row.get('scope') not in ('research', 'exploratory'):
         raise EvidenceError('Invalid expert decision or research scope')
     findings = row.get('rules')
@@ -37,8 +38,8 @@ def validate_decision(row, bundle):
         raise EvidenceError('Expert rule findings must match the frozen candidate order')
     for finding in findings:
         if set(finding) != {'rule_id', 'supported', 'reason'} or type(finding['supported']) is not bool \
-                or not memory.text(finding['reason']):
-            raise EvidenceError('Each rule needs a support finding and reason')
+                or not isinstance(finding['reason'], str):
+            raise EvidenceError('Each rule needs a support finding and a text reason, which may be empty')
     if row['decision'] == 'accept' and (not all(r['supported'] for r in findings)
             or bundle['review']['status'] == 'rejected'):
         raise EvidenceError('Unsupported or rejected rules cannot be activated')

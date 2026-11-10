@@ -1,6 +1,7 @@
 """Explicit offline entry points for the research experience library."""
 import json
 from pathlib import Path
+import sys
 
 from . import experience_memory as memory
 from . import experience_approval as approval
@@ -11,10 +12,11 @@ def register(sub):
     parser = sub.add_parser('experience-memory', help='Offline research experience library; no model calls')
     actions = parser.add_subparsers(dest='memory_action', required=True)
     for name in ('init', 'list', 'verify', 'freeze', 'add', 'show', 'search', 'retrieve', 'import-legacy',
-                 'active', 'review-template', 'expert-review', 'recode'):
+                 'active', 'review-template', 'expert-review', 'recode', 'review'):
         action = actions.add_parser(name)
         action.add_argument('--store', type=Path, required=True)
-        action.add_argument('--output', type=Path, help='New file only; default is standard output')
+        if name != 'review':
+            action.add_argument('--output', type=Path, help='New file only; default is standard output')
         if name in ('add', 'retrieve', 'import-legacy','recode'):
             action.add_argument('input', type=Path)
         if name == 'add':
@@ -35,6 +37,10 @@ def register(sub):
             action.add_argument('sha256')
         if name == 'expert-review':
             action.add_argument('--decision', type=Path, required=True)
+        if name == 'review':
+            action.add_argument('sha256', nargs='?', help='Optional exact experience version to open')
+            action.add_argument('--port', type=int, default=0)
+            action.add_argument('--no-browser', action='store_true')
         if name == 'recode':
             action.add_argument('--parent',required=True)
             action.add_argument('--version',required=True)
@@ -48,6 +54,9 @@ def register(sub):
 
 
 def run(args):
+    if args.memory_action == 'review':
+        from .memory_review import serve
+        return serve(args.store, args.sha256, args.port, not args.no_browser)
     if args.output and args.output.exists():
         raise EvidenceError('Output exists; use a new path')
     if args.output and (args.output.resolve() == args.store.resolve()
@@ -112,6 +121,7 @@ def run(args):
         args.output.parent.mkdir(parents=True, exist_ok=True)
         with args.output.open('x', encoding='utf-8') as stream:
             stream.write(content)
+        print('Saved: ' + str(args.output.resolve()), file=sys.stderr)
     else:
         print(content.rstrip('\n'))
     return 0

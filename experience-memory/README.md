@@ -21,6 +21,16 @@ No expert approval is inferred from import or AI-assisted label annotation.
 Usage and format: [EXPERIENCE_MEMORY.md](../docs/EXPERIENCE_MEMORY.md).
 Bounded automation and expert review: [EXPERIENCE_EVOLUTION.md](../docs/EXPERIENCE_EVOLUTION.md).
 
+Open the local review page to inspect rules and retained evidence, fill in your
+own findings and submit a decision. The page stays available until Ctrl+C:
+
+```bash
+python3 -B -m temporal_contract_analyzer experience-memory review --store experience-memory
+```
+
+Opening it does not approve or activate anything. A completed acceptance creates
+the `decisions/` directory automatically and activates the exact reviewed version.
+
 ```bash
 python3 -B -m temporal_contract_analyzer experience-memory list --store experience-memory
 python3 -B -m temporal_contract_analyzer experience-memory search --store experience-memory --query 'shared cache cancellation observers reconnect'

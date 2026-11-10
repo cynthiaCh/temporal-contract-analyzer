@@ -40,6 +40,7 @@ Use one experience collection with multiple R/O/B/L/I/F/A obligation labels. Mec
 python3 -B -m temporal_contract_analyzer taxonomy
 python3 -B -m temporal_contract_analyzer experience-memory init --store /path/to/new-memory
 python3 -B -m temporal_contract_analyzer experience-memory verify --store /path/to/memory
+python3 -B -m temporal_contract_analyzer experience-memory review --store /path/to/memory
 ```
 
 [Memory format and retrieval](docs/EXPERIENCE_MEMORY.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [bounded evolution](docs/EXPERIENCE_EVOLUTION.md) document the interfaces. Pending candidates require a named expert's decision on exact rules and outcomes before activation. Evaluation uses a frozen snapshot and cannot learn. No paid calls are authorized by reading this README.

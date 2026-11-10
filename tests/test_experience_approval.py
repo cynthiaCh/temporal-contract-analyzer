@@ -39,12 +39,28 @@ class ApprovalTests(unittest.TestCase):
         self.assertEqual(approval.active(self.f.store)[0]['bundle'], second)
 
     def test_incomplete_or_unsupported_expert_findings_cannot_activate(self):
-        for field in ('reviewer', 'reason', 'rules'):
+        for field in ('reviewer', 'rules'):
             bad=self.request();bad[field]=[] if field=='rules' else ''
             with self.assertRaises(EvidenceError):approval.decide(self.f.store,self.bundle['sha256'],bad)
         bad=self.request();bad['rules'][0]['supported']=False
         with self.assertRaises(EvidenceError):approval.decide(self.f.store,self.bundle['sha256'],bad)
         self.assertEqual(approval.active(self.f.store), [])
+
+    def test_review_reasons_may_be_empty_but_must_be_text(self):
+        request = self.request()
+        request['reason'] = ''
+        for rule in request['rules']:
+            rule['reason'] = ''
+        for field in ('overall', 'rule'):
+            invalid = deepcopy(request)
+            if field == 'overall': invalid['reason'] = None
+            else: invalid['rules'][0]['reason'] = None
+            with self.subTest(field=field), self.assertRaises(EvidenceError):
+                approval.decide(self.f.store, self.bundle['sha256'], invalid)
+        saved = approval.decide(self.f.store, self.bundle['sha256'], request)
+        self.assertEqual(saved['reason'], '')
+        self.assertTrue(all(rule['reason'] == '' for rule in saved['rules']))
+        self.assertEqual(approval.active(self.f.store)[0]['bundle'], self.bundle)
 
     def test_frozen_snapshot_survives_later_activation(self):
         approval.decide(self.f.store,self.bundle['sha256'],self.request())

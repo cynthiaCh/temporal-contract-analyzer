@@ -15,6 +15,29 @@ retrieves **cross-case research experience**. They are separate corpora and APIs
 
 ## Inspect and search the existing library
 
+For a local visual review, run from the repository root:
+
+```bash
+python3 -B -m temporal_contract_analyzer experience-memory review --store experience-memory
+```
+
+The command opens a loopback-only page and keeps its server running until Ctrl+C.
+Use `--no-browser` to print the address without opening a browser, or supply an
+exact record digest after `review` to open that version. The page lists immutable
+records, shows rules and prerequisites, and reads only the selected record's
+retained `sources/` evidence. It does not depend on historical research paths.
+
+Choose a finding for every rule, optionally write review reasons, enter your actual name and
+overall decision, then confirm review of the exact rules, labels, applicability
+and evidence. Clicking submit records the decision through the existing expert
+interface. Acceptance activates the exact version; revision/rejection are
+recorded without accepting it. Opening the page never creates approval or calls
+a model. The result displays the decision directory and activation status.
+
+CLI commands with `--output` write to the named new file and now print its saved
+path to stderr. They do not submit a review. A generated review template remains
+unapproved until the operator completes and explicitly submits it.
+
 Run from the repository root:
 
 ```bash
@@ -108,13 +131,21 @@ To inspect or review an exact version without launching models:
 
 ```bash
 python3 -B -m temporal_contract_analyzer experience-memory active --store experience-memory
-python3 -B -m temporal_contract_analyzer experience-memory review-template RECORD_SHA256 --store experience-memory --output /tmp/review-template.json
-python3 -B -m temporal_contract_analyzer experience-memory expert-review RECORD_SHA256 --decision /tmp/completed-expert-decision.json --store experience-memory
+python3 -B -m temporal_contract_analyzer experience-memory review-template RECORD_SHA256 --store experience-memory --output review-drafts/review.json
+# Complete the generated review-drafts/review.json before submitting it.
+python3 -B -m temporal_contract_analyzer experience-memory expert-review RECORD_SHA256 --decision review-drafts/review.json --store experience-memory
 ```
 
 The template has empty reviewer/reasons, false support findings and a revision
 default. It is not approval. The operator must supply findings for every rule.
+Overall and per-rule reasons are optional and may remain empty; the actual
+reviewer, explicit decision and every rule's support finding remain required.
 The automated controller never calls this approval action on its own.
+
+Keep CLI review drafts in the project's `review-drafts/` directory, outside the
+canonical memory store. The CLI creates missing parent directories. Drafts are
+ignored by Git; submitted decisions are retained in `experience-memory/decisions/`.
+Temporary-directory paths are not required for this workflow.
 
 ## Source-bound delivery for current seven-label analyses
 

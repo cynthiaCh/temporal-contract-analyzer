@@ -407,7 +407,7 @@ class Evolution:
         data=json.dumps(request,ensure_ascii=False).replace('<','\\u003c')
         rows=''.join('<fieldset><legend>'+html.escape(r['id'])+'</legend><p>'+html.escape(r['body'])+
             '</p><label><input type="checkbox" class="supported">Evidence supports this rule and its bounds</label>'+
-            '<p><textarea class="reason" required placeholder="Evidence, preservation obligations and counterexamples"></textarea></p></fieldset>'
+            '<p><textarea class="reason" placeholder="Optional: evidence, preservation obligations and counterexamples"></textarea></p></fieldset>'
             for r in packet['candidate']['rules'])
         body='''<!doctype html><html lang="en"><meta charset="utf-8"><title>Expert experience review</title>
 <style>body{max-width:960px;margin:2rem auto;font:16px system-ui}pre{white-space:pre-wrap}textarea{width:95%;min-height:5rem}fieldset{margin:1rem 0}</style>
@@ -421,7 +421,7 @@ Apply it with the explicit evolution expert command. This page never calls a mod
 <details open><summary>Complete outcomes, regressions and costs</summary><pre>'''+html.escape(json.dumps(packet['summary'],ensure_ascii=False,indent=2))+'''</pre></details>
 <form id="review"><label>Your name <input id="name" required></label> <label>Decision <select id="decision"><option>revise</option><option>reject</option><option>accept</option></select></label>
 <label>Scope <select id="scope"><option>exploratory</option><option>research</option></select></label>'''+rows+'''
-<label>Overall reason<textarea id="overall" required></textarea></label>
+<label>Overall reason (optional)<textarea id="overall"></textarea></label>
 <p><label><input id="outcomes" type="checkbox" required>I reviewed all successes, losses, unknowns and costs.</label></p>
 <button>Download decision JSON</button></form><script>const request='''+data+''';
 document.querySelector('#review').addEventListener('submit',e=>{e.preventDefault();

@@ -115,7 +115,8 @@ python3 -B -m temporal_contract_analyzer experience-evolution expert /path/to/ex
 ```
 
 The submission binds the exact candidate and expert-packet digest, confirms full
-outcome review, and provides each rule's supported/unsupported finding and reason.
+outcome review, and provides each rule's supported/unsupported finding. Overall
+and per-rule reasons are optional text and may remain empty.
 No default name, auto-checked approval or generated expert signature is supplied.
 This records the named local operator's review; it does not independently verify
 their professional qualifications or imply an independent external review.
