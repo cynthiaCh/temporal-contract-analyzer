@@ -19,7 +19,7 @@ from .case_evaluation import scoring_inputs, terminate
 
 SOURCE = Path(__file__).resolve().parent/'_session_runtime'
 DEPENDENCIES = ('runner.py','native_backend.py','archive.py','guard_server.py','guard_client.py',
-                'request_guard.py','read_policy.py','usage.py','structured.py','schema_validator.py',
+                'request_guard.py','read_policy.py','usage.py','structured.py','schema_validator.py','docker_transport.py',
                 'research-config.toml','maintenance.schema.json','extraction.schema.json')
 ROLES = {
     'repair':dict(model='gpt-5.6-terra', effort='low', requests=24, seconds=600),
@@ -29,8 +29,10 @@ from pathlib import Path
 import runner
 v=json.load(sys.stdin)
 runner.backend.BINARY=Path(v['binary'])
-r=runner.session(v['slot'],v['prompt'],case={'node':v['node']},candidate=Path(v['candidate']),
- task=v['task'],config=v['config'],run_dir=Path(v['run_dir']),allow_model_execution=True)
+case={'node':v['node'],'task_sha256':v['task_sha256']}
+if v.get('candidate_files') is not None:case['candidate_files']=v['candidate_files']
+r=runner.session(v['slot'],v['prompt'],case=case,candidate=Path(v['candidate']),
+ task=v['task'],config=v['config'],run_dir=Path(v['run_dir']),allow_model_execution=True,transport=v.get('transport'))
 print(json.dumps(r))
 '''
 
@@ -60,6 +62,35 @@ def source_hashes():
     return {str(SOURCE/name):sha((SOURCE/name).read_bytes()) for name in DEPENDENCIES}
 
 
+
+def validate_calibration(protocol, observed_runtime):
+    if scoring_inputs(protocol['case']) != protocol['scoring_inputs']:
+        raise EvidenceError('Evaluator or original candidate changed')
+    calibration = protocol['calibration']
+    required = {'case_id','candidate_sha256','scoring_inputs_sha256','runtime','evidence'}
+    if not isinstance(calibration,dict) or set(calibration)!=required \
+            or calibration['case_id']!=protocol['case']['id'] \
+            or calibration['candidate_sha256']!=protocol['candidate_sha256'] \
+            or calibration['scoring_inputs_sha256']!=sha(canonical(protocol['scoring_inputs']).encode()) \
+            or calibration['runtime']!=observed_runtime \
+            or not isinstance(calibration['evidence'],dict) \
+            or set(calibration['evidence'])!={'original','reference','degenerate'}:
+        raise EvidenceError('Missing version-bound reusable calibration evidence')
+    for role, source in calibration['evidence'].items():
+        if not isinstance(source,dict) or set(source)!={'path','sha256'} \
+                or sha(Path(source['path']).read_bytes()) != source['sha256']:
+            raise EvidenceError('Calibration evidence changed')
+        outcome=json.loads(Path(source['path']).read_text(encoding='utf-8'))
+        schedules=outcome.get('schedules',{}) if isinstance(outcome,dict) else {}
+        nested_error=isinstance(schedules,dict) and any(isinstance(row,dict) and row.get('runtimeError')
+                                                      for row in schedules.values())
+        if not isinstance(outcome,dict) or outcome.get('case_id')!=protocol['case']['id'] \
+                or outcome.get('verdict') not in ('PASS','UNDERREACH','OVERREACH','UNDERREACH_AND_OVERREACH') \
+                or (role=='reference' and outcome['verdict']!='PASS') \
+                or (role=='degenerate' and outcome['verdict']=='PASS') or outcome.get('runtime_errors') or nested_error:
+            raise EvidenceError('Calibration outcomes are not trustworthy for their declared roles')
+
+
 class NativeBackend:
     """Isolated native calls plus trusted external scoring; no fallback/retries."""
     kind = 'native_research_runner'
@@ -78,31 +109,13 @@ class NativeBackend:
                 raise EvidenceError('Prepared executable changed or was unavailable at preparation')
         manifest = read(inside(case_root(protocol['case']), protocol['case']['manifest']))
         observed_runtime=runtime(manifest, protocol['case']['adapter'], protocol['node'])
-        if scoring_inputs(protocol['case']) != protocol['scoring_inputs']:
-            raise EvidenceError('Evaluator or original candidate changed')
-        calibration = protocol['calibration']
-        required = {'case_id','candidate_sha256','scoring_inputs_sha256','runtime','evidence'}
-        if not isinstance(calibration,dict) or set(calibration)!=required \
-                or calibration['case_id']!=protocol['case']['id'] \
-                or calibration['candidate_sha256']!=protocol['candidate_sha256'] \
-                or calibration['scoring_inputs_sha256']!=sha(canonical(protocol['scoring_inputs']).encode()) \
-                or calibration['runtime']!=observed_runtime \
-                or not isinstance(calibration['evidence'],dict) \
-                or set(calibration['evidence'])!={'original','reference','degenerate'}:
-            raise EvidenceError('Missing version-bound reusable calibration evidence')
-        for role, source in calibration['evidence'].items():
-            if not isinstance(source,dict) or set(source)!={'path','sha256'} \
-                    or sha(Path(source['path']).read_bytes()) != source['sha256']:
-                raise EvidenceError('Calibration evidence changed')
-            outcome=json.loads(Path(source['path']).read_text(encoding='utf-8'))
-            schedules=outcome.get('schedules',{}) if isinstance(outcome,dict) else {}
-            nested_error=isinstance(schedules,dict) and any(isinstance(row,dict) and row.get('runtimeError')
-                                                          for row in schedules.values())
-            if not isinstance(outcome,dict) or outcome.get('case_id')!=protocol['case']['id'] \
-                    or outcome.get('verdict') not in ('PASS','UNDERREACH','OVERREACH','UNDERREACH_AND_OVERREACH') \
-                    or (role=='reference' and outcome['verdict']!='PASS') \
-                    or (role=='degenerate' and outcome['verdict']=='PASS') or outcome.get('runtime_errors') or nested_error:
-                raise EvidenceError('Calibration outcomes are not trustworthy for their declared roles')
+        validate_calibration(protocol, observed_runtime)
+
+    def session_options(self, protocol):
+        return {}
+
+    def stop_external(self, request, directory):
+        pass
 
     def execute(self, protocol, role, prompt, schema, directory):
         self.preflight(protocol)
@@ -114,11 +127,17 @@ class NativeBackend:
         archive.atomic_json(backend/'reflection.schema.json', schema or dict(type='object'))
         (backend/'driver.py').write_text(DRIVER, encoding='utf-8')
         frozen = {str(p.resolve()):sha(p.read_bytes()) for p in backend.iterdir() if p.is_file()}
+        task_path=directory/'task.md'
+        task_path.write_text(protocol['visible']['task'],encoding='utf-8')
+        task_sha=sha(task_path.read_bytes());frozen[str(task_path.resolve())]=task_sha
         request = dict(binary=protocol['binary'], node=protocol['node'],
-            slot=dict(slot=directory.name, phase=role), prompt=prompt, task=protocol['visible']['task'],
+            slot=dict(slot=directory.name, phase=role), prompt=prompt, task=str(task_path.resolve()),
+            task_sha256=task_sha,candidate_files=protocol.get('candidate_files'),
             candidate=protocol['input_path'], run_dir=str((directory/'native').resolve()),
             config=dict(frozen_files=frozen,seconds_per_session=ROLES[role]['seconds']))
+        request.update(self.session_options(protocol))
         archive.atomic_json(directory/'native-request.json',request)
+        cleanup_error=None
         process=subprocess.Popen([sys.executable,'-B',str(backend/'driver.py')],
             stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,
             cwd=str(backend),start_new_session=True)
@@ -136,8 +155,15 @@ class NativeBackend:
             (directory/'bridge-partial.stdout').write_text(stdout or '',encoding='utf-8')
             (directory/'bridge-partial.stderr').write_text(stderr or '',encoding='utf-8')
             raise
+        finally:
+            try:self.stop_external(request, directory)
+            except Exception as error:
+                cleanup_error=repr(error)
+                archive.atomic_json(directory/'bridge-cleanup-error.json',dict(error=cleanup_error,
+                    original_service_material='bridge streams and native archive retained separately'))
         (directory/'bridge.stdout').write_text(stdout,encoding='utf-8')
         (directory/'bridge.stderr').write_text(stderr,encoding='utf-8')
+        if cleanup_error:return self.invalid(directory,'Container cleanup unconfirmed; see bridge-cleanup-error.json')
         if process.returncode:
             return self.invalid(directory,'Native bridge failed; see retained stderr and native archive')
         try:receipt = json.loads(stdout)

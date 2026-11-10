@@ -105,6 +105,12 @@ def scoring_inputs(record):
 
 
 def relation_states(outcome):
+    if 'behavior_states' in outcome:
+        states=outcome['behavior_states']
+        if not isinstance(states,dict) or not states or any(not isinstance(k,str) or not k
+                or (v is not None and type(v) is not bool) for k,v in states.items()):
+            raise EvidenceError('Invalid derived behavior vector')
+        return dict(states)
     effects = outcome.get('observed_effects')
     if not isinstance(effects, dict) or not effects:
         raise EvidenceError('评分器未提供完整 observed_effects，不能判定经验改善门槛')

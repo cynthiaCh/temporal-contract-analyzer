@@ -90,6 +90,11 @@ Multi-case consolidation and automatic old-case replay are not implemented by
 this refactor. Current development updates shared experience through bounded
 per-case evidence and expert admission; generalization needs separate evidence.
 
+`docker_backend.py` adds the optional pinned SWE-TempoC transport and offline
+runtime/calibration entry points. `_session_runtime/docker_transport.py` replaces
+the namespace envelope while retaining the original guarded runner and archiver.
+See [Docker backend](DOCKER_BACKEND.md) for its explicit scope and isolation.
+
 ## Refactor validation
 
 - 355 Python tests passed, including bounded development, frozen evaluation,

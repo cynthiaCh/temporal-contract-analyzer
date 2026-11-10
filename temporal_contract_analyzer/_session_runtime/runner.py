@@ -71,7 +71,7 @@ def stop_process(proc):
         except ProcessLookupError:pass
     if proc is not None:proc.wait()
 
-def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=None,score_fn=None,allow_model_execution=False,diff_runner=subprocess.run):
+def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=None,score_fn=None,allow_model_execution=False,diff_runner=subprocess.run,transport=None):
     """Actual lifecycle; fake CLI can exercise it offline without model/scorer calls.
 
     score_fn is an explicit trusted evaluation callback. It receives ONLY the
@@ -85,17 +85,21 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
         verify(config['frozen_files'])
     seconds=config.get('seconds_per_session',600);stdout_limit=config.get('stdout_bytes',16777216)
     if not 0<seconds<=600 or not 0<stdout_limit<=16777216:raise ValueError('cannot increase original resource limits')
-    frozen={**config,'slot':slot,'model':model,'effort':effort,'requests_per_session':cap,'seconds_per_session':seconds,'stdout_bytes':stdout_limit,'offline_fixture':fixture,'archiver':'runner-owned-v2-null-safe','input_archive_policy':'snapshots/logs outside model workspace; no model archival duty'}
+    frozen={**config,'slot':slot,'model':model,'effort':effort,'requests_per_session':cap,'seconds_per_session':seconds,'stdout_bytes':stdout_limit,'offline_fixture':fixture,'archiver':'runner-owned-v2-null-safe','input_archive_policy':'snapshots/logs outside model workspace; no model archival duty','transport':transport}
     a=Archive(run_dir).prepare(candidate,task,prompt,frozen)
     if 'candidate_files' in case and backend.hashes(a.original)!=case['candidate_files']:raise ValueError('candidate version mismatch before launch')
     if case.get('task_sha256') and sha(a.root/'input/task.md')!=case['task_sha256']:raise ValueError('task version mismatch before launch')
-    runtime=Path(tempfile.mkdtemp(prefix='research-archive-runtime-'));proc=None
+    runtime=Path(tempfile.mkdtemp(prefix='research-archive-runtime-'));proc=None;launcher=None;transport_stopped=True
     outcome={**slot,'status':'LAUNCHED','started_at':time.time(),'failure_class':None,'stop_reason':None,'offline_fixture':fixture}
     events=[];answer=None
     try:
         with GuardServer(runtime/'hook-control',a.root/'meter',slot['slot'],cap,mode) as guard:
             try:
                 cmd=command_factory(a,runtime,guard) if fixture else command(slot['slot'],a.run_dir,phase,case,runtime=runtime,socket_dir=guard.directory)
+                if transport is not None:
+                    from docker_transport import Launcher
+                    launcher=Launcher(transport,a.root)
+                    cmd=launcher.command(cmd,a.run_dir,runtime,slot['slot'],guard.directory)
                 save(a.root/'command.json',cmd)
                 with (a.root/'input/actual-prompt.md').open('rb') as inp,(a.root/'events.jsonl').open('wb') as out,(a.root/'stderr.log').open('wb') as err:
                     proc=subprocess.Popen(cmd,stdin=inp,stdout=out,stderr=err,cwd=a.workspace,start_new_session=True)
@@ -113,6 +117,13 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
                 outcome.update(failure_class=outcome['failure_class'] or 'runner_exception',stop_reason=outcome['stop_reason'] or 'runner_exception',exception=repr(exc))
             finally:
                 stop_process(proc)
+                if launcher is not None:
+                    try:launcher.close()
+                    except Exception as exc:
+                        transport_stopped=False
+                        outcome['transport_cleanup_error']=repr(exc)
+                        if not outcome['failure_class']:
+                            outcome.update(failure_class='container_stop_failed',stop_reason='container_stop_failed')
     except Exception as exc:
         outcome.update(failure_class=outcome['failure_class'] or 'runner_exception',stop_reason=outcome['stop_reason'] or 'runner_exception',exception=repr(exc))
     finally:
@@ -127,9 +138,11 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
         try:
             if (profile/'config.toml').exists():save(a.root/'configuration-after.json',{'profile_sha256':sha(profile/'config.toml'),'global_config':backend.global_snapshot()})
         except Exception as exc:a.error('configuration_after',exc)
-        try:shutil.rmtree(runtime)  # runner-owned temporary profile only; never candidate files
+        try:
+            if transport_stopped:shutil.rmtree(runtime)  # never delete a live actor's profile
+            else:a.error('container_cleanup','Actor stop unconfirmed; protected runtime retained at '+str(runtime))
         except Exception as exc:a.error('runtime_cleanup',exc)
-        archive_state=a.finalize(model_stopped=proc is None or proc.poll() is not None,diff_runner=diff_runner)
+        archive_state=a.finalize(model_stopped=transport_stopped and (proc is None or proc.poll() is not None),diff_runner=diff_runner)
     # Reuse original role/accounting and resource-result interpretation.
     malformed=[]
     try:
@@ -161,7 +174,7 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
     posts=[e for e in model_events if e['hook_event_name']=='PostModelRequest'];pending=native.get('started',0)-native.get('completed',0)
     accounted=bool(native.get('started')) and (pending==0 or budget_hit and pending==1) and len(posts)==native.get('completed')
     completed=outcome.get('exit_code')==0 and sum(e.get('type')=='turn.completed' for e in events)==1 and not any(e.get('type') in ['error','turn.failed'] for e in events) and not malformed and not budget_hit
-    infra_ok=accounted and bool(model_events) and all(e.get('model')==model for e in model_events) and not native.get('blocked_tools') and all(e.get('status')=='completed' for e in posts) and not any(e.get('type')=='turn.failed' for e in events) and not malformed and completed
+    infra_ok=transport_stopped and not (guard.errors if 'guard' in locals() else []) and accounted and bool(model_events) and all(e.get('model')==model for e in model_events) and not native.get('blocked_tools') and all(e.get('status')=='completed' for e in posts) and not any(e.get('type')=='turn.failed' for e in events) and not malformed and completed
     rec={**outcome,'native':native,'output_format_valid':format_ok,'infrastructure_valid':infra_ok,'status':'VALID' if infra_ok and completed else 'INVALID','archive_status':archive_state,'archive_failure_requires_stop':archive_state['status']!='OK','archive_stop_reason':'archive_error' if archive_state['status']!='OK' else None,'scoring_status':'NOT_REQUESTED','source_body_proofs':source_proof(events,a.original),'final_candidate':str(a.final) if a.final.exists() else None,'patch_delivered':archive_state['steps'].get('diff')=='CHANGED'}
     rec['turn_complete']=bool(completed and infra_ok)
     rec['candidate_complete']=bool(completed and infra_ok and format_ok)

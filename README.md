@@ -51,6 +51,7 @@ python3 -B -m temporal_contract_analyzer experience-memory review --store /path/
 - On macOS, double-click `launch-ast-review.command` to open AST evidence review. It restarts the configured report service in the foreground; keep the terminal open and press Ctrl+C to stop it. Report annotations, analysis review and experience activation use separate records.
 - Benchmark execution requires the separately provisioned benchmark, matching scoring runtime and calibration. Set `TCA_BENCH_ROOT` explicitly for reproducible use; checkout-based sibling discovery remains a compatibility convenience.
 - The native evolution runner requires explicit executables, isolation tools and version-bound evidence; importing it cannot start a historical scheduler.
+- The [Docker backend](docs/DOCKER_BACKEND.md) reuses pinned SWE-TempoC public solver and trusted grading images, with zero-model checks and calibration and the same bounded evolution and expert activation rules.
 
 ## Offline verification
 

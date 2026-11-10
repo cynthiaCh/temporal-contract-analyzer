@@ -82,6 +82,9 @@ class BackendTests(unittest.TestCase):
                 self.command=command
             def communicate(self,request,timeout):
                 data=json.loads(request)
+                assert Path(data['task']).read_text()==protocol['visible']['task']
+                assert data['task_sha256']==sha(Path(data['task']).read_bytes())
+                assert data['config']['frozen_files'][data['task']]==data['task_sha256']
                 archive=Path(data['run_dir'])/'archive';archive.mkdir(parents=True)
                 (archive/'raw-answer.txt').write_text('')
                 (archive/'partial-answer.txt').write_text('SYNTHETIC_PARTIAL_STREAM')

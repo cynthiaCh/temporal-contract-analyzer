@@ -19,7 +19,7 @@ def load(path):
 
 
 def implementation():
-    names=('experience_evolution.py','evolution_backend.py','experience_approval.py',
+    names=('experience_evolution.py','evolution_backend.py','docker_backend.py','experience_approval.py',
            'experience_memory.py','experience_routing.py','taxonomy.py','case_evaluation.py',
            'case_catalog.py','candidate_files.py','archive.py','core.py')
     return {name:sha(Path(__file__).with_name(name).read_bytes()) for name in names}
@@ -82,13 +82,16 @@ class Evolution:
         state=self.state();state['pinned'][name]=sha(path.read_bytes());self.save(state)
 
     def prepare(self,case_id,visible,store,binary,node,calibration,kind='development',max_rounds=1,
-                source_relationship=''):
+                source_relationship='',backend=None):
         from .case_catalog import case_input
         if self.root.exists():raise EvidenceError('Use a new evolution directory')
         if kind not in ('development','evaluation') or type(max_rounds) is not int or not 1<=max_rounds<=2:
             raise EvidenceError('Choose development/evaluation and one or two bounded rounds')
         if not memory.text(source_relationship):raise EvidenceError('Record source relationship and prior exposure')
         inputs=case_input(case_id)
+        if backend is not None:
+            from .docker_backend import validate_config
+            backend=validate_config(backend)
         files,skipped=capture(Path(inputs['candidate']))
         sources={name:raw.decode('utf-8') for name,raw in files.items()}
         if set(visible)!={'task','sources','analysis','review'} or visible['task']!=inputs['task'] or visible['sources']!=sources:
@@ -121,6 +124,7 @@ class Evolution:
             roles=ROLES,slots=[dict(name=name,role=role,requests=ROLES[role]['requests']) for name,role in slots],
             total_request_cap=sum(ROLES[role]['requests'] for _,role in slots),
             active_snapshot_sha256=frozen['sha256'],no_retry=True,concurrency=1)
+        if backend is not None:protocol['backend']=backend
         archive.atomic_json(self.root/'protocol.json',protocol)
         archive.atomic_json(self.root/'active-snapshot.json',frozen)
         archive.atomic_json(self.root/'initial-route.json',routed)
@@ -142,11 +146,13 @@ class Evolution:
 
     def common(self,protocol,body=None):
         visible=protocol['visible']
+        node=protocol['node'] if protocol.get('backend',{}).get('kind')=='docker' else '/runtime/node'
+        python='python3' if protocol.get('backend',{}).get('kind')=='docker' else '/usr/bin/python3'
         prompt=(visible['task']+'\n\nCandidate automatic Contract; check against actual task/source:\n'+
             visible['analysis']['contract']+'\n\nRead the candidate source in /workspace. Repair business code only. '
             'Preserve public interfaces, dependencies and build/test configuration. Do not access network or '
             'research archives, install dependencies, or create backups, patches or experiment summaries. '
-            'Python performs all mechanical archival. Use /runtime/node or /usr/bin/python3 -B. '
+            'Python performs all mechanical archival. Use '+node+' or '+python+' -B. '
             'Return the maintenance-schema JSON report in English, describing actual changes, validation and gaps.')
         return prompt if body is None else prompt+'\n\nFrozen experience guidance; verify applicability:\n'+body
 
@@ -197,8 +203,12 @@ class Evolution:
     def _run(self,execute=False,backend=None):
         if not execute and getattr(backend,'kind',None)!='synthetic_fixture_not_model_or_effectiveness_evidence':
             raise EvidenceError('Live execution requires --execute; preparation never calls models')
-        backend=backend or NativeBackend()
         protocol=self.verify();state=self.state()
+        if backend is None:
+            if protocol.get('backend',{}).get('kind')=='docker':
+                from .docker_backend import DockerBackend
+                backend=DockerBackend()
+            else:backend=NativeBackend()
         if state['status'] not in ('prepared','revision_requested'):
             raise EvidenceError('Only a fresh or explicitly revised batch can run; no implicit resume')
         state['status']='running';state['backend_kind']=backend.kind;self.save(state)

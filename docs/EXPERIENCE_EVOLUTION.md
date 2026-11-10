@@ -35,6 +35,10 @@ python3 -B -m temporal_contract_analyzer experience-evolution run --root researc
 The explicit `--execute` is the live-call switch. This implementation task ran no
 live models. Do not reuse a stopped historical scheduler or enlarge a budget.
 
+An optional `backend` object selects the [SWE-TempoC Docker adapter](DOCKER_BACKEND.md).
+`docker-check` and `docker-calibrate` are explicit zero-model environment/scorer
+commands. Without that object, execution uses the existing native backend.
+
 `config.json` must contain exactly these required fields, with optional `kind`
 (`development` or `evaluation`) and `max_rounds` (1 or 2):
 
