@@ -1,10 +1,11 @@
 'use strict';
 const $ = selector => document.querySelector(selector);
-const labels = {parsed:'范围内解析完成', partial:'部分解析', failed:'扫描失败', empty:'没有源码'};
-const origins = {vscode:'VS Code', codex:'Codex', cli:'CLI', web:'浏览页面'};
-const decisions = {confirmed:'核查成立', dismissed:'核查不成立', uncertain:'待确认'};
+const systemText = window.TCAReportText;
+const labels = {parsed:'Parsed within scope', partial:'Partially parsed', failed:'Scan failed', empty:'No source'};
+const origins = {vscode:'VS Code', codex:'Codex', cli:'CLI', web:'Browser'};
+const decisions = {confirmed:'Supported', dismissed:'Not supported', uncertain:'Uncertain'};
 let items = [], offset = 0, total = 0, selected, current, tab = 'findings', detailRequest = 0, listRequest = 0;
-const protections = {sufficient:'保护充分', insufficient:'保护不足', uncertain:'待确认'};
+const protections = {sufficient:'Sufficient', insufficient:'Insufficient', uncertain:'Uncertain'};
 let reviewPaths = null;
 let contextFinding = '';
 const pageSize = 30;
@@ -21,16 +22,16 @@ function button(text, action, className = 'quiet') {
   node.addEventListener('click', () => Promise.resolve().then(action).catch(showError));
   return node;
 }
-function showError(error) { $('#notice').textContent = error.message || String(error); $('#notice').classList.remove('hidden'); }
+function showError(error) { $('#notice').textContent = systemText(error.message || String(error)); $('#notice').classList.remove('hidden'); }
 function clearError() { $('#notice').classList.add('hidden'); }
 async function api(url, data) {
   const options = data === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json','X-TCA-Request':'local'}, body:JSON.stringify(data)};
   const response = await fetch(url, options);
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || `请求失败：${response.status}`);
+  if (!response.ok) throw new Error(result.error || `Request failed: ${response.status}`);
   return result;
 }
-function date(value) { return new Date(value).toLocaleString('zh-CN', {hour12:false}); }
+function date(value) { return new Date(value).toLocaleString('en-GB', {hour12:false}); }
 function badge(status) { return element('span', 'pill '+status, labels[status] || status); }
 function reportURL(id) { return '/api/reports/' + encodeURIComponent(id); }
 function artifactLink(id, name, label) {
@@ -46,8 +47,8 @@ async function loadReports() {
   const result = await api('/api/reports?'+query);
   if (ticket !== listRequest) return;
   items = result.items; total = result.total;
-  $('#total').textContent = `${total} 份`;
-  $('#page-label').textContent = total ? `${offset+1}–${Math.min(offset+pageSize,total)} / ${total}` : '0 份';
+  $('#total').textContent = `${total} reports`;
+  $('#page-label').textContent = total ? `${offset+1}–${Math.min(offset+pageSize,total)} / ${total}` : '0 reports';
   $('#previous').disabled = offset === 0;
   $('#next').disabled = offset+pageSize >= total;
   const list = $('#report-list'); list.replaceChildren();
@@ -55,27 +56,27 @@ async function loadReports() {
     const row = element('a', 'report-row'+(meta.report_id === selected ? ' selected' : ''));
     row.href = '#report='+meta.report_id;
     row.append(element('div', 'row-title', meta.label || meta.project));
-    row.append(element('div', 'row-subtitle', `${meta.project} · ${meta.scope.mode === 'file' ? meta.scope.path : '整个目录'}`));
+    row.append(element('div', 'row-subtitle', `${meta.project} · ${meta.scope.mode === 'file' ? meta.scope.path : 'Whole directory'}`));
     const bottom = element('div', 'row-bottom'); bottom.append(badge(meta.status), element('span', '', origins[meta.origin] || meta.origin)); row.append(bottom);
     row.append(element('div', 'row-subtitle', date(meta.created_at)));
     list.append(row);
   }
-  if (!items.length) list.append(element('p','muted', '没有符合条件的报告。可新建扫描，或清除筛选条件。'));
-  if (result.invalid.length) showError(new Error(`${result.invalid.length} 条归档元数据无法读取；请检查报告库。`));
+  if (!items.length) list.append(element('p','muted', 'No matching reports. Start a scan or clear the filters.'));
+  if (result.invalid.length) showError(new Error(`${result.invalid.length} report metadata entries could not be read. Check the store.`));
 }
 
 async function openReport(id) {
   const ticket = ++detailRequest;
   if (selected !== id) { reviewPaths = null; contextFinding = ''; }
   selected = id;
-  $('#detail').replaceChildren(element('p', 'loading', '正在读取归档并校验内容…'));
+  $('#detail').replaceChildren(element('p', 'loading', 'Reading and verifying the archived report...'));
   for (const row of document.querySelectorAll('.report-row')) row.classList.toggle('selected', row.hash === '#report='+id);
   try {
     const value = await api(reportURL(id));
     if (ticket !== detailRequest) return;
     current = value; tab = 'findings'; render();
   } catch (error) {
-    if (ticket === detailRequest) $('#detail').replaceChildren(element('div','error-block', '无法读取报告：'+error.message));
+    if (ticket === detailRequest) $('#detail').replaceChildren(element('div','error-block', 'Could not read report: '+systemText(error.message)));
   }
 }
 
@@ -88,7 +89,7 @@ function openScan(meta) {
     form.elements.project.value = meta.project;
     form.elements.task_id.value = meta.task_id;
     form.elements.parent_report_id.value = meta.report_id;
-    $('#scan-parent').textContent = '将关联到当前报告；新扫描读取当前磁盘内容。';
+    $('#scan-parent').textContent = 'The new report will link to this baseline and scan the current files on disk.';
   }
   $('#scan-dialog').showModal(); form.elements.candidate.focus();
 }
@@ -96,29 +97,30 @@ function openScan(meta) {
 function render() {
   const {metadata:meta, report} = current;
   const detail = $('#detail'); detail.replaceChildren();
+  detail.append(element('p','scope-notice','Use this page before code changes: inspect AST evidence, read related source, and save local review judgments. Analysis review for evolution and expert activation of reusable experience are separate steps.'));
   const header = element('div', 'detail-header');
   header.append(element('span','eyebrow', 'ARCHIVED ANALYSIS'));
   const title = element('div','detail-title'); title.append(element('h2','',meta.label || meta.project), badge(meta.status)); header.append(title);
   const info = element('div','detail-meta');
-  for (const value of [date(meta.created_at), origins[meta.origin] || meta.origin, meta.input_kind === 'editor_snapshot' ? '含编辑器快照' : '磁盘源码', 'v'+meta.tool_version]) info.append(element('span','',value));
+  for (const value of [date(meta.created_at), origins[meta.origin] || meta.origin, meta.input_kind === 'editor_snapshot' ? 'Includes editor snapshot' : 'Source from disk', 'v'+meta.tool_version]) info.append(element('span','',value));
   header.append(info, element('code','',meta.report_id), element('p','detail-path',meta.candidate_root+(meta.scope.mode === 'file' ? '/'+meta.scope.path : '')));
   const actions = element('div','detail-actions');
-  actions.append(button('以此为基线扫描',()=>openScan(meta)));
-  actions.append(button('复制报告 ID',async()=>{await navigator.clipboard.writeText(meta.report_id);}));
-  if (report) actions.append(artifactLink(meta.report_id,'report.html','完整报告 ↗'),artifactLink(meta.report_id,'report.json','JSON ↗'));
-  actions.append(artifactLink(meta.report_id,'snapshot.json','输入快照 ↗'));
+  actions.append(button('Scan again from this baseline',()=>openScan(meta)));
+  actions.append(button('Copy report ID',async()=>{await navigator.clipboard.writeText(meta.report_id);}));
+  if (report) actions.append(artifactLink(meta.report_id,'report.html','Archived report (original) ↗'),artifactLink(meta.report_id,'report.json','JSON ↗'));
+  actions.append(artifactLink(meta.report_id,'snapshot.json','Input snapshot ↗'));
   header.append(actions); detail.append(header);
   if (!report) {
-    detail.append(element('div','summary-strip','本次扫描未产生分析结果；失败信息已归档。'),element('div','error-block',meta.error || '未知错误'));
+    detail.append(element('div','summary-strip','This scan produced no analysis. Its failure details were archived.'),element('div','error-block',systemText(meta.error) || 'Unknown error'));
   } else {
     const strip = element('div','summary-strip');
-    for (const [number, label] of [[report.summary.review_hints,'条待核查'],[`${report.summary.parsed_files}/${report.summary.files}`,'文件解析完成'],[report.summary.events,'个语法事件']]) {
+    for (const [number, label] of [[report.summary.review_hints,'hints to review'],[`${report.summary.parsed_files}/${report.summary.files}`,'files parsed'],[report.summary.events,'syntax events']]) {
       const metric = element('div','metric'); metric.append(element('strong','',number),element('span','',label)); strip.append(metric);
     }
-    detail.append(strip,element('p','scope-notice', '这里展示归档时的源码和结果。提示是审查线索；没有命中不代表安全。'+(report.files.some(f=>f.language==='vue') ? ' Vue 当前仅分析脚本语法，未建模模板与框架调度。' : '')));
+    detail.append(strip,element('p','scope-notice', 'This report shows the source and results captured at scan time. Hints need review; no matching hint does not establish safety.'+(report.files.some(f=>f.language==='vue') ? ' Vue analysis covers script syntax; templates and framework scheduling are outside scope.' : '')));
   }
   const tabs = element('div','tabs'); tabs.setAttribute('role','tablist');
-  for (const [key, label] of [['findings','边界审查卡'],['context','源码上下文'],['source','源码快照'],['compare','前后对比'],['provenance','归档信息'],['delivery','Agent 交付']]) {
+  for (const [key, label] of [['findings','Boundary review'],['context','Source context'],['source','Source snapshot'],['compare','Compare scans'],['provenance','Provenance'],['delivery','Agent deliveries']]) {
     const node = button(label,()=>{tab=key;render();},'tab'+(tab===key?' active':''));
     node.setAttribute('role','tab'); node.setAttribute('aria-selected',String(tab===key)); tabs.append(node);
   }
@@ -134,26 +136,26 @@ function render() {
 
 function renderContext(content) {
   const {report, metadata:meta} = current;
-  content.append(element('h3','','分析线索 → 定义补全 → Agent 核查'),
-    element('p','scope-notice','仅补充归档快照中可识别的定义，列出来源与未解析项。不会调用模型，不代表完整依赖或已确认缺陷。'));
-  if (!report) { content.append(element('p','muted','本报告没有可用的分析结果。')); return; }
+  content.append(element('h3','','Findings → related definitions → agent review'),
+    element('p','scope-notice','Expand identifiable definitions within the archived snapshot, with origins and unresolved references. This does not call a model or establish complete dependencies or a defect.'));
+  if (!report) { content.append(element('p','muted','This report has no available analysis.')); return; }
   const form=element('form','note-form context-controls');
-  const select=element('select'); select.setAttribute('aria-label','选择分析线索');
-  const all=element('option','','全部线索'); all.value=''; select.append(all);
+  const select=element('select'); select.setAttribute('aria-label','Select a finding');
+  const all=element('option','','All findings'); all.value=''; select.append(all);
   for (const finding of report.findings) {
     const option=element('option','',`${finding.id} · ${finding.rule}`); option.value=finding.id; select.append(option);
   }
   select.value=contextFinding;
-  const depth=element('select'); depth.setAttribute('aria-label','定义展开深度');
-  for(let n=0;n<=5;n++){const option=element('option','',`展开 ${n} 层定义`);option.value=String(n);depth.append(option);} depth.value='1';
-  const budget=element('input');budget.type='number';budget.min='1';budget.max='100000';budget.value='12000';budget.setAttribute('aria-label','代码字符预算');
-  const aliases=element('textarea');aliases.value='{}';aliases.rows=2;aliases.setAttribute('aria-label','路径别名 JSON');
-  for(const [label,field] of [['选择线索',select],['展开深度',depth],['代码字符预算（不含说明文字）',budget]]) {
+  const depth=element('select'); depth.setAttribute('aria-label','Definition expansion depth');
+  for(let n=0;n<=5;n++){const option=element('option','',`Expand ${n} definition levels`);option.value=String(n);depth.append(option);} depth.value='1';
+  const budget=element('input');budget.type='number';budget.min='1';budget.max='100000';budget.value='12000';budget.setAttribute('aria-label','Source character budget');
+  const aliases=element('textarea');aliases.value='{}';aliases.rows=2;aliases.setAttribute('aria-label','Path aliases JSON');
+  for(const [label,field] of [['Finding',select],['Expansion depth',depth],['Source character budget (excluding explanations)',budget]]) {
     const wrapper=element('label','field');wrapper.append(element('span','',label),field);form.append(wrapper);
   }
-  const advanced=element('details','context-aliases');advanced.append(element('summary','','路径别名（可选）'));
-  const aliasField=element('label','field');aliasField.append(element('span','','例如 {"@":"src"}'),aliases);advanced.append(aliasField);form.append(advanced);
-  const submit=element('button','primary','生成源码上下文');submit.type='submit';form.append(submit);
+  const advanced=element('details','context-aliases');advanced.append(element('summary','','Path aliases (optional)'));
+  const aliasField=element('label','field');aliasField.append(element('span','','Example: {"@":"src"}'),aliases);advanced.append(aliasField);form.append(advanced);
+  const submit=element('button','primary','Build source context');submit.type='submit';form.append(submit);
   const result=element('div');content.append(form,result);
   let request=0;
   async function load() {
@@ -162,32 +164,32 @@ function renderContext(content) {
     const mapping=JSON.parse(aliases.value);
     const query=new URLSearchParams({depth:depth.value,max_chars:budget.value,aliases:JSON.stringify(mapping)});
     if(select.value)query.set('finding_id',select.value);
-    submit.disabled=true;result.replaceChildren(element('p','muted','正在从归档源码补充定义…'));
+    submit.disabled=true;result.replaceChildren(element('p','muted','Expanding definitions from archived source...'));
     try {
       const data=await api(reportURL(meta.report_id)+'/context?'+query);
       if(ticket!==request || !content.isConnected)return;
       const packet=data.context;
-      result.replaceChildren(element('p','muted',`${packet.usage.snippets} 段源码 · ${packet.usage.code_chars} 字符 · ${packet.unresolved.length} 项未解析`),
-        button('复制完整上下文给 Agent',async()=>navigator.clipboard.writeText(data.markdown)));
-      if(!packet.snippets.length)result.append(element('p','muted','没有选中的线索；没有命中不代表安全。'));
+      result.replaceChildren(element('p','muted',`${packet.usage.snippets} snippets · ${packet.usage.code_chars} characters · ${packet.unresolved.length} unresolved references`),
+        button('Copy context for agent review',async()=>navigator.clipboard.writeText(data.markdown)));
+      if(!packet.snippets.length)result.append(element('p','muted','No findings selected. No matching hint does not establish safety.'));
       for(const snippet of packet.snippets) {
         const card=element('article','finding');
-        card.append(element('h3','',`${snippet.file}:${snippet.start_line}–${snippet.end_line} · ${snippet.kind==='seed'?'原始证据':'补充定义'}`));
+        card.append(element('h3','',`${snippet.file}:${snippet.start_line}–${snippet.end_line} · ${snippet.kind==='seed'?'Seed evidence':'Related definition'}`));
         const descriptions=snippet.reasons.map(reason=>reason.kind==='finding-evidence'
-          ? `分析线索 ${reason.finding_id} 的源码证据`
-          : `${reason.from_file}:${reason.reference_line} 使用 ${reason.local_name || reason.symbol}${reason.module?'，来自 '+reason.module:''}`);
+          ? `Source evidence for finding ${reason.finding_id}`
+          : `${reason.from_file}:${reason.reference_line} uses ${reason.local_name || reason.symbol}${reason.module?' from '+reason.module:''}`);
         for(const description of new Set(descriptions))card.append(element('p','muted',description));
-        card.append(element('pre','',snippet.code),button('查看归档源码',()=>{tab='source';render();loadSource(snippet.file,snippet.start_line,snippet.end_line).catch(showError);},'source-link'));
+        card.append(element('pre','',snippet.code),button('View archived source',()=>{tab='source';render();loadSource(snippet.file,snippet.start_line,snippet.end_line).catch(showError);},'source-link'));
         result.append(card);
       }
-      const gaps=element('article','finding');gaps.append(element('h3','','未解析项'));
-      if(!packet.unresolved.length)gaps.append(element('p','muted','未记录到可识别的解析缺口；结果仍受支持范围限制。'));
+      const gaps=element('article','finding');gaps.append(element('h3','','Unresolved references'));
+      if(!packet.unresolved.length)gaps.append(element('p','muted','No identifiable gaps were recorded. Results remain limited to the supported analysis scope.'));
       for(const gap of packet.unresolved)gaps.append(element('p','annotation',`${gap.from_file || ''}${gap.reference_line?':'+gap.reference_line:''} · ${gap.symbol || ''} · ${gap.reason}${gap.target_file?' → '+gap.target_file:''}${gap.detail?' · '+gap.detail:''}`));
       result.append(gaps);
-      const limits=element('article','finding');limits.append(element('h3','','支持范围'));
-      for(const limitation of packet.limitations)limits.append(element('p','muted',limitation));result.append(limits);
+      const limits=element('article','finding');limits.append(element('h3','','Analysis scope'));
+      for(const limitation of packet.limitations)limits.append(element('p','muted',systemText(limitation)));result.append(limits);
     } catch(error) {
-      if(ticket===request && content.isConnected)result.replaceChildren(element('div','error-block',error.message));
+      if(ticket===request && content.isConnected)result.replaceChildren(element('div','error-block',systemText(error.message)));
     } finally {if(ticket===request)submit.disabled=false;}
   }
   form.addEventListener('submit',event=>{event.preventDefault();load().catch(showError);});
@@ -214,33 +216,35 @@ function reviewScope(report, paths) {
 }
 
 function boundaryPacket(card, events, meta, note) {
-  const refs = card.evidence_ids.map(id=>events.get(id)).filter(Boolean).map(e=>`${e.path}:${e.line}`).join('、');
+  const refs = card.evidence_ids.map(id=>events.get(id)).filter(Boolean).map(e=>`${e.path}:${e.line}`).join(', ');
   const review = note?.boundary_review;
-  return [`此候选位置可能跨越执行边界：${card.title}`,
-    `执行边界：${card.boundary.evidence_ids.map(id=>events.get(id)).filter(Boolean).map(e=>`${e.path}:${e.line} · ${e.kind}`).join('、')}`,
-    `可能变化：${card.possible_changes.summary}`,
-    `影响效果：${card.effects.summary}${card.effects.evidence_ids.map(id=>events.get(id)).filter(Boolean).map(e=>`${e.path}:${e.line} · ${e.text.trim()}`).join('、')}`,
-    `请核查：${card.requirement_protection.summary}`,
-    `成立条件：${card.condition}`,
-    `人工关系判断：${note ? decisions[note.decision] : '待确认'}；保护：${review ? protections[review.protection] : '待确认'}。`,
-    ...(review?.requirement_basis ? [`仓库要求与保护依据（人工记录）：${review.requirement_basis}`] : []),
-    ...(note?.note ? [`关系判断依据（人工记录）：${note.note}`] : []),
-    `尚缺证据：${review?.missing_evidence || '请继续核查调用可达性、工作归属与保护范围。'}`,
-    `证据：${refs}。归档报告：${meta.report_id}；finding：${card.finding_id}；输入摘要：${meta.input_sha256}。`,
-    '请先核对当前源码与归档快照。此卡为审查线索，人工确认不等于 oracle 判定。'].join('\n');
+  return [`Candidate execution boundary: ${card.title}`,
+    `Execution boundary: ${card.boundary.evidence_ids.map(id=>events.get(id)).filter(Boolean).map(e=>`${e.path}:${e.line} · ${e.kind}`).join(', ')}`,
+    `Possible changes: ${card.possible_changes.summary}`,
+    `Affected effects: ${card.effects.summary}${card.effects.evidence_ids.map(id=>events.get(id)).filter(Boolean).map(e=>`${e.path}:${e.line} · ${e.text.trim()}`).join(', ')}`,
+    `Review question: ${card.requirement_protection.summary}`,
+    `Conditions and limits: ${card.condition}`,
+    `Human relation judgment: ${note ? decisions[note.decision] : 'Uncertain'}; protection: ${review ? protections[review.protection] : 'Uncertain'}.`,
+    ...(review?.requirement_basis ? [`Requirement and protection basis (human record): ${review.requirement_basis}`] : []),
+    ...(note?.note ? [`Relation basis (human record): ${note.note}`] : []),
+    `Missing evidence: ${review?.missing_evidence || 'Check call reachability, work ownership and the scope of protection.'}`,
+    `Evidence: ${refs}. Archived report: ${meta.report_id}; finding: ${card.finding_id}; input hash: ${meta.input_sha256}.`,
+    'Compare the current source with the archived snapshot first. This card is a review clue; a human judgment is not an oracle verdict.'].join('\n');
 }
 
 function renderFindings(content) {
-  const {report, metadata:meta, notes, boundary_cards:cards=[]} = current;
-  if (!report) { content.append(element('p','muted','扫描失败，没有可核查的规则提示。')); return; }
+  const {report, metadata:meta, notes, boundary_cards:rawCards=[]} = current;
+  const cards = rawCards.map(card => ({...card, title:systemText(card.title), condition:systemText(card.condition),
+    ...Object.fromEntries(['boundary','possible_changes','effects','requirement_protection'].map(key => [key, {...card[key], summary:systemText(card[key].summary)}]))}));
+  if (!report) { content.append(element('p','muted','The scan failed; no rule hints are available for review.')); return; }
   const events = new Map(report.files.flatMap(file=>file.events.map(event=>[event.id,event])));
-  content.append(element('p','scope-notice','先定位边界，再判断关系是否成立、保护是否充分、还缺什么证据。仓库要求尚未找到时保持待确认；可从源码上下文补充核查依据。'));
+  content.append(element('p','scope-notice','Locate the boundary, check whether the relation is supported and protection is sufficient, then record missing evidence. Keep uncertain judgments when repository requirements are not established.'));
   const scope = element('div','card-scope');
-  const paths = element('input'); paths.value=(reviewPaths || []).join(', '); paths.placeholder='相对文件路径，多个路径用逗号分隔'; paths.setAttribute('aria-label','本次改动文件');
+  const paths = element('input'); paths.value=(reviewPaths || []).join(', '); paths.placeholder='Relative file paths, separated by commas'; paths.setAttribute('aria-label','Changed files');
   const applyPaths = ()=>{reviewPaths=paths.value.trim() ? paths.value.split(',').map(p=>p.trim()).filter(Boolean) : null;render();};
   paths.addEventListener('keydown',event=>{if(event.key==='Enter')applyPaths();});
-  scope.append(paths,button('查看改动及相关调用候选',applyPaths),button('查看全部卡片',()=>{reviewPaths=null;render();}));
-  if (meta.parent_report_id) scope.append(button('使用基线间变化文件',async()=>{
+  scope.append(paths,button('Filter to changes and related calls',applyPaths),button('Show all cards',()=>{reviewPaths=null;render();}));
+  if (meta.parent_report_id) scope.append(button('Use files changed since baseline',async()=>{
     const id=meta.report_id;
     const compared=await api('/api/compare?'+new URLSearchParams({before:meta.parent_report_id,after:id}));
     if(current.metadata.report_id!==id)return;
@@ -251,11 +255,11 @@ function renderFindings(content) {
   const shown=cards.filter(card=>!related || card.evidence_ids.some(id=>related.has(events.get(id)?.path)));
   const captured=new Set(report.files.map(file=>file.path));
   const missing=(reviewPaths || []).filter(path=>!captured.has(path));
-  content.append(element('p','scope-notice',`显示 ${shown.length}/${cards.length} 张候选卡。${related ? '筛选文件：'+reviewPaths.join('、')+'；关联文件：'+[...related].join('、')+'。仅按文件及候选直接调用关系扩展。' : '当前显示本次扫描的全部候选卡。'}${missing.length ? '指定路径未被当前源码快照捕获：'+missing.join('、')+'。' : ''}动态派发、回调目标、框架调度及扫描范围外的路径未完整覆盖；隐藏卡片和无命中路径仍需核查。`));
-  const coverage=element('details','review-box');coverage.append(element('summary','','查看扫描范围与未覆盖内容'));
-  for(const limitation of report.limitations)coverage.append(element('p','muted',limitation));
-  for(const file of report.files.filter(f=>f.status!=='parsed'))coverage.append(element('p','error-block',`${file.path} · ${file.error?.message || file.status}`));
-  for(const file of report.skipped)coverage.append(element('p','muted',`${file.path} · ${file.reason}`));
+  content.append(element('p','scope-notice',`Showing ${shown.length}/${cards.length} candidate cards. ${related ? 'Selected files: '+reviewPaths.join(', ')+'; related files: '+[...related].join(', ')+'. Expansion uses file-level candidate direct call links only. ' : 'Showing all candidate cards from this scan. '}${missing.length ? 'Paths absent from this snapshot: '+missing.join(', ')+'. ' : ''}Dynamic dispatch, callback targets, framework scheduling and paths outside the scan are not fully covered. Hidden cards and paths without hints still need review.`));
+  const coverage=element('details','review-box');coverage.append(element('summary','','Scan coverage and limitations'));
+  for(const limitation of report.limitations)coverage.append(element('p','muted',systemText(limitation)));
+  for(const file of report.files.filter(f=>f.status!=='parsed'))coverage.append(element('p','error-block',`${file.path} · ${systemText(file.error?.message) || file.status}`));
+  for(const file of report.skipped)coverage.append(element('p','muted',`${file.path} · ${systemText(file.reason)}`));
   content.append(coverage);
   function sourceButton(id) {
     const event=events.get(id);
@@ -264,42 +268,42 @@ function renderFindings(content) {
   for (const candidate of shown) {
     const card = element('article','finding boundary-card');
     const ownNotes=notes.filter(n=>n.finding_id===candidate.finding_id), latest=ownNotes.at(-1);
-    const head=element('div','finding-head');head.append(element('code','',candidate.rule),element('span','',candidate.finding_id),element('span','pill',latest ? decisions[latest.decision] : '待确认'));
+    const head=element('div','finding-head');head.append(element('code','',candidate.rule),element('span','',candidate.finding_id),element('span','pill',latest ? decisions[latest.decision] : 'Uncertain'));
     card.append(head,element('h3','',candidate.title));
     const questions=element('dl','boundary-questions');
-    for (const [label,value] of [['执行边界在哪里？',candidate.boundary],['什么可能已经变化？',candidate.possible_changes],['影响什么效果？',candidate.effects],['仓库要求与保护是什么？',candidate.requirement_protection]]) {
+    for (const [label,value] of [['Where is the execution boundary?',candidate.boundary],['What may have changed?',candidate.possible_changes],['Which effects may be affected?',candidate.effects],['What requirements and protection apply?',candidate.requirement_protection]]) {
       const answer=element('dd');answer.append(element('p','',value.summary));
       for(const id of value.evidence_ids || [])answer.append(sourceButton(id));
-      if(label==='仓库要求与保护是什么？')answer.append(element('p','muted',latest?.boundary_review?.requirement_basis || '仓库依据待补充；判断或取消调用的存在不代表充分。'));
+      if(label==='What requirements and protection apply?')answer.append(element('p','muted',latest?.boundary_review?.requirement_basis || 'Repository evidence is still needed. A guard or cancellation call alone does not establish sufficient protection.'));
       questions.append(element('dt','',label),answer);
     }
     card.append(questions);
-    const evidence=element('details','evidence');evidence.append(element('summary','','源码引用与成立条件'));
+    const evidence=element('details','evidence');evidence.append(element('summary','','Source evidence, conditions and limits'));
     evidence.append(element('p','muted',candidate.condition));
     for(const id of candidate.evidence_ids){evidence.append(sourceButton(id),element('pre','',events.get(id).text));}
     card.append(evidence);
     const actions=element('div','detail-actions');
-    actions.append(button('补充相关源码',()=>{contextFinding=candidate.finding_id;tab='context';render();}));
-    actions.append(button('复制给 Agent 的核查材料',async()=>{await navigator.clipboard.writeText(boundaryPacket(candidate,events,meta,latest));}));
+    actions.append(button('Expand related source',()=>{contextFinding=candidate.finding_id;tab='context';render();}));
+    actions.append(button('Copy review packet for an agent',async()=>{await navigator.clipboard.writeText(boundaryPacket(candidate,events,meta,latest));}));
     card.append(actions);
-    const review=element('details','review-box');review.append(element('summary','','人工核查记录'));
+    const review=element('details','review-box');review.append(element('summary','','Human review notes'));
     if(ownNotes.length)review.open=true;
     for(const note of ownNotes){
       const structured=note.boundary_review;
-      review.append(element('div','annotation',`${decisions[note.decision]} · ${date(note.created_at)}\n${note.note}`+(structured ? `\n保护：${protections[structured.protection]}\n仓库要求与保护依据：${structured.requirement_basis || '待补充'}\n尚缺证据：${structured.missing_evidence || '未记录'}` : '')));
+      review.append(element('div','annotation',`${decisions[note.decision]} · ${date(note.created_at)}\n${note.note}`+(structured ? `\n保护：${protections[structured.protection]}\nRequirement and protection basis：${structured.requirement_basis || 'To be supplied'}\nMissing evidence: ${structured.missing_evidence || 'Not recorded'}` : '')));
     }
     const form=element('form','note-form');
     function field(label,node){const wrapper=element('label','review-field');wrapper.append(element('span','',label),node);form.append(wrapper);return node;}
-    const decision=element('select');decision.setAttribute('aria-label','关系是否成立');
+    const decision=element('select');decision.setAttribute('aria-label','Relation judgment');
     for(const [value,label] of Object.entries(decisions)){const option=element('option','',label);option.value=value;decision.append(option);}
-    decision.value=latest?.decision || 'uncertain';field('这条关系是否成立？',decision);
-    const note=element('textarea');note.placeholder='记录关系判断的源码或测试依据。';note.maxLength=10000;note.setAttribute('aria-label','关系判断依据');field('判断依据',note);
-    const protection=element('select');protection.setAttribute('aria-label','现有保护是否充分');
+    decision.value=latest?.decision || 'uncertain';field('Is the relation supported?',decision);
+    const note=element('textarea');note.placeholder='Record source or test evidence for this judgment.';note.maxLength=10000;note.setAttribute('aria-label','Relation basis');field('Judgment basis',note);
+    const protection=element('select');protection.setAttribute('aria-label','Protection sufficiency');
     for(const [value,label] of Object.entries(protections)){const option=element('option','',label);option.value=value;protection.append(option);}
-    protection.value=latest?.boundary_review?.protection || 'uncertain';field('现有保护是否充分？',protection);
-    const basis=element('textarea');basis.maxLength=10000;basis.value=latest?.boundary_review?.requirement_basis || '';basis.placeholder='仓库规范、调用处、测试或设计依据的路径/位置；说明保护约束哪些效果。';basis.setAttribute('aria-label','仓库要求与保护依据');field('仓库要求与保护依据',basis);
-    const missingEvidence=element('textarea');missingEvidence.maxLength=10000;missingEvidence.placeholder='例如：待完成通知与关闭后通知是否都受约束？缺少哪条调用路径或行为轨迹？';missingEvidence.setAttribute('aria-label','尚缺什么证据');field('还缺什么证据？',missingEvidence);
-    const save=element('button','quiet','追加核查记录');save.type='submit';form.append(save);
+    protection.value=latest?.boundary_review?.protection || 'uncertain';field('Is the current protection sufficient?',protection);
+    const basis=element('textarea');basis.maxLength=10000;basis.value=latest?.boundary_review?.requirement_basis || '';basis.placeholder='Cite repository requirements, callers, tests or design notes, and state which effects the protection constrains.';basis.setAttribute('aria-label','Requirement and protection basis');field('Requirement and protection basis',basis);
+    const missingEvidence=element('textarea');missingEvidence.maxLength=10000;missingEvidence.placeholder='For example: which call path or execution trace is needed to check pending notifications and delivery after close?';missingEvidence.setAttribute('aria-label','Missing evidence');field('What evidence is missing?',missingEvidence);
+    const save=element('button','quiet','Save review note');save.type='submit';form.append(save);
     form.addEventListener('submit',async event=>{
       event.preventDefault();save.disabled=true;
       try{
@@ -309,16 +313,16 @@ function renderFindings(content) {
     });
     review.append(form);card.append(review);content.append(card);
   }
-  if(!shown.length)content.append(element('p','muted','当前范围没有候选卡。请结合解析覆盖、未建模行为和项目测试继续核查。'));
+  if(!shown.length)content.append(element('p','muted','No candidate cards in this scope. Review parsing coverage, unmodeled behavior and project tests.'));
 }
 
 function renderSource(content) {
   const files = current.report?.files || [];
-  if (!files.length) { content.append(element('p','muted','这条记录没有捕获到源码。'));return; }
-  const toolbar=element('div','source-toolbar');const select=element('select');select.id='source-select';select.setAttribute('aria-label','归档源码文件');
+  if (!files.length) { content.append(element('p','muted','This record has no captured source.'));return; }
+  const toolbar=element('div','source-toolbar');const select=element('select');select.id='source-select';select.setAttribute('aria-label','Archived source file');
   for(const file of files){const option=element('option','',file.path);option.value=file.path;select.append(option);}
   select.addEventListener('change',()=>loadSource(select.value).catch(showError));
-  toolbar.append(select,element('span','muted','归档快照'));content.append(toolbar,element('div','code-view'));content.querySelector('.code-view').id='source-code';
+  toolbar.append(select,element('span','muted','Archived snapshot'));content.append(toolbar,element('div','code-view'));content.querySelector('.code-view').id='source-code';
   loadSource(select.value).catch(showError);
 }
 let sourceRequest=0;
@@ -338,27 +342,27 @@ async function loadSource(name,start,end) {
 function renderProvenance(content) {
   const {metadata:meta,report}=current;
   const list=element('dl','provenance');
-  const values={'报告 ID':meta.report_id,'项目':meta.project,'任务 ID':meta.task_id || '未指定','基线报告':meta.parent_report_id || '未关联','扫描范围':meta.scope.mode==='file'?meta.scope.path:'整个目录','输入类型':meta.input_kind,'未保存内容':meta.overlays.join(', ') || '无','输入摘要':meta.input_sha256 || '未产生','工具摘要':meta.tool_sha256 || '未产生','工具版本':meta.tool_version,'可用实验层':meta.layers.join(', ') || '无（解析未完整）'};
+  const values={'Report ID':meta.report_id,'Project':meta.project,'Task ID':meta.task_id || 'Not specified','Baseline report':meta.parent_report_id || 'Not linked','Scan scope':meta.scope.mode==='file'?meta.scope.path:'Whole directory','Input kind':meta.input_kind,'Unsaved overlays':meta.overlays.join(', ') || '无','Input hash':meta.input_sha256 || 'Not available','Tool hash':meta.tool_sha256 || 'Not available','Tool version':meta.tool_version,'Available frozen layers':meta.layers.join(', ') || 'None (incomplete parsing)'};
   for(const [label,value] of Object.entries(values)){list.append(element('dt','',label),element('dd','',value));}
-  content.append(list,element('p','integrity','读取时已核验归档字节和输入绑定。这不证明分析结论正确，也不是防篡改签名。'));
-  content.append(button('重新校验归档',async()=>{await api(reportURL(meta.report_id)+'/verify',{});showError(new Error('归档校验通过；分析语义未验证。'));}));
+  content.append(list,element('p','integrity','Archive bytes and input binding were verified on read. This does not establish semantic correctness or provide a tamper-proof signature.'));
+  content.append(button('Verify archive again',async()=>{await api(reportURL(meta.report_id)+'/verify',{});showError(new Error('Archive verified. Analysis semantics were not verified.'));}));
   if(report){
-    const table=element('table');const head=element('tr');for(const label of ['文件','解析状态','范围 / 错误'])head.append(element('th','',label));table.append(head);
-    for(const file of report.files){const row=element('tr');for(const value of [file.path,file.status,file.error?.message||file.analysis_scope||''])row.append(element('td','',value));table.append(row);}
-    const wrap=element('div','table-wrap');wrap.append(table);content.append(element('h3','','文件覆盖'),wrap);
-    for(const limit of report.limitations)content.append(element('p','muted',limit));
-    if(report.skipped.length){content.append(element('h3','','跳过的文件与目录'));for(const item of report.skipped)content.append(element('p','muted',`${item.path} · ${item.reason}`));}
+    const table=element('table');const head=element('tr');for(const label of ['File','Parse status','Scope / error'])head.append(element('th','',label));table.append(head);
+    for(const file of report.files){const row=element('tr');for(const value of [file.path,file.status,systemText(file.error?.message||file.analysis_scope)||''])row.append(element('td','',value));table.append(row);}
+    const wrap=element('div','table-wrap');wrap.append(table);content.append(element('h3','','File coverage'),wrap);
+    for(const limit of report.limitations)content.append(element('p','muted',systemText(limit)));
+    if(report.skipped.length){content.append(element('h3','','Skipped files and directories'));for(const item of report.skipped)content.append(element('p','muted',`${item.path} · ${systemText(item.reason)}`));}
   }
 }
 
 function renderDeliveries(content) {
-  content.append(element('p','scope-notice','交付记录保存 MCP 准备返回的确切内容及传输状态。“已写入传输”不证明客户端收到、模型阅读或采用了材料。手工复制和普通 CLI 读取不会被自动记作 Agent 交付。'));
+  content.append(element('p','scope-notice','Delivery records retain the exact MCP response material and transport status. A transport write does not prove client receipt, model attention or use. Manual copying and ordinary CLI reads are not recorded as agent deliveries.'));
   const prepared=current.deliveries.filter(d=>d.state==='prepared_for_tool_response');
-  if(!prepared.length){content.append(element('p','muted','暂无可观测的 Agent 报告交付记录。'));return;}
+  if(!prepared.length){content.append(element('p','muted','No observable agent report deliveries yet.'));return;}
   for(const record of prepared){
     const written=current.deliveries.some(d=>d.delivery_id===record.delivery_id&&d.state==='transport_written');
-    const card=element('details','finding');card.append(element('summary','',`${date(record.created_at)} · ${record.payload.material} · ${written?'已写入传输':'已准备，传输未确认'}`));
-    card.append(element('p','muted',`客户端：${record.client?.name||'未知'} · 字符范围：${record.payload.offset}–${record.payload.offset+record.payload.text.length}`),element('code','',record.payload.response_text_sha256),element('pre','',record.payload.text));content.append(card);
+    const card=element('details','finding');card.append(element('summary','',`${date(record.created_at)} · ${record.payload.material} · ${written?'Transport written':'Prepared; transport unconfirmed'}`));
+    card.append(element('p','muted',`Client: ${record.client?.name||'Unknown'} · Character range: ${record.payload.offset}–${record.payload.offset+record.payload.text.length}`),element('code','',record.payload.response_text_sha256),element('pre','',record.payload.text));content.append(card);
   }
 }
 
@@ -367,17 +371,17 @@ async function renderComparison(content) {
   const previous=await api('/api/reports?'+new URLSearchParams({project:meta.project_id,limit:500}));
   if(current.metadata.report_id!==meta.report_id||tab!=='compare')return;
   const matches=previous.items.filter(m=>m.report_id!==meta.report_id&&m.scope.mode===meta.scope.mode&&m.scope.path===meta.scope.path);
-  const box=element('div','comparison');box.append(element('p','muted','比较同一项目和扫描范围的历史结果。工具或解析环境不一致时，不计算提示增减。'));
-  if(!matches.length){box.append(element('p','muted','还没有可比较的同范围报告。使用“以此为基线扫描”生成下一条记录。'));content.append(box);return;}
-  const controls=element('div','comparison-controls');const select=element('select');select.setAttribute('aria-label','对比基线报告');
+  const box=element('div','comparison');box.append(element('p','muted','Compare reports for the same project and scan scope. Hint changes require compatible tool and parser environments.'));
+  if(!matches.length){box.append(element('p','muted','No comparable report with the same scope yet. Use “Scan again from this baseline” to create one.'));content.append(box);return;}
+  const controls=element('div','comparison-controls');const select=element('select');select.setAttribute('aria-label','Baseline report to compare');
   for(const item of matches){const option=element('option','',`${date(item.created_at)} · ${item.label||item.project} · ${item.report_id.slice(-12)}`);option.value=item.report_id;select.append(option);}
   if(matches.some(m=>m.report_id===meta.parent_report_id))select.value=meta.parent_report_id;
   const output=element('div');
-  controls.append(select,button('与当前报告对比',async()=>{
+  controls.append(select,button('Compare with current report',async()=>{
     const delta=await api('/api/compare?'+new URLSearchParams({before:select.value,after:meta.report_id}));
-    output.replaceChildren(element('p','scope-notice',delta.interpretation));
-    if(!delta.comparable){output.append(element('p','error-block','两份报告不具备可比的完整分析条件，未计算提示变化。'));return;}
-    for(const [label,values] of [['新增提示',delta.added_hints.map(f=>`${f.path} · ${f.rule}`)],['消失提示',delta.removed_hints.map(f=>`${f.path} · ${f.rule}`)],['变化文件',delta.changed_files]]){
+    output.replaceChildren(element('p','scope-notice',systemText(delta.interpretation)));
+    if(!delta.comparable){output.append(element('p','error-block','The reports do not meet complete-analysis comparability requirements. Hint changes were not computed.'));return;}
+    for(const [label,values] of [['Added hints',delta.added_hints.map(f=>`${f.path} · ${f.rule}`)],['Removed hints',delta.removed_hints.map(f=>`${f.path} · ${f.rule}`)],['Changed files',delta.changed_files]]){
       output.append(element('h3','',`${label} · ${values.length}`));const list=element('ul');for(const value of values)list.append(element('li','',value));output.append(list);
     }
   }));box.append(controls,output);content.append(box);
@@ -386,11 +390,11 @@ async function renderComparison(content) {
 $('#new-scan').addEventListener('click',()=>openScan());
 $('#close-scan').addEventListener('click',()=>$('#scan-dialog').close());
 $('#scan-form').addEventListener('submit',async event=>{
-  event.preventDefault();const submit=$('#scan-submit');submit.disabled=true;submit.textContent='正在扫描并归档…';$('#scan-error').textContent='';
+  event.preventDefault();const submit=$('#scan-submit');submit.disabled=true;submit.textContent='Scanning and archiving...';$('#scan-error').textContent='';
   const data=Object.fromEntries(new FormData(event.target));for(const key of Object.keys(data))if(!data[key])delete data[key];
   try{const result=await api('/api/scans',data);$('#scan-dialog').close();$('#search').value='';$('#status').value='';$('#origin').value='';offset=0;await loadReports();location.hash='report='+result.report_id;}
-  catch(error){$('#scan-error').textContent=error.message;}
-  finally{submit.disabled=false;submit.textContent='扫描并归档';}
+  catch(error){$('#scan-error').textContent=systemText(error.message);}
+  finally{submit.disabled=false;submit.textContent='Scan and archive';}
 });
 $('#refresh').addEventListener('click',()=>{clearError();loadReports().catch(showError);if(selected)openReport(selected);});
 let searchTimer;

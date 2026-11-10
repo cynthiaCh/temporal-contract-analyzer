@@ -12,7 +12,7 @@ TREES = ('temporal_contract_analyzer', 'tests', 'case-clusters', 'templates',
          'examples', 'docs', 'tools', 'vscode-extension')
 FILES = ('README.md', 'MASTER_PROMPT.md', 'pyproject.toml', 'setup.cfg',
          'setup.py', '.gitignore', 'experiments/local-cases.json',
-         '启动边界审查工作台.command')
+         'launch-ast-review.command')
 SKIP = {'.git', '__pycache__', 'node_modules', '.venv', '.vscode-test',
         'build', 'dist', 'runtime'}
 PRIVATE_DOCS = {'docs/CLEANUP.md', 'docs/RELEASE_SCOPE.md'}
