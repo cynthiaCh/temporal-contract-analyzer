@@ -41,7 +41,7 @@ class ClassReminderTests(unittest.TestCase):
 
     def test_unclassified_call_keeps_common_reminder_without_label_reminders(self):
         expected = ('Task\n\nCandidate automatic Contract: verify its basis against the current source; do not blindly follow unsupported policies.\nContract'
-                    '\n\n完成维护任务，保留有依据的既有行为；分别核查启动、接纳、完成、取消及副作用归属。')
+                    '\n\nComplete the maintenance task while preserving existing behavior supported by evidence. Check startup, admission, completion, cancellation, and ownership of side effects separately.')
         self.assertEqual(maintenance_prompt('Task', 'Contract'), expected)
         self.assertNotIn('七类通用核查提醒', expected)
 
@@ -68,7 +68,7 @@ class ClassReminderTests(unittest.TestCase):
             with redirect_stdout(StringIO()):
                 self.assertEqual(main(['maintenance-prompt', str(source), '--output', str(target)]), 0)
             result = target.read_text(encoding='utf-8')
-            self.assertIn('[L · 生命周期约束下的接纳与副作用]', result)
+            self.assertIn('[L · Lifecycle-scoped admission and effects]', result)
             self.assertNotIn('[R ·', result)
             self.assertNotIn('冻结经验正文', result)
 
