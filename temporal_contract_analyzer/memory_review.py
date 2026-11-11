@@ -60,6 +60,7 @@ class ReviewHandler(LocalHandler):
             bundle = record(self.server.store, parts[2])
             if len(parts) == 3:
                 self.send(dict(bundle=bundle, predicates=taxonomy.definition()['mechanism_predicates'],
+                    activation=approval.activation_options(self.server.store, bundle['sha256']),
                     decisions=[d for d in approval.decisions(self.server.store)
                     if d['candidate_sha256'] == bundle['sha256']]))
             elif len(parts) == 5 and parts[3] == 'sources':
@@ -88,13 +89,23 @@ class ReviewHandler(LocalHandler):
 
     def post(self, data):
         parts = urlsplit(self.path).path.strip('/').split('/')
-        if len(parts) != 4 or parts[:2] != ['api', 'records'] or parts[3] != 'decision':
+        if len(parts) != 4 or parts[:2] != ['api', 'records'] or parts[3] not in ('decision', 'activate', 'rollback'):
             self.send({'error': 'Not found'}, 404)
             return
         bundle = record(self.server.store, parts[2])
-        if set(data) != {'reviewed', 'decision'} or data['reviewed'] is not True:
+        if parts[3] in ('activate', 'rollback'):
+            if set(data) != {'actor', 'reason', 'expected_current'}:
+                raise EvidenceError('Activation needs actor, reason and expected_current')
+            index = approval.activate(self.server.store, bundle['sha256'], data['expected_current'],
+                data['actor'], data['reason'], rollback=parts[3] == 'rollback')
+            self.send(dict(active=index['versions'].get(bundle['id']) == bundle['sha256'],
+                           directory=str(self.server.store/'active.json')), 201)
+            return
+        if set(data) != {'reviewed', 'decision', 'activate', 'expected_current'} \
+                or data['reviewed'] is not True:
             raise EvidenceError('Confirm review of the exact rules, labels, premises and evidence')
-        decision = approval.decide(self.server.store, bundle['sha256'], data['decision'])
+        decision = approval.decide(self.server.store, bundle['sha256'], data['decision'],
+            activate_version=data['activate'], expected_current=data['expected_current'])
         active = any(r['bundle']['sha256'] == bundle['sha256'] for r in approval.active(self.server.store))
         self.send(dict(decision=decision, active=active,
             directory=str(self.server.store/'decisions')), 201)

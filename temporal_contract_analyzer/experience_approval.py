@@ -6,6 +6,180 @@ from copy import deepcopy
 
 from . import archive, experience_memory as memory
 from .core import EvidenceError, canonical
+from . import taxonomy
+
+ACTIVE_VERSION = 'experience-active-index-v1'
+UNSPECIFIED = object()
+
+
+def empty_index():
+    return dict(schema_version=ACTIVE_VERSION, versions={}, history=[])
+
+
+def _descendant(bundles, candidate, ancestor):
+    while candidate is not None:
+        if candidate == ancestor:
+            return True
+        candidate = bundles[candidate]['parent_sha256']
+    return False
+
+
+def _acceptance(rows, code):
+    final = [row for row in rows if row['candidate_sha256'] == code
+             and row['decision'] in ('accept', 'reject')]
+    if not final or final[-1]['decision'] != 'accept':
+        raise EvidenceError('Activation requires an existing acceptance of this exact version')
+    return final[-1]
+
+
+def _compatible(bundle):
+    if bundle['taxonomy_version'] != taxonomy.VERSION:
+        raise EvidenceError('Only the current seven-label taxonomy can be activated; retain legacy versions as history')
+
+
+def _index(store, bundles, rows):
+    path = Path(store)/'active.json'
+    if not path.is_file():
+        raise EvidenceError('Explicit active.json is missing; migrate-active with an exact reviewed version mapping')
+    try:
+        value = json.loads(path.read_text(encoding='utf-8'))
+        memory.object_fields(value, {'schema_version', 'versions', 'history'}, 'active index')
+        if value['schema_version'] != ACTIVE_VERSION or not isinstance(value['versions'], dict) \
+                or not isinstance(value['history'], list):
+            raise EvidenceError('Invalid active index')
+        replay = {}
+        by_decision = {row['sha256']: row for row in rows}
+        fields = {'sequence', 'action', 'id', 'previous_sha256', 'candidate_sha256',
+                  'source_decision_sha256', 'actor', 'reason', 'at'}
+        for sequence, event in enumerate(value['history'], 1):
+            memory.object_fields(event, fields, 'activation event')
+            if event['sequence'] != sequence or event['action'] not in ('migrate', 'activate', 'rollback', 'deactivate') \
+                    or not memory.text(event['actor']) or not isinstance(event['reason'], str) \
+                    or not memory.text(event['at']) or not isinstance(event['id'], str) \
+                    or event['previous_sha256'] != replay.get(event['id']):
+                raise EvidenceError('Invalid activation history or previous pointer')
+            decision = by_decision[event['source_decision_sha256']]
+            code = event['candidate_sha256']
+            if event['action'] == 'deactivate':
+                if code is not None or event['previous_sha256'] is None or decision['decision'] != 'reject' \
+                        or decision['candidate_sha256'] != event['previous_sha256']:
+                    raise EvidenceError('Invalid deactivation evidence')
+                replay.pop(event['id'])
+            else:
+                bundle = bundles[code]
+                _compatible(bundle)
+                previous = event['previous_sha256']
+                if bundle['id'] != event['id'] or decision['decision'] != 'accept' \
+                        or decision['candidate_sha256'] != code:
+                    raise EvidenceError('Activation must reference exact acceptance evidence')
+                if event['action'] == 'migrate' and previous is not None:
+                    raise EvidenceError('Migration cannot replace an active pointer')
+                if event['action'] == 'activate' and previous is not None and not _descendant(bundles, code, previous):
+                    raise EvidenceError('An upgrade cannot silently select an ancestor or another branch')
+                if event['action'] == 'rollback' and (previous is None or previous == code
+                        or not _descendant(bundles, previous, code)):
+                    raise EvidenceError('Rollback must explicitly select an accepted ancestor')
+                replay[event['id']] = code
+        if value['versions'] != replay:
+            raise EvidenceError('Active pointers do not match their retained activation history')
+        for identifier, code in value['versions'].items():
+            bundle = bundles[code]
+            _compatible(bundle)
+            if bundle['id'] != identifier:
+                raise EvidenceError('Active pointer identity mismatch')
+            _acceptance(rows, code)
+        return value
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise EvidenceError('Invalid active index: '+str(error)) from error
+
+
+def _change(store, index, bundle, decision, action, actor, reason):
+    value = deepcopy(index)
+    identifier = bundle['id']
+    code = None if action == 'deactivate' else bundle['sha256']
+    previous = value['versions'].get(identifier)
+    if previous == code:
+        return value
+    value['history'].append(dict(sequence=len(value['history'])+1, action=action, id=identifier,
+        previous_sha256=previous, candidate_sha256=code, source_decision_sha256=decision['sha256'],
+        actor=actor, reason=reason, at=archive.now()))
+    if code is None:
+        value['versions'].pop(identifier, None)
+    else:
+        value['versions'][identifier] = code
+    archive.atomic_json(Path(store)/'active.json', value)
+    return value
+
+
+def migrate_active(store, versions, actor, reason=''):
+    """Explicit technical migration using existing decisions, never a new expert review."""
+    store = Path(store)
+    if not isinstance(versions, dict) or not memory.text(actor) or not isinstance(reason, str):
+        raise EvidenceError('Migration needs an exact id-to-digest mapping and a named technical actor')
+    with (store/'decision.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if (store/'active.json').exists():
+            raise EvidenceError('Active index already exists; use explicit activate or rollback')
+        bundles = {b['sha256']: b for b in memory.records(store)}
+        rows = decisions(store)
+        value = empty_index()
+        for identifier, code in sorted(versions.items()):
+            if not isinstance(identifier, str) or not isinstance(code, str) or code not in bundles \
+                    or bundles[code]['id'] != identifier:
+                raise EvidenceError('Migration mapping contains an unknown or unrelated version')
+            _compatible(bundles[code])
+            decision = _acceptance(rows, code)
+            value['versions'][identifier] = code
+            value['history'].append(dict(sequence=len(value['history'])+1, action='migrate', id=identifier,
+                previous_sha256=None, candidate_sha256=code, source_decision_sha256=decision['sha256'],
+                actor=actor, reason=reason, at=archive.now()))
+        archive.atomic_json(store/'active.json', value)
+        return value
+
+
+def activation_options(store, code):
+    bundles = {b['sha256']: b for b in memory.records(store)}
+    rows = decisions(store)
+    index = _index(store, bundles, rows)
+    if code not in bundles:
+        raise EvidenceError('Unknown experience version')
+    bundle = bundles[code]
+    previous = index['versions'].get(bundle['id'])
+    try:
+        _compatible(bundle)
+        _acceptance(rows, code)
+        accepted = True
+    except EvidenceError:
+        accepted = False
+    return dict(current_sha256=previous,
+        can_activate=accepted and previous != code and (previous is None or _descendant(bundles, code, previous)),
+        can_rollback=accepted and previous is not None and previous != code and _descendant(bundles, previous, code))
+
+
+def activate(store, code, expected_current, actor, reason='', *, rollback=False):
+    """Select an accepted exact version, with a stale-view check and an explicit rollback mode."""
+    if not memory.text(actor) or not isinstance(reason, str):
+        raise EvidenceError('Activation needs the actual operator name and a text reason')
+    store = Path(store)
+    with (store/'decision.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        bundles = {b['sha256']: b for b in memory.records(store)}
+        rows = decisions(store)
+        index = _index(store, bundles, rows)
+        if code not in bundles:
+            raise EvidenceError('Unknown experience version')
+        bundle = bundles[code]
+        _compatible(bundle)
+        decision = _acceptance(rows, code)
+        previous = index['versions'].get(bundle['id'])
+        if previous != expected_current:
+            raise EvidenceError('Active version changed; reload before selecting a version')
+        if rollback:
+            if previous is None or previous == code or not _descendant(bundles, previous, code):
+                raise EvidenceError('Rollback must select an accepted ancestor of the active version')
+        elif previous is not None and not _descendant(bundles, code, previous):
+            raise EvidenceError('Selecting an older version requires explicit rollback; unrelated branches cannot replace it')
+        return _change(store, index, bundle, decision, 'rollback' if rollback else 'activate', actor, reason)
 
 
 def decisions(store):
@@ -48,16 +222,25 @@ def validate_decision(row, bundle):
         raise EvidenceError('Invalid review report digest')
 
 
-def decide(store, candidate_sha256, request, report_sha256=None):
+def decide(store, candidate_sha256, request, report_sha256=None, *, activate_version=True,
+           expected_current=UNSPECIFIED):
     """Operator entry point. Never called by automatic reflection or repair."""
     if not isinstance(request, dict) or set(request) != {'reviewer', 'decision', 'reason', 'scope', 'rules'}:
         raise EvidenceError('Expert request must contain reviewer, decision, reason, scope and per-rule findings')
     store = Path(store)
+    if type(activate_version) is not bool:
+        raise EvidenceError('Activation choice must be boolean')
     with (store/'decision.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         bundles = {b['sha256']:b for b in memory.records(store)}
         if candidate_sha256 not in bundles:
             raise EvidenceError('Unknown expert-review candidate')
+        prior = decisions(store)
+        index = _index(store, bundles, prior)
+        bundle = bundles[candidate_sha256]
+        previous = index['versions'].get(bundle['id'])
+        if expected_current is not UNSPECIFIED and previous != expected_current:
+            raise EvidenceError('Active version changed; reload before submitting this review')
         # The same admission rule applies to the browser and CLI.
         if request.get('decision') == 'accept' and request.get('scope') != 'exploratory':
             for source in bundles[candidate_sha256]['audit']['sources']:
@@ -65,7 +248,6 @@ def decide(store, candidate_sha256, request, report_sha256=None):
                     comparisons = json.loads((store/'sources'/source['sha256']).read_text())
                     if not any(c['gained'] for c in comparisons):
                         raise EvidenceError('No observed development gain: acceptance must explicitly be exploratory')
-        prior = decisions(store)
         row = dict(deepcopy(request), schema_version='experience-expert-decision-v1',
                    actor='named_operator', candidate_sha256=candidate_sha256,
                    report_sha256=report_sha256, at=archive.now(), sequence=len(prior)+1)
@@ -75,20 +257,20 @@ def decide(store, candidate_sha256, request, report_sha256=None):
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open('x', encoding='utf-8') as target:
             target.write(json.dumps(row, ensure_ascii=False, indent=2)+'\n')
+        if row['decision'] == 'reject' and previous == candidate_sha256:
+            _change(store, index, bundle, row, 'deactivate', row['reviewer'], row['reason'])
+        elif row['decision'] == 'accept' and activate_version and bundle['taxonomy_version'] == taxonomy.VERSION \
+                and (previous is None or _descendant(bundles, candidate_sha256, previous)):
+            _change(store, index, bundle, row, 'activate', row['reviewer'], row['reason'])
         return row
 
 
 def active(store):
     bundles = {b['sha256']:b for b in memory.records(store)}
-    selected = {}
-    for row in decisions(store):
-        bundle = bundles[row['candidate_sha256']]
-        if row['decision'] == 'accept':
-            selected[bundle['id']] = dict(bundle=bundle, expert_decision=row)
-        elif row['decision']=='reject' and bundle['id'] in selected \
-                and selected[bundle['id']]['bundle']['sha256']==bundle['sha256']:
-            del selected[bundle['id']]
-    return [selected[key] for key in sorted(selected)]
+    rows = decisions(store)
+    index = _index(store, bundles, rows)
+    return [dict(bundle=bundles[code], expert_decision=_acceptance(rows, code))
+            for identifier, code in sorted(index['versions'].items())]
 
 
 def freeze(store):

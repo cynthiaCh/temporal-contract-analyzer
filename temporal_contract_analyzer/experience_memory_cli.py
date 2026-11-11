@@ -12,12 +12,13 @@ def register(sub):
     parser = sub.add_parser('experience-memory', help='Offline research experience library; no model calls')
     actions = parser.add_subparsers(dest='memory_action', required=True)
     for name in ('init', 'list', 'verify', 'freeze', 'add', 'show', 'search', 'retrieve', 'import-legacy',
-                 'active', 'review-template', 'expert-review', 'recode', 'review'):
+                 'active', 'review-template', 'expert-review', 'recode', 'review',
+                 'migrate-active', 'activate', 'rollback'):
         action = actions.add_parser(name)
         action.add_argument('--store', type=Path, required=True)
         if name != 'review':
             action.add_argument('--output', type=Path, help='New file only; default is standard output')
-        if name in ('add', 'retrieve', 'import-legacy','recode'):
+        if name in ('add', 'retrieve', 'import-legacy','recode', 'migrate-active'):
             action.add_argument('input', type=Path)
         if name == 'add':
             action.add_argument('--source', type=Path, action='append', default=[])
@@ -37,6 +38,14 @@ def register(sub):
             action.add_argument('sha256')
         if name == 'expert-review':
             action.add_argument('--decision', type=Path, required=True)
+            action.add_argument('--review-only', action='store_true', help='Record acceptance without changing active.json')
+            action.add_argument('--expected-current', help='Expected active digest, or none')
+        if name in ('activate', 'rollback'):
+            action.add_argument('sha256')
+            action.add_argument('--expected-current', required=True, help='Expected active digest, or none')
+        if name in ('activate', 'rollback', 'migrate-active'):
+            action.add_argument('--actor', required=True, help='Actual operator or explicitly authorized technical actor')
+            action.add_argument('--reason', default='')
         if name == 'review':
             action.add_argument('sha256', nargs='?', help='Optional exact experience version to open')
             action.add_argument('--port', type=int, default=0)
@@ -75,8 +84,18 @@ def run(args):
                                 json.loads(args.snapshot.read_text(encoding='utf-8')))
     elif action == 'active':
         value = approval.active(args.store)
+    elif action == 'migrate-active':
+        value = approval.migrate_active(args.store, json.loads(args.input.read_text(encoding='utf-8')),
+                                        args.actor, args.reason)
+    elif action in ('activate', 'rollback'):
+        value = approval.activate(args.store, args.sha256,
+            None if args.expected_current == 'none' else args.expected_current,
+            args.actor, args.reason, rollback=action == 'rollback')
     elif action == 'expert-review':
-        value = approval.decide(args.store, args.sha256, json.loads(args.decision.read_text(encoding='utf-8')))
+        expected = approval.UNSPECIFIED if args.expected_current is None else (
+            None if args.expected_current == 'none' else args.expected_current)
+        value = approval.decide(args.store, args.sha256, json.loads(args.decision.read_text(encoding='utf-8')),
+            activate_version=not args.review_only, expected_current=expected)
     elif action == 'recode':
         from .experience_recoding import candidate
         value=candidate(args.store,args.parent,args.input,args.version)
@@ -96,7 +115,8 @@ def run(args):
             value = approval.freeze(args.store)
         elif action == 'verify':
             value = dict(verified=True, records=len(bundles), lineage_tips=len(memory.tips(bundles)),
-                         snapshot=memory.snapshot(bundles), semantic_validity='not_checked')
+                         snapshot=memory.snapshot(bundles), active_versions=len(approval.active(args.store)),
+                         semantic_validity='not_checked')
         elif action in ('show', 'review-template'):
             value = next((b for b in bundles if b['sha256'] == args.sha256), None)
             if value is None:

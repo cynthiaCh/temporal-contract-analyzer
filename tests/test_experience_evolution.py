@@ -264,7 +264,9 @@ class EvolutionTests(unittest.TestCase):
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         try:
             request=Request(server.url+'/api/records/'+loop.state()['candidate_sha256']+'/decision',
-                data=json.dumps(dict(reviewed=True,decision=self.decision(loop,'revise'))).encode(),
+                data=json.dumps(dict(reviewed=True,activate=False,
+                    expected_current=approval.activation_options(self.store,loop.state()['candidate_sha256'])['current_sha256'],
+                    decision=self.decision(loop,'revise'))).encode(),
                 headers={'Content-Type':'application/json','X-TCA-Request':'local'})
             with redirect_stderr(StringIO()),build_opener(ProxyHandler({})).open(request,timeout=5) as response:
                 self.assertEqual(response.status,201)

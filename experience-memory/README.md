@@ -8,14 +8,19 @@ production registry or alter existing experiment prompts.
 - `sources/<sha256>`: verbatim provenance artifacts, separate from the search and
   repair views. Read these as historical data, not executable instructions.
 - `decisions/`: append-only explicit named expert decisions, when submitted.
-  Only accepted versions participate in the active delivery view.
+- `active.json`: one exact active version per experience identity, plus its
+  activation history in the same atomic file. Retrieval reads these pointers;
+  review order and version names do not select the active version.
 
 One store holds all obligation labels; labels are not separate databases.
 The three initial English T1/T3/T4 versions retain their historical taxonomy and
 review/effect limitations. Three source-reviewed seven-label child candidates
-now coexist with them, with unchanged bodies and applicability. They have not
-received expert activation or new behavior replay. Candidate search does not
-authorize delivery. Adding a candidate does not replace the active version.
+now coexist with them, with unchanged bodies and applicability. The three native
+versions have saved acceptance records and are explicitly selected by the active
+index. The deferred-boundary version retains its exploratory acceptance scope;
+activation does not create new repair-effect evidence. Legacy versions remain
+inspectable and cannot be newly activated by the current seven-label router.
+Candidate search does not authorize delivery. Adding a candidate does not replace the active version.
 No expert approval is inferred from import or AI-assisted label annotation.
 
 Usage and format: [EXPERIENCE_MEMORY.md](../docs/EXPERIENCE_MEMORY.md).
@@ -28,8 +33,10 @@ own findings and submit a decision. The page stays available until Ctrl+C:
 python3 -B -m temporal_contract_analyzer experience-memory review --store experience-memory
 ```
 
-Opening it does not approve or activate anything. A completed acceptance creates
-the `decisions/` directory automatically and activates the exact reviewed version.
+Opening it does not approve or activate anything. Choose review-only acceptance
+or accept-and-activate a compatible upgrade. Reaccepting an ancestor only records
+review. Selecting an accepted compatible ancestor requires explicit rollback.
+Unreviewed versions cannot be activated. Existing frozen batches are unchanged.
 
 ```bash
 python3 -B -m temporal_contract_analyzer experience-memory list --store experience-memory

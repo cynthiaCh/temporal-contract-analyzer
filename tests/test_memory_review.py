@@ -42,7 +42,10 @@ class MemoryReviewTests(unittest.TestCase):
         return '/api/records/'+self.bundle['sha256']
 
     def decision(self, choice='accept'):
-        return dict(reviewed=True, decision=dict(reviewer='SYNTHETIC_OPERATOR_FIXTURE', decision=choice,
+        active = approval.active(self.store)
+        return dict(reviewed=True, activate=True,
+            expected_current=active[0]['bundle']['sha256'] if active else None,
+            decision=dict(reviewer='SYNTHETIC_OPERATOR_FIXTURE', decision=choice,
             scope='exploratory', reason='Synthetic transport test, not real expert approval.',
             rules=[dict(rule_id=r['id'], supported=True, reason='Synthetic evidence checked.') for r in self.bundle['rules']]))
 
@@ -112,6 +115,66 @@ class MemoryReviewTests(unittest.TestCase):
             self.assertFalse(json.load(response)['active'])
         self.assertEqual(approval.active(self.store), [])
         self.assertEqual(len(approval.decisions(self.store)), 1)
+
+    def test_review_only_then_explicit_activation_and_stale_page(self):
+        body = self.decision()
+        body['activate'] = False
+        with self.call(self.base+'/decision', body) as response:
+            self.assertFalse(json.load(response)['active'])
+        with self.call(self.base) as response:
+            self.assertTrue(json.load(response)['activation']['can_activate'])
+        action = dict(actor='SYNTHETIC_OPERATOR_FIXTURE', reason='Synthetic selection.', expected_current=None)
+        with self.call(self.base+'/activate', action) as response:
+            self.assertTrue(json.load(response)['active'])
+        with self.assertRaises(HTTPError):
+            self.call(self.base+'/decision', body)
+        self.assertEqual(len(approval.decisions(self.store)), 1)
+        with self.assertRaises(HTTPError):
+            self.call(self.base+'/activate', action)
+
+    def test_old_browser_payload_cannot_bypass_pointer_check(self):
+        body = self.decision()
+        del body['expected_current']
+        with self.assertRaises(HTTPError):
+            self.call(self.base+'/decision', body)
+        self.assertEqual(approval.decisions(self.store), [])
+
+    def test_cli_review_only_activation_and_explicit_migration(self):
+        decision = self.fixture.root/'decision.json'
+        decision.write_text(json.dumps(self.decision()['decision']))
+        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            self.assertEqual(main(['experience-memory', 'expert-review', self.bundle['sha256'],
+                '--decision', str(decision), '--review-only', '--expected-current', 'none',
+                '--store', str(self.store)]), 0)
+        self.assertEqual(approval.active(self.store), [])
+        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            self.assertEqual(main(['experience-memory', 'activate', self.bundle['sha256'],
+                '--expected-current', 'none', '--actor', 'SYNTHETIC_OPERATOR', '--store', str(self.store)]), 0)
+        self.assertEqual(approval.active(self.store)[0]['bundle'], self.bundle)
+        (self.store/'active.json').unlink()
+        mapping = self.fixture.root/'mapping.json'
+        mapping.write_text(json.dumps({self.bundle['id']:self.bundle['sha256']}))
+        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            self.assertEqual(main(['experience-memory', 'migrate-active', str(mapping),
+                '--actor', 'SYNTHETIC_MIGRATOR', '--store', str(self.store)]), 0)
+        self.assertEqual(approval.active(self.store)[0]['bundle'], self.bundle)
+        self.assertEqual(len(approval.decisions(self.store)), 1)
+
+    def test_browser_explicit_rollback_preserves_review_history(self):
+        from copy import deepcopy
+        with self.call(self.base+'/decision', self.decision()):pass
+        payload = deepcopy(self.fixture.payload)
+        payload.update(version='v2', parent_sha256=self.bundle['sha256'])
+        child = memory.add(self.store, payload, [self.fixture.source])
+        with self.call('/api/records/'+child['sha256']+'/decision', self.decision()):pass
+        with self.call(self.base) as response:
+            options = json.load(response)['activation']
+        self.assertTrue(options['can_rollback'])
+        self.assertFalse(options['can_activate'])
+        action = dict(actor='SYNTHETIC_OPERATOR', reason='Explicit synthetic rollback.', expected_current=child['sha256'])
+        with self.call(self.base+'/rollback', action) as response:
+            self.assertTrue(json.load(response)['active'])
+        self.assertEqual(len(approval.decisions(self.store)), 2)
 
     def test_review_status_tracks_exact_version_and_latest_decision(self):
         from copy import deepcopy

@@ -169,7 +169,8 @@ class MemoryTests(unittest.TestCase):
         self.assertEqual(memory.search(self.store, 'entry', taxonomy.VERSION)['results'], [])
         result = memory.retrieve(self.store, self.visible())
         self.assertIsNone(result['experience_text'])
-        self.assertEqual(result['route']['reason'], 'legacy_entries_require_explicit_evidence_backed_recoding')
+        self.assertEqual(approval.active(self.store), [])
+        self.assertEqual(result['route']['reason'], 'no_expert_activated_experience')
 
     def test_snapshot_guard_and_empty_library(self):
         self.assertEqual(memory.retrieve(self.store, self.visible())['route']['condition'], 'AUTO')

@@ -14,7 +14,7 @@ Approved visible analysis + original source + frozen active snapshot
   -> mechanical/source-link checks (not semantic expert approval)
   -> two independent candidate-guided repairs and full scores
   -> save candidate in experience memory; PAUSE for memory review
-       accept in memory review -> activate exact version -> usable by the next prepared task
+       accept and activate a compatible upgrade -> explicit active.json pointer -> next prepared task
        revise -> one more round only if budgeted and explicitly executed
        reject -> preserve evidence, stop; active parent remains available
 ```
@@ -183,7 +183,10 @@ actual patches and complete job feedback), `raw-reflection.json`,
 `mechanical-review.json`, `comparisons.json` and validation scores. All successes,
 regressions and unknowns remain available. Supply your actual name and a finding
 for every rule, then accept, request revision or reject directly in this page.
-Acceptance activates the exact version; unsupported rules cannot be accepted.
+Acceptance can be review-only or activate a compatible forward version through
+the explicit active index; unsupported rules cannot be accepted. Reviewing an
+ancestor again cannot silently roll back retrieval. Explicit compatible rollback
+is separate from acceptance. See [active-version management](EXPERIENCE_MEMORY.md#explicit-active-versions-and-migration).
 Without observed gained relations, acceptance requires `exploratory` scope.
 Acceptance does not require both validation repairs to pass or zero regressions.
 

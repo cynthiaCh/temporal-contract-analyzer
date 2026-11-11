@@ -43,8 +43,10 @@ button opens a new blank form. Submission refreshes the list and saved findings.
 Choose a finding for every rule, optionally write review reasons, enter your actual name and
 overall decision, then confirm review of the exact rules, labels, applicability
 and evidence. Clicking submit records the decision through the existing expert
-interface. Acceptance activates the exact version; revision/rejection are
-recorded without accepting it. Opening the page never creates approval or calls
+interface. Choose review-only acceptance or acceptance plus a compatible forward
+activation. Reaccepting an older version does not roll back retrieval. Explicit
+rollback has its own action; the page shows the active version separately from
+the latest review. Revision/rejection are recorded without accepting it. Opening the page never creates approval or calls
 a model. The result displays the decision directory and activation status.
 
 CLI commands with `--output` write to the named new file and now print its saved
@@ -129,8 +131,10 @@ python3 -B -m temporal_contract_analyzer experience-memory add new-bundle.json -
 Existing `(id, version)` records cannot be overwritten. A new version of an
 existing identity must reference its parent record digest. Discovery uses lineage
 tips; delivery uses a separate expert-activated view. An unapproved or rejected
-child does not replace the active parent. Only explicit expert acceptance selects
-an active version. Rejection of the exact active version disables it without
+child does not replace the active parent. `active.json` explicitly maps each
+identity to one accepted current-taxonomy digest; its activation history is
+updated atomically with the pointers. Reads do not replay review order to choose
+versions. Rejection of the exact active version disables it without
 implicitly restoring an older version. Multiple eligible identities remain a
 delivery conflict; lexical score cannot settle a policy conflict.
 
@@ -154,6 +158,43 @@ default. It is not approval. The operator must supply findings for every rule.
 Overall and per-rule reasons are optional and may remain empty; the actual
 reviewer, explicit decision and every rule's support finding remain required.
 The automated controller never calls this approval action on its own.
+
+### Explicit active versions and migration
+
+New stores start with an empty `active.json`. Existing stores without that file
+require an explicit mapping migration; reads never create or guess one. Supply
+an `id -> exact SHA256` JSON object containing only already accepted native
+versions. Migration retains all records, sources and decisions and identifies
+the actual technical actor, without inventing a new expert review:
+
+```bash
+python3 -B -m temporal_contract_analyzer experience-memory migrate-active selected-versions.json --actor OPERATOR --reason 'Explicit version migration' --store experience-memory
+```
+
+The reviewed native versions in this repository have been migrated explicitly;
+historical batches and their frozen snapshots were not migrated or rewritten.
+
+`expert-review` defaults to accept-and-activate a compatible forward version.
+Use `--review-only` to save acceptance without changing retrieval, and
+`--expected-current DIGEST` (or `none`) to guard a review against a stale view.
+Reaccepting an ancestor or incompatible legacy version saves review only. No
+version-number sorting, newest-file heuristic or implicit parent fallback exists.
+
+Already accepted versions can be selected without repeating expert findings:
+
+```bash
+python3 -B -m temporal_contract_analyzer experience-memory activate NEW_SHA256 --expected-current CURRENT_SHA256 --actor OPERATOR --store experience-memory
+python3 -B -m temporal_contract_analyzer experience-memory rollback ACCEPTED_ANCESTOR_SHA256 --expected-current CURRENT_SHA256 --actor OPERATOR --reason 'Explicit rollback' --store experience-memory
+```
+
+Activation and rollback check exact acceptance, taxonomy compatibility and the
+expected current pointer under the same store lock. A normal activation permits
+an initial version or a descendant; only explicit rollback may select a compatible
+accepted ancestor. Rejected versions, unknown digests and unrelated branches
+cannot be selected. A failed pointer write retains any completed review but
+does not report activation success. The index is an atomic file containing both
+the version mapping and actual selection history; it has no duplicate archived
+status to maintain. Existing frozen snapshots remain valid after later changes.
 
 Keep CLI review drafts in the project's `review-drafts/` directory, outside the
 canonical memory store. The CLI creates missing parent directories. Drafts are
@@ -204,7 +245,7 @@ versions alongside three source-reviewed native-taxonomy child candidates:
 - `deferred-boundary-binding`: T3, six rules, from the recent development batch;
   its original stop and missing test maintenance remain unchanged.
 
-All remain in `legacy-toolflow-t1-t4-v1`. Their reviews, source objects, translation
+The original versions remain in `legacy-toolflow-t1-t4-v1`. Their reviews, source objects, translation
 lineage and available evidence/outcomes are preserved as hashed audit copies.
 Initial provenance is recorded in
 `implement-stage/experience-memory-v1/IMPORT.json` in the [research archive](ARCHIVE.md).
@@ -221,10 +262,13 @@ inventory. Some B grounds are explicitly preserved-behavior inferences, not
 literal README deadlines. See the full
 [archived recoding audit](ARCHIVE.md) (`research/unified-seven-label-recoding-20261110_112750/REPORT.md`).
 
-No named expert has activated these versions. A valid current retrieval therefore
-returns `no_expert_activated_experience`; searching a native candidate does not
-permit delivery. New native versions require a genuine expert decision and a
-separately bounded development replay before repair-benefit claims.
+The three native child digests have saved acceptance decisions. The explicit
+active index selects them, including exploratory scope for deferred boundary
+binding. Previously, a later acceptance of its legacy parent superseded the native
+child under review-order selection; the explicit index removes that ambiguity.
+No stored decision or old experiment was rewritten. Searching an unaccepted
+candidate still does not permit delivery, and activation creates no new replay
+or repair-benefit evidence.
 
 The explicit recoding interface consumes an annotation sheet, never a legacy
 class-name lookup:

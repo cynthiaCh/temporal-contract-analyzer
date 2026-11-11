@@ -166,6 +166,9 @@ def initialize(store):
     (store/'sources').mkdir()
     (store/'memory.json').write_text(json.dumps(dict(schema_version=STORE_VERSION,
         scope='research_only', automatic_evolution=False), indent=2)+'\n', encoding='utf-8')
+    from .experience_approval import empty_index
+    from .archive import atomic_json
+    atomic_json(store/'active.json', empty_index())
     return dict(initialized=True, scope='research_only')
 
 
