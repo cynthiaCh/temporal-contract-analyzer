@@ -97,13 +97,17 @@ class EvolutionTests(unittest.TestCase):
 
     def decision(self,loop,action='accept',scope='research'):
         bundle=next(b for b in memory.records(self.store) if b['sha256']==loop.state()['candidate_sha256'])
+        if action=='accept':
+            # Legacy lifecycle compatibility only; source-only v1 results do not
+            # themselves establish qualification under the new protocol.
+            fixtures.synthetic_screen(self.store,bundle['sha256'])
         return dict(reviewer='SYNTHETIC_OPERATOR_FIXTURE',decision=action,scope=scope,
                     reason='Synthetic operator action, not actual expert approval.',
                     rules=[dict(rule_id=r['id'],supported=True,reason='Synthetic fixture finding.')
                            for r in bundle['rules']])
 
     def review(self,loop,request):
-        approval.decide(self.store,loop.state()['candidate_sha256'],request)
+        approval.decide(self.store,loop.state()['candidate_sha256'],request, activate_version=True)
         return loop.sync_review()
 
     def test_complete_develop_review_activate_and_next_task_retrieval(self):
@@ -175,11 +179,13 @@ class EvolutionTests(unittest.TestCase):
         self.assertTrue((loop.root/'runs/BASE-1/partial.txt').exists())
         with self.assertRaises(EvidenceError):loop.run(backend=backend)
 
-    def test_no_gain_is_not_discarded_but_requires_exploratory_acceptance(self):
+    def test_source_only_results_do_not_establish_default_qualification(self):
         loop=self.prepare();loop.run(backend=SyntheticBackend(no_gain=True))
         self.assertEqual(loop.state()['status'],'awaiting_review')
-        with self.assertRaises(EvidenceError):self.review(loop,self.decision(loop))
-        self.assertEqual(self.review(loop,self.decision(loop,scope='exploratory'))['status'],'accepted')
+        request=self.decision(loop)
+        (self.store/'screening'/(loop.state()['candidate_sha256']+'.json')).unlink()
+        approval.decide(self.store,loop.state()['candidate_sha256'],request,activate_version=False)
+        self.assertEqual(approval.freeze(self.store)['entries'],[])
 
     def test_target_gain_and_regression_are_both_kept_without_all_pass_gate(self):
         class RegressingBackend(SyntheticBackend):
@@ -230,12 +236,11 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual(self.review(loop,self.decision(loop,'reject'))['status'],'rejected')
         with self.assertRaises(EvidenceError):loop.run(backend=SyntheticBackend())
 
-    def test_live_execution_opt_in_and_preflight_block_before_calls(self):
+    def test_legacy_live_execution_is_retired_before_calls(self):
         loop=self.prepare()
         with self.assertRaises(EvidenceError):loop.run()
-        result=loop.run(execute=True)
-        self.assertEqual(result['status'],'stopped')
-        self.assertEqual(result['jobs'],[])
+        with self.assertRaisesRegex(EvidenceError,'retired'):loop.run(execute=True)
+        self.assertEqual(loop.state()['jobs'],[])
 
     def test_cli_requires_explicit_execution_and_reads_memory_review(self):
         from temporal_contract_analyzer.cli import main
@@ -244,7 +249,7 @@ class EvolutionTests(unittest.TestCase):
             self.assertEqual(main(['experience-evolution','run','--root',str(loop.root)]),1)
         self.assertEqual(loop.state()['status'],'prepared')
         loop.run(backend=SyntheticBackend())
-        approval.decide(self.store,loop.state()['candidate_sha256'],self.decision(loop))
+        approval.decide(self.store,loop.state()['candidate_sha256'],self.decision(loop), activate_version=True)
         with redirect_stdout(StringIO()),redirect_stderr(StringIO()):
             self.assertEqual(main(['experience-evolution','status','--root',str(loop.root)]),0)
         self.assertEqual(loop.state()['status'],'accepted')
@@ -252,7 +257,7 @@ class EvolutionTests(unittest.TestCase):
     def test_latest_memory_review_can_replace_a_pending_revision(self):
         loop=self.prepare(rounds=2);backend=SyntheticBackend();loop.run(backend=backend)
         self.assertEqual(self.review(loop,self.decision(loop,'revise'))['status'],'revision_requested')
-        approval.decide(self.store,loop.state()['candidate_sha256'],self.decision(loop,'accept'))
+        approval.decide(self.store,loop.state()['candidate_sha256'],self.decision(loop,'accept'), activate_version=True)
         with self.assertRaises(EvidenceError):loop.run(backend=backend)
         self.assertEqual(loop.state()['status'],'accepted')
         self.assertEqual(len(backend.calls),5)

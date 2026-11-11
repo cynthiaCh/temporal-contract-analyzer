@@ -16,13 +16,16 @@ ROLE={'analysis':('gpt-6-sol','low',12,'extraction'),'extract':('gpt-6-sol','low
 
 def command(call,folder,phase,case,*,runtime,socket_dir,copy_auth=True):
     """Original autonomous Codex CLI and role flags, no host archive bind mounts."""
-    cmd=backend.command(call,folder,'reflection' if phase=='reflect' else 'extraction',copy_auth=copy_auth,runtime=runtime,socket_dir=socket_dir)
+    readonly_evidence = phase=='reflect' and case.get('reflection_readonly') is True
+    backend_mode='reflection' if phase=='reflect' and not readonly_evidence else 'extraction'
+    cmd=backend.command(call,folder,backend_mode,copy_auth=copy_auth,runtime=runtime,socket_dir=socket_dir)
     if phase in ['repair','reflect']:
-        i=cmd.index(str(folder/'workspace'));assert cmd[i-1]=='--ro-bind';cmd[i-1]='--bind'
+        if phase=='repair':
+            i=cmd.index(str(folder/'workspace'));assert cmd[i-1]=='--ro-bind';cmd[i-1]='--bind'
         cmd[cmd.index('--sandbox')+1]='danger-full-access';cmd[cmd.index('-m')+1]='gpt-5.6-terra'
         cmd=[s.replace('model_reasoning_effort="low"','model_reasoning_effort="'+ROLE[phase][1]+'"') for s in cmd]
     # Native role permissions and output schema are separate decisions.
-    old_schema=str(O/('reflection.schema.json' if phase=='reflect' else 'extraction.schema.json'))
+    old_schema=str(O/('reflection.schema.json' if backend_mode=='reflection' else 'extraction.schema.json'))
     role_schema=str(Path(case['extraction_schema'])) if phase=='extract' and case.get('extraction_schema') else str(O/{'analysis':'analysis.schema.json','extract':'extraction.schema.json','repair':'maintenance.schema.json','reflect':'reflection.schema.json'}[phase])
     cmd=[role_schema if x==old_schema else x for x in cmd]
     i=cmd.index('--chdir');cmd[i:i]=['--ro-bind',case['node'],'/runtime/node']
@@ -78,11 +81,18 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
     frozen final candidate and score destination after all actor processes stop.
     """
     phase=slot['phase'];model,effort,cap,mode=ROLE[phase]
+    requested_cap=config.get('requests_per_session',cap)
+    if type(requested_cap) is not int or not 0<requested_cap<=cap:
+        raise ValueError('cannot increase the role request limit')
+    cap=requested_cap
+    if phase=='reflect' and config.get('reflection_readonly') is True:
+        mode='evidence_readonly';case=dict(case,reflection_readonly=True)
     fixture=command_factory is not None
     if not fixture and not allow_model_execution:raise RuntimeError('model execution disabled; this change is offline-only')
     if not fixture:
-        if not config.get('frozen_files'):raise ValueError('a separate frozen protocol is required for native execution')
-        verify(config['frozen_files'])
+        if config.get('protocol_schema') not in ('experience-development-v2','experience-evaluation-v2'):
+            if not config.get('frozen_files'):raise ValueError('a separate frozen protocol is required for native execution')
+            verify(config['frozen_files'])
     seconds=config.get('seconds_per_session',600);stdout_limit=config.get('stdout_bytes',16777216)
     if not 0<seconds<=600 or not 0<stdout_limit<=16777216:raise ValueError('cannot increase original resource limits')
     frozen={**config,'slot':slot,'model':model,'effort':effort,'requests_per_session':cap,'seconds_per_session':seconds,'stdout_bytes':stdout_limit,'offline_fixture':fixture,'archiver':'runner-owned-v2-null-safe','input_archive_policy':'snapshots/logs outside model workspace; no model archival duty','transport':transport}
@@ -189,6 +199,10 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
         after=inventory(a.final);save(a.root/'score-after-manifest.json',after)
         rec['scored_candidate_sha256']=digest(before);rec['scored_candidate_unchanged']=before==after
     elif score_fn is not None:rec['scoring_status']='NOT_ADMITTED_INCOMPLETE_OR_INVALID_CANDIDATE'
+    if phase=='analysis' or phase=='reflect' and config.get('reflection_readonly') is True:
+        if not a.final.is_dir() or inventory(a.final)!=inventory(a.original):
+            rec.update(candidate_complete=False,infrastructure_valid=False,
+                       preanalysis_error='Read-only analysis/evidence session changed its workspace')
     if phase=='analysis':
         save(a.root/'analysis.json',ans)
         if format_ok:(a.root/'contract.md').write_text(ans['contract'])

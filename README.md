@@ -70,3 +70,12 @@ Tests use synthetic runners and fixtures. They do not establish repair benefit o
 ## Distribution status
 
 This is a prepared source tree, not a published release. The owner has not selected a project license. Preserve upstream notices for any separately redistributed third-party code. No license grant or venue acceptance is implied. The exported source excludes exposed research memory, original experiment data, installed dependencies and Git history.
+
+The current [v2 development protocol](docs/EXPERIENCE_EVOLUTION.md) preregisters
+one source task, two other independent transfer sources and a reviewed boundary
+input. Both successful and failed starts may yield one increment or no_update.
+Default activation requires cross-source whole-task improvement and exact content
+acceptance. Historical active records are retained without automatic v2
+qualification. Frozen milestone evaluation shares public analyses and never learns.
+Real training/evaluation must be explicitly launched; offline fixtures are not
+repair-benefit evidence.

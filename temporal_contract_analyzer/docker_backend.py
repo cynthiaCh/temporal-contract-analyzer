@@ -99,9 +99,9 @@ class DockerBackend(NativeBackend):
 
     def _case(self, protocol):
         record=protocol['case'];root=case_root(record)
-        manifest_path=inside(root,record['manifest']);manifest=read(manifest_path)
+        manifest_path=inside(root,record['manifest']);manifest=protocol.get('frozen_manifest') or read(manifest_path)
         if record['source']=='local':
-            return manifest, '/evaluation/case', [(manifest_path.parent,'/evaluation/case')]
+            return manifest, '/evaluation/case', [(Path(protocol.get('trusted_case_path',manifest_path.parent)),'/evaluation/case')]
         # The trusted image supplies the benchmark, verified against host hashes.
         return manifest, str(Path('/opt/swe-tempoc')/Path(record['manifest']).parent), []
 
@@ -209,7 +209,7 @@ print(json.dumps(dict(python=python,node=node)))
         return projected
 
     def score(self, protocol, candidate, directory):
-        self.preflight(protocol)
+        if not protocol.get('boundary_preflight_complete'):self.preflight(protocol)
         return self.raw_score(protocol,candidate,directory)
 
 

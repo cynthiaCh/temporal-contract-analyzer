@@ -28,7 +28,12 @@ def account(e,root,call,terminate=True):
   elif k=='PostModelRequest':s['completed']+=1;r['completed']+=1
   elif k in ['PreToolUse','PermissionRequest']:
    s['tool_attempts']+=1;r['tool_attempts']+=1
-   if limit['mode']=='reflection' or (limit['mode']!='maintenance' and not read_command(e)):deny=True;reason='reflection no tools / extraction candidate read commands only';r['blocked_tools']+=1
+   read_ok=read_command(e) if limit['mode']!='maintenance' else True
+   if limit['mode']=='evidence_readonly':
+    inp=e.get('tool_input',{});command=inp.get('command',inp.get('cmd','')) if isinstance(inp,dict) else ''
+    # Shell newlines are command separators, not ordinary reader arguments.
+    read_ok=read_ok and not any(ch in command for ch in ['\n','\r'])
+   if limit['mode']=='reflection' or not read_ok:deny=True;reason='role permits no tools or only closed-grammar workspace evidence reads';r['blocked_tools']+=1
   item=dict(at=time.time(),call_id=call,event=e,denied=deny,reason=reason);s['events'].append(item);p.write_text(json.dumps(s,ensure_ascii=False,indent=2)+'\n')
   with (root/'events.jsonl').open('a') as f:f.write(json.dumps(item,ensure_ascii=False)+'\n')
  if deny and terminate:kill_cli()

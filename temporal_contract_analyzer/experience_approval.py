@@ -7,6 +7,7 @@ from copy import deepcopy
 from . import archive, experience_memory as memory
 from .core import EvidenceError, canonical
 from . import taxonomy
+from . import experience_screening as screening
 
 ACTIVE_VERSION = 'experience-active-index-v1'
 UNSPECIFIED = object()
@@ -151,9 +152,11 @@ def activation_options(store, code):
         accepted = True
     except EvidenceError:
         accepted = False
-    return dict(current_sha256=previous,
-        can_activate=accepted and previous != code and (previous is None or _descendant(bundles, code, previous)),
-        can_rollback=accepted and previous is not None and previous != code and _descendant(bundles, previous, code))
+    eligible = screening.qualified(store, code)
+    return dict(current_sha256=previous, default_eligible=eligible,
+        qualification='development_screened' if eligible else 'legacy_or_pending_validation',
+        can_activate=accepted and eligible and previous != code and (previous is None or _descendant(bundles, code, previous)),
+        can_rollback=accepted and eligible and previous is not None and previous != code and _descendant(bundles, previous, code))
 
 
 def activate(store, code, expected_current, actor, reason='', *, rollback=False):
@@ -171,6 +174,7 @@ def activate(store, code, expected_current, actor, reason='', *, rollback=False)
         bundle = bundles[code]
         _compatible(bundle)
         decision = _acceptance(rows, code)
+        screening.require(store, code)
         previous = index['versions'].get(bundle['id'])
         if previous != expected_current:
             raise EvidenceError('Active version changed; reload before selecting a version')
@@ -222,7 +226,7 @@ def validate_decision(row, bundle):
         raise EvidenceError('Invalid review report digest')
 
 
-def decide(store, candidate_sha256, request, report_sha256=None, *, activate_version=True,
+def decide(store, candidate_sha256, request, report_sha256=None, *, activate_version=False,
            expected_current=UNSPECIFIED):
     """Operator entry point. Never called by automatic reflection or repair."""
     if not isinstance(request, dict) or set(request) != {'reviewer', 'decision', 'reason', 'scope', 'rules'}:
@@ -241,13 +245,7 @@ def decide(store, candidate_sha256, request, report_sha256=None, *, activate_ver
         previous = index['versions'].get(bundle['id'])
         if expected_current is not UNSPECIFIED and previous != expected_current:
             raise EvidenceError('Active version changed; reload before submitting this review')
-        # The same admission rule applies to the browser and CLI.
-        if request.get('decision') == 'accept' and request.get('scope') != 'exploratory':
-            for source in bundles[candidate_sha256]['audit']['sources']:
-                if Path(source['path']).name == 'comparisons.json':
-                    comparisons = json.loads((store/'sources'/source['sha256']).read_text())
-                    if not any(c['gained'] for c in comparisons):
-                        raise EvidenceError('No observed development gain: acceptance must explicitly be exploratory')
+        # Content acceptance is separate from cross-source effect qualification.
         row = dict(deepcopy(request), schema_version='experience-expert-decision-v1',
                    actor='named_operator', candidate_sha256=candidate_sha256,
                    report_sha256=report_sha256, at=archive.now(), sequence=len(prior)+1)
@@ -260,6 +258,7 @@ def decide(store, candidate_sha256, request, report_sha256=None, *, activate_ver
         if row['decision'] == 'reject' and previous == candidate_sha256:
             _change(store, index, bundle, row, 'deactivate', row['reviewer'], row['reason'])
         elif row['decision'] == 'accept' and activate_version and bundle['taxonomy_version'] == taxonomy.VERSION \
+                and screening.qualified(store, candidate_sha256) \
                 and (previous is None or _descendant(bundles, candidate_sha256, previous)):
             _change(store, index, bundle, row, 'activate', row['reviewer'], row['reason'])
         return row
@@ -273,9 +272,12 @@ def active(store):
             for identifier, code in sorted(index['versions'].items())]
 
 
-def freeze(store):
+def freeze(store, *, legacy=False):
+    entries = active(store)
+    if not legacy:
+        entries = [entry for entry in entries if screening.qualified(store, entry['bundle']['sha256'])]
     result = dict(schema_version='experience-active-snapshot-v1', scope='research_only',
-                  entries=active(store))
+                  entries=entries)
     result['sha256'] = memory.digest(canonical(result))
     return result
 

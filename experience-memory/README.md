@@ -16,8 +16,9 @@ One store holds all obligation labels; labels are not separate databases.
 The three initial English T1/T3/T4 versions retain their historical taxonomy and
 review/effect limitations. Three source-reviewed seven-label child candidates
 now coexist with them, with unchanged bodies and applicability. The three native
-versions have saved acceptance records and are explicitly selected by the active
-index. The deferred-boundary version retains its exploratory acceptance scope;
+versions have saved acceptance records and historical selections in the active
+index. The new default view additionally requires v2 cross-source development
+screening; historical acceptance/activity is not automatically grandfathered. The deferred-boundary version retains its exploratory acceptance scope;
 activation does not create new repair-effect evidence. Legacy versions remain
 inspectable and cannot be newly activated by the current seven-label router.
 Candidate search does not authorize delivery. Adding a candidate does not replace the active version.
@@ -36,10 +37,17 @@ python3 -B -m temporal_contract_analyzer experience-memory review --store experi
 Opening it does not approve or activate anything. Choose review-only acceptance
 or accept-and-activate a compatible upgrade. Reaccepting an ancestor only records
 review. Selecting an accepted compatible ancestor requires explicit rollback.
-Unreviewed versions cannot be activated. Existing frozen batches are unchanged.
+Default activation requires both exact content acceptance and passing cross-source
+screening. CLI expert-review is review-only by default; activation must be explicit.
+Unreviewed or pending-validation versions cannot enter default delivery. Existing
+frozen batches are unchanged.
 
 ```bash
 python3 -B -m temporal_contract_analyzer experience-memory list --store experience-memory
 python3 -B -m temporal_contract_analyzer experience-memory search --store experience-memory --query 'shared cache cancellation observers reconnect'
 python3 -B -m temporal_contract_analyzer experience-memory list --store experience-memory --label B --label I
 ```
+
+New development qualification is stored separately in `screening/`; no existing
+rule body, source or decision is rewritten to claim new evidence. Default
+`experience-memory freeze` includes only qualified active versions.

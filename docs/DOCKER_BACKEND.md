@@ -76,9 +76,8 @@ errors. No model is called and no reference patch is sent to a solver.
 
 Use the existing [evolution configuration](EXPERIENCE_EVOLUTION.md), adding
 `backend` above, selecting the container `node` path, supplying the host public
-`binary`, and assigning the parsed calibration object to `calibration`. Reviewed
-visible task/source/Contract/labels/facts are still required. Automatic analysis
-was not added. The controller's declared deployment requirement remains Python
+`binary`, and assigning the parsed calibration object to `calibration`. One reviewed public task/source/Contract/labels/facts analysis is shared per
+case. Omitted analysis uses the existing AST-assisted extraction and review path. The controller's declared deployment requirement remains Python
 >=3.9; case code and grading use the checked container runtimes.
 
 Normal `prepare`, `run --execute`, `status` and `report` commands then
@@ -120,3 +119,20 @@ session. An actor whose stop is unconfirmed is not snapshotted as complete.
 Partial responses and null usage remain unknown. There are no hidden retries,
 replacement slots or implicit expert approvals. Offline/synthetic validation
 does not establish live provider availability, repair benefit or generalization.
+
+## V2 development limits and evidence reads
+
+The maintained CLI now prepares the [v2 protocol](EXPERIENCE_EVOLUTION.md).
+Maintenance remains unchanged (gpt-5.6-terra/low, 24 requests, 600 seconds).
+Extraction uses gpt-5.6-terra/medium, capped at 2 requests after two PASS starts
+or 12 after valid non-PASS starts. Its evidence workspace is read-only. The
+existing hook transport admits only closed-grammar workspace reader commands;
+execution, writes, external reads and newline command injection are blocked.
+The exact lower cap is passed to the runner/guard. No tools are expanded for
+maintenance or analysis and no extra execution framework is introduced.
+
+Input/calibration correspondence and the original candidate score are checked
+once at batch startup, before model calls. Captured runtime/scorer files are
+reused; per-call whole-batch/approval-history hash walks are not added. Raw and
+partial responses, usage, original errors and cleanup errors remain archived by
+Python. Historical Docker runs and their freezes are unchanged.

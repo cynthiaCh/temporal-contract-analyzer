@@ -42,6 +42,8 @@ class MemoryReviewTests(unittest.TestCase):
         return '/api/records/'+self.bundle['sha256']
 
     def decision(self, choice='accept'):
+        from evolution_fixtures import synthetic_screen
+        for bundle in memory.records(self.store):synthetic_screen(self.store,bundle['sha256'])
         active = approval.active(self.store)
         return dict(reviewed=True, activate=True,
             expected_current=active[0]['bundle']['sha256'] if active else None,

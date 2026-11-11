@@ -211,6 +211,8 @@ class Evolution:
             raise
 
     def run(self,execute=False,backend=None):
+        if getattr(backend,'kind',None)!='synthetic_fixture_not_model_or_effectiveness_evidence':
+            raise EvidenceError('Historical v1 execution is retired; prepare an explicit v2 batch')
         protocol=self.verify()
         with (Path(protocol['store'])/'evolution-execution.lock').open('a') as lock:
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)

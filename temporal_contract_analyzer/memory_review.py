@@ -47,10 +47,12 @@ class ReviewHandler(LocalHandler):
             bundles = memory.records(self.server.store)
             decisions = {d['candidate_sha256']: d for d in approval.decisions(self.server.store)}
             active = {r['bundle']['sha256'] for r in approval.active(self.server.store)}
+            from .experience_screening import qualified
             tips = {r['sha256'] for r in memory.tips(bundles)}
             self.send(dict(store=str(self.server.store), records=[dict(
                 id=b['id'], version=b['version'], sha256=b['sha256'], labels=b['labels'],
                 status=b['review']['status'], active=b['sha256'] in active,
+                default_eligible=qualified(self.server.store, b['sha256']),
                 latest=b['sha256'] in tips, rules=len(b['rules']),
                 reviewed=b['sha256'] in decisions,
                 last_decision=None if b['sha256'] not in decisions else {
@@ -82,6 +84,10 @@ class ReviewHandler(LocalHandler):
                     value = None
                 self.send(dict(name=Path(source['path']).name, sha256=code, pointer=pointer,
                     value=value if pointer else None, text=text[:500000], truncated=len(text)>500000))
+            elif len(parts) == 4 and parts[3] == 'screening':
+                from .experience_screening import read, evaluate
+                report = read(self.server.store, bundle['sha256'])
+                self.send(dict(report=report, gate=None if report is None else evaluate(report)))
             else:
                 self.send({'error': 'Not found'}, 404)
         else:
@@ -107,7 +113,8 @@ class ReviewHandler(LocalHandler):
         decision = approval.decide(self.server.store, bundle['sha256'], data['decision'],
             activate_version=data['activate'], expected_current=data['expected_current'])
         active = any(r['bundle']['sha256'] == bundle['sha256'] for r in approval.active(self.server.store))
-        self.send(dict(decision=decision, active=active,
+        from .experience_screening import qualified
+        self.send(dict(decision=decision, active=active, default_active=active and qualified(self.server.store,bundle['sha256']),
             directory=str(self.server.store/'decisions')), 201)
 
 

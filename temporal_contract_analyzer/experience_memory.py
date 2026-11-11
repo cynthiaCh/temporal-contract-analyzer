@@ -10,6 +10,7 @@ from . import taxonomy
 
 STORE_VERSION = 'research-experience-memory-v1'
 BUNDLE_VERSION = 'experience-bundle-v1'
+BUNDLE_VERSION_V2 = 'experience-bundle-v2'
 LEGACY_TAXONOMY = 'legacy-toolflow-t1-t4-v1'
 CATEGORIES = {'applicability': 'Applicability', 'event_relation': 'Event relation',
               'preservation': 'Preservation', 'exclusion': 'Exclusion', 'verification': 'Verification'}
@@ -76,7 +77,7 @@ def json_pointer(raw, pointer):
 
 def _validate(bundle, blobs):
     object_fields(bundle, FIELDS | {'body_sha256', 'sha256'}, 'bundle')
-    if bundle['schema_version'] != BUNDLE_VERSION:
+    if bundle['schema_version'] not in (BUNDLE_VERSION, BUNDLE_VERSION_V2):
         raise EvidenceError('Wrong experience schema version')
     for field in ('id', 'version'):
         if not isinstance(bundle[field], str) or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._-]{0,159}', bundle[field]):
@@ -103,7 +104,7 @@ def _validate(bundle, blobs):
                 or rule['category'] not in CATEGORIES or not text(rule['body']):
             raise EvidenceError('Invalid rule number, category or body')
         categories.add(rule['category'])
-    if categories != set(CATEGORIES):
+    if bundle['schema_version'] == BUNDLE_VERSION and categories != set(CATEGORIES):
         raise EvidenceError('Bundle must retain applicability, relations, preservation, exclusions and verification')
     review = bundle['review']
     object_fields(review, {'status', 'kind', 'source_sha256', 'limitations'}, 'review')

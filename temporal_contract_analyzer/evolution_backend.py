@@ -31,6 +31,7 @@ import runner
 v=json.load(sys.stdin)
 runner.backend.BINARY=Path(v['binary'])
 case={'node':v['node'],'task_sha256':v['task_sha256']}
+case['reflection_readonly']=v['config'].get('reflection_readonly',False)
 if v.get('candidate_files') is not None:case['candidate_files']=v['candidate_files']
 r=runner.session(v['slot'],v['prompt'],case=case,candidate=Path(v['candidate']),
  task=v['task'],config=v['config'],run_dir=Path(v['run_dir']),allow_model_execution=True,transport=v.get('transport'))
@@ -108,24 +109,33 @@ class NativeBackend:
         pass
 
     def execute(self, protocol, role, prompt, schema, directory):
-        self.preflight(protocol)
+        if not protocol.get('boundary_preflight_complete'):self.preflight(protocol)
         directory = Path(directory)
         backend = directory/'backend'
         backend.mkdir()
         for name in DEPENDENCIES:
-            shutil.copyfile(SOURCE/name, backend/name)
+            shutil.copyfile(Path(protocol.get('runtime_source',SOURCE))/name, backend/name)
         schema_name='analysis.schema.json' if role=='analysis' else 'reflection.schema.json'
         archive.atomic_json(backend/schema_name, schema or dict(type='object'))
         (backend/'driver.py').write_text(DRIVER, encoding='utf-8')
-        frozen = {str(p.resolve()):sha(p.read_bytes()) for p in backend.iterdir() if p.is_file()}
+        lightweight=protocol.get('execution_policy') in ('experience-development-v2','experience-evaluation-v2')
+        frozen = {} if lightweight else {str(p.resolve()):sha(p.read_bytes()) for p in backend.iterdir() if p.is_file()}
         task_path=directory/'task.md'
         task_path.write_text(protocol['visible']['task'],encoding='utf-8')
-        task_sha=sha(task_path.read_bytes());frozen[str(task_path.resolve())]=task_sha
+        task_sha=sha(task_path.read_bytes())
+        if not lightweight:frozen[str(task_path.resolve())]=task_sha
+        limits=protocol.get('session_limits',ROLES[role])
+        if type(limits['requests']) is not int or not 0<limits['requests']<=ROLES[role]['requests'] \
+                or not 0<limits['seconds']<=ROLES[role]['seconds']:
+            raise EvidenceError('Session limits cannot exceed the fixed role budget')
+        evidence=protocol.get('reflection_evidence_path') if role=='reflect' else None
         request = dict(binary=protocol['binary'], node=protocol['node'],
             slot=dict(slot=directory.name, phase=role), prompt=prompt, task=str(task_path.resolve()),
-            task_sha256=task_sha,candidate_files=protocol.get('candidate_files'),
-            candidate=protocol['input_path'], run_dir=str((directory/'native').resolve()),
-            config=dict(frozen_files=frozen,seconds_per_session=ROLES[role]['seconds']))
+            task_sha256=task_sha,candidate_files=None if evidence else protocol.get('candidate_files'),
+            candidate=evidence or protocol['input_path'], run_dir=str((directory/'native').resolve()),
+            config=dict(frozen_files=frozen,seconds_per_session=limits['seconds'],
+                        requests_per_session=limits['requests'],protocol_schema=protocol.get('execution_policy'),
+                        reflection_readonly=bool(evidence)))
         request.update(self.session_options(protocol))
         archive.atomic_json(directory/'native-request.json',request)
         cleanup_error=None
@@ -184,15 +194,15 @@ class NativeBackend:
     def score(self, protocol, candidate, directory):
         from .case_evaluation import invoke, runtime
         from .case_catalog import case_root, inside, read
-        self.preflight(protocol)
+        if not protocol.get('boundary_preflight_complete'):self.preflight(protocol)
         directory = Path(directory)
         files,_ = capture(Path(candidate))
         subject=directory/'candidate'
         write_files(subject,files,file_modes(Path(candidate),files))
-        record=protocol['case'];case_path=inside(case_root(record),record['manifest']);manifest=read(case_path)
+        record=protocol['case'];case_path=inside(case_root(record),record['manifest']);manifest=protocol.get('frozen_manifest') or read(case_path)
         if record['authorization']!='ungranted':raise EvidenceError('Unsupported score authorization')
-        probe=inside(case_path.parent,manifest['oracle']['probe'])
-        environment=runtime(manifest,record['adapter'],protocol['node'])
+        probe=Path(protocol['frozen_probe']) if protocol.get('frozen_probe') else inside(case_path.parent,manifest['oracle']['probe'])
+        environment=protocol['calibration']['runtime'] if protocol.get('boundary_preflight_complete') else runtime(manifest,record['adapter'],protocol['node'])
         command=([environment['path'],'-B',str(probe),str(subject)] if record['adapter']=='python'
                  else [environment['path'],str(probe),str(subject),'ungranted'])
         archive.atomic_json(directory/'evaluation.json',dict(command=command,runtime=environment,

@@ -43,10 +43,13 @@ class MemoryTests(unittest.TestCase):
     def add(self, payload=None):
         bundle = memory.add(self.store, self.payload if payload is None else payload, [self.source])
         if bundle['review']['status'] == 'research_admitted':
+            if bundle['taxonomy_version'] == taxonomy.VERSION:
+                from evolution_fixtures import synthetic_screen
+                synthetic_screen(self.store,bundle['sha256'])
             approval.decide(self.store, bundle['sha256'], dict(reviewer='SYNTHETIC_EXPERT_FIXTURE',
                 decision='accept', reason='Synthetic operator-action fixture, not real expert approval.',
                 scope='exploratory', rules=[dict(rule_id=r['id'], supported=True,
-                    reason='Synthetic fixture.') for r in bundle['rules']]))
+                    reason='Synthetic fixture.') for r in bundle['rules']]), activate_version=True)
         return bundle
 
     def test_storage_preserves_single_source_body_and_evidence(self):

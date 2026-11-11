@@ -35,7 +35,7 @@ class DockerTests(unittest.TestCase):
                     dict(CONFIG,grader_node='/tmp/arbitrary')):
             with self.subTest(config=bad),self.assertRaises(EvidenceError):validate_config(bad)
 
-    def test_docker_selection_preserves_budgets_prompts_and_expert_pause(self):
+    def test_legacy_docker_metadata_is_readable_but_live_execution_is_retired(self):
         loop=self.prepared();protocol=load(loop.root/'protocol.json')
         self.assertEqual(protocol['total_request_cap'],108)
         self.assertEqual(protocol['backend'],CONFIG)
@@ -45,14 +45,13 @@ class DockerTests(unittest.TestCase):
         self.assertNotIn('sha256:',prompt)
         backend=fixtures.SyntheticBackend()
         with patch('temporal_contract_analyzer.docker_backend.DockerBackend',return_value=backend) as selected:
-            result=loop.run(execute=True)
-        self.assertEqual(selected.call_count,1)
-        self.assertEqual(result['status'],'awaiting_review')
-        self.assertEqual(len(backend.calls),5)
+            with self.assertRaisesRegex(EvidenceError,'retired'):loop.run(execute=True)
+        self.assertEqual(selected.call_count,0)
+        self.assertEqual(len(backend.calls),0)
 
     def test_backend_freeze_and_live_execution_gate(self):
         loop=self.prepared()
-        with self.assertRaisesRegex(EvidenceError,'--execute'):loop.run()
+        with self.assertRaisesRegex(EvidenceError,'retired'):loop.run()
         path=loop.root/'protocol.json';value=load(path);value['backend']['solver_image']='sha256:'+'c'*64
         path.write_text(json.dumps(value))
         with self.assertRaisesRegex(EvidenceError,'Frozen artifact'):loop.verify()

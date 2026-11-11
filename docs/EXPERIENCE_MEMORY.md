@@ -159,6 +159,30 @@ Overall and per-rule reasons are optional and may remain empty; the actual
 reviewer, explicit decision and every rule's support finding remain required.
 The automated controller never calls this approval action on its own.
 
+### Development qualification is separate from historical activity
+
+The default delivery view now requires complete v2 cross-source development
+screening as well as exact-version content acceptance. `active.json` retains
+historical operator selections; activity alone does not confer eligibility.
+`freeze` filters out legacy or pending-validation entries. `list` and the review
+page show `default_eligible` independently of the retained active flag.
+
+`screening/<experience-id>.json` stores the immutable candidate-linked source and
+two-transfer outcomes, preregistered critical obligations, prompt-difference
+checks and request budget. The gate is recomputed from those outcomes, not trusted
+from a saved qualified boolean. The review page exposes it. Both the HTTP and CLI
+activation/rollback paths require this gate; content acceptance cannot bypass it.
+An exploratory, plausible or source-only improvement stays out of default
+retrieval. This does not erase any historical review or old frozen experiment.
+
+New v2 bundles allow one or more evidence-backed rules rather than requiring all
+five category headings. Applicability remains structured in requires/excludes;
+necessary preservation/boundary/verification meaning must remain in the guidance.
+A valid shape or category label is not a semantic approval. The single model rule
+body is still rendered deterministically; metadata and evidence IDs are not
+silently expanded into invented business rules. See the complete
+[development and evaluation protocol](EXPERIENCE_EVOLUTION.md).
+
 ### Explicit active versions and migration
 
 New stores start with an empty `active.json`. Existing stores without that file
@@ -174,8 +198,9 @@ python3 -B -m temporal_contract_analyzer experience-memory migrate-active select
 The reviewed native versions in this repository have been migrated explicitly;
 historical batches and their frozen snapshots were not migrated or rewritten.
 
-`expert-review` defaults to accept-and-activate a compatible forward version.
-Use `--review-only` to save acceptance without changing retrieval, and
+`expert-review` defaults to review-only content acceptance. Use `--activate` to
+explicitly combine acceptance with a compatible forward activation after both
+content and cross-source screening gates pass. `--review-only` is also accepted. Use
 `--expected-current DIGEST` (or `none`) to guard a review against a stale view.
 Reaccepting an ancestor or incompatible legacy version saves review only. No
 version-number sorting, newest-file heuristic or implicit parent fallback exists.
@@ -262,9 +287,10 @@ inventory. Some B grounds are explicitly preserved-behavior inferences, not
 literal README deadlines. See the full
 [archived recoding audit](ARCHIVE.md) (`research/unified-seven-label-recoding-20261110_112750/REPORT.md`).
 
-The three native child digests have saved acceptance decisions. The explicit
-active index selects them, including exploratory scope for deferred boundary
-binding. Previously, a later acceptance of its legacy parent superseded the native
+The three native child digests have saved acceptance decisions. The historical explicit
+active index retains those selections, including exploratory scope for deferred
+boundary binding. None is automatically certified under the new v2 effect gate;
+the new default snapshot can therefore be empty. Previously, a later acceptance of its legacy parent superseded the native
 child under review-order selection; the explicit index removes that ambiguity.
 No stored decision or old experiment was rewritten. Searching an unaccepted
 candidate still does not permit delivery, and activation creates no new replay

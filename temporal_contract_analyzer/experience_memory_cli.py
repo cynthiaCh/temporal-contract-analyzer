@@ -38,7 +38,9 @@ def register(sub):
             action.add_argument('sha256')
         if name == 'expert-review':
             action.add_argument('--decision', type=Path, required=True)
-            action.add_argument('--review-only', action='store_true', help='Record acceptance without changing active.json')
+            mode=action.add_mutually_exclusive_group()
+            mode.add_argument('--review-only', action='store_true', help='Record acceptance only (the default)')
+            mode.add_argument('--activate', action='store_true', help='Explicitly request activation after both gates pass')
             action.add_argument('--expected-current', help='Expected active digest, or none')
         if name in ('activate', 'rollback'):
             action.add_argument('sha256')
@@ -95,7 +97,7 @@ def run(args):
         expected = approval.UNSPECIFIED if args.expected_current is None else (
             None if args.expected_current == 'none' else args.expected_current)
         value = approval.decide(args.store, args.sha256, json.loads(args.decision.read_text(encoding='utf-8')),
-            activate_version=not args.review_only, expected_current=expected)
+            activate_version=args.activate, expected_current=expected)
     elif action == 'recode':
         from .experience_recoding import candidate
         value=candidate(args.store,args.parent,args.input,args.version)
@@ -116,6 +118,7 @@ def run(args):
         elif action == 'verify':
             value = dict(verified=True, records=len(bundles), lineage_tips=len(memory.tips(bundles)),
                          snapshot=memory.snapshot(bundles), active_versions=len(approval.active(args.store)),
+                         default_active_versions=len(approval.freeze(args.store)['entries']),
                          semantic_validity='not_checked')
         elif action in ('show', 'review-template'):
             value = next((b for b in bundles if b['sha256'] == args.sha256), None)
@@ -132,9 +135,11 @@ def run(args):
             required=taxonomy.labels(args.label)
             bundles=[b for b in bundles if set(required)<=set(b['labels'])]
             activated={row['bundle']['sha256'] for row in approval.active(args.store)}
+            from .experience_screening import qualified
             value = [dict(id=b['id'], version=b['version'], sha256=b['sha256'],
                 taxonomy_version=b['taxonomy_version'], labels=b['labels'],
                 status=b['review']['status'], expert_active=b['sha256'] in activated,
+                default_eligible=qualified(args.store,b['sha256']),
                 is_lineage_tip=b['sha256'] in tips) for b in bundles]
     content = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2)+'\n'
     if args.output:

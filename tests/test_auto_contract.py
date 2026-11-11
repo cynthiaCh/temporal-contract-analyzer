@@ -1,4 +1,4 @@
-"""AST-assisted analysis lifecycle; all model responses are synthetic fixtures."""
+"""Historical v1 analysis compatibility; live v2 coverage is in test_development_v2."""
 from contextlib import redirect_stdout
 from copy import deepcopy
 from io import StringIO
@@ -49,12 +49,8 @@ class AutoContractTests(unittest.TestCase):
                        evidence=[dict(file='main.py',line=1,quote='accepted = True')])
         return request
 
-    def test_prepare_cli_without_visible_generates_ast_and_prompt_without_models(self):
-        config=self.root/'config.json';config.write_text(json.dumps(self.config()))
-        root=self.root/'auto-loop'
-        with redirect_stdout(StringIO()):
-            self.assertEqual(main(['experience-evolution','prepare',str(config),'--root',str(root)]),0)
-        loop=Evolution(root)
+    def test_legacy_preparation_keeps_ast_and_prompt_without_models(self):
+        loop=self.prepare();root=loop.root
         self.assertEqual(loop.state()['status'],'analysis_prepared')
         self.assertEqual(loop.state()['jobs'],[])
         material=json.loads((root/'analysis/prompt.md').read_text().split('Public inputs:\n',1)[1])
@@ -110,9 +106,7 @@ class AutoContractTests(unittest.TestCase):
         self.assertIsNone(load(loop.root/'analysis/review-input.json')['approved'])
         with self.assertRaises(EvidenceError):loop.run(backend=backend)
         review=self.root/'review.json';review.write_text(json.dumps(self.reviewed(loop)))
-        with redirect_stdout(StringIO()):
-            self.assertEqual(main(['experience-evolution','review-analysis',str(review),
-                                   '--root',str(loop.root)]),0)
+        loop.review_analysis(load(review))
         self.assertEqual(loop.state()['status'],'prepared')
         self.assertEqual(loop.run(backend=backend)['status'],'awaiting_review')
         self.assertEqual([name for name,_,_ in backend.calls],
@@ -199,7 +193,7 @@ class AutoContractTests(unittest.TestCase):
 
     def test_automatic_analysis_requires_explicit_live_execution_switch(self):
         loop=self.prepare()
-        with self.assertRaisesRegex(EvidenceError,'--execute'):loop.run()
+        with self.assertRaisesRegex(EvidenceError,'retired'):loop.run()
         self.assertEqual(loop.state()['status'],'analysis_prepared')
 
 

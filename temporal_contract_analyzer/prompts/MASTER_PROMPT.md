@@ -1,6 +1,6 @@
 # Experience Research Controller — Master Prompt
 
-Version: `experience-research-controller-v4`
+Version: `experience-research-controller-v5`
 
 ## 1. Your role, responsibilities and operating rules
 
@@ -45,10 +45,18 @@ production updates or additional evolution rounds from this prompt alone.
 Keep new prompts, schemas and research documentation in English. Preserve raw
 historical outputs verbatim, including their original language and errors.
 
+The current intervention evolves only supported, traceable, versioned text
+experience and its applicability. Keep model weights, Coding Agent architecture,
+execution tools, taxonomy, manual reminders, routing policy and common repair
+prompts fixed. Do not generate tasks or search agent architectures. Manual
+checklists are not learned results.
+
 The expert-gated automation entry point is `experience-evolution`; see
 `docs/EXPERIENCE_EVOLUTION.md`. Candidate storage and development validation may
-be automatic within a prepared budget. Activating a version requires an explicit
-named operator's decision in the experience-memory review page on the exact rules and retained outcomes.
+be automatic within a prepared budget. Default activation requires both passing preregistered cross-source development
+screening and an explicit named operator's content decision on the exact rules
+and retained outcomes. Content acceptance is review-only by default; activation
+is a separate explicit action or an expressly combined UI/CLI choice.
 Do not manufacture this action or translate AI-assisted checking into human
 approval. Keep active-version decisions separate from candidate lineage: adding
 or rejecting a child does not displace an accepted parent. Freeze the active
@@ -200,7 +208,9 @@ Learn proposed revisions from development cases only, retaining successes and
 regressions. Preserve the parent module and exact change. Do not treat static
 reminders as learned experience, or stored experience as a learned retriever.
 
-Evaluate prompt evolution and retrieval as separate interventions. A later
+Shared class-prompt evolution is not enabled in the current protocol. Keep the
+manual class-reminder delivery unchanged. Evaluate any future prompt evolution
+and retrieval as separate interventions. A later
 authorized 2x2 comparison can cross old/new class modules with absent/present
 frozen retrieval while holding other inputs fixed. Do not launch that matrix
 without a bounded batch authorization. Do not infer class-wide benefit from one
@@ -213,7 +223,33 @@ tool isolation, prompt composition, schema support, request metering, exceptiona
 archive paths, scorer version and reusable calibration. Reuse valid calibration;
 do not run extra connection probes or historical rescoring as a substitute.
 
-In development, use the manifest's fixed baselines and candidate counts. Feed
+In v2 development use two independent starting repairs, using the frozen old
+memory view. Call them AUTO or ROUTED truthfully. Both PASS still permit one
+extraction, capped at 2 requests; valid non-PASS starts permit 12. Extraction
+returns either a complete no_update or one evidence-linked incremental candidate.
+Invalid/truncated/over-budget output is incomplete, not no_update. Do not require
+five rules or rewrite the entire memory. Python applies explicit changes and
+preserves untouched text. Evidence reads use only the isolated read-only packet
+and closed reader grammar, not arbitrary program execution.
+
+A source-reviewed candidate receives two independent source validations. Block
+unsupported policy, critical preservation loss or unknown critical evidence;
+do not impose a new two-PASS source gate. Then compare complete old/new retrieval
+strategies on two preregistered other independent development sources, each in
+NEW1/OLD1/OLD2/NEW2 order. Transfer analyses are source-only, shared and deferred
+until needed. Parent revisions replace that identity; additions retain real
+conflict fallbacks. Complete all fixed comparisons before aggregating results.
+
+Default qualification requires no lower new whole-task pass count at either
+transfer source, at least two additional whole-task passes across both, complete
+valid evidence/accounting, and no critical preservation loss or unknown. This is
+an engineering screen, not statistical significance. Identical-prompt random wins
+are not experience benefit. Named expert content review is also required. Old
+acceptance/active/exploratory records remain historical, not retroactive v2
+qualification. Store candidate rules and screening separately, without rewriting
+raw rules after outcomes. Do not fabricate expert findings.
+
+In development, use the manifest's fixed starting-repair and candidate counts. Feed
 reflection the permitted training requirements, actual patches, full outcomes and
 event evidence, retained successes, improvements, regressions and unknowns. Do
 not provide reference patches or evaluation-case feedback. A repair agent's
@@ -238,10 +274,24 @@ slot starts independently from its pinned original candidate. Do not deliver
 ledgers, historical failures, development scores, reference patches or evaluator
 internals to the maintenance agent.
 
-Python performs snapshots, patch copying, diffs, hashes, archives, scoring handoff
+Python performs snapshots, patch copying, diffs, existing identity digests, archives, scoring handoff
 and cost summaries. The maintenance model edits business code, performs permitted
 verification and returns a brief result. Score each admissible completed candidate
 once under the frozen evaluator; do not cherry-pick or rerun failed outcomes.
+
+Check calibration and original inputs once at the batch startup boundary. Reuse
+the captured runtime/scoring files; do not repeatedly hash the whole batch or all
+history before each call, add log hash chains or comprehensively lock executable
+contents. Preserve source isolation, request limits, atomic writes, actual prompt
+records and independent original starts.
+
+Final evaluation compares AUTO and distinct frozen M0/M1/M2 strategies on tasks
+not used for generation, screening or tuning. Share one public analysis per task;
+use two independent repairs per distinct condition, merge exact prompt duplicates
+before calls and report aliases as not separately run. No reflection, memory
+update or activation occurs. Analyze independent source units and retain repeat
+variation, all behavior vectors, costs, delivery/fallback and missingness. Reusing
+final feedback for development requires another final cohort.
 
 ## 5. Errors, evidence preservation and stopping
 

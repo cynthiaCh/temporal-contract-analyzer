@@ -1,20 +1,19 @@
 # Maintained workflow and source map
 
 TempoEvo uses one versioned experience store. Obligation labels organize candidate
-guidance; source-bound mechanism premises and exclusions govern delivery. The
-refactor removes older execution paths without changing the current bounded
-development or frozen evaluation protocol.
+guidance; source-bound mechanism premises and exclusions govern delivery. The current v2 intervention evolves text experience only; Coding Agent models,
+repair tools, common prompts, taxonomy and manual reminder delivery remain fixed.
 
 ```text
 Task + original candidate source
   ├─ omit visible: AST scan → selected evidence → explicit analysis LLM call
   │     → source-bound analysis review
   └─ or supply reviewed automatic Contract + labels + facts
-       → frozen active experience snapshot
+       → frozen qualified default experience snapshot
        → source-bound retrieval: zero or one experience
-       ├─ development: starting repairs → feedback → reflection
-       │    → candidate validation → named expert decision → next-task retrieval
-       └─ evaluation: B1/A1/A2/B2 from original source; no memory updates
+       ├─ development: two starts → no_update or one delta → source checks
+       │    → two-source old/new comparisons → effect gate + expert → activation
+       └─ evaluation: frozen AUTO/M0/M1/M2, two repeats; no learning
 ```
 
 When `visible` is omitted from preparation, the controller captures the registered
@@ -35,7 +34,7 @@ retrieval](EXPERIENCE_MEMORY.md), and [execution protocol](EXPERIENCE_EVOLUTION.
 | Analysis materials and offline routing | `taxonomy`, `experience-prompt`, `experience-review-template`, `route-experience`, `maintenance-prompt` | `taxonomy_cli.py`, `experience_routing.py` |
 | Unified memory and activation | `experience-memory …` | `experience_memory.py`, `experience_approval.py`, `experience_memory_cli.py` |
 | Human review queue | `experience-memory review --store PATH` | `memory_review.py`, `web/memory-review.*` |
-| Bounded development / frozen testing | `experience-evolution prepare/run/review-analysis/status/report` | `experience_evolution.py`, `evolution_cli.py` |
+| Bounded development / frozen testing | `experience-evolution prepare/run/review-analysis/review-candidate/status/report` | `experience_development.py`, `experience_evaluation.py`, `evolution_cli.py` |
 
 Opening a browser, reading memory, preparing prompts and preparing an evolution
 batch do not call a model. Live execution requires the explicit execution switch
@@ -51,8 +50,8 @@ and the native backend's prerequisites.
 | Reports and context | `archive.py`, `archive_cli.py`, `context.py`, `hub.py`, `hub_entry.py`, `mcp_server.py` | Immutable source snapshots, annotations, context expansion, report UI and MCP delivery |
 | Vocabulary and static reminders | `taxonomy.py`, `taxonomy_cli.py`, `reminders.py` | Seven-label definitions, material commands and authored checklists; reminders are not learned experience |
 | Shared knowledge | `experience_memory.py`, `experience_memory_cli.py`, `experience_recoding.py`, `experience_routing.py` | Immutable records, evidence closure, label recoding, discovery and conditional delivery |
-| Expert decisions | `experience_approval.py`, `memory_review.py` | Exact-version decisions, active snapshots and pending/reviewed queue |
-| Evolution | `experience_evolution.py`, `evolution_cli.py`, `evolution_backend.py`, `preanalysis.py` | AST-assisted analysis, bounded sessions, candidate creation, validation, expert checkpoint and frozen evaluation |
+| Expert decisions and effect gate | `experience_approval.py`, `experience_screening.py`, `memory_review.py` | Separate content acceptance, cross-source qualification and explicit active versions |
+| Development/evaluation | `experience_development.py`, `experience_updates.py`, `experience_evaluation.py`, `evolution_cli.py`, `evolution_backend.py`, `preanalysis.py` | Public analysis, typed incremental extraction, source/transfer screening and frozen milestone comparison; v1 reader remains in `experience_evolution.py` |
 | Candidate snapshots | `candidate_files.py` | Candidate-visible file capture, hashes, modes and independent workspace copies |
 | Trusted scoring | `case_catalog.py`, `case_evaluation.py` | Registered task inputs, scorer binding, runtime checks, oracle invocation, effect-vector comparisons and process termination |
 | Shared HTTP transport | `http_common.py` | Loopback origin checks, JSON validation and security headers for both browsers |
