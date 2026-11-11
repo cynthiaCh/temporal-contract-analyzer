@@ -403,7 +403,10 @@ class Development(Evolution):
         state=self.state()
         state['status']='candidate_approved' if request['approved'] and not request['blocking_issues'] \
             and all(r['supported'] for r in request['rules']) else 'candidate_rejected'
-        self.save(state);self.report();return state
+        self.save(state)
+        if state['status']=='candidate_approved':
+            self._store_candidate(self.verify())
+        self.report();return self.state()
 
     def _store_candidate(self, p):
         value=load(self.root/'composed-candidate.json');raw=load(self.root/'raw-reflection.json');parent=value['parent']
@@ -428,10 +431,18 @@ class Development(Evolution):
             review=dict(status='candidate',kind='ai_assisted',source_sha256=codes[paths[2]],
                 limitations=['AI-assisted source review; pending independent named operator content acceptance.']+raw['unresolved']),
             audit=dict(sources=sources,rule_links=links,notes=['One program-applied delta; untouched rule bodies retained.'],outcome_refs=[]))
-        bundle=memory.add(p['store'],payload,paths+[Path(p['store'])/'sources'/s['sha256'] for s in sources
-            if s['sha256'] not in set(codes.values())])
+        bundle=memory.seal(payload)
+        with (Path(p['store'])/'decision.lock').open('a') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX)
+            existing={b['sha256']:b for b in memory.records(p['store'])}
+            if bundle['sha256'] not in existing:
+                bundle=memory.add(p['store'],payload,paths+[Path(p['store'])/'sources'/s['sha256'] for s in sources
+                    if s['sha256'] not in set(codes.values())])
+        target=self.root/'candidate.json'
+        if target.exists() and load(target)!=bundle:
+            raise EvidenceError('Stored candidate differs; do not rewrite a frozen version')
         state=self.state();state['candidate_sha256']=bundle['sha256'];self.save(state)
-        archive.atomic_json(self.root/'candidate.json',bundle)
+        if not target.exists():archive.atomic_json(target,bundle)
         return bundle
 
     def _validate_candidate(self, backend, p):
@@ -549,6 +560,13 @@ class Development(Evolution):
             financial_cost=None,engineering_agent_usage=None)
         summary['whole_pass_rate']=summary['whole_passes']/summary['valid_behavior_scores'] if summary['valid_behavior_scores'] else None
         summary['pooled_rate_scope']='Descriptive count over distinct repair slots, not an old/new effect estimate'
+        code=state.get('candidate_sha256')
+        summary['candidate_handoff']=None if code is None else dict(
+            record_store=p['store'],record_path=str(Path(p['store'])/'records'/(code+'.json')),
+            content_review_available=True,submission_is_not_approval=True,
+            review_argv=['python3','-B','-m','temporal_contract_analyzer','experience-memory','review',code,'--store',p['store']],
+            submit_argv_template=['python3','-B','-m','temporal_contract_analyzer','experience-memory','submit',code,
+                '--from-store',p['store'],'--store','TARGET_REVIEW_STORE'])
         if p['kind']=='development':
             groups={};comparisons=[]
             for key,case in p['cases'].items():
@@ -576,5 +594,7 @@ class Development(Evolution):
         archive.atomic_json(self.root/'summary.json',summary)
         (self.root/'REPORT.md').write_text('# Bounded development v2\n\nNo unstarted or invalid slot is a behavioral failure. '
             'Raw prompts, patches, scores, usage and critical/source evidence remain separate. Content acceptance and '
-            'development qualification are both required before explicit default activation.\n\n```json\n'+
+            'development qualification are both required before explicit default activation. '
+            'An approved AI candidate is recorded before source validation. Content review remains available when '
+            'effect screening is pending; candidate_handoff identifies its actual store and explicit shared-store submission.\n\n```json\n'+
             json.dumps(summary,ensure_ascii=False,indent=2)+'\n```\n',encoding='utf-8')

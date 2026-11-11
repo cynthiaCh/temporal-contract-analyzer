@@ -13,7 +13,7 @@ def register(sub):
     actions = parser.add_subparsers(dest='memory_action', required=True)
     for name in ('init', 'list', 'verify', 'freeze', 'add', 'show', 'search', 'retrieve', 'import-legacy',
                  'active', 'review-template', 'expert-review', 'recode', 'review',
-                 'migrate-active', 'activate', 'rollback'):
+                 'migrate-active', 'activate', 'rollback', 'submit'):
         action = actions.add_parser(name)
         action.add_argument('--store', type=Path, required=True)
         if name != 'review':
@@ -25,6 +25,10 @@ def register(sub):
         if name == 'show':
             action.add_argument('sha256')
             action.add_argument('--format', choices=('json', 'md'), default='json')
+        if name == 'submit':
+            action.add_argument('sha256')
+            action.add_argument('--from-store', type=Path, required=True,
+                                help='Isolated source store; copy the exact candidate into --store for review only')
         if name == 'search':
             action.add_argument('--query', required=True)
             action.add_argument('--taxonomy')
@@ -78,6 +82,9 @@ def run(args):
         value = memory.initialize(args.store)
     elif action == 'add':
         value = memory.add(args.store, json.loads(args.input.read_text(encoding='utf-8')), args.source)
+    elif action == 'submit':
+        from .experience_submission import submit
+        value = submit(args.from_store, args.store, args.sha256)
     elif action == 'search':
         value = memory.search(args.store, args.query, args.taxonomy, args.limit,args.label)
     elif action == 'retrieve':

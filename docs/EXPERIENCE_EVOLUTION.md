@@ -47,6 +47,16 @@ rewritten or replaced automatically. Revisions need a separately prepared,
 explicitly executed batch and budget. Historical v1 batches remain readable;
 the CLI cannot resume them or start another v1 live loop.
 
+After that AI-assisted check passes, the controller immediately writes the
+immutable candidate record to the configured store, before source validations.
+Validation reuses that exact record rather than creating or rewriting a version.
+The report's `candidate_handoff` identifies this store. If it is an isolated
+research store, use `experience-memory submit` to hand the exact candidate,
+retained evidence, screen and development exposure to a shared review store.
+This is an explicit zero-model operation; neither submission nor a pending
+effect screen blocks content review. Submission never grants approval or changes
+active retrieval. See [candidate submission](EXPERIENCE_MEMORY.md#submit-a-candidate-from-an-isolated-development-store).
+
 ## Preparation contract
 
 Use the maintained CLI; preparation never calls a model:

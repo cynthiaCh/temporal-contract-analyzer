@@ -53,6 +53,37 @@ CLI commands with `--output` write to the named new file and now print its saved
 path to stderr. They do not submit a review. A generated review template remains
 unapproved until the operator completes and explicitly submits it.
 
+## Submit a candidate from an isolated development store
+
+A candidate record, a named content-review decision, and an active retrieval
+version are separate artifacts. A pending effect screen does not prohibit
+record submission or content review. AI-assisted admission is not a named expert
+decision. The development controller records an AI-approved candidate before any
+source validation, even if later validation is incomplete or unsuccessful.
+
+When a run uses an isolated store, its record is not automatically present in
+the repository's review page. Submit that exact version explicitly:
+
+```sh
+python3 -B -m temporal_contract_analyzer experience-memory submit CANDIDATE_SHA256 --from-store /path/to/run/memory --store experience-memory
+python3 -B -m temporal_contract_analyzer experience-memory review CANDIDATE_SHA256 --store experience-memory
+```
+
+Both stores must already exist. Submission retains the immutable candidate and
+any needed ancestors, source blobs, original screening (including pending or
+blocked findings), and matching development-source exposure. It does not copy
+expert decisions or active pointers, activate the candidate, launch models, or
+change the originating experiment. Repeated submission is idempotent; conflicting
+versions or screening evidence are rejected before publishing records. Evidence
+files are published completely before the candidate becomes visible.
+
+The development report's `candidate_handoff` names the actual record store and
+provides review/submission arguments. A named reviewer can record a review-only
+acceptance while effect evidence is pending. Explicit activation still requires
+both content acceptance and qualifying development evidence. Submitting into a
+Git-tracked review store creates new Git-visible data; keeping an isolated store
+outside the repository does not.
+
 Run from the repository root:
 
 ```bash

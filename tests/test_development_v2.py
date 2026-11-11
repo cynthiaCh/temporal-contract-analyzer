@@ -131,6 +131,27 @@ class DevelopmentTests(unittest.TestCase):
             self.assertEqual(backend.calls[-1]['cap'],cap)
             self.assertEqual(memory.records(self.store),[])
 
+    def test_ai_approved_candidate_is_recorded_before_any_validation(self):
+        loop=self.prepare();backend=Backend()
+        self.assertEqual(loop.run(backend=backend)['status'],'candidate_review')
+        self.assertEqual(memory.records(self.store),[])
+        state=self.candidate_review(loop)
+        self.assertEqual(state['status'],'candidate_approved')
+        bundle=memory.records(self.store)[0]
+        self.assertEqual(state['candidate_sha256'],bundle['sha256'])
+        self.assertEqual(len(backend.calls),3)
+        self.assertFalse((self.store/'screening').exists())
+        self.assertEqual(approval.decisions(self.store),[])
+        before=(loop.root/'candidate.json').read_bytes()
+        summary=json.loads((loop.root/'summary.json').read_text())
+        self.assertTrue(summary['candidate_handoff']['content_review_available'])
+        self.assertEqual(summary['candidate_handoff']['record_store'],str(self.store))
+        self.assertIn('--from-store',summary['candidate_handoff']['submit_argv_template'])
+        self.assertEqual(loop.run(backend=backend)['status'],'awaiting_review')
+        self.assertEqual((loop.root/'candidate.json').read_bytes(),before)
+        self.assertEqual(len(memory.records(self.store)),1)
+        self.assertEqual(len(backend.calls),13)
+
     def test_full_screening_requires_expert_and_changes_next_task_only(self):
         loop=self.prepare();backend=Backend()
         self.assertEqual(loop.run(backend=backend)['status'],'candidate_review')
