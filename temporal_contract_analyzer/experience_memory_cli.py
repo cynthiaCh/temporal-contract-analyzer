@@ -40,6 +40,8 @@ def register(sub):
             action.add_argument('--snapshot', type=Path)
         if name in ('review-template', 'expert-review'):
             action.add_argument('sha256')
+        if name == 'review-template':
+            action.add_argument('--full', action='store_true', help='Review every rule instead of referencing unchanged accepted parent findings')
         if name == 'expert-review':
             action.add_argument('--decision', type=Path, required=True)
             mode=action.add_mutually_exclusive_group()
@@ -132,8 +134,7 @@ def run(args):
             if value is None:
                 raise EvidenceError('Unknown experience digest')
             if action == 'review-template':
-                value = dict(reviewer='', decision='revise', reason='', scope='exploratory',
-                    rules=[dict(rule_id=r['id'], supported=False, reason='') for r in value['rules']])
+                value = approval.review_template(args.store, args.sha256, full=args.full)
             elif args.format == 'md':
                 value = memory.render(value)
         else:

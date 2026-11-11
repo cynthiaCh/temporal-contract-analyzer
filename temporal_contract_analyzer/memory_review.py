@@ -63,6 +63,7 @@ class ReviewHandler(LocalHandler):
             if len(parts) == 3:
                 self.send(dict(bundle=bundle, predicates=taxonomy.definition()['mechanism_predicates'],
                     activation=approval.activation_options(self.server.store, bundle['sha256']),
+                    review_plan=approval.review_plan(self.server.store, bundle['sha256']),
                     decisions=[d for d in approval.decisions(self.server.store)
                     if d['candidate_sha256'] == bundle['sha256']]))
             elif len(parts) == 5 and parts[3] == 'sources':

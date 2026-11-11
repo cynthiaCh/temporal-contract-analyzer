@@ -35,14 +35,16 @@ retained `sources/` evidence. It does not depend on historical research paths.
 The list groups all versions into pending and reviewed entries, with counts and
 filters for all/pending/reviewed. A version is reviewed only when an explicit
 operator decision exists for that exact digest; historical AI admission does not
-count, and a new child does not inherit its parent's review. Reviewed entries
+count, and a new child does not become reviewed automatically. An explicit
+incremental decision may reference unchanged accepted parent findings. Reviewed entries
 show the latest decision, reviewer and time, independently of whether they are
 currently active. Opening one displays saved findings; an explicit re-review
 button opens a new blank form. Submission refreshes the list and saved findings.
 
-Choose a finding for every rule, optionally write review reasons, enter your actual name and
-overall decision, then confirm review of the exact rules, labels, applicability
-and evidence. Clicking submit records the decision through the existing expert
+Choose findings for affected rules, optionally write review reasons, enter your
+actual name and overall decision, then explicitly confirm the exact changes,
+their interactions and any displayed parent findings. Full review remains an
+option. Clicking submit records the decision through the existing expert
 interface. Choose review-only acceptance or acceptance plus a compatible forward
 activation. Reaccepting an older version does not roll back retrieval. Explicit
 rollback has its own action; the page shows the active version separately from
@@ -52,6 +54,41 @@ a model. The result displays the decision directory and activation status.
 CLI commands with `--output` write to the named new file and now print its saved
 path to stderr. They do not submit a review. A generated review template remains
 unapproved until the operator completes and explicitly submits it.
+
+## Incremental content review
+
+The page compares a candidate with its direct parent and shows changed text
+before/after, parent evidence, and any changed prerequisites. If only R02 changed,
+the parent has a current named acceptance, and the other six rules retain their
+text/category, linked evidence and shared applicability, only R02 needs a new
+finding. The six parent findings appear in a collapsed section with their actual
+reviewer, decision and source version. They are not six new approvals by the
+current reviewer. Opening the page or generating a template submits nothing.
+
+The backend rechecks eligibility under the existing decision lock. It references
+the exact latest parent acceptance, not the parent's activity or AI review flag.
+Changed rule evidence requires a new finding for that rule. Changed taxonomy,
+labels, requires/excludes, applicability/exclusion rules or their evidence, and
+global outcome evidence require full review. Missing/revoked parent acceptance
+also prevents inheritance. A stale parent-decision reference is rejected before
+writing a decision. Changing the requested review scope requires full review.
+
+Structural equality does not prove semantic independence. The reviewer must
+check interactions with retained rules and can choose **Review R03 explicitly**
+for an otherwise unchanged rule, or **Review all rules instead**. Switching the
+granularity preserves the current draft. Re-reviewing an already reviewed exact
+version opens a full form; it does not silently override its existing findings.
+
+CLI `review-template` uses the same incremental plan by default; `--full` emits
+all explicit rule findings. Incremental input contains only new findings and
+`inherit_from` with the exact parent-version and parent-decision IDs. The backend
+resolves every omitted eligible finding itself. A v2 decision stores all resolved
+findings with per-rule `inherited_from` references (parent version, decision and
+rule), so history and frozen snapshots can verify the actual provenance. Existing
+v1 decisions are unchanged. A v2 snapshot requires its retained audited decision
+history. New-version acceptance still needs the current operator's explicit
+decision, and neither inheritance nor content acceptance bypasses effect-based
+activation requirements.
 
 ## Submit a candidate from an isolated development store
 
@@ -184,10 +221,11 @@ python3 -B -m temporal_contract_analyzer experience-memory review-template RECOR
 python3 -B -m temporal_contract_analyzer experience-memory expert-review RECORD_SHA256 --decision review-drafts/review.json --store experience-memory
 ```
 
-The template has empty reviewer/reasons, false support findings and a revision
-default. It is not approval. The operator must supply findings for every rule.
+The template has empty reviewer/reasons, false explicit support findings and a
+revision default. It is not approval. The operator supplies the required new
+findings and explicitly confirms any eligible referenced parent findings.
 Overall and per-rule reasons are optional and may remain empty; the actual
-reviewer, explicit decision and every rule's support finding remain required.
+reviewer, explicit decision and a resolved finding for every rule remain required.
 The automated controller never calls this approval action on its own.
 
 ### Development qualification is separate from historical activity

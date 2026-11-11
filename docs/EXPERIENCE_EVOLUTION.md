@@ -57,6 +57,13 @@ This is an explicit zero-model operation; neither submission nor a pending
 effect screen blocks content review. Submission never grants approval or changes
 active retrieval. See [candidate submission](EXPERIENCE_MEMORY.md#submit-a-candidate-from-an-isolated-development-store).
 
+Named content review supports [incremental findings](EXPERIENCE_MEMORY.md#incremental-content-review).
+Unchanged rules may reference the exact accepted parent's findings only after
+evidence and shared applicability checks; the reviewer explicitly reviews changes
+and their interactions. The final decision retains every finding and its source.
+This does not alter AI-assisted candidate checking, model budgets, development
+scores, frozen prompts or activation gates.
+
 ## Preparation contract
 
 Use the maintained CLI; preparation never calls a model:

@@ -196,12 +196,12 @@ def decisions(store):
         if row.get('sha256') != expected or path.name != f"{row.get('sequence', 0):08d}-{expected}.json" \
                 or row.get('sequence') != len(result)+1 or row.get('candidate_sha256') not in bundles:
             raise EvidenceError('Invalid expert decision history')
-        validate_decision(row, bundles[row['candidate_sha256']])
+        validate_decision(row, bundles[row['candidate_sha256']], bundles, result)
         result.append(row)
     return result
 
 
-def validate_decision(row, bundle):
+def validate_decision(row, bundle, bundles=None, prior=None):
     if not memory.text(row.get('reviewer')):
         raise EvidenceError('A named operator is required')
     if not isinstance(row.get('reason'), str):
@@ -210,17 +210,30 @@ def validate_decision(row, bundle):
         raise EvidenceError('Invalid expert decision or research scope')
     findings = row.get('rules')
     if not isinstance(findings, list) or len(findings) != len(bundle['rules']):
-        raise EvidenceError('Expert must review every rule')
+        raise EvidenceError('Every rule needs a resolved explicit or verified inherited finding')
     expected = [r['id'] for r in bundle['rules']]
     if [r.get('rule_id') for r in findings if isinstance(r, dict)] != expected:
         raise EvidenceError('Expert rule findings must match the frozen candidate order')
     for finding in findings:
-        if set(finding) != {'rule_id', 'supported', 'reason'} or type(finding['supported']) is not bool \
+        fields = {'rule_id', 'supported', 'reason'}
+        if row.get('schema_version') == 'experience-expert-decision-v2' and 'inherited_from' in finding:
+            fields.add('inherited_from')
+        if set(finding) != fields or type(finding['supported']) is not bool \
                 or not isinstance(finding['reason'], str):
             raise EvidenceError('Each rule needs a support finding and a text reason, which may be empty')
+    if row.get('schema_version') == 'experience-expert-decision-v2':
+        if bundles is None or prior is None:
+            raise EvidenceError('Inherited review findings require retained parent decision history')
+        from .experience_review_delta import resolve
+        explicit = [r for r in findings if 'inherited_from' not in r]
+        expected_findings = resolve(bundle, bundles, prior, row.get('inherit_from'), explicit, row['scope'])
+        if findings != expected_findings:
+            raise EvidenceError('Inherited findings differ from the unchanged accepted parent rules')
+    elif 'inherit_from' in row:
+        raise EvidenceError('Review inheritance requires the v2 decision schema')
     if row['decision'] == 'accept' and (not all(r['supported'] for r in findings)
             or bundle['review']['status'] == 'rejected'):
-        raise EvidenceError('Unsupported or rejected rules cannot be activated')
+        raise EvidenceError('Unsupported or rejected rules cannot be accepted')
     report = row.get('report_sha256')
     if report is not None and (not isinstance(report, str) or len(report) != 64):
         raise EvidenceError('Invalid review report digest')
@@ -229,7 +242,8 @@ def validate_decision(row, bundle):
 def decide(store, candidate_sha256, request, report_sha256=None, *, activate_version=False,
            expected_current=UNSPECIFIED):
     """Operator entry point. Never called by automatic reflection or repair."""
-    if not isinstance(request, dict) or set(request) != {'reviewer', 'decision', 'reason', 'scope', 'rules'}:
+    fields = {'reviewer', 'decision', 'reason', 'scope', 'rules'}
+    if not isinstance(request, dict) or set(request) not in (fields, fields | {'inherit_from'}):
         raise EvidenceError('Expert request must contain reviewer, decision, reason, scope and per-rule findings')
     store = Path(store)
     if type(activate_version) is not bool:
@@ -246,10 +260,13 @@ def decide(store, candidate_sha256, request, report_sha256=None, *, activate_ver
         if expected_current is not UNSPECIFIED and previous != expected_current:
             raise EvidenceError('Active version changed; reload before submitting this review')
         # Content acceptance is separate from cross-source effect qualification.
-        row = dict(deepcopy(request), schema_version='experience-expert-decision-v1',
+        row = dict(deepcopy(request), schema_version='experience-expert-decision-v2' if 'inherit_from' in request else 'experience-expert-decision-v1',
                    actor='named_operator', candidate_sha256=candidate_sha256,
                    report_sha256=report_sha256, at=archive.now(), sequence=len(prior)+1)
-        validate_decision(row, bundles[candidate_sha256])
+        if 'inherit_from' in request:
+            from .experience_review_delta import resolve
+            row['rules'] = resolve(bundle, bundles, prior, request['inherit_from'], request['rules'], request['scope'])
+        validate_decision(row, bundles[candidate_sha256], bundles, prior)
         row['sha256'] = memory.digest(canonical(row))
         path = store/'decisions'/f"{row['sequence']:08d}-{row['sha256']}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -272,6 +289,26 @@ def active(store):
             for identifier, code in sorted(index['versions'].items())]
 
 
+def review_plan(store, code):
+    from .experience_review_delta import plan
+    bundles = {b['sha256']:b for b in memory.records(store)}
+    if code not in bundles:
+        raise EvidenceError('Unknown review candidate')
+    return plan(bundles[code], bundles, decisions(store))
+
+
+def review_template(store, code, full=False):
+    delta = review_plan(store, code)
+    inherited = delta['mode'] == 'incremental' and not full
+    result = dict(reviewer='', decision='revise', reason='',
+        scope=delta['parent_decision']['scope'] if inherited else 'exploratory',
+        rules=[dict(rule_id=r['rule_id'], supported=False, reason='') for r in delta['rules']
+               if not inherited or not r['inheritable']])
+    if inherited:
+        result['inherit_from'] = delta['inherit_from']
+    return result
+
+
 def freeze(store, *, legacy=False):
     entries = active(store)
     if not legacy:
@@ -288,11 +325,22 @@ def validate_snapshot(store, snapshot):
             or snapshot['sha256'] != memory.digest(canonical({k:v for k,v in snapshot.items() if k!='sha256'})):
         raise EvidenceError('Invalid frozen active snapshot')
     seen = set()
+    history = None
+    bundles = None
     for entry in snapshot['entries']:
         memory.object_fields(entry, {'bundle', 'expert_decision'}, 'active snapshot entry')
         bundle, decision = entry['bundle'], entry['expert_decision']
         memory.validate(bundle, lambda code:(Path(store)/'sources'/code).read_bytes())
-        validate_decision(decision, bundle)
+        if decision.get('schema_version') == 'experience-expert-decision-v2':
+            if history is None:
+                history = decisions(store)
+                bundles = {b['sha256']:b for b in memory.records(store)}
+            position = next((i for i,r in enumerate(history) if r['sha256']==decision.get('sha256')), None)
+            if position is None or history[position] != decision:
+                raise EvidenceError('Inherited snapshot decision needs its retained audited history')
+            validate_decision(decision, bundle, bundles, history[:position])
+        else:
+            validate_decision(decision, bundle)
         if decision['decision'] != 'accept' or decision['candidate_sha256'] != bundle['sha256'] \
                 or decision['sha256'] != memory.digest(canonical({k:v for k,v in decision.items() if k!='sha256'})) \
                 or bundle['id'] in seen:
