@@ -16,6 +16,13 @@ experience**. They are separate corpora and APIs.
 
 ## Inspect and search the existing library
 
+On macOS, double-click [launch-experience-review.command](../launch-experience-review.command)
+in the repository root. It opens the local review queue in your browser and
+works regardless of the terminal's starting directory. The queue shows pending
+and reviewed counts; use the Pending filter to find versions that need review.
+Keep its terminal open while reviewing, then press Ctrl+C to stop the service.
+Candidates from isolated development stores must first be submitted as described below.
+
 For a local visual review, run from the repository root:
 
 ```bash

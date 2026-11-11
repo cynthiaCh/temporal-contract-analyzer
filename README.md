@@ -36,6 +36,8 @@ For a wheel installation, the parser scripts and lockfile are inside the install
 
 Use one experience collection with multiple R/O/B/L/I/F/A obligation labels. Mechanism predicates and exclusion boundaries determine applicability; matching a label alone does not authorize delivery. Source-context retrieval and experience retrieval remain distinct inputs.
 
+On macOS, double-click [launch-experience-review.command](launch-experience-review.command) to open this repository's experience review queue. The page shows pending and reviewed versions with counts and filters. Keep the terminal open while reviewing; press Ctrl+C to stop the service. Opening the page does not submit a decision, activate an experience, or call a model.
+
 ```sh
 python3 -B -m temporal_contract_analyzer taxonomy
 python3 -B -m temporal_contract_analyzer experience-memory init --store /path/to/new-memory
