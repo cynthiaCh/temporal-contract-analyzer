@@ -42,6 +42,14 @@ screening. CLI expert-review is review-only by default; activation must be expli
 Unreviewed or pending-validation versions cannot enter default delivery. Existing
 frozen batches are unchanged.
 
+Use **Edit rules manually** to revise rule text or category. For changed rules,
+**Use Before** copies the parent wording into the editor; **Use current text**
+restores the displayed version. Supply your name and modification reason, then
+choose **Save as new version**. This creates an immutable child candidate with
+the original evidence and a retained `manual-revision.json` provenance record.
+Review the saved version against that evidence: edited rules require new findings,
+and saving wording does not accept, activate, or qualify the candidate for delivery.
+
 ```bash
 python3 -B -m temporal_contract_analyzer experience-memory list --store experience-memory
 python3 -B -m temporal_contract_analyzer experience-memory search --store experience-memory --query 'shared cache cancellation observers reconnect'

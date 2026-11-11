@@ -1,8 +1,12 @@
 """Local review of immutable memory records and their retained evidence. No models."""
 import json
+from copy import deepcopy
+from datetime import datetime, timezone
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 import re
+from tempfile import TemporaryDirectory
+from uuid import uuid4
 import webbrowser
 from urllib.parse import parse_qs, urlsplit
 
@@ -18,6 +22,38 @@ def record(store, code):
     if result is None:
         raise EvidenceError('Unknown experience version')
     return result
+
+
+def revise(store, bundle, data):
+    """Save operator wording as a new candidate, retaining source evidence."""
+    memory.object_fields(data, {'actor', 'reason', 'rules'}, 'manual revision')
+    if not memory.text(data['actor']) or not memory.text(data['reason']):
+        raise EvidenceError('Manual revision needs an editor name and reason')
+    rules = data['rules']
+    if not isinstance(rules, list) or len(rules) != len(bundle['rules']):
+        raise EvidenceError('Manual revision must retain all rule identities')
+    for old, new in zip(bundle['rules'], rules):
+        memory.object_fields(new, {'id', 'category', 'body'}, 'edited rule')
+        if new['id'] != old['id'] or not isinstance(new['category'], str) \
+                or new['category'] not in memory.CATEGORIES or not memory.text(new['body']):
+            raise EvidenceError('Invalid edited rule identity, category or body')
+    changed = [new['id'] for old, new in zip(bundle['rules'], rules) if old != new]
+    if not changed:
+        raise EvidenceError('Change at least one rule before saving a revision')
+    payload = deepcopy({key: bundle[key] for key in memory.FIELDS})
+    payload.update(version='human-'+uuid4().hex, parent_sha256=bundle['sha256'], rules=rules)
+    provenance = dict(kind='manual_revision', actor=data['actor'].strip(), reason=data['reason'].strip(),
+        at=datetime.now(timezone.utc).isoformat(), parent_sha256=bundle['sha256'],
+        changed_rule_ids=changed, rules=rules)
+    with TemporaryDirectory() as directory:
+        source = Path(directory)/'manual-revision.json'
+        source.write_text(json.dumps(provenance, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
+        code = memory.digest(source.read_text(encoding='utf-8'))
+        payload['audit']['sources'].append(dict(path='manual-revision.json', sha256=code))
+        payload['audit']['notes'].append('Human wording revision; retained evidence requires review against edited rules.')
+        payload['review'] = dict(status='candidate', kind='human', source_sha256=code,
+            limitations=['Manual editing does not establish evidence support or content acceptance.'])
+        return memory.add(store, payload, [source])
 
 
 class ReviewServer(ThreadingHTTPServer):
@@ -96,10 +132,14 @@ class ReviewHandler(LocalHandler):
 
     def post(self, data):
         parts = urlsplit(self.path).path.strip('/').split('/')
-        if len(parts) != 4 or parts[:2] != ['api', 'records'] or parts[3] not in ('decision', 'activate', 'rollback'):
+        if len(parts) != 4 or parts[:2] != ['api', 'records'] or parts[3] not in ('decision', 'activate', 'rollback', 'revise'):
             self.send({'error': 'Not found'}, 404)
             return
         bundle = record(self.server.store, parts[2])
+        if parts[3] == 'revise':
+            saved = revise(self.server.store, bundle, data)
+            self.send(dict(sha256=saved['sha256']), 201)
+            return
         if parts[3] in ('activate', 'rollback'):
             if set(data) != {'actor', 'reason', 'expected_current'}:
                 raise EvidenceError('Activation needs actor, reason and expected_current')

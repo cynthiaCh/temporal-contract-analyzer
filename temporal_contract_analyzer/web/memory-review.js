@@ -76,9 +76,36 @@ function renderActivation(target,data){
  }
  target.append(box);
 }
+function renderManualEditor(target,data,draft={}){
+ const panel=el('details',undefined,'panel manual-editor');panel.append(el('summary','Edit rules manually'));
+ panel.append(el('p','Save your wording as a new version, then review it against the retained evidence.','muted'));
+ const actor=field(panel,'Editor name',el('input'));actor.value=draft.actor||'';
+ const reason=field(panel,'Modification reason',el('textarea'));reason.value=draft.reason||'';
+ const editors=data.bundle.rules.map(rule=>{
+  const box=el('div',undefined,'manual-rule');box.append(el('h3',rule.id));
+  const category=field(box,'Category',select(Object.entries(categories)));
+  const body=field(box,'Rule text',el('textarea'));body.rows=5;
+  const saved=draft.rules?.find(r=>r.id===rule.id)||rule;category.value=saved.category;body.value=saved.body;
+  const before=data.review_plan?.rules.find(r=>r.rule_id===rule.id)?.before;
+  const actions=el('div',undefined,'actions');
+  if(before&&(before.body!==rule.body||before.category!==rule.category))actions.append(button('Use Before for '+rule.id,()=>{body.value=before.body;category.value=before.category;}));
+  actions.append(button('Use current text for '+rule.id,()=>{body.value=rule.body;category.value=rule.category;}));box.append(actions);panel.append(box);
+  return {id:rule.id,category,body};
+ });
+ const capture=()=>({actor:actor.value,reason:reason.value,rules:editors.map(r=>({id:r.id,category:r.category.value,body:r.body.value}))});
+ const save=button('Save as new version',async()=>{
+  const request=capture();
+  if(!request.actor.trim()||!request.reason.trim()||request.rules.some(r=>!r.body.trim())){message('Enter your name, modification reason and nonempty rule text.',true);return;}
+  save.disabled=true;
+  try{const result=await api('/api/records/'+data.bundle.sha256+'/revise',request);await library();await openRecord(result.sha256);message('Manual revision saved. Review the new version against its evidence.');}
+  finally{save.disabled=false;}
+ });
+ panel.append(save);target.append(panel);return capture;
+}
 function render(data,rereview=false,fullReview=false,manualRules=new Set(),draft={}){
  const b=data.bundle;const target=$('#detail');target.replaceChildren();const intro=el('div',undefined,'panel');intro.append(el('h2',names[b.id]||b.id),el('p',b.version,'meta'),el('code',b.sha256),el('p',b.labels.join(' / '),'meta'),el('p','Review the rules, labels, applicability and evidence for this exact version. Acceptance permits research use; repair benefit requires evaluation.','notice'));target.append(intro);
  renderActivation(target,data);
+ const captureManual=renderManualEditor(target,data,draft.manual);
  const last=data.decisions[data.decisions.length-1];const readonly=Boolean(last)&&!rereview;
  intro.append(el('p',last?'✓ Reviewed · '+decisionText(last.decision)+' · '+last.reviewer+' · '+reviewedAt(last.at):'Awaiting review','review-state '+(last?'reviewed':'pending')));
  const meta=el('div',undefined,'metadata');for(const [key,title] of [['requires','Required mechanism premises'],['excludes','Exclusions that must be contradicted']]){const box=el('div');box.append(el('h3',title));const ul=el('ul');for(const v of b[key])ul.append(el('li',predicateDescriptions[v]||v));if(!b[key].length)ul.append(el('li','None registered. Check the boundaries in the rules as well.'));box.append(ul);meta.append(box);}intro.append(meta);
@@ -126,7 +153,7 @@ function render(data,rereview=false,fullReview=false,manualRules=new Set(),draft
  const decision=el('div',undefined,'panel');decision.append(el('h2','Submit a review decision'));const reviewer=field(decision,'Reviewer name',el('input'));reviewer.required=true;reviewer.autocomplete='name';const choices=[['','Select an option'],['accept_only','Accept for review only'],['revise','Request revision'],['reject','Reject this version']];if(data.activation.default_eligible)choices.splice(2,0,['accept','Accept and activate a compatible upgrade']);const choice=field(decision,'Overall decision',select(choices));choice.required=true;const scope=field(decision,'Use scope',select([['exploratory','Exploratory research: effectiveness unverified'],['research','Research use']]));if(incremental)scope.value=delta.parent_decision.scope;const reason=field(decision,'Overall reason (optional)',el('textarea'));
  const check=el('label',undefined,'check');const confirmed=el('input');confirmed.type='checkbox';confirmed.required=true;check.append(confirmed,el('span',incremental?'I reviewed the changed rules, their interactions with retained rules, and unchanged labels, applicability, evidence and outcomes. I explicitly reference the displayed parent findings for the unchanged rules.':'I have reviewed all rules, labels, applicability conditions, source evidence and retained repair outcomes for this exact version. These findings reflect my own review.'));decision.append(check);
  if(draft.reviewer!==undefined){reviewer.value=draft.reviewer;choice.value=draft.choice;scope.value=draft.scope;reason.value=draft.reason;confirmed.checked=draft.confirmed;}
- captureDraft=()=>({rules:{...(draft.rules||{}),...Object.fromEntries(fields.map(f=>[f.id,{supported:f.support.value,reason:f.reason.value}]))},reviewer:reviewer.value,choice:choice.value,scope:scope.value,reason:reason.value,confirmed:confirmed.checked});
+ captureDraft=()=>({manual:captureManual(),rules:{...(draft.rules||{}),...Object.fromEntries(fields.map(f=>[f.id,{supported:f.support.value,reason:f.reason.value}]))},reviewer:reviewer.value,choice:choice.value,scope:scope.value,reason:reason.value,confirmed:confirmed.checked});
  const submit=el('button','Submit decision','primary');submit.type='submit';decision.append(submit,el('p','Reviews remain in decisions/. Active retrieval is selected in active.json. Reaccepting an older or incompatible version records review without replacing the active version. Use the explicit rollback action for an accepted compatible ancestor. No model call or Git commit is made.','muted'));form.append(decision);target.append(form);
  renderHistory(target,data.decisions);
  form.addEventListener('submit',async event=>{event.preventDefault();if(!form.reportValidity())return;if(choice.value.startsWith('accept')&&fields.some(f=>f.support.value!=='yes')){message('Acceptance requires supported new findings and accepted inherited findings. Otherwise, request revision or reject this version.',true);return;}if(incremental&&scope.value!==delta.parent_decision.scope){message('Changing the review scope requires choosing “Review all rules instead”.',true);return;}submit.disabled=true;try{const request={reviewer:reviewer.value.trim(),decision:choice.value==='accept_only'?'accept':choice.value,reason:reason.value.trim(),scope:scope.value,rules:fields.map(f=>({rule_id:f.id,supported:f.support.value==='yes',reason:f.reason.value.trim()}))};if(incremental)request.inherit_from=delta.inherit_from;const result=await api('/api/records/'+b.sha256+'/decision',{reviewed:confirmed.checked,activate:choice.value==='accept',expected_current:data.activation.current_sha256,decision:request});await library();render(await api('/api/records/'+b.sha256));message((result.default_active?'Review saved. This exact version is active in default retrieval.':'Review saved. This version is not enabled in default retrieval.')+' Saved to: '+result.directory);}catch(error){message(error.message,true);}finally{submit.disabled=false;}});

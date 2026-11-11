@@ -80,6 +80,52 @@ class MemoryReviewTests(unittest.TestCase):
         with self.assertRaises(HTTPError):
             self.call(self.base+'/sources/'+source+'?pointer=/rules/0&line=1')
 
+    def test_manual_revision_preserves_history_and_requires_new_review(self):
+        from copy import deepcopy
+        with self.call(self.base+'/decision', self.decision()):
+            pass
+        original = (self.store/'records'/(self.bundle['sha256']+'.json')).read_bytes()
+        rules = deepcopy(self.bundle['rules'])
+        rules[1]['body'] = 'Register the listener before activating a source that can emit synchronously.'
+        body = dict(actor='SYNTHETIC_EDITOR', reason='Generalize the mechanism.', rules=rules)
+        with self.call(self.base+'/revise', body) as response:
+            self.assertEqual(response.status, 201)
+            code = json.load(response)['sha256']
+        with self.call('/api/records/'+code) as response:
+            saved = json.load(response)
+        child = saved['bundle']
+        self.assertEqual(child['parent_sha256'], self.bundle['sha256'])
+        self.assertEqual(child['rules'], rules)
+        self.assertEqual(child['review']['kind'], 'human')
+        self.assertEqual(child['review']['status'], 'candidate')
+        self.assertEqual(child['audit']['rule_links'], self.bundle['audit']['rule_links'])
+        self.assertEqual(saved['decisions'], [])
+        self.assertEqual(saved['review_plan']['required_rule_ids'], [rules[1]['id']])
+        self.assertFalse(saved['activation']['default_eligible'])
+        provenance = json.loads((self.store/'sources'/child['review']['source_sha256']).read_text())
+        self.assertEqual(provenance['actor'], body['actor'])
+        self.assertEqual(provenance['reason'], body['reason'])
+        self.assertEqual(provenance['changed_rule_ids'], [rules[1]['id']])
+        self.assertEqual(approval.active(self.store)[0]['bundle'], self.bundle)
+        self.assertEqual(len(approval.decisions(self.store)), 1)
+        self.assertEqual((self.store/'records'/(self.bundle['sha256']+'.json')).read_bytes(), original)
+
+    def test_invalid_manual_revision_does_not_create_records(self):
+        from copy import deepcopy
+        for case in ('unchanged', 'name', 'reason', 'empty', 'identity', 'category', 'missing', 'extra'):
+            body = dict(actor='SYNTHETIC_EDITOR', reason='Synthetic revision.', rules=deepcopy(self.bundle['rules']))
+            if case != 'unchanged': body['rules'][0]['body'] += ' Edited.'
+            if case == 'name': body['actor'] = ''
+            elif case == 'reason': body['reason'] = ' '
+            elif case == 'empty': body['rules'][0]['body'] = ''
+            elif case == 'identity': body['rules'][0]['id'] = 'R99'
+            elif case == 'category': body['rules'][0]['category'] = 'unknown'
+            elif case == 'missing': body['rules'].pop()
+            elif case == 'extra': body['activate'] = True
+            with self.subTest(case=case), self.assertRaises(HTTPError):
+                self.call(self.base+'/revise', body)
+        self.assertEqual(memory.records(self.store), [self.bundle])
+
     def test_incomplete_or_unconfirmed_review_is_rejected(self):
         original = (self.store/'records'/(self.bundle['sha256']+'.json')).read_bytes()
         for change in ('confirmation', 'name', 'reason_type', 'unsupported', 'missing_rule'):

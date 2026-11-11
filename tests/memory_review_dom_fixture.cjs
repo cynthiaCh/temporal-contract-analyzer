@@ -18,7 +18,7 @@ roots['review-filter'].value='all';
 const document={createElement:tag=>new Element(tag),querySelector:s=>roots[s.slice(1)],querySelectorAll:()=>[]};
 let posted;
 const fetch=async(path,options={})=>{
- if(options.method==='POST'){posted=JSON.parse(options.body);return {ok:true,json:async()=>({default_active:false,directory:'/synthetic/decisions'})};}
+ if(options.method==='POST'){posted=JSON.parse(options.body);return {ok:true,json:async()=>({sha256:input.data.bundle.sha256,default_active:false,directory:'/synthetic/decisions'})};}
  return {ok:true,json:async()=>path==='/api/library'?{store:'/synthetic/memory',records:[]}:input.data};
 };
 const context=vm.createContext({document,fetch,location:{search:''},history:{replaceState(){}},URLSearchParams,DATA:input.data,console});
@@ -60,6 +60,25 @@ async function main(){
  context.READONLY=input.readonly;vm.runInContext('current=READONLY.bundle;render(READONLY)',context);
  assert.equal(ruleInputs().length,0,'Saved review is read-only');
  assert.equal(all(roots.detail,node=>node.tagName==='p'&&node.textContent.startsWith('Inherited from parent ')).length,6,'Saved parent provenance remains visible');
+ vm.runInContext('current=DATA.bundle;render(DATA)',context);
+ let editor=all(roots.detail,node=>node.className==='panel manual-editor')[0];
+ const beforeButton=all(editor,tag('button')).find(b=>b.textContent==='Use Before for R02');
+ await beforeButton.listeners.click();
+ let manualRules=all(editor,node=>node.className==='manual-rule');
+ assert.equal(all(manualRules[1],tag('textarea'))[0].value,input.data.review_plan.rules[1].before.body);
+ all(manualRules[1],tag('textarea'))[0].value='SYNTHETIC generalized mechanism';
+ all(editor,tag('input'))[0].value='SYNTHETIC_EDITOR';
+ all(editor,tag('textarea'))[0].value='SYNTHETIC edit reason';
+ await all(roots.detail,tag('button')).find(b=>b.textContent==='Review all rules instead').listeners.click();
+ editor=all(roots.detail,node=>node.className==='panel manual-editor')[0];
+ manualRules=all(editor,node=>node.className==='manual-rule');
+ assert.equal(all(manualRules[1],tag('textarea'))[0].value,'SYNTHETIC generalized mechanism','Review toggles retain manual wording');
+ await all(editor,tag('button')).find(b=>b.textContent==='Save as new version').listeners.click();
+ assert.equal(posted.actor,'SYNTHETIC_EDITOR');
+ assert.equal(posted.reason,'SYNTHETIC edit reason');
+ assert.equal(posted.rules[1].body,'SYNTHETIC generalized mechanism');
+ assert.equal(posted.rules.length,7);
+ assert.equal(posted.activate,undefined,'Saving wording does not request activation');
  console.log('incremental DOM passed: one explicit rule, six parent references, full-review toggle, exact base sent');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
