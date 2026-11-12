@@ -11,6 +11,7 @@ import uuid
 
 from . import archive, taxonomy, experience_memory as memory, experience_approval as approval
 from . import experience_routing as routing, experience_updates as updates, experience_screening as screening
+from . import failure_learning
 from .core import EvidenceError, canonical, sha
 from .candidate_files import capture, inventory, file_modes, write_files
 from .case_evaluation import scoring_inputs, relation_states, delta, VERDICTS
@@ -139,6 +140,7 @@ class Development(Evolution):
         archive.atomic_json(self.root/'M-old.json',frozen)
         archive.atomic_json(self.root/'prior-experiences.json',prior_records)
         archive.atomic_json(self.root/'prior-reviews.json',prior_reviews)
+        archive.atomic_json(self.root/'prior-failures.json',failure_learning.prior(config['store'], cases['source']['visible']))
         slots = [dict(name=f'ANALYSIS-{k}',role='analysis',case=k,requests=12) for k,c in cases.items() if c['analysis_needed']]
         slots += [dict(name=f'START-{n}',role='repair',case='source',requests=24) for n in (1,2)]
         slots += [dict(name='EXTRACT',role='reflect',case='source',requests=12)]
@@ -153,6 +155,7 @@ class Development(Evolution):
             branch_caps=dict(success=290,failure=300,success_no_update=50,failure_no_update=60),
             analysis_cap=12*sum(c['analysis_needed'] for c in cases.values()),
             source_relationship=config['source_relationship'],no_retry=True,concurrency=1,
+            failure_learning=True,
             parent_selection=parent_selection,
             critical_policy='Preregistered visible obligations; losses block and unknowns remain pending',
             qualification_policy='cross-source-development-screen-v2; old active metadata is not qualification')
@@ -216,7 +219,13 @@ class Development(Evolution):
         path=Path(protocol['input_path']).parent/'common-prompt.md'
         if not path.exists():path.write_text(super().common(protocol),encoding='utf-8')
         base=path.read_text(encoding='utf-8')
-        return base if body is None else base+'\n\nFrozen experience guidance; verify applicability:\n'+body
+        return base if body is None else base+'\n\nFrozen experience guidance; verify applicability:\n'+body+(
+            '\n\nBefore editing, map each applicable guidance rule to the current source. '
+            'Before finishing, check the actual patch against those rules, especially synchronous '
+            'callbacks during startup, cancellation, and reentry. A rule in this prompt is not '
+            'evidence that the patch implements it. Explain concrete implementation or inapplicability '
+            'in the final maintenance report; do not claim unexecuted checks passed.'
+            if protocol.get('failure_learning') else '')
 
     def _session(self, backend, p, name, role, key, prompt, schema=None, cap=None):
         state = self.state()
@@ -253,6 +262,10 @@ class Development(Evolution):
                 if original.exists():job['original_delta']=delta(load(original),outcome)
                 archive.atomic_json(directory/'score.json',outcome)
             job['status']='valid';job['seconds']=time.monotonic()-started;self.save(state)
+            if role=='repair' and name.startswith('START-') and p.get('failure_learning'):
+                old=[e['bundle'] for e in load(self.root/'M-old.json')['entries']]
+                failure_learning.capture(self.root,p,[j for j in state['jobs'] if j['slot'].startswith('START-')],
+                                         load(self.root/'starting-route.json'),old)
             return result
         except BaseException as error:
             job.update(status='invalid',error=repr(error),seconds=time.monotonic()-started)
@@ -351,6 +364,11 @@ class Development(Evolution):
         from . import reminders
         context['fixed_manual_material']=dict(taxonomy=taxonomy.definition(),reminders=reminders.definition(),
             qualification='Human-authored fixed checks are not learned experience')
+        failure_context = None
+        if p.get('failure_learning'):
+            failure_context = failure_learning.capture(self.root,p,starting,load(self.root/'starting-route.json'),old)
+            context['failure_observations'] = failure_context
+            context['previous_failed_attempts'] = load(self.root/'prior-failures.json')
         delta_protocol=p.get('reflection_delta_protocol',updates.DELTA_V1)
         increment_instructions=''
         if delta_protocol==updates.DELTA_V2:
@@ -372,7 +390,7 @@ class Development(Evolution):
                     target=evidence/'starting'/job['slot']/name;target.parent.mkdir(parents=True,exist_ok=True)
                     shutil.copyfile(path,target);retained.append(str(target.relative_to(evidence)))
         archive.atomic_json(evidence/'index.json',dict(source='Only this source task and its two starting repairs',files=retained))
-        prompt=(increment_instructions+'Extract either no_update with a specific reason, or ONE evidence-backed incremental new/revised '
+        prompt=((failure_learning.INSTRUCTIONS if failure_context is not None else '')+increment_instructions+'Extract either no_update with a specific reason, or ONE evidence-backed incremental new/revised '
             'text experience in English. Success does not establish the cause of success; failure does not establish '
             'a cause from assertion names or agent claims. Check novelty against prior guidance. Do not relabel '
             'the fixed manual reminders as learned results. Add a genuinely supported mechanism check or '
@@ -389,18 +407,30 @@ class Development(Evolution):
             'organizer session.\n'+canonical(context))
         result=self._session(backend,p,'EXTRACT','reflect','source',prompt,
             updates.schema(p['cases']['source']['visible'],ledger,selectable,protocol=delta_protocol,
-                prior_experiences=context['prior_experiences']),cap=2 if state['branch']=='success' else 12)
+                prior_experiences=context['prior_experiences'],failure_context=failure_context),cap=2 if state['branch']=='success' else 12)
         raw=result['output'];archive.atomic_json(self.root/'raw-reflection.json',raw)
         composed=updates.compose(raw,p['cases']['source']['visible'],ledger,selectable,protocol=delta_protocol,
-                                 prior_experiences=context['prior_experiences'])
+                                 prior_experiences=context['prior_experiences'],failure_context=failure_context)
+        if failure_context is not None:
+            failure_learning.finish(self.root,p,raw)
+            state=self.state();state['followup_required']=bool(failure_context['failures']);self.save(state)
         if composed is None:
-            state=self.state();state.update(status='no_update',no_update_reason=raw['reason']);self.save(state);return
+            self._finish_no_update(raw);return
         archive.atomic_json(self.root/'composed-candidate.json',composed)
         (self.root/'candidate-experience.md').write_text(memory.render(composed),encoding='utf-8')
         review=dict(reviewer=None,approved=None,blocking_issues=[],novelty_reason='',
             rules=[dict(rule_id=r['id'],supported=None,reason='') for r in composed['rules']])
         if not getattr(self,'AUTOMATED_CHECKS',False):archive.atomic_json(self.root/'candidate-review-input.json',review)
         state=self.state();state['status']='candidate_prepared' if getattr(self,'AUTOMATED_CHECKS',False) else 'candidate_review';self.save(state)
+
+    def _finish_no_update(self, raw):
+        path=self.root/'failure-learning.json'
+        if path.exists() and 'failure_review' in raw:
+            failure_learning.finish(self.root,self.verify(),raw)
+        failure=load(path) if path.exists() else None
+        state=self.state();state.update(status='needs_followup' if failure and failure['failures'] else 'no_update',
+            no_update_reason=raw['reason'],followup_required=bool(failure and failure['failures']))
+        self.save(state)
 
     def review_candidate(self, request):
         if self.state()['status']!='candidate_review':raise EvidenceError('No candidate review is pending')
@@ -489,6 +519,8 @@ class Development(Evolution):
         critical=screening.critical_check(before+[load(self.root/'cases/source/original-score.json')],after,
             [v['relation'] for v in p['cases']['source']['lineage']['critical']])
         archive.atomic_json(self.root/'source-preservation.json',critical)
+        failure_learning.record_validation(Path(p.get('origin_root',self.root)),p,candidate['sha256'],after,critical,
+                                           prompts['source']['old']!=prompts['source']['new'])
         if critical['lost'] or critical['unknown']:
             state['status']='source_blocked' if critical['lost'] else 'pending_validation';self.save(state);return
         pending=[key for key in ('transfer-1','transfer-2') if not (self.root/'cases'/key/'approved-visible.json').exists()]
@@ -570,6 +602,8 @@ class Development(Evolution):
             known_seconds=sum(j['seconds'] for j in jobs if type(j.get('seconds')) in (int,float)),
             candidate_sha256=state.get('candidate_sha256'),screening=state.get('screening'),
             no_update_reason=state.get('no_update_reason'),error=state.get('error'),
+            followup_required=state.get('followup_required',False),
+            failure_learning=load(self.root/'failure-learning.json') if (self.root/'failure-learning.json').exists() else None,
             qualification='Development only; no final evaluation or generalization claim',
             financial_cost=None,engineering_agent_usage=None)
         summary['whole_pass_rate']=summary['whole_passes']/summary['valid_behavior_scores'] if summary['valid_behavior_scores'] else None
@@ -607,8 +641,8 @@ class Development(Evolution):
             summary.update(groups=groups,comparisons=comparisons)
         archive.atomic_json(self.root/'summary.json',summary)
         (self.root/'REPORT.md').write_text('# Bounded development v2\n\nNo unstarted or invalid slot is a behavioral failure. '
-            'Raw prompts, patches, scores, usage and critical/source evidence remain separate. Content acceptance and '
-            'development qualification are both required before explicit default activation. '
+            'Raw prompts, patches, scores, usage and critical/source evidence remain separate. Accepted records '
+            'are eligible for retrieval without effect-screening or version admission gates. '
             'An approved AI candidate is recorded before source validation. Content review remains available when '
             'effect screening is pending; candidate_handoff identifies its actual store and explicit shared-store submission.\n\n```json\n'+
             json.dumps(summary,ensure_ascii=False,indent=2)+'\n```\n',encoding='utf-8')

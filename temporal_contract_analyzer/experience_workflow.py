@@ -283,16 +283,19 @@ class Workflow(AutomatedChecks,Development):
                     archive.atomic_json(self.root/'raw-reflection.json',result['output'])
                     context=load(self.root/'reflection-input.json');parents={b['sha256']:b for b in load(self.root/'prior-experiences.json')}
                     composed=updates.compose(result['output'],p['cases']['source']['visible'],context['ledger'],parents,
-                        protocol=p.get('reflection_delta_protocol',updates.DELTA_V1),prior_experiences=context['prior_experiences'])
+                        protocol=p.get('reflection_delta_protocol',updates.DELTA_V1),prior_experiences=context['prior_experiences'],failure_context=context.get('failure_observations'))
                     if composed is not None:archive.atomic_json(self.root/'composed-candidate.json',composed)
-                    else:self._status('no_update',development_done=True,no_update_reason=result['output']['reason']);return
+                    else:
+                        self._finish_no_update(result['output']);self._status(self.state()['status'],development_done=True);return
                 else:self._extract(backend,p,old)
-            if self.state()['status']=='no_update':self._status('no_update',development_done=True);return
+            if self.state()['status'] in ('no_update','needs_followup'):
+                self._status(self.state()['status'],development_done=True);return
             if not (self.root/'composed-candidate.json').exists():
                 context=load(self.root/'reflection-input.json');parents={b['sha256']:b for b in load(self.root/'prior-experiences.json')}
                 composed=updates.compose(load(self.root/'raw-reflection.json'),p['cases']['source']['visible'],context['ledger'],parents,
-                    protocol=p.get('reflection_delta_protocol',updates.DELTA_V1),prior_experiences=context['prior_experiences'])
-                if composed is None:self._status('no_update',development_done=True);return
+                    protocol=p.get('reflection_delta_protocol',updates.DELTA_V1),prior_experiences=context['prior_experiences'],failure_context=context.get('failure_observations'))
+                if composed is None:
+                    self._finish_no_update(load(self.root/'raw-reflection.json'));self._status(self.state()['status'],development_done=True);return
                 archive.atomic_json(self.root/'composed-candidate.json',composed)
         else:
             # A legacy/unbound edited candidate can enter a fresh authorized v3 development batch.
@@ -382,7 +385,7 @@ class Workflow(AutomatedChecks,Development):
     def run(self,execute=False,backend=None):
         if not execute:raise EvidenceError('Execution requires explicit --execute; browsing/editing/review never dispatches models')
         p=self.verify();backend=backend or backend_for(p)
-        if self.state()['status'] in ('infrastructure_error','reflection_incomplete','ai_check_incomplete','budget_exhausted','cancelled','ai_contract_failed'):
+        if self.state()['status'] in ('needs_followup','infrastructure_error','reflection_incomplete','ai_check_incomplete','budget_exhausted','cancelled','ai_contract_failed'):
             return self.state()
         auth_path=self.root/'execution-authorization.json'
         if not auth_path.exists():archive.atomic_json(auth_path,dict(root=str(self.root),request_cap=p['global_request_cap'],cancelled=False,at=archive.now()))
@@ -401,7 +404,7 @@ class Workflow(AutomatedChecks,Development):
                         scope='Revalidate original calibration/runtime for the explicitly authorized continuation; reuse original scores.'))
                 if not self.state().get('development_done') and self.state()['status'] not in ('ai_contract_failed','ai_check_incomplete','infrastructure_error','budget_exhausted','cancelled'):
                     self._develop(backend,p)
-                if self.state().get('development_done') and self.state()['status']!='no_update':
+                if self.state().get('development_done') and self.state()['status'] not in ('no_update','needs_followup'):
                     self._checked_public_inputs(p)
                     versions=[]
                     for file in (Path(p['store'])/'workflow/versions').glob('*.json'):

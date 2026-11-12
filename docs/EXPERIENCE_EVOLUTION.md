@@ -72,6 +72,35 @@ to a fresh batch; it never transfers acceptance or old effect results to a child
 
 ## Reflection and human review
 
+New batches also retain a failure-learning record. Each valid source repair is
+recorded before reflection, so a later interrupted repair or invalid reflection
+cannot erase an earlier observed failure. Reflection must cover every failed or
+unknown behavior once, cite its execution observation, compare the actual patch
+with the guidance that was actually delivered, and propose a concrete next check.
+Diagnoses are `retrieval_gap`, `execution_gap`, `rule_gap`, or `unknown`; non-unknown
+attributions also need task/source evidence. These are model hypotheses, not
+verified causal findings. An execution-gap claim must name a delivered rule.
+
+`no_update` means no proposed rule change. If failures remain, the run instead
+ends as `needs_followup`, and `work --watch` stops without another model call.
+An accepted candidate is likewise not proof that the failures are resolved.
+The summary exposes `followup_required` and the failure record. All-PASS runs can
+still finish with ordinary `no_update` and an empty failure review.
+
+Records live at `failure-learning.json` in the run and
+`STORE/failure-learning/BATCH_ID.json`. New preparation snapshots up to 20 prior
+failure records for the same original task/source into `prior-failures.json`;
+the next reflection receives them and their proposed checks. They never become
+repair instructions or approved experience automatically. Repair prompts instead
+ask the agent to map the delivered approved rules to the patch and check actual
+implementation before finishing. A new authorized execution is still needed to
+test a proposed remedy; this mechanism does not certify improvement or schedule
+automatic paid retries. Existing frozen batches keep their original schema.
+When the existing authorized source-validation stage actually executes, its two
+scores and critical-preservation check are attached to the originating failure
+record under the candidate identity. `not_reproduced` is an observation, not proof
+that the experience caused improvement; prompt equivalence is recorded explicitly.
+
 Both success and failure permit one reflection; two successes cap reflection at2
 requests, otherwise12. Valid `no_update` is normal. Invalid, incomplete or
 infrastructure-failed reflection is not no_update. The model compares relevant

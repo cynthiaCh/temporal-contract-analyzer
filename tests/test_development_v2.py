@@ -62,6 +62,12 @@ class Backend:
                 value['increment_review']=dict(compared_versions=versions,comparisons=[dict(
                     change_index=None if self.no_update else 0,matches=[],uncovered_increment='' if self.no_update else 'Synthetic new verification requirement.',
                     classification='insufficient_evidence' if self.no_update else 'independent_new',reason='Synthetic comparison, not actual novelty evidence.')])
+            if 'failure_review' in schema['properties']:
+                ids=schema['properties']['failure_review']['items']['properties']['failure_id'].get('enum',[])
+                value['failure_review']=[dict(failure_id=key,diagnosis='unknown',
+                    evidence=['O-'+key.split(':',1)[0]],guidance_rule_ids=[],
+                    explanation='Synthetic failure observation; cause is not established.',
+                    next_check='Reproduce the ordering and retirement observations after a reviewed change.') for key in ids]
             if self.invalid:value['basis']=['NONEXISTENT']
             return dict(completed=True,infrastructure_valid=True,usage=usage,output=value,patch='')
         final=directory/'final';final.mkdir()
@@ -131,7 +137,7 @@ class DevelopmentTests(unittest.TestCase):
         for success,cap in [(True,2),(False,12)]:
             loop=self.prepare('success' if success else 'failure');backend=Backend(no_update=True,success=success)
             result=loop.run(backend=backend)
-            self.assertEqual(result['status'],'no_update',result.get('error'))
+            self.assertEqual(result['status'],'no_update' if success else 'needs_followup',result.get('error'))
             self.assertEqual(len(backend.calls),3)
             self.assertEqual(backend.calls[-1]['cap'],cap)
             self.assertEqual(memory.records(self.store),[])
@@ -253,7 +259,7 @@ class DevelopmentTests(unittest.TestCase):
             with redirect_stdout(StringIO()),redirect_stderr(StringIO()):
                 self.assertEqual(main(['experience-evolution','review-analysis',str(path),'--root',str(loop.root)]),0)
         self.assertEqual(loop.state()['status'],'prepared')
-        self.assertEqual(loop.run(backend=b)['status'],'no_update')
+        self.assertEqual(loop.run(backend=b)['status'],'needs_followup')
         self.assertEqual(sum(c['role']=='analysis' for c in b.calls),1)
 
     def test_transfer_analysis_is_deferred_until_source_checks_pass(self):
@@ -319,7 +325,7 @@ class DevelopmentTests(unittest.TestCase):
         cfg=self.config();cfg.update(backend=CONFIG,node='/runtime/node16/bin/node')
         loop=self.prepare(config=cfg);agent=Backend(no_update=True)
         with patch('temporal_contract_analyzer.docker_backend.DockerBackend',return_value=agent) as factory:
-            self.assertEqual(loop.run(execute=True)['status'],'no_update')
+            self.assertEqual(loop.run(execute=True)['status'],'needs_followup')
         self.assertEqual(factory.call_count,1)
         self.assertIn('/runtime/node16/bin/node',agent.calls[0]['prompt'])
         other=self.prepare('blocked');broken=Backend()

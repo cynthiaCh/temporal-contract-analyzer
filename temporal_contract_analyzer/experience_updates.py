@@ -10,7 +10,7 @@ DELTA_V1 = 'experience-delta-v1'
 DELTA_V2 = 'experience-delta-v2'
 
 
-def schema(visible, ledger, parents, *, protocol=DELTA_V1, prior_experiences=None):
+def schema(visible, ledger, parents, *, protocol=DELTA_V1, prior_experiences=None, failure_context=None):
     if protocol not in (DELTA_V1, DELTA_V2):raise EvidenceError('Unknown reflection delta protocol')
     def array(values, nullable=False):
         values=list(values)
@@ -51,17 +51,24 @@ def schema(visible, ledger, parents, *, protocol=DELTA_V1, prior_experiences=Non
     if protocol==DELTA_V2:
         fields['increment_review']=comparison.schema(parents if prior_experiences is None else prior_experiences,
                                                      'change_index', [])
+    if failure_context is not None:
+        from .failure_learning import review_schema
+        fields['failure_review'] = review_schema(failure_context, ledger)
     return dict(type='object', properties=fields, required=list(fields), additionalProperties=False)
 
 
-def compose(value, visible, ledger, parents, *, protocol=DELTA_V1, prior_experiences=None):
+def compose(value, visible, ledger, parents, *, protocol=DELTA_V1, prior_experiences=None, failure_context=None):
     """Return one composed rule list and its exact origin pointers, or None."""
     try:
-        validate(value, schema(visible, ledger, parents,protocol=protocol,prior_experiences=prior_experiences))
+        validate(value, schema(visible, ledger, parents,protocol=protocol,prior_experiences=prior_experiences,
+                               failure_context=failure_context))
     except (ValueError, KeyError, TypeError) as error:
         raise EvidenceError('Invalid reflection output: '+str(error)) from error
     if not value['basis']:
         raise EvidenceError('Extraction needs traceable basis IDs')
+    if failure_context is not None:
+        from .failure_learning import check
+        check(value['failure_review'], failure_context, ledger)
     if protocol==DELTA_V2:
         priors=parents if prior_experiences is None else prior_experiences
         rows=comparison.check(value['increment_review'],priors,'change_index',
