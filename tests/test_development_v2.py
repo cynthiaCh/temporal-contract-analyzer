@@ -57,6 +57,11 @@ class Backend:
                 changes=[] if self.no_update else [dict(operation='add',rule_id=None,category='event_relation',
                     body='Capture accepted entry data before callbacks, retain accepted results, and verify reentry without retargeting.',
                     support=['TASK'],causal_status='documented_relation')],unresolved=['Synthetic evidence only.'])
+            if 'increment_review' in schema['properties']:
+                versions=schema['properties']['increment_review']['properties']['compared_versions']['items'].get('enum',[])
+                value['increment_review']=dict(compared_versions=versions,comparisons=[dict(
+                    change_index=None if self.no_update else 0,matches=[],uncovered_increment='' if self.no_update else 'Synthetic new verification requirement.',
+                    classification='insufficient_evidence' if self.no_update else 'independent_new',reason='Synthetic comparison, not actual novelty evidence.')])
             if self.invalid:value['basis']=['NONEXISTENT']
             return dict(completed=True,infrastructure_valid=True,usage=usage,output=value,patch='')
         final=directory/'final';final.mkdir()

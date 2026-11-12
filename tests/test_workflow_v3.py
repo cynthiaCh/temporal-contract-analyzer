@@ -49,6 +49,11 @@ class FakeBackend(fixtures.Backend):
                 conflict_free=True,boundaries_supported=True,no_unfounded_causality=True,unknowns=['Synthetic limits.'],
                 blocking_issues=['Synthetic unsupported policy.'] if self.candidate_block else [],
                 rules=[dict(rule_id=key,supported=not self.candidate_block,support=['TASK'],reason='Synthetic original-task support.') for key in ids])
+            if 'increment_review' in schema['properties']:
+                versions=schema['properties']['increment_review']['properties']['compared_versions']['items'].get('enum',[])
+                out['increment_review']=dict(compared_versions=versions,comparisons=[dict(rule_id=key,matches=[],
+                    uncovered_increment='Synthetic supported increment.',classification='independent_new',
+                    reason='Synthetic semantic comparison.') for key in ids])
         return dict(completed=True,infrastructure_valid=True,output=out,usage=dict(requests_started=1,
             usage_unknown_requests=0,total_usage=dict(total_tokens=10,input_tokens=8,output_tokens=2)))
 
@@ -98,6 +103,28 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(approval.decisions(self.store),[])
         self.assertEqual(life.metadata(self.store,state['candidate_sha256'])['ai_status'],'failed')
         with self.assertRaises(EvidenceError):self.accept(state['candidate_sha256'])
+
+    def test_duplicate_comparison_blocks_new_proposal_and_retains_original_action(self):
+        import test_experience_memory as memory_fixtures
+        fixture=memory_fixtures.MemoryTests('test_storage_preserves_single_source_body_and_evidence')
+        fixture.setUp();self.addCleanup(fixture.doCleanups)
+        prior=memory.add(self.store,fixture.payload,[fixture.source])
+        class DuplicateBackend(FakeBackend):
+            def execute(inner,p,role,prompt,schema,directory):
+                result=super().execute(p,role,prompt,schema,directory)
+                if role=='candidate_check':
+                    for row in result['output']['increment_review']['comparisons']:
+                        row.update(classification='duplicate',uncovered_increment='',matches=[dict(
+                            experience_sha256=prior['sha256'],rule_id='R01',covered='Synthetic prior coverage.')])
+                return result
+        loop=self.prepare();backend=DuplicateBackend();state=loop.run(execute=True,backend=backend)
+        self.assertEqual(state['status'],'ai_candidate_failed',state.get('error'))
+        self.assertEqual(json.loads((loop.root/'raw-reflection.json').read_text())['action'],'new')
+        meta=life.metadata(self.store,state['candidate_sha256'])
+        self.assertEqual(meta['ai_result']['increment_review']['comparisons'][0]['classification'],'duplicate')
+        self.assertEqual(meta['validation_status'],'not_started')
+        self.assertEqual(approval.decisions(self.store),[])
+        self.assertEqual(sum(c['role']=='candidate_check' for c in backend.calls),1)
 
     def test_accept_authorize_validate_and_automatically_enable(self):
         loop=self.prepare();backend=FakeBackend();state=loop.run(execute=True,backend=backend);code=state['candidate_sha256']

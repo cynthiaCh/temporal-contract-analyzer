@@ -145,6 +145,43 @@ test names, human edits or agent claims alone cannot justify policy. No transfer
 feedback/reference patch enters it. A failed, invalid or incomplete check is not
 no_update. AI checking never creates named human acceptance.
 
+New preparations freeze `reflection_delta_protocol=experience-delta-v2` and
+`candidate_check_protocol=candidate-evidence-check-v2`. These extend the existing
+reflection/check response, not the call count or budget. Reflection must compare
+each proposed change with relevant old rules, record all considered versions,
+already-covered meaning, a concrete uncovered increment and its classification.
+A supported local correction uses `revise` with an exact parent; rewording,
+combining existing rules or restating an implication is not grounds for `new`.
+`no_update` is normal for duplication or insufficient evidence. It retains its
+comparison reason and unknowns; incomplete reflection is never no_update.
+
+Candidate checking independently covers every full-candidate rule. Its
+`increment_review` contains `compared_versions` and ordered `comparisons` with
+`rule_id`, `matches` (exact `experience_sha256`, old `rule_id`, `covered`),
+`uncovered_increment`, `classification` and `reason`. Classifications are
+`duplicate`, `local_revision`, `independent_new`, `unchanged` or
+`insufficient_evidence`. Relevant rules must be compared jointly: separate rules
+on retirement-before-cleanup, retained delayed audits and startup-before-return
+testing may already entail a proposed merged rule. Python validates reference
+pairs, complete target/version coverage and classification consistency. It does
+not calculate string similarity or decide semantic novelty. AI and human content
+review still assess whether the explanation is actually supported.
+
+A positive novelty boolean cannot override an all-duplicate/unchanged or
+insufficient-evidence comparison. A parentless proposal requiring local revision
+is blocked without reparenting. Original actions and candidates remain immutable:
+a duplicate historical `new` is recorded as a blocked proposal, never rewritten
+as retrospective `no_update`. No existing real candidate was reviewed by this
+implementation change; offline synthetic checks do not supply that review.
+
+Historical reflection schemas/results retain v1 interpretation. An unstarted
+candidate check in an older authorized workflow uses v2, pinned in a separate
+`candidate-check-protocol.json` before dispatch; the old frozen protocol and raw
+reflection stay unchanged. Started/completed checks retain their original policy
+and are never implicitly rerun. The exact schema, prompt, result and protocol
+receipt are archived with the existing single check slot. Legacy v1 receipts
+remain readable but are not represented as satisfying v2 comparison requirements.
+
 Reflection changes use operation-specific structured schemas: add requires
 rule_id=null and a nonempty body; Python assigns its canonical rule number.
 Replace/remove require a retained parent rule ID, and removal carries no new

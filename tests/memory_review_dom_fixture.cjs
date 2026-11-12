@@ -87,9 +87,24 @@ async function main(){
  assert.equal(posted.rules.length,7);
  assert.equal(posted.activate,undefined,'Saving wording does not request activation');
  context.DATA.workflow={ai_status:'pending',status:'ai_check_pending',validation_status:'not_started'};
+ context.DATA.display={title:'SYNTHETIC readable startup title',state:'Candidate proposal · AI check pending',source_batch:'dev-synthetic',parent_description:'None (parentless proposal; novelty not implied)'};
  vm.runInContext('current=DATA.bundle;render(DATA)',context);
  assert.equal(all(roots.detail,tag('select')).some(s=>s.children.some(o=>o.value.startsWith('accept'))),false,'AI-pending workflow cannot offer acceptance');
  assert.ok(all(roots.detail,tag('p')).some(p=>p.textContent.includes('content acceptance waits')));
+ assert.equal(all(roots.detail,tag('h2'))[0].textContent,'SYNTHETIC readable startup title');
+ assert.ok(all(roots.detail,tag('p')).some(p=>p.textContent==='Candidate proposal · AI check pending'));
+ assert.ok(all(roots.detail,tag('p')).some(p=>p.textContent==='Experience identity: '+input.data.bundle.id));
+ assert.ok(all(roots.detail,tag('p')).some(p=>p.textContent==='Source batch: dev-synthetic'));
+ assert.ok(!all(roots.detail,tag('p')).some(p=>p.textContent==='Awaiting review'));
+ vm.runInContext('records=[{...DATA.bundle,latest:true,reviewed:false,display:DATA.display}];renderLibrary()',context);
+ assert.ok(all(roots.library,tag('strong')).some(p=>p.textContent==='SYNTHETIC readable startup title'));
+ assert.ok(all(roots.library,tag('span')).some(p=>p.textContent==='Candidate proposal · AI check pending'));
+ assert.ok(all(roots.library,tag('span')).some(p=>p.textContent.includes('Latest record')));
+ assert.ok(!all(roots.library,tag('span')).some(p=>p.textContent.includes('Latest version')));
+ context.DATA.workflow.ai_result={increment_review:{comparisons:[{rule_id:'R01',classification:'duplicate',matches:[{experience_sha256:'a'.repeat(64),rule_id:'R03',covered:'Synthetic existing admission duty.'}],uncovered_increment:'',reason:'Synthetic jointly covered rule.'}]}};
+ vm.runInContext('render(DATA)',context);
+ assert.ok(all(roots.detail,tag('h4')).some(p=>p.textContent==='R01 · duplicate'));
+ assert.ok(all(roots.detail,tag('p')).some(p=>p.textContent.includes('/ R03: Synthetic existing admission duty.')));
  console.log('incremental DOM passed: one explicit rule, six parent references, full-review toggle, exact base sent');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

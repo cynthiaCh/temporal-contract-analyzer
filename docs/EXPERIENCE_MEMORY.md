@@ -18,8 +18,8 @@ experience**. They are separate corpora and APIs.
 
 On macOS, double-click [launch-experience-review.command](../launch-experience-review.command)
 in the repository root. It opens the local review queue in your browser and
-works regardless of the terminal's starting directory. The queue shows pending
-and reviewed counts; use the Pending filter to find versions that need review.
+works regardless of the terminal's starting directory. The queue shows unreviewed
+and reviewed counts; inspect each record’s AI state before human content review.
 Keep its terminal open while reviewing, then press Ctrl+C to stop the service.
 Open the store actually used by the worker. Legacy/unbound candidates from
 isolated stores may be submitted as described below; a v3 execution-bound record
@@ -41,8 +41,9 @@ exact record digest after `review` to open that version. The page lists immutabl
 records, shows rules and prerequisites, and reads only the selected record's
 retained `sources/` evidence. It does not depend on historical research paths.
 
-The list groups all versions into pending and reviewed entries, with counts and
-filters for all/pending/reviewed. A version is reviewed only when an explicit
+The list groups records into unreviewed and reviewed entries, with counts and
+filters for all/unreviewed/reviewed. Unreviewed includes AI-pending or blocked proposals;
+it does not mean eligible for human acceptance. A version is reviewed only when an explicit
 operator decision exists for that exact digest; historical AI admission does not
 count, and a new child does not become reviewed automatically. An explicit
 incremental decision may reference unchanged accepted parent findings. Reviewed entries
@@ -66,6 +67,25 @@ a model. The result displays the decision directory and activation status.
 CLI commands with `--output` write to the named new file and now print its saved
 path to stderr. They do not submit a review. A generated review template remains
 unapproved until the operator completes and explicitly submits it.
+
+## Readable titles and honest candidate states
+
+`STORE/display.json` stores optional display-only titles using one mechanism for
+all identities. Its format is `{"schema_version":"experience-display-v1",
+"titles":{"EXPERIENCE_ID":"Readable title"}}`. These titles never enter repair
+prompts or routing. They change neither immutable records nor their SHA, lineage,
+AI findings, human decisions or active pointers. An unregistered identity falls
+back to a labeled excerpt of its first rule; no model call is made to name it.
+The browser has no hard-coded list of known experience IDs.
+
+List and detail views separate title, stable experience identity, version/digest,
+source batch (when recorded) and parent. A parentless model proposal does not
+establish novelty. “Latest record” describes lineage recency, not qualification.
+AI-pending, running, incomplete and failed states are explicit. Only AI-passed
+unreviewed workflow records say “Awaiting human content review”; old records with
+no AI receipt say “AI check not recorded”. Existing human decisions remain visible.
+Rule-by-rule novelty comparisons appear beside the complete AI result, including
+old-version/rule references, covered obligations and specific uncovered increments.
 
 ## Incremental content review
 

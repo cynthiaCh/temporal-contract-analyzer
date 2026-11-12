@@ -12,6 +12,36 @@ from .core import EvidenceError
 from .http_common import LocalHandler, WEB
 
 
+def presentation(store, bundle, workflow, decision):
+    """Display-only metadata. Never edits a sealed record or implies approval."""
+    from .experience_lifecycle import load
+    catalog=load(Path(store)/'display.json',{})
+    if catalog and (catalog.get('schema_version')!='experience-display-v1' or
+                    not isinstance(catalog.get('titles'),dict) or
+                    any(not memory.text(v) for v in catalog['titles'].values())):
+        raise EvidenceError('Invalid experience display metadata')
+    title=catalog.get('titles',{}).get(bundle['id'])
+    if title is None:
+        title=bundle['rules'][0]['body'].split('. ',1)[0]
+        if len(title)>100:title=title[:97].rsplit(' ',1)[0]+'…'
+    ai=(workflow or {}).get('ai_status','not_recorded')
+    state={'pending':'Candidate proposal · AI check pending',
+           'running':'Candidate proposal · AI check running',
+           'incomplete':'Candidate proposal · AI check incomplete',
+           'failed':'Candidate proposal · AI check failed',
+           'passed':'Awaiting human content review',
+           'not_recorded':'AI check not recorded'}[ai]
+    if (workflow or {}).get('status')=='ai_candidate_checking':state='Candidate proposal · AI check running'
+    if decision:state={'accept':'Content accepted','reject':'Rejected','revise':'Revision requested'}[decision['decision']]
+    if (workflow or {}).get('status')=='enabled':state='Enabled'
+    origin=(workflow or {}).get('origin_root')
+    source_batch=load(Path(origin)/'protocol.json',{}).get('batch_id') if origin else None
+    return dict(title=title,title_source='display.json' if bundle['id'] in catalog.get('titles',{}) else 'derived_rule_excerpt',
+        state=state,ai_status=ai,source_batch=source_batch,
+        parent_sha256=bundle['parent_sha256'],
+        parent_description=bundle['parent_sha256'] or 'None (parentless proposal; novelty not implied)')
+
+
 def record(store, code):
     if not isinstance(code, str) or not re.fullmatch(r'[0-9a-f]{64}', code):
         raise EvidenceError('Invalid experience digest')
@@ -62,11 +92,13 @@ class ReviewHandler(LocalHandler):
             active = {r['bundle']['sha256'] for r in approval.active(self.server.store)}
             from .experience_screening import qualified
             tips = {r['sha256'] for r in memory.tips(bundles)}
+            from .experience_lifecycle import metadata
             self.send(dict(review_api_version='experience-review-v3',store=str(self.server.store), records=[dict(
                 id=b['id'], version=b['version'], sha256=b['sha256'], labels=b['labels'],
                 status=b['review']['status'], active=b['sha256'] in active,
                 default_eligible=qualified(self.server.store, b['sha256']),
                 latest=b['sha256'] in tips, rules=len(b['rules']),
+                display=presentation(self.server.store,b,metadata(self.server.store,b['sha256']),decisions.get(b['sha256'])),
                 reviewed=b['sha256'] in decisions,
                 last_decision=None if b['sha256'] not in decisions else {
                     key: decisions[b['sha256']][key] for key in ('decision', 'reviewer', 'at', 'sequence')}
@@ -76,6 +108,8 @@ class ReviewHandler(LocalHandler):
             if len(parts) == 3:
                 from .experience_lifecycle import view
                 self.send(dict(bundle=bundle, predicates=taxonomy.definition()['mechanism_predicates'],
+                    display=presentation(self.server.store,bundle,view(self.server.store,bundle['sha256']),
+                        next((d for d in reversed(approval.decisions(self.server.store)) if d['candidate_sha256']==bundle['sha256']),None)),
                     workflow=view(self.server.store,bundle['sha256']),
                     activation=approval.activation_options(self.server.store, bundle['sha256']),
                     review_plan=approval.review_plan(self.server.store, bundle['sha256']),

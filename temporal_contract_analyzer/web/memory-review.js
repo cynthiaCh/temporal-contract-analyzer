@@ -1,6 +1,5 @@
 'use strict';
 const $ = selector => document.querySelector(selector);
-const names = {'subscription-retirement':'Subscription Retirement and Deferred Auditing','paused-shared-work':'Shared Work and Cancellation Recovery','deferred-boundary-binding':'Deferred Editing and Boundary Settlement'};
 const categories = {applicability:'Applicability',event_relation:'Event relations',preservation:'Preservation',exclusion:'Exclusions',verification:'Verification'};
 // Display translations only; the versioned taxonomy and stored evidence remain unchanged.
 const predicateDescriptions = {
@@ -47,15 +46,15 @@ async function library(){
  const data=await api('/api/library');if(data.review_api_version!=='experience-review-v3')throw Error('This review server is running older Python code. Restart the review service before reviewing new workflow candidates.');$('#store').textContent=data.store;records=data.records.sort((a,b)=>Number(b.latest)-Number(a.latest)||a.id.localeCompare(b.id));renderLibrary();
 }
 function renderLibrary(){
- const list=$('#library');list.replaceChildren();const pending=records.filter(r=>!r.reviewed).length;$('#counts').textContent='Pending '+pending+' · Reviewed '+(records.length-pending)+' · Total '+records.length;
+ const list=$('#library');list.replaceChildren();const pending=records.filter(r=>!r.reviewed).length;$('#counts').textContent='Unreviewed '+pending+' · Reviewed '+(records.length-pending)+' · Total '+records.length;
  if(!records.length){list.append(el('p','This store has no experience versions.','muted'));return;}
  const filter=$('#review-filter').value;
  for(const reviewed of [false,true]){
   if(filter==='pending'&&reviewed||filter==='reviewed'&&!reviewed)continue;
-  const group=records.filter(r=>r.reviewed===reviewed);if(!group.length)continue;list.append(el('h3',(reviewed?'Reviewed':'Pending')+' ('+group.length+')','group-heading'));
-  for(const item of group){const b=button('',()=>openRecord(item.sha256));b.className='version'+(item.sha256===selected?' selected':'');const state=reviewed?'✓ Reviewed · '+decisionText(item.last_decision.decision):'Awaiting review';b.append(el('strong',names[item.id]||item.id),el('span',state,'review-state '+(reviewed?'reviewed':'pending')),el('span',item.labels.join(' / ')+' · '+(item.latest?'Latest version':'Historical version')+(item.active?(item.default_eligible?' · Default active':' · Historical selection (not default)'):''),'meta'),el('small',item.version));if(reviewed)b.append(el('small',item.last_decision.reviewer+' · '+reviewedAt(item.last_decision.at)));b.dataset.sha=item.sha256;b.dataset.reviewed=String(reviewed);list.append(b);}
+  const group=records.filter(r=>r.reviewed===reviewed);if(!group.length)continue;list.append(el('h3',(reviewed?'Reviewed records':'Unreviewed records')+' ('+group.length+')','group-heading'));
+  for(const item of group){const b=button('',()=>openRecord(item.sha256));b.className='version'+(item.sha256===selected?' selected':'');const state=item.display?.state||(reviewed?'Content '+decisionText(item.last_decision.decision):'AI check not recorded');b.append(el('strong',item.display?.title||'Experience record'),el('span',state,'review-state '+(reviewed?'reviewed':'pending')),el('span',item.labels.join(' / ')+' · '+(item.latest?'Latest record':'Historical record')+(item.active?(item.default_eligible?' · Default active':' · Historical selection (not default)'):''),'meta'),el('small',item.version));if(reviewed)b.append(el('small',item.last_decision.reviewer+' · '+reviewedAt(item.last_decision.at)));b.dataset.sha=item.sha256;b.dataset.reviewed=String(reviewed);list.append(b);}
  }
- if(!list.childElementCount)list.append(el('p',filter==='pending'?'No versions are awaiting review.':'No versions have been reviewed yet.','muted'));
+ if(!list.childElementCount)list.append(el('p',filter==='pending'?'No unreviewed records.':'No versions have been reviewed yet.','muted'));
 }
 async function openRecord(code){
  const data=await api('/api/records/'+code);current=data.bundle;selected=code;history.replaceState(null,'','/?record='+code);render(data);for(const b of document.querySelectorAll('.version'))b.classList.toggle('selected',b.dataset.sha===code);message('');
@@ -111,7 +110,7 @@ function renderManualEditor(target,data,draft={}){
 function renderWorkflow(target,data){
  const w=data.workflow;if(!w)return;
  const last=data.decisions[data.decisions.length-1];const panel=el('div',undefined,'panel workflow-status');
- panel.append(el('h3','Exact-version workflow'),el('p','AI evidence check: '+w.ai_status),el('p','Human content: '+(last?decisionText(last.decision):'Awaiting review')),el('p','Effect validation: '+w.validation_status),el('p','Workflow state: '+w.status));
+ panel.append(el('h3','Exact-version workflow'),el('p','AI evidence check: '+w.ai_status),el('p','Human content: '+(last?decisionText(last.decision):(w.ai_status==='passed'?'Awaiting human content review':'Not yet eligible for content acceptance'))),el('p','Effect validation: '+w.validation_status),el('p','Workflow state: '+w.status));
  const authorized=last?.enable_authorization?.authorized&&w.authorization_withdrawal?.decision_sha256!==last.sha256;
  panel.append(el('p','Enable after validation: '+(authorized?'Authorized by '+last.reviewer:'Not authorized / withdrawn')));
  if(w.enable_blocker)panel.append(el('p',w.enable_blocker,'notice'));
@@ -119,18 +118,19 @@ function renderWorkflow(target,data){
  if(w.handoff_source)panel.append(el('p','Recovered from the original reflection without changing its rule text: '+w.handoff_source,'meta'));
  if(w.origin_root)panel.append(el('p','Execution needs an explicitly authorized worker. Opening or submitting this page never launches models.','muted'),el('pre',w.worker_command||'python3 -B -m temporal_contract_analyzer experience-evolution work --root '+w.origin_root+' --execute --watch'));
  else panel.append(el('p','No authorized v3 origin is attached. Prepare a new v3 batch with candidate_sha256 to check/validate this proposal.','notice'));
+ if(w.ai_result?.increment_review){const comparisons=el('div',undefined,'increment-comparisons');comparisons.append(el('h4','Rule-by-rule increment comparison'));for(const row of w.ai_result.increment_review.comparisons){const box=el('article');box.append(el('h4',row.rule_id+' · '+row.classification));for(const match of row.matches)box.append(el('p','Prior '+match.experience_sha256+' / '+match.rule_id+': '+match.covered));box.append(el('p','Uncovered increment: '+(row.uncovered_increment||'None stated')),el('p',row.reason));comparisons.append(box);}panel.append(comparisons);}
  if(w.ai_result){const detail=el('details');detail.append(el('summary','AI check: evidence, limits and blockers'),el('pre',JSON.stringify(w.ai_result,null,2)));panel.append(detail);}
  if(w.edit)panel.append(el('p','Edited by '+w.edit.actor+': '+w.edit.reason,'meta'));
  if(authorized){const actor=field(panel,'Operator withdrawing enable authorization',el('input'));const reason=field(panel,'Withdrawal reason (optional)',el('textarea'));panel.append(button('Withdraw automatic enable authorization',async()=>{if(!actor.value.trim())throw Error('Enter the actual operator name.');await api('/api/records/'+data.bundle.sha256+'/revoke-enable',{actor:actor.value.trim(),reason:reason.value.trim()});await openRecord(data.bundle.sha256);message('Enable authorization withdrawn. Content acceptance is retained.');}));}
  target.append(panel);
 }
 function render(data,rereview=false,fullReview=false,manualRules=new Set(),draft={}){
- const b=data.bundle;const target=$('#detail');target.replaceChildren();const intro=el('div',undefined,'panel');intro.append(el('h2',names[b.id]||b.id),el('p',b.version,'meta'),el('code',b.sha256),el('p',b.labels.join(' / '),'meta'),el('p','Review the rules, labels, applicability and evidence for this exact version. Acceptance permits research use; repair benefit requires evaluation.','notice'));target.append(intro);
+ const b=data.bundle;const target=$('#detail');target.replaceChildren();const intro=el('div',undefined,'panel');intro.append(el('h2',data.display?.title||'Experience record'),el('p','Experience identity: '+b.id,'meta'),el('p','Version: '+b.version,'meta'),el('p','Version digest: '+b.sha256.slice(0,8)+'…','meta'),el('p','Source batch: '+(data.display?.source_batch||'Not recorded'),'meta'),el('p','Parent: '+(data.display?.parent_description||b.parent_sha256||'None'),'meta'),el('code',b.sha256),el('p',b.labels.join(' / '),'meta'),el('p','Review the rules, labels, applicability and evidence for this exact version. Acceptance permits research use; repair benefit requires evaluation.','notice'));target.append(intro);
  renderActivation(target,data);
  renderWorkflow(target,data);
  const captureManual=renderManualEditor(target,data,draft.manual);
  const last=data.decisions[data.decisions.length-1];const readonly=Boolean(last)&&!rereview;
- intro.append(el('p',last?'✓ Reviewed · '+decisionText(last.decision)+' · '+last.reviewer+' · '+reviewedAt(last.at):'Awaiting review','review-state '+(last?'reviewed':'pending')));
+ intro.append(el('p',last?'✓ Reviewed · '+decisionText(last.decision)+' · '+last.reviewer+' · '+reviewedAt(last.at):(data.display?.state||'AI check not recorded'),'review-state '+(last?'reviewed':'pending')));
  const meta=el('div',undefined,'metadata');for(const [key,title] of [['requires','Required mechanism premises'],['excludes','Exclusions that must be contradicted']]){const box=el('div');box.append(el('h3',title));const ul=el('ul');for(const v of b[key])ul.append(el('li',predicateDescriptions[v]||v));if(!b[key].length)ul.append(el('li','None registered. Check the boundaries in the rules as well.'));box.append(ul);meta.append(box);}intro.append(meta);
  const limitations=el('details');limitations.append(el('summary','Review provenance and limitations'));limitations.append(el('pre',JSON.stringify(b.review,null,2)));intro.append(limitations);
  const delta=data.review_plan;

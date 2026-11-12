@@ -155,6 +155,7 @@ class Workflow(AutomatedChecks,Development):
         p.update(max_candidate_versions=limit,initial_request_cap=initial,
             total_request_cap=initial+(limit-1)*244,global_request_cap=initial+(limit-1)*244,
             external_candidate_sha256=external,check_policy='Separate budgeted semantic model checks; no human intermediate forms')
+        p.update(reflection_delta_protocol=updates.DELTA_V2,candidate_check_protocol=checks.CANDIDATE_V2)
         if external is not None and not any(b['sha256']==external for b in memory.records(p['store'])):
             raise EvidenceError('Unknown supplied candidate; prepare against a store containing its immutable record/evidence')
         archive.atomic_json(self.root/'protocol.json',p)
@@ -243,11 +244,23 @@ class Workflow(AutomatedChecks,Development):
         code=bundle['sha256'];self._status('ai_candidate_checking')
         life.update(p['store'],code,status='ai_candidate_checking')
         origin=Path(p.get('origin_root',self.root));context=load(origin/'reflection-input.json')
+        # Freeze this unstarted check's protocol without rewriting an old batch.
+        # Existing checks retain their original response contract on recovery.
+        binding=self.root/'candidate-check-protocol.json'
+        if binding.exists():policy=load(binding)['protocol']
+        else:
+            already_started=any(j['slot']=='CANDIDATE-CHECK' for j in self.state()['jobs'])
+            policy=p.get('candidate_check_protocol',checks.CANDIDATE_V1 if already_started else checks.CANDIDATE_V2)
+            archive.atomic_json(binding,dict(candidate_sha256=code,protocol=policy,
+                prior_versions=list(context.get('prior_experiences',{})),
+                scope='This check only; historical reflection/action and earlier checks are unchanged'))
+        if load(binding)['candidate_sha256']!=code:raise EvidenceError('Candidate check protocol belongs to another version')
         result=self._session(backend,p,'CANDIDATE-CHECK','candidate_check','source',
-            checks.candidate_prompt(bundle,context),checks.candidate_schema(bundle,context['ledger']))
-        archive.atomic_json(self.root/'candidate-ai-check.json',dict(candidate_sha256=code,kind='AI',result=result['output'],human_acceptance=False))
+            checks.candidate_prompt(bundle,context,protocol=policy),checks.candidate_schema(bundle,context['ledger'],
+                protocol=policy,prior_experiences=context.get('prior_experiences',{})))
+        archive.atomic_json(self.root/'candidate-ai-check.json',dict(candidate_sha256=code,kind='AI',protocol=policy,result=result['output'],human_acceptance=False))
         life.update(p['store'],code,ai_result=result['output'],ai_check_path=str(self.root/'candidate-ai-check.json'))
-        try:checks.accept_candidate(result['output'],bundle,context,p['cases']['source']['visible'])
+        try:checks.accept_candidate(result['output'],bundle,context,p['cases']['source']['visible'],protocol=policy)
         except EvidenceError as error:raise CandidateCheckFailed(str(error)) from error
         with life.locked(p['store']):
             decisions=[row for row in approval.decisions(p['store']) if row['candidate_sha256']==code]
@@ -269,14 +282,16 @@ class Workflow(AutomatedChecks,Development):
                     result=self._session(backend,p,'EXTRACT','reflect','source','',None)
                     archive.atomic_json(self.root/'raw-reflection.json',result['output'])
                     context=load(self.root/'reflection-input.json');parents={b['sha256']:b for b in load(self.root/'prior-experiences.json')}
-                    composed=updates.compose(result['output'],p['cases']['source']['visible'],context['ledger'],parents)
+                    composed=updates.compose(result['output'],p['cases']['source']['visible'],context['ledger'],parents,
+                        protocol=p.get('reflection_delta_protocol',updates.DELTA_V1),prior_experiences=context['prior_experiences'])
                     if composed is not None:archive.atomic_json(self.root/'composed-candidate.json',composed)
                     else:self._status('no_update',development_done=True,no_update_reason=result['output']['reason']);return
                 else:self._extract(backend,p,old)
             if self.state()['status']=='no_update':self._status('no_update',development_done=True);return
             if not (self.root/'composed-candidate.json').exists():
                 context=load(self.root/'reflection-input.json');parents={b['sha256']:b for b in load(self.root/'prior-experiences.json')}
-                composed=updates.compose(load(self.root/'raw-reflection.json'),p['cases']['source']['visible'],context['ledger'],parents)
+                composed=updates.compose(load(self.root/'raw-reflection.json'),p['cases']['source']['visible'],context['ledger'],parents,
+                    protocol=p.get('reflection_delta_protocol',updates.DELTA_V1),prior_experiences=context['prior_experiences'])
                 if composed is None:self._status('no_update',development_done=True);return
                 archive.atomic_json(self.root/'composed-candidate.json',composed)
         else:

@@ -351,6 +351,14 @@ class Development(Evolution):
         from . import reminders
         context['fixed_manual_material']=dict(taxonomy=taxonomy.definition(),reminders=reminders.definition(),
             qualification='Human-authored fixed checks are not learned experience')
+        delta_protocol=p.get('reflection_delta_protocol',updates.DELTA_V1)
+        increment_instructions=''
+        if delta_protocol==updates.DELTA_V2:
+            from .experience_comparison import INSTRUCTIONS
+            increment_instructions=INSTRUCTIONS+('Return increment_review with one comparison for each change_index, in order. '
+                'For no_update return one comparison with change_index=null explaining duplication or insufficient evidence. '
+                'List all prior_experiences versions exactly once in compared_versions. Do not select new merely '
+                'because a rule is phrased more specifically. Local corrections belong to one exact parent.\n')
         archive.atomic_json(self.root/'reflection-input.json',context)
         evidence=self.root/'reflection-evidence';evidence.mkdir()
         archive.atomic_json(evidence/'evidence.json',context)
@@ -364,7 +372,7 @@ class Development(Evolution):
                     target=evidence/'starting'/job['slot']/name;target.parent.mkdir(parents=True,exist_ok=True)
                     shutil.copyfile(path,target);retained.append(str(target.relative_to(evidence)))
         archive.atomic_json(evidence/'index.json',dict(source='Only this source task and its two starting repairs',files=retained))
-        prompt=('Extract either no_update with a specific reason, or ONE evidence-backed incremental new/revised '
+        prompt=(increment_instructions+'Extract either no_update with a specific reason, or ONE evidence-backed incremental new/revised '
             'text experience in English. Success does not establish the cause of success; failure does not establish '
             'a cause from assertion names or agent claims. Check novelty against prior guidance. Do not relabel '
             'the fixed manual reminders as learned results. Add a genuinely supported mechanism check or '
@@ -380,9 +388,11 @@ class Development(Evolution):
             'no execution, writes, network, scorer/reference access or additional validation. No retry or extra '
             'organizer session.\n'+canonical(context))
         result=self._session(backend,p,'EXTRACT','reflect','source',prompt,
-            updates.schema(p['cases']['source']['visible'],ledger,selectable),cap=2 if state['branch']=='success' else 12)
+            updates.schema(p['cases']['source']['visible'],ledger,selectable,protocol=delta_protocol,
+                prior_experiences=context['prior_experiences']),cap=2 if state['branch']=='success' else 12)
         raw=result['output'];archive.atomic_json(self.root/'raw-reflection.json',raw)
-        composed=updates.compose(raw,p['cases']['source']['visible'],ledger,selectable)
+        composed=updates.compose(raw,p['cases']['source']['visible'],ledger,selectable,protocol=delta_protocol,
+                                 prior_experiences=context['prior_experiences'])
         if composed is None:
             state=self.state();state.update(status='no_update',no_update_reason=raw['reason']);self.save(state);return
         archive.atomic_json(self.root/'composed-candidate.json',composed)

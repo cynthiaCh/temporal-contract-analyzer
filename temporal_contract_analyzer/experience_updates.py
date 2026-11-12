@@ -4,9 +4,14 @@ from copy import deepcopy
 from . import experience_memory as memory, taxonomy
 from .core import EvidenceError
 from ._session_runtime.schema_validator import validate
+from . import experience_comparison as comparison
+
+DELTA_V1 = 'experience-delta-v1'
+DELTA_V2 = 'experience-delta-v2'
 
 
-def schema(visible, ledger, parents):
+def schema(visible, ledger, parents, *, protocol=DELTA_V1, prior_experiences=None):
+    if protocol not in (DELTA_V1, DELTA_V2):raise EvidenceError('Unknown reflection delta protocol')
     def array(values, nullable=False):
         values=list(values)
         result=dict(type=['array','null'] if nullable else 'array',items=dict(type='string'))
@@ -43,17 +48,38 @@ def schema(visible, ledger, parents):
             props['body']=dict(type='string',minLength=1,maxLength=2400)
         branches.append(branch)
     fields['changes']['items']=dict(anyOf=branches)
+    if protocol==DELTA_V2:
+        fields['increment_review']=comparison.schema(parents if prior_experiences is None else prior_experiences,
+                                                     'change_index', [])
     return dict(type='object', properties=fields, required=list(fields), additionalProperties=False)
 
 
-def compose(value, visible, ledger, parents):
+def compose(value, visible, ledger, parents, *, protocol=DELTA_V1, prior_experiences=None):
     """Return one composed rule list and its exact origin pointers, or None."""
     try:
-        validate(value, schema(visible, ledger, parents))
+        validate(value, schema(visible, ledger, parents,protocol=protocol,prior_experiences=prior_experiences))
     except (ValueError, KeyError, TypeError) as error:
         raise EvidenceError('Invalid reflection output: '+str(error)) from error
     if not value['basis']:
         raise EvidenceError('Extraction needs traceable basis IDs')
+    if protocol==DELTA_V2:
+        priors=parents if prior_experiences is None else prior_experiences
+        rows=comparison.check(value['increment_review'],priors,'change_index',
+                             list(range(len(value['changes']))) if value['action']!='no_update' else [None])
+        if value['action']=='no_update':
+            if any(r['classification'] not in ('duplicate','unchanged','insufficient_evidence') for r in rows):
+                raise EvidenceError('no_update cannot claim an uncovered increment')
+        else:
+            if not any(r['classification'] in ('local_revision','independent_new') for r in rows):
+                raise EvidenceError('A candidate requires a stated substantive increment')
+            if value['action']=='new' and any(r['classification']=='local_revision' for r in rows):
+                raise EvidenceError('A local revision must identify its exact parent, not propose new')
+            if value['action']=='revise':
+                for row,change in zip(rows,value['changes']):
+                    if change['operation'] in ('replace','remove') and not any(
+                            m['experience_sha256']==value['parent_sha256'] and m['rule_id']==change['rule_id']
+                            for m in row['matches']):
+                        raise EvidenceError('A changed parent rule needs a direct comparison to that rule')
     if value['action'] == 'no_update':
         if value['changes'] or any(value[k] is not None for k in ('parent_sha256','labels','requires','excludes')):
             raise EvidenceError('no_update cannot carry a hidden change')

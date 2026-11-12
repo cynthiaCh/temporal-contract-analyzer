@@ -80,6 +80,33 @@ class MemoryReviewTests(unittest.TestCase):
         with self.assertRaises(HTTPError):
             self.call(self.base+'/sources/'+source+'?pointer=/rules/0&line=1')
 
+    def test_titles_are_separate_metadata_and_status_follows_real_ai_state(self):
+        from temporal_contract_analyzer import experience_lifecycle as life
+        original=(self.store/'records'/(self.bundle['sha256']+'.json')).read_bytes()
+        (self.store/'display.json').write_text(json.dumps(dict(schema_version='experience-display-v1',
+            titles={self.bundle['id']:'Synthetic readable title for any identity'})))
+        life.update(self.store,self.bundle['sha256'],ai_status='pending',status='ai_check_pending',validation_status='not_started')
+        with self.call('/api/library') as response:item=json.load(response)['records'][0]
+        self.assertEqual(item['display']['title'],'Synthetic readable title for any identity')
+        self.assertEqual(item['display']['state'],'Candidate proposal · AI check pending')
+        self.assertFalse(item['reviewed'])
+        with self.call(self.base) as response:detail=json.load(response)
+        self.assertEqual(detail['display'],item['display'])
+        self.assertEqual(detail['bundle'],self.bundle)
+        for ai,label in [('failed','Candidate proposal · AI check failed'),('incomplete','Candidate proposal · AI check incomplete'),
+                         ('passed','Awaiting human content review')]:
+            life.update(self.store,self.bundle['sha256'],ai_status=ai,status='ai_'+ai)
+            with self.call('/api/library') as response:self.assertEqual(json.load(response)['records'][0]['display']['state'],label)
+        self.assertEqual((self.store/'records'/(self.bundle['sha256']+'.json')).read_bytes(),original)
+        self.assertFalse((self.store/'decisions').exists())
+
+    def test_unregistered_identity_has_readable_fallback_and_no_invented_batch(self):
+        with self.call(self.base) as response:data=json.load(response)
+        self.assertEqual(data['display']['title_source'],'derived_rule_excerpt')
+        self.assertNotEqual(data['display']['title'],self.bundle['id'])
+        self.assertEqual(data['display']['state'],'AI check not recorded')
+        self.assertIsNone(data['display']['source_batch'])
+
     def test_manual_revision_preserves_history_and_requires_new_review(self):
         from copy import deepcopy
         with self.call(self.base+'/decision', self.decision()):

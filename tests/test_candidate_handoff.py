@@ -24,8 +24,8 @@ class HandoffTests(unittest.TestCase):
 
     def stopped(self):
         original_schema=updates.schema
-        def legacy_schema(*args):
-            schema=original_schema(*args);item=deepcopy(schema['properties']['changes']['items']['anyOf'][0])
+        def legacy_schema(*args,**kwargs):
+            schema=original_schema(*args,**kwargs);item=deepcopy(schema['properties']['changes']['items']['anyOf'][0])
             item['properties']['rule_id']=dict(type=['string','null'])
             schema['properties']['changes']['items']=item;return schema
         class LegacyBackend(FakeBackend):
@@ -34,6 +34,9 @@ class HandoffTests(unittest.TestCase):
                 if role=='reflect':result['output']['changes'][0]['rule_id']='R01'
                 return result
         source=Workflow(self.root/'source-batch');source.prepare_config(self.fixture.config())
+        # This fixture intentionally represents the frozen legacy response protocol.
+        protocol=json.loads((source.root/'protocol.json').read_text());protocol.pop('reflection_delta_protocol',None)
+        (source.root/'protocol.json').write_text(json.dumps(protocol))
         with patch.object(updates,'schema',side_effect=legacy_schema):
             state=source.run(execute=True,backend=LegacyBackend())
         self.assertEqual(state['status'],'reflection_incomplete',state.get('error'))
