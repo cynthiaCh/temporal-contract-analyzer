@@ -352,9 +352,7 @@ class Development(Evolution):
         context['fixed_manual_material']=dict(taxonomy=taxonomy.definition(),reminders=reminders.definition(),
             qualification='Human-authored fixed checks are not learned experience')
         delta_protocol=p.get('reflection_delta_protocol',updates.DELTA_V1)
-        increment_instructions=('Compare the meaning against relevant prior rules in reason. Use no_update when already covered, '
-            'revise for a supported change to one exact parent, and new only for a genuine independent addition. '
-            'No separate AI review will run; do not claim that your own proposal has been reviewed.\n') if p.get('review_policy')=='human-content-only-v1' else ''
+        increment_instructions=''
         if delta_protocol==updates.DELTA_V2:
             from .experience_comparison import INSTRUCTIONS
             increment_instructions=INSTRUCTIONS+('Return increment_review with one comparison for each change_index, in order. '

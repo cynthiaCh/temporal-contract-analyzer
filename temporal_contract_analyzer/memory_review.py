@@ -30,7 +30,6 @@ def presentation(store, bundle, workflow, decision):
            'incomplete':'Candidate proposal · AI check incomplete',
            'failed':'Candidate proposal · AI check failed',
            'passed':'Awaiting human content review',
-           'not_run':'Awaiting human content review · AI check not performed',
            'not_recorded':'AI check not recorded'}[ai]
     if (workflow or {}).get('status')=='ai_candidate_checking':state='Candidate proposal · AI check running'
     if decision:state={'accept':'Content accepted','reject':'Rejected','revise':'Revision requested'}[decision['decision']]

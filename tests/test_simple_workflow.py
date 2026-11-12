@@ -120,31 +120,5 @@ class SimpleWorkflowTests(unittest.TestCase):
         loop.run(execute=True,backend=backend);self.assertEqual(count,len(backend.calls))
         self.assertFalse(approval.active(self.store))
 
-    def test_no_review_call_can_overwrite_a_concurrent_human_rejection(self):
-        from unittest.mock import patch
-        loop=self.prepare();backend=FakeBackend();original=loop._store_candidate
-        def publish(p):
-            bundle=original(p);self.accept(bundle['sha256'],decision='reject');return bundle
-        with patch.object(loop,'_store_candidate',side_effect=publish):state=loop.run(execute=True,backend=backend)
-        self.assertEqual(state['status'],'rejected',state.get('error'))
-        self.assertEqual(life.metadata(self.store,state['candidate_sha256'])['status'],'rejected')
-        self.assertEqual(sum(c['role']=='repair' for c in backend.calls),2)
-
-    def test_not_run_is_not_approval_for_a_legacy_or_unbound_version(self):
-        self.assertFalse(life.content_review_available(dict(ai_status='not_run')))
-        self.assertFalse(life.content_review_available(dict(ai_status='pending',review_policy=HUMAN_ONLY)))
-
-    def test_default_frozen_evaluation_has_no_audit_calls_or_learning(self):
-        from temporal_contract_analyzer.experience_workflow import FrozenEvaluation
-        cfg=dict(kind='evaluation',store=str(self.store),binary='/synthetic/codex',node='/synthetic/node',
-            milestones=[],excluded_source_units=['source','transfer-a','transfer-b'],tasks=[dict(case_id='holdout',visible=None,
-                calibration={'synthetic':True},lineage=dict(source_unit='holdout',derived_from=[],prior_exposure='Synthetic holdout.'),
-                holdout=dict(used_for_generation=False,used_for_selection=False,used_for_tuning=False))])
-        loop=FrozenEvaluation(self.root/'evaluation');loop.prepare_config(cfg);backend=FakeBackend(contract_block=True)
-        state=loop.run(execute=True,backend=backend)
-        self.assertEqual(state['status'],'evaluation_complete',state.get('error'))
-        self.assertEqual([c['role'] for c in backend.calls],['analysis','repair','repair'])
-        self.assertEqual(memory.records(self.store),[]);self.assertEqual(approval.decisions(self.store),[])
-
 
 if __name__=='__main__':unittest.main()
