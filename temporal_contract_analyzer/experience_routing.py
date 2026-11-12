@@ -30,7 +30,8 @@ def evidence_issues(evidence, task, sources, field, *, text_grounding=False):
         lines = (task if path == 'TASK' else sources.get(path, '')).splitlines()
         actual = lines[line - 1] if line <= len(lines) else ''
         # Model location hints may drift; require the same literal words in the same file.
-        grounded = text_grounding and exists and bool(quote.strip()) and ' '.join(quote.split()) in ' '.join(' '.join(lines).split())
+        normalized_quote = ' '.join(quote.split())
+        grounded = text_grounding and exists and bool(normalized_quote) and normalized_quote in ' '.join(' '.join(lines).split())
         if not grounded and (not exists or line > len(lines) or quote not in actual):
             issues.append(dict(field=location, file=path, line=line, quote=quote,
                 reason='file_missing' if not exists else 'line_out_of_range' if line > len(lines) else 'quote_not_on_line',
@@ -68,19 +69,12 @@ def source_inputs(task, sources):
             raise EvidenceError('Candidate paths must be local; TASK is reserved for the original task')
 
 
-def evidence_valid(evidence, task, sources):
-    if not isinstance(evidence, list) or not evidence:
+def evidence_valid(evidence, task, sources, *, text_grounding=False):
+    try:
+        return not evidence_issues(evidence, task, sources, 'review.evidence',
+                                   text_grounding=text_grounding)
+    except EvidenceError:
         return False
-    for anchor in evidence:
-        if not isinstance(anchor, dict) or set(anchor) != {'file', 'line', 'quote'}:
-            return False
-        path, line, quote = anchor['file'], anchor['line'], anchor['quote']
-        if not isinstance(path, str) or type(line) is not int or not isinstance(quote, str) or not 1 <= len(quote) <= 160:
-            return False
-        lines = (task if path == 'TASK' else sources.get(path, '')).splitlines()
-        if not 1 <= line <= len(lines) or quote not in lines[line - 1]:
-            return False
-    return True
 
 
 def analysis_prompt(task, sources, ast=None):
@@ -190,14 +184,14 @@ def route(analysis, sources, library, *, task, review=None):
         return dict(condition='AUTO', taxonomy_version=taxonomy.VERSION, reason=reason, selected=None, checks=checks)
     unreviewed = isinstance(review, dict) and review.get('reviewer') == 'unreviewed_model_analysis' and review.get('approved') is False
     try:
-        codes = validate_analysis(analysis, task, sources, text_grounding=unreviewed)
+        codes = validate_analysis(analysis, task, sources, text_grounding=True)
     except EvidenceError as error:
         return fallback(str(error))
-    template = review_template(analysis, task, sources, text_grounding=unreviewed)
+    template = review_template(analysis, task, sources, text_grounding=True)
     if not isinstance(review, dict) or set(review) != set(template) or review['input_sha256'] != template['input_sha256']:
         return fallback('missing_or_drifted_semantic_review')
     if (not unreviewed and (review['reviewer'] not in ('execution_agent_visible_input_only', 'human_visible_input_only','model_evidence_check')
-            or review['approved'] is not True or not evidence_valid(review['evidence'], task, sources))) \
+            or review['approved'] is not True or not evidence_valid(review['evidence'], task, sources, text_grounding=True))) \
             or review['blocking_issues'] != [] \
             or not isinstance(review['scope_unknowns'], list) or any(not isinstance(x, str) for x in review['scope_unknowns']) \
             or not isinstance(review['reason'], str) or not review['reason'].strip():

@@ -82,7 +82,7 @@ class TaxonomyRoutingTests(unittest.TestCase):
         self.assertEqual(self.route(review=review)['condition'], 'AUTO')
 
     def test_invalid_anchors_and_malformed_facts_fall_back(self):
-        for bad in (dict(self.anchor, line=99), dict(self.anchor, quote='never in input'),
+        for bad in (dict(self.anchor, quote='never in input'),
                     dict(self.anchor, file='../hidden.json'), dict(self.anchor, line=True)):
             value = deepcopy(self.analysis)
             value['obligation_labels'][0]['evidence'] = [bad]

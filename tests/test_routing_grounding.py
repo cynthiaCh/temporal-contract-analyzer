@@ -37,8 +37,22 @@ class GroundingTests(unittest.TestCase):
     def test_unknown_premise_still_does_not_route(self):
         self.assertEqual(self.decision(self.view(state='unknown'))['condition'],'AUTO')
 
-    def test_human_review_keeps_strict_location_validation(self):
-        values=self.view();values[2].update(reviewer='human_visible_input_only',approved=True)
+    def test_reviewed_analysis_and_review_quotes_also_tolerate_location_drift(self):
+        values=self.view();values[2].update(reviewer='human_visible_input_only',approved=True,
+                         evidence=[dict(file='TASK',line=99,quote='entry snapshot')])
+        self.assertEqual(self.decision(values)['condition'],'ROUTED')
+
+    def test_label_mismatch_is_not_promoted_by_valid_quotation(self):
+        values=self.view()
+        values[3][0]=r.freeze_entry('Different lifecycle rule.', ['L'],['entry_snapshot'],[],'other')
+        self.assertEqual(self.decision(values)['condition'],'AUTO')
+
+    def test_confirmed_exclusion_still_prevents_matching(self):
+        values=self.view()
+        values[3][0]=r.freeze_entry('Excluded here.', ['I'],['entry_snapshot'],['inline_reentry'],'other')
+        values[0]['facts'].append(dict(predicate='inline_reentry',state='known',
+            evidence=[dict(file='TASK',line=99,quote='entry snapshot')]))
+        values[2]['input_sha256']=r.input_digest(values[0],values[1],{})
         self.assertEqual(self.decision(values)['condition'],'AUTO')
 
     def test_changed_analysis_cannot_reuse_snapshot(self):
