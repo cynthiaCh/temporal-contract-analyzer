@@ -37,6 +37,7 @@ def register(sub):
             action.add_argument('--label',action='append',default=[],help='Native obligation label; repeat to require all')
         if name == 'retrieve':
             action.add_argument('--expected-snapshot')
+            action.add_argument('--max-experiences',type=int,default=5)
             action.add_argument('--snapshot', type=Path)
         if name in ('review-template', 'expert-review'):
             action.add_argument('sha256')
@@ -92,7 +93,7 @@ def run(args):
     elif action == 'retrieve':
         value = memory.retrieve(args.store, json.loads(args.input.read_text(encoding='utf-8')),
                                 args.expected_snapshot, None if args.snapshot is None else
-                                json.loads(args.snapshot.read_text(encoding='utf-8')))
+                                json.loads(args.snapshot.read_text(encoding='utf-8')), max_experiences=args.max_experiences)
     elif action == 'active':
         value = approval.active(args.store)
     elif action == 'migrate-active':

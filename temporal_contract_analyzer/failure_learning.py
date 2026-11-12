@@ -63,7 +63,9 @@ def _save(store, root, record):
 
 
 def capture(root, protocol, jobs, route, bundles):
-    selected = next((b for b in bundles if b['sha256'] == route['selected_sha256']), None)
+    codes=route.get('selected_sha256s',[route.get('selected_sha256')])
+    selected=[b for b in bundles if b['sha256'] in codes]
+    delivered=[dict(sha256=b['sha256'],id=b['id'],rules=[dict(r,id=b['sha256']+':'+r['id']) if len(selected)>1 else dict(r) for r in b['rules']]) for b in selected]
     artifacts = {}
     for job in jobs:
         if job['status'] != 'valid':
@@ -77,8 +79,8 @@ def capture(root, protocol, jobs, route, bundles):
                   source_key=source_key(protocol['cases']['source']['visible']),
                   roles=protocol.get('roles', {}), artifacts=artifacts,
                   failures=observations(jobs),
-                  delivered=None if selected is None else dict(
-                      sha256=selected['sha256'], id=selected['id'], rules=selected['rules']),
+                  delivered=None if not delivered else (delivered[0] if len(delivered)==1 else dict(
+                      records=delivered,rules=[r for b in delivered for r in b['rules']])),
                   status='awaiting_reflection', review=None, candidate_action=None,
                   qualification='Observed failures only; diagnosis is unverified. Not approved repair guidance.')
     archive.atomic_json(Path(root)/'failure-observations.json', record)

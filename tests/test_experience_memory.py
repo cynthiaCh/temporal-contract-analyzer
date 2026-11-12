@@ -144,13 +144,66 @@ class MemoryTests(unittest.TestCase):
             reason='Synthetic explicit exclusion check.', evidence=[dict(file='TASK', line=1, quote='Keep')])
         self.assertEqual(memory.retrieve(self.store, visible)['route']['condition'], 'ROUTED')
 
-    def test_conflict_does_not_get_resolved_by_lexical_rank(self):
+    def test_multiple_matching_identities_are_delivered_together(self):
         self.add()
         other = deepcopy(self.payload)
         other.update(id='other-guidance', version='v2')
         self.add(other)
-        self.assertEqual(memory.retrieve(self.store, self.visible())['route']['reason'],
-                         'unresolved_multiple_experience_conflict')
+        result=memory.retrieve(self.store,self.visible())
+        self.assertEqual(result['route']['condition'],'ROUTED')
+        self.assertEqual(len(result['selected_memory_records']),2)
+        self.assertIsNone(result['selected_memory_record'])
+        for row in result['selected_memory_records']:
+            self.assertIn(row['sha256']+':R01',result['experience_text'])
+
+    def test_multi_match_excludes_unmatched_and_tracks_all_delivered_rules(self):
+        from temporal_contract_analyzer import experience_updates as updates,failure_learning
+        first=self.add()
+        other=deepcopy(self.payload);other['id']='second-match';other['rules'][0]['body']='Second matched applicability.'
+        second=self.add(other)
+        unrelated=deepcopy(self.payload);unrelated['id']='unmatched';unrelated['requires']=['inline_reentry']
+        unrelated['rules'][0]['body']='UNMATCHED_SENTINEL'
+        third=self.add(unrelated)
+        visible=self.visible();decision=updates.route_view(visible,[first,second,third])
+        self.assertEqual(set(decision['selected_sha256s']),{first['sha256'],second['sha256']})
+        self.assertNotIn('UNMATCHED_SENTINEL',decision['experience_text'])
+        record=failure_learning.capture(self.root,dict(store=str(self.store),batch_id='synthetic-multi',
+            cases=dict(source=dict(visible=visible))),[],decision,[first,second,third])
+        self.assertEqual({b['sha256'] for b in record['delivered']['records']},{first['sha256'],second['sha256']})
+        refs={r['id'] for r in record['delivered']['rules']}
+        for ref in refs:self.assertIn(ref,decision['experience_text'])
+        enum=failure_learning.review_schema(record,{'TASK':{}})['items']['properties']['guidance_rule_ids']['items']['enum']
+        self.assertEqual(set(enum),refs)
+
+    def test_cap_applies_to_actual_records_even_when_frozen_bodies_are_identical(self):
+        from temporal_contract_analyzer import experience_updates as updates
+        bundles=[]
+        for i in range(7):
+            payload=deepcopy(self.payload);payload['id']='match-'+str(i)
+            bundles.append(self.add(payload))
+        visible=self.visible();forward=updates.route_view(visible,bundles)
+        reverse=updates.route_view(visible,list(reversed(bundles)))
+        self.assertEqual(len(forward['selected_sha256s']),5)
+        self.assertEqual(forward['selected_sha256s'],reverse['selected_sha256s'])
+        self.assertEqual(forward['route']['matched_count'],7)
+        self.assertEqual(forward['route']['truncated_count'],2)
+        self.assertEqual(set(forward['selected_sha256s']) | set(forward['route']['omitted_memory_sha256s']),
+                         {b['sha256'] for b in bundles})
+        capped=updates.route_view(visible,bundles,max_experiences=2)
+        self.assertEqual(capped['selected_sha256s'],forward['selected_sha256s'][:2])
+        for b in bundles:
+            self.assertEqual(b['sha256']+':R01' in forward['experience_text'],b['sha256'] in forward['selected_sha256s'])
+
+    def test_cap_prefers_more_specific_label_match_and_rejects_invalid_limits(self):
+        from temporal_contract_analyzer import experience_updates as updates
+        exact=self.add()
+        payload=deepcopy(self.payload);payload.update(id='broad-match',labels=['I','L'])
+        broad=self.add(payload)
+        result=updates.route_view(self.visible(),[broad,exact],max_experiences=1)
+        self.assertEqual(result['selected_sha256'],exact['sha256'])
+        for cap in (0,-1,True,None,1.5):
+            with self.subTest(cap=cap),self.assertRaises(EvidenceError):
+                updates.route_view(self.visible(),[exact],max_experiences=cap)
 
     def test_metadata_excluded_from_search_and_query_contract(self):
         payload = deepcopy(self.payload)

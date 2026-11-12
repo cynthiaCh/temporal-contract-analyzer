@@ -557,7 +557,7 @@ class Development(Evolution):
         for boundary_input in p['boundaries']:
             visible=boundary_input['visible']
             left=updates.route_view(visible,old);right=updates.route_view(visible,new)
-            unresolved_boundary=unresolved_boundary or right['selected_sha256']==candidate['sha256']
+            unresolved_boundary=unresolved_boundary or candidate['sha256'] in right['selected_sha256s']
             boundary.append(dict(old=left,new=right,identical=left['experience_text']==right['experience_text'],
                                  lineage=boundary_input['lineage'],model_status='not_run',effect_equivalence=None))
         archive.atomic_json(self.root/'boundary-checks.json',boundary)

@@ -104,7 +104,10 @@ class TaxonomyRoutingTests(unittest.TestCase):
         value = dict(self.analysis, obligation_labels=[])
         self.assertEqual(self.route(analysis=value, review=self.review(value))['reason'], 'unknown_obligation_labels')
         other = routing.freeze_entry('Another matching rule.', ['I'], ['entry_snapshot'], [], 'research-v2')
-        self.assertEqual(self.route(library=[self.entry, other])['reason'], 'unresolved_multiple_experience_conflict')
+        result=self.route(library=[self.entry,other])
+        self.assertEqual(result['condition'],'ROUTED')
+        self.assertEqual(len(result['selected_entries']),2)
+        self.assertIsNone(result['selected'])
 
     def test_visible_prompt_and_control_difference(self):
         prompt = routing.analysis_prompt(self.task, self.sources, ast={'calls':[]})

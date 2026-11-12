@@ -363,8 +363,9 @@ class DevelopmentTests(unittest.TestCase):
         other=dict(existing,id='independent-other',sha256='f'*64)
         visible=self.visible('source')
         conflict=updates.route_view(visible,[existing,other])
-        self.assertEqual(conflict['route']['reason'],'unresolved_multiple_experience_conflict')
-        self.assertIsNone(conflict['experience_text'])
+        self.assertEqual(conflict['route']['condition'],'ROUTED')
+        self.assertEqual(conflict['selected_sha256s'],[existing['sha256'],other['sha256']])
+        self.assertIn(existing['sha256']+':R01',conflict['experience_text'])
 
 
 class DeltaTests(unittest.TestCase):

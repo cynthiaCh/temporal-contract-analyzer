@@ -177,11 +177,27 @@ def freeze_entry(text, obligation_labels, requires, excludes, version):
     return entry
 
 
-def route(analysis, sources, library, *, task, review=None):
-    """Multi-label retrieval followed by verified mechanism prerequisites; at most one entry."""
+DEFAULT_MAX_EXPERIENCES = 5
+
+
+def match_rank(entry, codes):
+    """Transparent label relevance, then stable identity; not an effect estimate."""
+    labels=set(entry['obligation_labels']);target=set(codes);overlap=len(labels & target)
+    return (-overlap / len(labels | target), -overlap, entry['sha256'])
+
+
+def delivery_limit(value):
+    if type(value) is not int or value < 1:
+        raise EvidenceError('max_experiences must be a positive integer')
+    return value
+
+
+def route(analysis, sources, library, *, task, review=None, max_experiences=DEFAULT_MAX_EXPERIENCES):
+    """Match prerequisites, rank eligible guidance, and deliver up to the limit."""
+    delivery_limit(max_experiences)
     checks = []
     def fallback(reason):
-        return dict(condition='AUTO', taxonomy_version=taxonomy.VERSION, reason=reason, selected=None, checks=checks)
+        return dict(condition='AUTO', taxonomy_version=taxonomy.VERSION, reason=reason, selected=None, selected_entries=[], checks=checks)
     unreviewed = isinstance(review, dict) and review.get('reviewer') == 'unreviewed_model_analysis' and review.get('approved') is False
     try:
         codes = validate_analysis(analysis, task, sources, text_grounding=True)
@@ -225,14 +241,18 @@ def route(analysis, sources, library, *, task, review=None):
         checks.append(check)
         if check['eligible']:
             eligible.append(entry)
-    if len(eligible) > 1:
-        return fallback('unresolved_multiple_experience_conflict')
     if not eligible:
         return fallback('empty_or_inapplicable_library')
-    entry = eligible[0]
-    return dict(condition='ROUTED', taxonomy_version=taxonomy.VERSION, reason='unreviewed_analysis_source_premises' if unreviewed else 'source_bound_obligations_and_premises',
-                selected=dict(version=entry['version'], obligation_labels=entry['obligation_labels'],
-                              sha256=entry['sha256'], text_sha256=entry['text_sha256']), checks=checks)
+    eligible.sort(key=lambda entry:match_rank(entry,codes))
+    matched_count=len(eligible)
+    selected = [dict(version=entry['version'], obligation_labels=entry['obligation_labels'],
+                     sha256=entry['sha256'], text_sha256=entry['text_sha256']) for entry in eligible[:max_experiences]]
+    return dict(condition='ROUTED', taxonomy_version=taxonomy.VERSION,
+                reason='unreviewed_analysis_source_premises' if unreviewed else 'source_bound_obligations_and_premises',
+                selected=selected[0] if len(selected)==1 else None,
+                selected_entries=selected, checks=checks, matched_count=matched_count,
+                max_experiences=max_experiences, truncated_count=max(0,matched_count-max_experiences),
+                ranking='label_jaccard_then_overlap_then_digest')
 
 
 def maintenance_prompt(task, contract, experience=None, *, obligation_labels=None):

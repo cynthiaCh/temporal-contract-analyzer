@@ -298,8 +298,7 @@ child does not replace the active parent. `active.json` explicitly maps each
 identity to one accepted current-taxonomy digest; its activation history is
 updated atomically with the pointers. Reads do not replay review order to choose
 versions. Rejection of the exact active version disables it without
-implicitly restoring an older version. Multiple eligible identities remain a
-delivery conflict; lexical score cannot settle a policy conflict.
+implicitly restoring an older version. Multiple eligible identities are delivered together, capped at five by default. Matching is based on labels and mechanism premises, not a numerical rank.
 
 The library itself does not launch models or evolve ranking, taxonomy or prompts.
 The separate [expert-gated controller](EXPERIENCE_EVOLUTION.md) automatically
@@ -419,12 +418,11 @@ paths must be new files outside the store. These commands never start a model.
 
 The router checks source citations, source-bound semantic review, compatible
 labels, known required premises and explicitly contradicted exclusions. Unknown
-premises/exclusions fail closed. Multiple eligible bundles fall back to AUTO;
-the lexical score does not resolve a policy conflict. Selection is by the chosen
+premises/exclusions fail closed. Up to five eligible bundles are delivered together by default; multiple matches alone do not cause AUTO. Selection is by the chosen
 entry digest, not array position. Source-bound review may be AI-assisted; no new
 human-approval requirement is introduced.
 
-The result separates `route`, `selected_memory_record`, `memory_snapshot` and
+The result separates `route`, `selected_memory_records`, `memory_snapshot` and
 `experience_text`. Pass **only `experience_text`** as optional repair guidance.
 If it is null, retain AUTO; do not append the audit result. A/B common material
 must remain identical except for the selected text. Existing runners do not
@@ -486,3 +484,7 @@ unactivated child. ID/quote validity alone does not establish semantic support.
 pointer resolution. It does not judge business policy or repair effectiveness.
 The offline suite uses explicitly synthetic native records to exercise successful
 delivery and rejection cases. That validates an interface, not empirical benefit.
+
+Multiple matching records are included with unique SHA:rule references, also retained in failure reflection. Singular selected_memory_record / selected_sha256 fields are populated only for a single match; consumers must use the plural fields for multiple matches. Unknown prerequisites and exclusion boundaries still prevent a record from matching.
+
+Delivery defaults to at most five matched experience identities. Matching and latest-applicable revision selection happen before the cap. Eligible identities are ordered by label Jaccard similarity to the current task, then shared-label count, then stable digests; this is a transparent heuristic, not an empirically calibrated effectiveness score. The audit records matched_count, max_experiences, truncated_count and omitted record digests. The retrieve CLI supports --max-experiences; the Python retrieve / route_view APIs accept max_experiences. Truncation never turns successful matches into AUTO, and delivered rule bodies are not cut.

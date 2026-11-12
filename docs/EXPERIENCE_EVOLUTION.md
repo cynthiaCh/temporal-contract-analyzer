@@ -33,7 +33,7 @@ silently corrected, no uncertain premise is promoted, and no human is impersonat
 Routing uses current source-bound labels and mechanism premises, not case IDs or
 history. Invalid evidence, unknown prerequisites, exclusions or conflicts can
 cause AUTO fallback; they do not stop repair. Valid source anchors permit routing
-without claiming independent semantic review. At most one experience is delivered.
+without claiming independent semantic review. Up to five matched experience identities are delivered together by default; multiple matches alone are not a conflict. Same-identity revisions retain the existing latest-applicable selection. Multi-record prompts and failure reflection use SHA:rule references.
 The same original code and frozen public analysis are shared across old/new views;
 new candidate text/results never enter the old-condition prompt or shared analysis.
 Preanalysis has no circular experience retrieval.
@@ -192,3 +192,5 @@ historical proposal for human content review without a model call. Offline fake
 backends establish controller behavior, not real repair improvement.
 
 Routing accepts a source quotation with an inaccurate line hint or wrapped whitespace only if its literal words occur in the same candidate-visible file. Raw analysis and location warnings are preserved. Missing quotation text or files, unknown prerequisites, and changed input snapshots still prevent selection. Routing applies this location tolerance to analysis and review quotations alike; standalone citation diagnostics retain exact line validation. This fallback does not imply semantic review or effectiveness validation.
+
+Delivery defaults to at most five matched experience identities. Matching and latest-applicable revision selection happen before the cap. Eligible identities are ordered by label Jaccard similarity to the current task, then shared-label count, then stable digests; this is a transparent heuristic, not an empirically calibrated effectiveness score. The audit records matched_count, max_experiences, truncated_count and omitted record digests. The retrieve CLI supports --max-experiences; the Python retrieve / route_view APIs accept max_experiences. Truncation never turns successful matches into AUTO, and delivered rule bodies are not cut.

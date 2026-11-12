@@ -351,9 +351,10 @@ def delivery_entries(bundles):
             for b in bundles]
 
 
-def route_records(visible, bundles):
+def route_records(visible, bundles, *, max_experiences=5):
     """Shared routing for repair delivery and prospective/evaluation views."""
     from . import experience_routing as routing
+    routing.delivery_limit(max_experiences)
     entries = delivery_entries(bundles)
     # Prefer the latest reviewed applicable revision within the same experience.
     # An inapplicable revision cannot hide an applicable approved predecessor.
@@ -366,20 +367,41 @@ def route_records(visible, bundles):
     if applicable:
         entries = list(applicable.values())
     decision = routing.route(visible['analysis'], visible['sources'], [entry for entry, _ in entries],
-                             task=visible['task'], review=visible.get('review'))
-    selected = None
-    if decision['selected'] is not None:
-        # Match the selected entry digest. Never inject the first library entry.
-        matches = [b for entry, b in entries if entry['sha256'] == decision['selected']['sha256']]
-        if len(matches) != 1:
-            raise EvidenceError('Ambiguous selected experience identity')
-        selected = matches[0]
-        if digest(render(selected)) != decision['selected']['text_sha256']:
+                             task=visible['task'], review=visible.get('review'), max_experiences=max(1,len(entries)))
+    chosen = {row['sha256']: row for row in decision['selected_entries']}
+    codes=[r['code'] for r in visible['analysis']['obligation_labels']] if decision['condition']=='ROUTED' else []
+    entries.sort(key=lambda pair:(routing.match_rank(pair[0],codes),pair[1]['sha256']))
+    matched=[]
+    for entry, bundle in entries:
+        if entry['sha256'] not in chosen:
+            continue
+        if digest(render(bundle)) != chosen[entry['sha256']]['text_sha256']:
             raise EvidenceError('Selected body digest mismatch')
+        matched.append((entry,bundle))
+    selected=[bundle for _,bundle in matched[:max_experiences]]
+    selected_entries=[dict(version=e['version'],obligation_labels=e['obligation_labels'],sha256=e['sha256'],text_sha256=e['text_sha256']) for e,_ in matched[:max_experiences]]
+    decision.update(selected_entries=selected_entries,selected=selected_entries[0] if len(selected_entries)==1 else None,
+        matched_count=len(matched),max_experiences=max_experiences,truncated_count=max(0,len(matched)-max_experiences),
+        ranking='label_jaccard_then_overlap_then_digest',
+        omitted_memory_sha256s=[b['sha256'] for _,b in matched[max_experiences:]])
     return decision, selected
 
 
-def retrieve(store, visible, expected_snapshot=None, frozen_snapshot=None):
+def delivery_text(bundles):
+    if not bundles:
+        return None
+    if len(bundles)==1:
+        return render(bundles[0])
+    sections=[]
+    for bundle in bundles:
+        rules=[dict(r,id=bundle['sha256']+':'+r['id']) for r in bundle['rules']]
+        sections.append('Matched experience '+bundle['sha256']+'\n'+render(dict(rules=rules)))
+    return ('Use the matched guidance together where supported by the current task and source. '
+            'If advice conflicts, resolve it against the concrete requirements and explain the choice; '
+            'do not combine incompatible obligations.\n\n'+'\n\n'.join(sections))
+
+
+def retrieve(store, visible, expected_snapshot=None, frozen_snapshot=None, *, max_experiences=5):
     """Route approved guidance against the current task evidence."""
     from . import experience_routing as routing
     from . import experience_approval as approval
@@ -391,12 +413,13 @@ def retrieve(store, visible, expected_snapshot=None, frozen_snapshot=None):
     bundles = [entry['bundle'] for entry in state['entries']]
     if expected_snapshot is not None and expected_snapshot != state['sha256']:
         raise EvidenceError('Frozen experience memory changed')
-    decision, selected = route_records(visible, bundles)
+    decision, selected = route_records(visible, bundles, max_experiences=max_experiences)
     if decision['reason'] == 'empty_or_inapplicable_library' and not bundles:
         decision['reason'] = 'no_expert_approved_experience'
     return dict(schema_version='experience-delivery-v1', memory_snapshot=state, route=decision,
-                selected_memory_record=None if selected is None else dict(id=selected['id'],
-                    version=selected['version'], sha256=selected['sha256'], body_sha256=selected['body_sha256']),
-                experience_text=None if selected is None else render(selected),
+                selected_memory_record=None if len(selected)!=1 else dict(id=selected[0]['id'],
+                    version=selected[0]['version'], sha256=selected[0]['sha256'], body_sha256=selected[0]['body_sha256']),
+                selected_memory_records=[dict(id=b['id'],version=b['version'],sha256=b['sha256'],body_sha256=b['body_sha256']) for b in selected],
+                experience_text=delivery_text(selected),
                 qualification='Research guidance only. Pass experience_text alone as optional repair guidance; '
                               'route and provenance are separate audit material. No repair benefit is established.')

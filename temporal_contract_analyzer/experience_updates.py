@@ -182,12 +182,12 @@ def recover_program_numbering(value, visible, ledger, parents, *, failure_contex
         original_output_preserved=True,semantic_review='not_performed')
 
 
-def route_view(visible, bundles):
+def route_view(visible, bundles, *, max_experiences=5):
     """Same router over a controlled prospective view; not expert activation."""
     memory.object_fields(visible,{'task','sources','analysis','review'},'candidate-visible routing input')
-    decision, selected = memory.route_records(visible, bundles)
-    return dict(route=decision, selected_sha256=None if selected is None else selected['sha256'],
-                experience_text=None if selected is None else memory.render(selected))
+    decision, selected = memory.route_records(visible, bundles, max_experiences=max_experiences)
+    return dict(route=decision, selected_sha256=selected[0]['sha256'] if len(selected)==1 else None,
+                selected_sha256s=[b['sha256'] for b in selected],experience_text=memory.delivery_text(selected))
 
 
 def new_view(old, candidate):
