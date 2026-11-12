@@ -143,11 +143,11 @@ def run(args):
             required=taxonomy.labels(args.label)
             bundles=[b for b in bundles if set(required)<=set(b['labels'])]
             activated={row['bundle']['sha256'] for row in approval.active(args.store)}
-            from .experience_screening import qualified
+            eligible = {row['bundle']['sha256'] for row in approval.approved(args.store)}
             value = [dict(id=b['id'], version=b['version'], sha256=b['sha256'],
                 taxonomy_version=b['taxonomy_version'], labels=b['labels'],
                 status=b['review']['status'], expert_active=b['sha256'] in activated,
-                default_eligible=qualified(args.store,b['sha256']),
+                default_eligible=b['sha256'] in eligible,
                 is_lineage_tip=b['sha256'] in tips) for b in bundles]
     content = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2)+'\n'
     if args.output:

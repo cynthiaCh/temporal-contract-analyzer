@@ -164,16 +164,17 @@ class MemoryTests(unittest.TestCase):
             with self.assertRaises(EvidenceError):
                 memory.retrieve(self.store, dict(self.visible(), **{key:'forbidden'}))
 
-    def test_legacy_discovery_does_not_recode_or_deliver(self):
+    def test_approved_legacy_delivers_using_reviewed_predicates_without_recoding(self):
         payload = deepcopy(self.payload)
         payload.update(taxonomy_version=memory.LEGACY_TAXONOMY, labels=['T3'])
         self.add(payload)
         self.assertTrue(memory.search(self.store, 'entry', memory.LEGACY_TAXONOMY)['results'])
         self.assertEqual(memory.search(self.store, 'entry', taxonomy.VERSION)['results'], [])
         result = memory.retrieve(self.store, self.visible())
-        self.assertIsNone(result['experience_text'])
-        self.assertEqual(approval.active(self.store), [])
-        self.assertEqual(result['route']['reason'], 'no_expert_activated_experience')
+        self.assertEqual(result['experience_text'], memory.render(payload))
+        self.assertEqual(result['route']['condition'], 'ROUTED')
+        self.assertEqual(approval.active(self.store)[0]['bundle']['labels'], ['T3'])
+        self.assertIsNone(memory.retrieve(self.store, self.visible('unknown'))['experience_text'])
 
     def test_snapshot_guard_and_empty_library(self):
         self.assertEqual(memory.retrieve(self.store, self.visible())['route']['condition'], 'AUTO')

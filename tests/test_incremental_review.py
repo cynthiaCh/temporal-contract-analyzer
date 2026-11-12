@@ -193,7 +193,7 @@ class IncrementalReviewTests(unittest.TestCase):
             self.assertEqual(len(approval.decisions(self.store)),1)
             with post(body) as response:
                 result=json.load(response)
-            self.assertFalse(result['active']);self.assertFalse(result['default_active'])
+            self.assertFalse(result['active']);self.assertTrue(result['default_active'])
             self.assertEqual(sum('inherited_from' in r for r in result['decision']['rules']),6)
             with opener.open(base,timeout=5) as response:saved=json.load(response)
             self.assertEqual(saved['decisions'][-1],result['decision'])

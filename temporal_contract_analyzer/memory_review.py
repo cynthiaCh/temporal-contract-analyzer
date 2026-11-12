@@ -90,13 +90,13 @@ class ReviewHandler(LocalHandler):
             bundles = memory.records(self.server.store)
             decisions = {d['candidate_sha256']: d for d in approval.decisions(self.server.store)}
             active = {r['bundle']['sha256'] for r in approval.active(self.server.store)}
-            from .experience_screening import qualified
+            eligible = {row['bundle']['sha256'] for row in approval.approved(self.server.store)}
             tips = {r['sha256'] for r in memory.tips(bundles)}
             from .experience_lifecycle import metadata
             self.send(dict(review_api_version='experience-review-v3',store=str(self.server.store), records=[dict(
                 id=b['id'], version=b['version'], sha256=b['sha256'], labels=b['labels'],
                 status=b['review']['status'], active=b['sha256'] in active,
-                default_eligible=qualified(self.server.store, b['sha256']),
+                default_eligible=b['sha256'] in eligible,
                 latest=b['sha256'] in tips, rules=len(b['rules']),
                 display=presentation(self.server.store,b,metadata(self.server.store,b['sha256']),decisions.get(b['sha256'])),
                 reviewed=b['sha256'] in decisions,
@@ -170,8 +170,8 @@ class ReviewHandler(LocalHandler):
         decision = approval.decide(self.server.store, bundle['sha256'], data['decision'],
             activate_version=data['activate'], expected_current=data['expected_current'])
         active = any(r['bundle']['sha256'] == bundle['sha256'] for r in approval.active(self.server.store))
-        from .experience_screening import qualified
-        self.send(dict(decision=decision, active=active, default_active=active and qualified(self.server.store,bundle['sha256']),
+        eligible = {row['bundle']['sha256'] for row in approval.approved(self.server.store)}
+        self.send(dict(decision=decision, active=active, default_active=bundle['sha256'] in eligible,
             directory=str(self.server.store/'decisions')), 201)
 
 

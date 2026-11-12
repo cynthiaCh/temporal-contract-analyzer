@@ -542,7 +542,7 @@ class Development(Evolution):
             if rows:
                 state['expert_feedback']=rows[-1]
                 if rows[-1]['decision']=='reject':state['status']='rejected'
-                elif rows[-1]['decision']=='accept' and screening.qualified(p['store'],state['candidate_sha256']):
+                elif rows[-1]['decision']=='accept':
                     state['status']='accepted'
                 self.save(state)
         return state

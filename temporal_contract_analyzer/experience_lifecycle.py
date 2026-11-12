@@ -114,7 +114,7 @@ def on_decision(store,row):
     """Caller holds decision.lock. Persist intent; never start a paid task."""
     value=metadata(store,row['candidate_sha256'])
     if not value:return
-    state={'accept':'content_accepted_waiting_validation','revise':'revision_requested','reject':'rejected'}[row['decision']]
+    state={'accept':'content_accepted','revise':'revision_requested','reject':'rejected'}[row['decision']]
     _update(store,row['candidate_sha256'],human_decision_sha256=row['sha256'],status=state)
     if row['decision']=='revise' or row['decision']=='accept' and row.get('auto_enable') is False:
         from . import experience_approval as approval
@@ -174,7 +174,7 @@ def revoke(store,code,request):
 
 
 def maybe_enable(store,code,technical_actor):
-    from . import experience_approval as approval, experience_screening as screening
+    from . import experience_approval as approval
     with locked(store):
         value=metadata(store,code) or {}
         rows=approval.decisions(store);selected=[r for r in rows if r['candidate_sha256']==code]
@@ -186,7 +186,6 @@ def maybe_enable(store,code,technical_actor):
         elif not row.get('enable_authorization',{}).get('authorized'):reason='Review-only or automatic enable authorization revoked'
         elif (Path(store)/'workflow/revocations'/(row['sha256']+'.json')).exists():reason='Automatic enable authorization withdrawn'
         elif value.get('ai_status')!='passed':reason='Exact-version AI check not passed'
-        elif value.get('validation_status')!='passed' or not screening.qualified(store,code):reason='Exact-version effect validation not passed'
         if reason:
             status='cancelled' if auth and auth.get('cancelled') else 'awaiting_human_review' if not row else 'rejected' if row['decision']=='reject' else 'revision_requested' if row['decision']=='revise' else 'authorization_revoked' if 'withdrawn' in reason else value.get('status','waiting_enable_conditions')
             _update(store,code,enable_blocker=reason,status=status);return dict(enabled=False,reason=reason)

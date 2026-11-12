@@ -326,19 +326,22 @@ The automated controller never calls this approval action on its own.
 
 ### Development qualification is separate from historical activity
 
-The default delivery view requires complete cross-source development
-screening as well as exact-version content acceptance. `active.json` retains
-historical operator selections; activity alone does not confer eligibility.
-`freeze` filters out legacy or pending-validation entries. `list` and the review
-page show `default_eligible` independently of the retained active flag.
+The default delivery view includes every record whose latest named review is
+`accept`, including historical taxonomies, review-only acceptances, and approved
+revisions without an active pointer. Protocol versions and cross-source effect
+screening no longer gate retrieval or activation. Rejected, revision-requested,
+unreviewed, and explicitly withdrawn records stay outside the current pool.
+Frozen historical experiments retain their original contents.
 
-Legacy `screening/<candidate-SHA>.json` stores the immutable candidate-linked source and
-two-transfer outcomes, preregistered critical obligations, prompt-difference
-checks and request budget. The gate is recomputed from those outcomes, not trusted
-from a saved qualified boolean. The review page exposes it. Both the HTTP and CLI
-activation/rollback paths require this gate; content acceptance cannot bypass it.
-An exploratory, plausible or source-only improvement stays out of default
-retrieval. This does not erase any historical review or old frozen experiment.
+Task evidence must satisfy each record's reviewed prerequisites and exclusions.
+Historical taxonomy labels remain unchanged; those records match by mechanism
+predicates. Within one experience identity, retrieval prefers the most recently
+reviewed applicable revision; an inapplicable child cannot hide an approved parent.
+`default_eligible` reports approval eligibility independently of the preferred
+selection in `active.json`.
+
+Screening records remain optional, immutable evidence for studying effectiveness.
+They are visible in the review page and do not control delivery.
 
 V3 screens live under workflow/screens/CANDIDATE_SHA/VALIDATION_JOB.json with
 exact candidate/job bindings. Old or parent screens cannot qualify a bound v3
@@ -369,11 +372,10 @@ The reviewed native versions in this repository have been migrated explicitly;
 historical batches and their frozen snapshots were not migrated or rewritten.
 
 `expert-review` defaults to review-only content acceptance. Use `--activate` to
-explicitly combine acceptance with a compatible forward activation after both
-content and cross-source screening gates pass. `--review-only` is also accepted. Use
+also update the preferred selection after acceptance. `--review-only` is also accepted. Use
 `--expected-current DIGEST` (or `none`) to guard a review against a stale view.
-Reaccepting an ancestor or incompatible legacy version saves review only. No
-version-number sorting, newest-file heuristic or implicit parent fallback exists.
+Preferred selections retain their recorded history; all approved revisions remain
+retrieval candidates regardless of that selection.
 
 Already accepted versions can be selected without repeating expert findings:
 
@@ -459,8 +461,8 @@ literal README deadlines. See the full
 
 The three native child digests have saved acceptance decisions. The historical explicit
 active index retains those selections, including exploratory scope for deferred
-boundary binding. None is automatically certified under the new v2 effect gate;
-the new default snapshot can therefore be empty. Previously, a later acceptance of its legacy parent superseded the native
+boundary binding. Their acceptance is sufficient for inclusion in the default snapshot, without
+certification under the v2 effect protocol. Previously, a later acceptance of its legacy parent superseded the native
 child under review-order selection; the explicit index removes that ambiguity.
 No stored decision or old experiment was rewritten. Searching an unaccepted
 candidate still does not permit delivery, and activation creates no new replay

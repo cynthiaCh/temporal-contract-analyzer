@@ -179,13 +179,13 @@ class EvolutionTests(unittest.TestCase):
         self.assertTrue((loop.root/'runs/BASE-1/partial.txt').exists())
         with self.assertRaises(EvidenceError):loop.run(backend=backend)
 
-    def test_source_only_results_do_not_establish_default_qualification(self):
+    def test_review_acceptance_allows_retrieval_without_effect_screening(self):
         loop=self.prepare();loop.run(backend=SyntheticBackend(no_gain=True))
         self.assertEqual(loop.state()['status'],'awaiting_review')
         request=self.decision(loop)
         (self.store/'screening'/(loop.state()['candidate_sha256']+'.json')).unlink()
         approval.decide(self.store,loop.state()['candidate_sha256'],request,activate_version=False)
-        self.assertEqual(approval.freeze(self.store)['entries'],[])
+        self.assertEqual(len(approval.freeze(self.store)['entries']),1)
 
     def test_target_gain_and_regression_are_both_kept_without_all_pass_gate(self):
         class RegressingBackend(SyntheticBackend):

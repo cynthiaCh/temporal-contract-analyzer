@@ -41,8 +41,9 @@ class Evaluation(Development):
                 raise EvidenceError('Milestone names must be unique safe identifiers')
             snapshot=approval.validate_snapshot(config['store'],item['snapshot'])
             for entry in snapshot['entries']:
-                code=entry['bundle']['sha256'];screening.require(config['store'],code)
+                code=entry['bundle']['sha256']
                 report=screening.read(config['store'],code)
+                if report is None:continue
                 for group in [report['source']]+report['transfers']:excluded.add(group['source_unit'])
                 for provenance in report.get('source_relationships',{}).values():
                     excluded.update([provenance['source_unit']]+provenance['derived_from'])

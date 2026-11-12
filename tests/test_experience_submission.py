@@ -116,8 +116,11 @@ class SubmissionTests(unittest.TestCase):
                 rules=[dict(rule_id=r['id'],supported=True,reason='Synthetic.') for r in self.child['rules']]))
             self.assertEqual(len(approval.decisions(self.target)),1)
             self.assertEqual(approval.active(self.target),[])
-            with self.assertRaises(EvidenceError):
-                approval.activate(self.target,self.child['sha256'],None,'SYNTHETIC_REVIEWER','Synthetic blocked activation.')
+            self.assertEqual(len(approval.freeze(self.target)['entries']),1)
+            approval.activate(self.target,self.child['sha256'],None,'SYNTHETIC_REVIEWER','Synthetic activation without effect gate.')
+            with build_opener(ProxyHandler({})).open(server.url+'/api/library',timeout=5) as response:
+                row=next(r for r in json.load(response)['records'] if r['sha256']==self.child['sha256'])
+            self.assertTrue(row['default_eligible'])
         finally:
             server.shutdown();server.server_close();thread.join(3)
 

@@ -6,8 +6,6 @@ from copy import deepcopy
 
 from . import archive, experience_memory as memory
 from .core import EvidenceError, canonical
-from . import taxonomy
-from . import experience_screening as screening
 
 ACTIVE_VERSION = 'experience-active-index-v1'
 UNSPECIFIED = object()
@@ -31,11 +29,6 @@ def _acceptance(rows, code):
     if not final or final[-1]['decision'] != 'accept':
         raise EvidenceError('Activation requires an existing acceptance of this exact version')
     return final[-1]
-
-
-def _compatible(bundle):
-    if bundle['taxonomy_version'] != taxonomy.VERSION:
-        raise EvidenceError('Only the current seven-label taxonomy can be activated; retain legacy versions as history')
 
 
 def _index(store, bundles, rows):
@@ -73,7 +66,6 @@ def _index(store, bundles, rows):
                 replay.pop(event['id'])
             else:
                 bundle = bundles[code]
-                _compatible(bundle)
                 previous = event['previous_sha256']
                 if bundle['id'] != event['id'] or decision['decision'] != 'accept' \
                         or decision['candidate_sha256'] != code:
@@ -90,7 +82,6 @@ def _index(store, bundles, rows):
             raise EvidenceError('Active pointers do not match their retained activation history')
         for identifier, code in value['versions'].items():
             bundle = bundles[code]
-            _compatible(bundle)
             if bundle['id'] != identifier:
                 raise EvidenceError('Active pointer identity mismatch')
             _acceptance(rows, code)
@@ -133,7 +124,6 @@ def migrate_active(store, versions, actor, reason=''):
             if not isinstance(identifier, str) or not isinstance(code, str) or code not in bundles \
                     or bundles[code]['id'] != identifier:
                 raise EvidenceError('Migration mapping contains an unknown or unrelated version')
-            _compatible(bundles[code])
             decision = _acceptance(rows, code)
             value['versions'][identifier] = code
             value['history'].append(dict(sequence=len(value['history'])+1, action='migrate', id=identifier,
@@ -152,14 +142,13 @@ def activation_options(store, code):
     bundle = bundles[code]
     previous = index['versions'].get(bundle['id'])
     try:
-        _compatible(bundle)
         _acceptance(rows, code)
         accepted = True
     except EvidenceError:
         accepted = False
-    eligible = screening.qualified(store, code)
+    eligible = any(entry['bundle']['sha256'] == code for entry in approved(store))
     return dict(current_sha256=previous, default_eligible=eligible,
-        qualification='development_screened' if eligible else 'legacy_or_pending_validation',
+        qualification='review_accepted' if eligible else 'awaiting_acceptance',
         can_activate=accepted and eligible and previous != code and (previous is None or _descendant(bundles, code, previous)),
         can_rollback=accepted and eligible and previous is not None and previous != code and _descendant(bundles, previous, code))
 
@@ -177,9 +166,7 @@ def activate(store, code, expected_current, actor, reason='', *, rollback=False)
         if code not in bundles:
             raise EvidenceError('Unknown experience version')
         bundle = bundles[code]
-        _compatible(bundle)
         decision = _acceptance(rows, code)
-        screening.require(store, code)
         previous = index['versions'].get(bundle['id'])
         if previous != expected_current:
             raise EvidenceError('Active version changed; reload before selecting a version')
@@ -286,7 +273,7 @@ def decide(store, candidate_sha256, request, report_sha256=None, *, activate_ver
         previous = index['versions'].get(bundle['id'])
         if expected_current is not UNSPECIFIED and previous != expected_current:
             raise EvidenceError('Active version changed; reload before submitting this review')
-        # Content acceptance is separate from cross-source effect qualification.
+        # Content acceptance is sufficient; effect reports are optional.
         row = dict(deepcopy(request), schema_version='experience-expert-decision-v2' if 'inherit_from' in request else 'experience-expert-decision-v1',
                    actor='named_operator', candidate_sha256=candidate_sha256,
                    report_sha256=report_sha256, at=archive.now(), sequence=len(prior)+1)
@@ -305,8 +292,7 @@ def decide(store, candidate_sha256, request, report_sha256=None, *, activate_ver
             target.write(json.dumps(row, ensure_ascii=False, indent=2)+'\n')
         if row['decision'] == 'reject' and previous == candidate_sha256:
             _change(store, index, bundle, row, 'deactivate', row['reviewer'], row['reason'])
-        elif row['decision'] == 'accept' and activate_version and bundle['taxonomy_version'] == taxonomy.VERSION \
-                and screening.qualified(store, candidate_sha256) \
+        elif row['decision'] == 'accept' and activate_version \
                 and (previous is None or _descendant(bundles, candidate_sha256, previous)):
             _change(store, index, bundle, row, 'activate', row['reviewer'], row['reason'])
         lifecycle.on_decision(store,row)
@@ -319,6 +305,18 @@ def active(store):
     index = _index(store, bundles, rows)
     return [dict(bundle=bundles[code], expert_decision=_acceptance(rows, code))
             for identifier, code in sorted(index['versions'].items())]
+
+
+def approved(store):
+    """Every currently accepted record, ordered by its latest review."""
+    bundles = {b['sha256']: b for b in memory.records(store)}
+    latest = {}
+    for row in decisions(store):
+        latest[row['candidate_sha256']] = row
+    return [dict(bundle=bundles[row['candidate_sha256']], expert_decision=row)
+            for row in sorted(latest.values(), key=lambda r: r['sequence'])
+            if row['decision'] == 'accept' and not
+            (Path(store)/'workflow/revocations'/(row['sha256']+'.json')).exists()]
 
 
 def review_plan(store, code):
@@ -342,9 +340,9 @@ def review_template(store, code, full=False):
 
 
 def freeze(store, *, legacy=False):
-    entries = active(store)
-    if not legacy:
-        entries = [entry for entry in entries if screening.qualified(store, entry['bundle']['sha256'])]
+    # The legacy argument remains for compatibility. Neither active pointers nor
+    # taxonomy/effect protocol versions restrict the approved retrieval pool.
+    entries = approved(store)
     result = dict(schema_version='experience-active-snapshot-v1', scope='research_only',
                   entries=entries)
     result['sha256'] = memory.digest(canonical(result))
@@ -363,19 +361,16 @@ def validate_snapshot(store, snapshot):
         memory.object_fields(entry, {'bundle', 'expert_decision'}, 'active snapshot entry')
         bundle, decision = entry['bundle'], entry['expert_decision']
         memory.validate(bundle, lambda code:(Path(store)/'sources'/code).read_bytes())
-        if decision.get('schema_version') in ('experience-expert-decision-v2','experience-expert-decision-v3'):
-            if history is None:
-                history = decisions(store)
-                bundles = {b['sha256']:b for b in memory.records(store)}
-            position = next((i for i,r in enumerate(history) if r['sha256']==decision.get('sha256')), None)
-            if position is None or history[position] != decision:
-                raise EvidenceError('Inherited snapshot decision needs its retained audited history')
-            validate_decision(decision, bundle, bundles, history[:position])
-        else:
-            validate_decision(decision, bundle)
+        if history is None:
+            history = decisions(store)
+            bundles = {b['sha256']:b for b in memory.records(store)}
+        position = next((i for i,r in enumerate(history) if r['sha256']==decision.get('sha256')), None)
+        if position is None or history[position] != decision:
+            raise EvidenceError('Snapshot decision needs its retained audited history')
+        validate_decision(decision, bundle, bundles, history[:position])
         if decision['decision'] != 'accept' or decision['candidate_sha256'] != bundle['sha256'] \
                 or decision['sha256'] != memory.digest(canonical({k:v for k,v in decision.items() if k!='sha256'})) \
-                or bundle['id'] in seen:
-            raise EvidenceError('Snapshot must bind one expert-accepted version per identity')
-        seen.add(bundle['id'])
+                or bundle['sha256'] in seen:
+            raise EvidenceError('Snapshot must bind unique expert-accepted records')
+        seen.add(bundle['sha256'])
     return snapshot

@@ -200,15 +200,17 @@ class DevelopmentTests(unittest.TestCase):
         self.assertEqual(len(b.calls),5)
         self.assertFalse(screening.qualified(self.store,loop.state()['candidate_sha256']))
 
-    def test_no_gain_stays_pending_even_after_content_acceptance(self):
+    def test_no_gain_report_does_not_block_approved_retrieval(self):
         loop=self.prepare();b=Backend(no_gain=True)
         loop.run(backend=b);self.candidate_review(loop)
         self.assertEqual(loop.run(backend=b)['status'],'pending_validation')
         code=loop.state()['candidate_sha256']
         approval.decide(self.store,code,dict(reviewer='SYNTHETIC_EXPERT',decision='accept',reason='',scope='exploratory',
             rules=[dict(rule_id='R01',supported=True,reason='')]), activate_version=True)
-        self.assertEqual(approval.freeze(self.store)['entries'],[])
-        with self.assertRaises(EvidenceError):approval.activate(self.store,code,None,'SYNTHETIC_OPERATOR')
+        self.assertEqual(len(approval.freeze(self.store)['entries']),1)
+        self.assertFalse(screening.qualified(self.store,code))
+        self.assertEqual(loop.sync_review()['status'],'accepted')
+        approval.activate(self.store,code,code,'SYNTHETIC_OPERATOR')
 
     def test_rejected_candidate_or_invalid_reflection_never_starts_validation(self):
         loop=self.prepare();b=Backend()

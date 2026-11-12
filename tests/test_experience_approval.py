@@ -20,13 +20,6 @@ class ApprovalTests(unittest.TestCase):
         self.bundle = memory.add(fixture.store, fixture.payload, [fixture.source])
 
     def request(self, decision='accept'):
-        # These tests isolate pointer behavior; effect screening is a separate,
-        # explicitly synthetic fixture, never inferred from source-only success.
-        if decision=='accept':
-            from evolution_fixtures import synthetic_screen
-            from temporal_contract_analyzer import taxonomy
-            for bundle in memory.records(self.f.store):
-                if bundle['taxonomy_version']==taxonomy.VERSION:synthetic_screen(self.f.store,bundle['sha256'])
         return dict(reviewer='SYNTHETIC_EXPERT_FIXTURE', decision=decision, scope='exploratory',
             reason='Synthetic test decision, not an independent human approval.',
             rules=[dict(rule_id=r['id'], supported=True, reason='Synthetic test finding.')
@@ -35,7 +28,7 @@ class ApprovalTests(unittest.TestCase):
     def test_research_admission_does_not_activate(self):
         self.assertEqual(approval.active(self.f.store), [])
         self.assertEqual(memory.retrieve(self.f.store, self.f.visible())['route']['reason'],
-                         'no_expert_activated_experience')
+                         'no_expert_approved_experience')
 
     def test_exact_expert_acceptance_and_unreviewed_child(self):
         approval.decide(self.f.store, self.bundle['sha256'], self.request(), activate_version=True)
@@ -48,6 +41,40 @@ class ApprovalTests(unittest.TestCase):
         self.assertEqual(approval.active(self.f.store)[0]['bundle'], self.bundle)
         approval.decide(self.f.store, second['sha256'], self.request(), activate_version=True)
         self.assertEqual(approval.active(self.f.store)[0]['bundle'], second)
+
+    def test_all_approved_versions_eligible_without_screening_or_active_pointer(self):
+        approval.decide(self.f.store, self.bundle['sha256'], self.request())
+        child = deepcopy(self.f.payload)
+        child.update(version='v2', parent_sha256=self.bundle['sha256'])
+        # Use a known predicate that is absent from the current source evidence.
+        child['requires'] = ['entry_snapshot']
+        child['excludes'] = ['inline_reentry']
+        second = memory.add(self.f.store, child, [self.f.source])
+        approval.decide(self.f.store, second['sha256'], self.request())
+        self.assertFalse((self.f.store/'screening').exists())
+        frozen = approval.freeze(self.f.store)
+        self.assertEqual(len(frozen['entries']), 2)
+        self.assertEqual(approval.validate_snapshot(self.f.store, frozen), frozen)
+        self.assertTrue(approval.activation_options(self.f.store, second['sha256'])['default_eligible'])
+        result = memory.retrieve(self.f.store, self.f.visible())
+        self.assertEqual(result['route']['condition'], 'ROUTED')
+        self.assertEqual(result['selected_memory_record']['sha256'], self.bundle['sha256'])
+        approval.decide(self.f.store, self.bundle['sha256'], self.request('reject'))
+        self.assertEqual([e['bundle']['sha256'] for e in approval.freeze(self.f.store)['entries']], [second['sha256']])
+
+    def test_authorized_preferred_selection_does_not_wait_for_effect_validation(self):
+        from temporal_contract_analyzer import experience_lifecycle as lifecycle
+        root = self.f.root/'workflow'
+        root.mkdir()
+        (root/'execution-authorization.json').write_text(json.dumps({'cancelled': False}))
+        request = self.request()
+        request.update(auto_enable=True, request_id='synthetic-approval')
+        approval.decide(self.f.store, self.bundle['sha256'], request)
+        lifecycle.update(self.f.store, self.bundle['sha256'], origin_root=str(root),
+                         ai_status='passed', validation_status='not_started')
+        result = lifecycle.maybe_enable(self.f.store, self.bundle['sha256'], 'SYNTHETIC_WORKER')
+        self.assertTrue(result['enabled'])
+        self.assertFalse((self.f.store/'screening').exists())
 
     def test_incomplete_or_unsupported_expert_findings_cannot_activate(self):
         for field in ('reviewer', 'rules'):
@@ -99,8 +126,6 @@ class ApprovalTests(unittest.TestCase):
         value = deepcopy(self.f.payload)
         value.update(version=version, parent_sha256=parent or self.bundle['sha256'])
         bundle=memory.add(self.f.store, value, [self.f.source])
-        from evolution_fixtures import synthetic_screen
-        synthetic_screen(self.f.store,bundle['sha256'])
         return bundle
 
     def test_reaccepting_parent_does_not_replace_active_child(self):
@@ -146,7 +171,7 @@ class ApprovalTests(unittest.TestCase):
         with self.assertRaises(EvidenceError):
             approval.migrate_active(self.f.store, {}, 'SYNTHETIC_MIGRATOR')
 
-    def test_unapproved_rejected_unknown_and_legacy_targets_cannot_activate(self):
+    def test_unapproved_rejected_unknown_blocked_but_approved_legacy_can_activate(self):
         with self.assertRaises(EvidenceError):
             approval.activate(self.f.store, self.bundle['sha256'], None, 'SYNTHETIC_OPERATOR')
         with self.assertRaises(EvidenceError):
@@ -158,7 +183,7 @@ class ApprovalTests(unittest.TestCase):
         legacy.update(id='legacy-entry', taxonomy_version=memory.LEGACY_TAXONOMY, labels=['T3'])
         old = memory.add(self.f.store, legacy, [self.f.source])
         approval.decide(self.f.store, old['sha256'], self.request(), activate_version=True)
-        self.assertEqual(approval.active(self.f.store), [])
+        self.assertEqual(approval.active(self.f.store)[0]['bundle'], old)
         with self.assertRaises(EvidenceError):
             approval.activate(self.f.store, old['sha256'], None, 'SYNTHETIC_OPERATOR', rollback=True)
 

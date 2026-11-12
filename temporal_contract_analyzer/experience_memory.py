@@ -338,26 +338,33 @@ def legacy_payload(entry, identifier, registry_path, review_path, extra_sources=
         review=dict(status='research_admitted' if admitted else 'candidate', kind='ai_assisted_historical',
                     source_sha256=review_code,
                     limitations=['Historical review retained; import is not a fresh semantic review or production admission.',
-                                 'Legacy taxonomy is not automatically deliverable through the seven-label router.']),
+                                 'Historical labels are retained; delivery uses reviewed applicability predicates.']),
         audit=dict(sources=sources, rule_links=links, outcome_refs=[] if outcome_refs is None else outcome_refs,
                    notes=list(notes)+['Exact historical body and applicability retained; no new model output.']))
 
 
-def retrieve(store, visible, expected_snapshot=None, frozen_snapshot=None):
-    """Reuse the current conservative seven-label router; no taxonomy guessing."""
+def delivery_entries(bundles):
+    """Historical labels stay unchanged; reviewed predicates decide applicability."""
     from . import experience_routing as routing
-    from . import experience_approval as approval
-    if not isinstance(visible, dict) or not {'task', 'sources', 'analysis'} <= set(visible) \
-            or set(visible) - {'task', 'sources', 'analysis', 'review'}:
-        raise EvidenceError('Only task, candidate sources, analysis and optional visible-input review are allowed')
-    routing.source_inputs(visible['task'], visible['sources'])
-    state = approval.freeze(store) if frozen_snapshot is None else approval.validate_snapshot(store, frozen_snapshot)
-    bundles = [entry['bundle'] for entry in state['entries']]
-    if expected_snapshot is not None and expected_snapshot != state['sha256']:
-        raise EvidenceError('Frozen experience memory changed')
-    eligible = [b for b in bundles if b['taxonomy_version'] == taxonomy.VERSION]
-    entries = [(routing.freeze_entry(render(b), b['labels'], b['requires'], b['excludes'], b['version']), b)
-               for b in eligible]
+    return [(routing.freeze_entry(render(b), b['labels'] if b['taxonomy_version'] == taxonomy.VERSION
+                                  else list(taxonomy.CODES), b['requires'], b['excludes'], b['version']), b)
+            for b in bundles]
+
+
+def route_records(visible, bundles):
+    """Shared routing for repair delivery and prospective/evaluation views."""
+    from . import experience_routing as routing
+    entries = delivery_entries(bundles)
+    # Prefer the latest reviewed applicable revision within the same experience.
+    # An inapplicable revision cannot hide an applicable approved predecessor.
+    applicable = {}
+    for entry, bundle in entries:
+        trial = routing.route(visible['analysis'], visible['sources'], [entry],
+                              task=visible['task'], review=visible.get('review'))
+        if trial['selected'] is not None:
+            applicable[bundle['id']] = (entry, bundle)
+    if applicable:
+        entries = list(applicable.values())
     decision = routing.route(visible['analysis'], visible['sources'], [entry for entry, _ in entries],
                              task=visible['task'], review=visible.get('review'))
     selected = None
@@ -369,11 +376,24 @@ def retrieve(store, visible, expected_snapshot=None, frozen_snapshot=None):
         selected = matches[0]
         if digest(render(selected)) != decision['selected']['text_sha256']:
             raise EvidenceError('Selected body digest mismatch')
-    if decision['reason'] == 'empty_or_inapplicable_library' and not eligible \
-            and any(b['taxonomy_version'] == LEGACY_TAXONOMY for b in bundles):
-        decision['reason'] = 'legacy_entries_require_explicit_evidence_backed_recoding'
-    elif decision['reason'] == 'empty_or_inapplicable_library' and not bundles:
-        decision['reason'] = 'no_expert_activated_experience'
+    return decision, selected
+
+
+def retrieve(store, visible, expected_snapshot=None, frozen_snapshot=None):
+    """Route approved guidance against the current task evidence."""
+    from . import experience_routing as routing
+    from . import experience_approval as approval
+    if not isinstance(visible, dict) or not {'task', 'sources', 'analysis'} <= set(visible) \
+            or set(visible) - {'task', 'sources', 'analysis', 'review'}:
+        raise EvidenceError('Only task, candidate sources, analysis and optional visible-input review are allowed')
+    routing.source_inputs(visible['task'], visible['sources'])
+    state = approval.freeze(store) if frozen_snapshot is None else approval.validate_snapshot(store, frozen_snapshot)
+    bundles = [entry['bundle'] for entry in state['entries']]
+    if expected_snapshot is not None and expected_snapshot != state['sha256']:
+        raise EvidenceError('Frozen experience memory changed')
+    decision, selected = route_records(visible, bundles)
+    if decision['reason'] == 'empty_or_inapplicable_library' and not bundles:
+        decision['reason'] = 'no_expert_approved_experience'
     return dict(schema_version='experience-delivery-v1', memory_snapshot=state, route=decision,
                 selected_memory_record=None if selected is None else dict(id=selected['id'],
                     version=selected['version'], sha256=selected['sha256'], body_sha256=selected['body_sha256']),

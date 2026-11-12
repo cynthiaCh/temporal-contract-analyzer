@@ -170,13 +170,8 @@ def recover_program_numbering(value, visible, ledger, parents):
 
 def route_view(visible, bundles):
     """Same router over a controlled prospective view; not expert activation."""
-    from . import experience_routing as routing
     memory.object_fields(visible,{'task','sources','analysis','review'},'candidate-visible routing input')
-    entries = [(routing.freeze_entry(memory.render(b), b['labels'], b['requires'], b['excludes'], b['version']), b)
-               for b in bundles if b['taxonomy_version']==taxonomy.VERSION]
-    decision = routing.route(visible['analysis'], visible['sources'], [e for e,_ in entries],
-                             task=visible['task'], review=visible['review'])
-    selected = next((b for e,b in entries if decision['selected'] and e['sha256']==decision['selected']['sha256']), None)
+    decision, selected = memory.route_records(visible, bundles)
     return dict(route=decision, selected_sha256=None if selected is None else selected['sha256'],
                 experience_text=None if selected is None else memory.render(selected))
 
