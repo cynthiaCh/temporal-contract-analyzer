@@ -7,12 +7,13 @@ import importlib.util,json,os,re,shutil,signal,subprocess,sys,tempfile,time,shle
 from pathlib import Path
 from archive import Archive,inventory,digest,save,sha
 from guard_server import GuardServer
+from model_settings import MODEL, EFFORT
 from structured import parse_response
 
 O=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('archive_native',O/'native_backend.py')
 backend=importlib.util.module_from_spec(spec);spec.loader.exec_module(backend);backend.OUT=O
-ROLE={'analysis':('gpt-6-sol','low',12,'extraction'),'extract':('gpt-6-sol','low',12,'extraction'),'repair':('gpt-5.6-terra','low',24,'maintenance'),'reflect':('gpt-5.6-terra','medium',12,'reflection')}
+ROLE={'analysis':(MODEL,EFFORT,12,'extraction'),'extract':(MODEL,EFFORT,12,'extraction'),'repair':(MODEL,EFFORT,24,'maintenance'),'reflect':(MODEL,EFFORT,12,'reflection')}
 
 def command(call,folder,phase,case,*,runtime,socket_dir,copy_auth=True):
     """Original autonomous Codex CLI and role flags, no host archive bind mounts."""
@@ -22,8 +23,7 @@ def command(call,folder,phase,case,*,runtime,socket_dir,copy_auth=True):
     if phase in ['repair','reflect']:
         if phase=='repair':
             i=cmd.index(str(folder/'workspace'));assert cmd[i-1]=='--ro-bind';cmd[i-1]='--bind'
-        cmd[cmd.index('--sandbox')+1]='danger-full-access';cmd[cmd.index('-m')+1]='gpt-5.6-terra'
-        cmd=[s.replace('model_reasoning_effort="low"','model_reasoning_effort="'+ROLE[phase][1]+'"') for s in cmd]
+        cmd[cmd.index('--sandbox')+1]='danger-full-access'
     # Native role permissions and output schema are separate decisions.
     old_schema=str(O/('reflection.schema.json' if backend_mode=='reflection' else 'extraction.schema.json'))
     role_schema=str(Path(case['extraction_schema'])) if phase=='extract' and case.get('extraction_schema') else str(O/{'analysis':'analysis.schema.json','extract':'extraction.schema.json','repair':'maintenance.schema.json','reflect':'reflection.schema.json'}[phase])

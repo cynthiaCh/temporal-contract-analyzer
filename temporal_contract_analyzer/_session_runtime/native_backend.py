@@ -1,6 +1,7 @@
 """Reused native CLI namespace; host archives are never mounted into the actor."""
 import json,hashlib,os,shutil,subprocess,time,signal,sys
 from pathlib import Path
+from model_settings import MODEL, EFFORT
 OUT=Path(__file__).resolve().parent;ROOT=OUT.parent.parent
 BINARY=None  # Supplied explicitly by the prepared, hash-bound protocol.
 DISABLE=['code_mode','apps','plugins','multi_agent','browser_use','computer_use','sleep_tool','tool_suggest']
@@ -29,7 +30,7 @@ def command(call,folder,mode,copy_auth=True,meter=None,*,runtime=None,socket_dir
  for k in ['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy']:
   if k in os.environ:ns+=['--setenv',k,os.environ[k]]
  ns+=['--setenv','DIAG_CALL_ID',call,'--']
- cmd=ns+['/opt/codex','exec','--ignore-rules','--ephemeral','--json','--color','never','--skip-git-repo-check','--sandbox','read-only','-c','approval_policy="never"','-m','gpt-6-sol','-c','model_reasoning_effort="low"','-c','web_search="disabled"','-c','service_tier="priority"','-c','model_provider="experiment_no_retry"','-c','model_providers.experiment_no_retry.name="OpenAI"','-c','model_providers.experiment_no_retry.wire_api="responses"','-c','model_providers.experiment_no_retry.requires_openai_auth=true','-c','model_providers.experiment_no_retry.request_max_retries=0','-c','model_providers.experiment_no_retry.stream_max_retries=0','--dangerously-bypass-hook-trust','--output-schema','/format.json']
+ cmd=ns+['/opt/codex','exec','--ignore-rules','--ephemeral','--json','--color','never','--skip-git-repo-check','--sandbox','read-only','-c','approval_policy="never"','-m',MODEL,'-c','model_reasoning_effort="'+EFFORT+'"','-c','web_search="disabled"','-c','service_tier="priority"','-c','model_provider="experiment_no_retry"','-c','model_providers.experiment_no_retry.name="OpenAI"','-c','model_providers.experiment_no_retry.wire_api="responses"','-c','model_providers.experiment_no_retry.requires_openai_auth=true','-c','model_providers.experiment_no_retry.request_max_retries=0','-c','model_providers.experiment_no_retry.stream_max_retries=0','--dangerously-bypass-hook-trust','--output-schema','/format.json']
  for feature in DISABLE+(['shell_tool','code_mode_host'] if mode=='reflection' else []):cmd+=['--disable',feature]
  if mode=='extraction':cmd+=['--enable','code_mode_host','--enable','shell_tool']
  return cmd+['-C','/workspace','-']

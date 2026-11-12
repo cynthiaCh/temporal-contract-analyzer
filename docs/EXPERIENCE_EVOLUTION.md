@@ -150,9 +150,9 @@ prevents automatic selection, and execution cancellation stops future dispatch.
 
 |Role|Model / effort|Request cap|Time|
 |---|---|---:|---:|
-|Missing public analysis|gpt-6-sol / low|12 per case|600 s|
-|Maintenance|gpt-5.6-terra / low|24|600 s|
-|Reflection: two PASS / otherwise|gpt-5.6-terra / medium|2 /12|600 s|
+|Missing public analysis|gpt-6.1-sol / medium|12 per case|600 s|
+|Maintenance|gpt-6.1-sol / medium|24|600 s|
+|Reflection: two PASS / otherwise|gpt-6.1-sol / medium|2 /12|600 s|
 
 No extra AI review call is budgeted. With N missing public analyses, one candidate's
 full maximum is396+12N requests with the default corrective budget (up to96
