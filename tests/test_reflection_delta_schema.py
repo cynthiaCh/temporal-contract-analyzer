@@ -40,15 +40,18 @@ class DeltaSchemaTests(unittest.TestCase):
         with self.assertRaises(EvidenceError):
             updates.compose(value,self.visible,self.ledger,self.parents)
 
-    def test_no_update_reference_cannot_hide_rule_or_applicability_changes(self):
+    def test_no_update_context_cannot_modify_guidance_or_hide_rule_operations(self):
         value=deepcopy(self.value)
         value.update(action='no_update',parent_sha256='a'*64,changes=[],
                      labels=None,requires=None,excludes=None)
-        for field,hidden in [('changes',self.value['changes']),('labels',['I']),
-                             ('requires',['entry_snapshot']),('excludes',[])]:
-            bad=deepcopy(value);bad[field]=hidden
-            with self.subTest(field=field),self.assertRaises(EvidenceError):
-                updates.compose(bad,self.visible,self.ledger,self.parents)
+        for field,context in [('labels',['I']),('requires',['entry_snapshot']),('excludes',[])]:
+            supplied=deepcopy(value);supplied[field]=context;before=deepcopy(supplied);parents=deepcopy(self.parents)
+            with self.subTest(field=field):
+                self.assertIsNone(updates.compose(supplied,self.visible,self.ledger,self.parents))
+                self.assertEqual(supplied,before);self.assertEqual(self.parents,parents)
+        value['changes']=self.value['changes']
+        with self.assertRaises(EvidenceError):
+            updates.compose(value,self.visible,self.ledger,self.parents)
 
     def test_parent_replacement_requires_actual_parent_id(self):
         value=deepcopy(self.value);value.update(action='revise',parent_sha256='a'*64)
@@ -57,6 +60,17 @@ class DeltaSchemaTests(unittest.TestCase):
         for wrong in (None,'R99'):
             value['changes'][0]['rule_id']=wrong
             with self.assertRaises(ValueError):validate(value,updates.schema(self.visible,self.ledger,self.parents))
+
+    def test_independent_new_can_cite_prior_guidance_without_inheriting_it(self):
+        value=deepcopy(self.value);value['parent_sha256']='a'*64;before=deepcopy(value)
+        result=updates.compose(value,self.visible,self.ledger,self.parents)
+        self.assertIsNone(result['parent'])
+        self.assertEqual(len(result['rules']),1)
+        self.assertEqual(result['rules'][0]['body'],value['changes'][0]['body'])
+        self.assertEqual(value,before)
+        value['changes'][0].update(operation='replace',rule_id='R01')
+        with self.assertRaisesRegex(EvidenceError,'Independent new guidance'):
+            updates.compose(value,self.visible,self.ledger,self.parents)
 
     def test_removal_cannot_also_carry_new_text(self):
         value=deepcopy(self.value);value.update(action='revise',parent_sha256='a'*64)

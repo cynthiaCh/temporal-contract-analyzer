@@ -88,14 +88,18 @@ def compose(value, visible, ledger, parents, *, protocol=DELTA_V1, prior_experie
                             for m in row['matches']):
                         raise EvidenceError('A changed parent rule needs a direct comparison to that rule')
     if value['action'] == 'no_update':
-        # The schema permits a retained parent reference. With no operations or
-        # applicability edits, it identifies existing guidance rather than a
-        # revision. Keep the raw reference for audit; do not compose a candidate.
-        if value['changes'] or any(value[k] is not None for k in ('labels','requires','excludes')):
+        # A no-op cannot modify stored guidance. Copied references/applicability
+        # remain raw audit context, rather than being applied as a hidden revision.
+        if value['changes']:
             raise EvidenceError('no_update cannot carry a hidden change')
         return None
-    parent = parents.get(value['parent_sha256'])
-    if (value['action'] == 'new' and (value['parent_sha256'] is not None or not value['changes'])) \
+    # The declared action controls composition. A known prior reference on an
+    # independent addition is retained in the raw audit, without inheriting its
+    # rules or applicability. Only revise selects a lineage parent.
+    parent = parents.get(value['parent_sha256']) if value['action']=='revise' else None
+    if value['action']=='new' and any(c['operation']!='add' for c in value['changes']):
+        raise EvidenceError('Independent new guidance cannot edit existing rules; use revise')
+    if (value['action'] == 'new' and not value['changes']) \
             or (value['action'] == 'revise' and parent is None):
         raise EvidenceError('One new candidate or one exact parent revision is required')
     if not any(ledger[k]['kind'] in ('original_task','source_document') for k in value['basis']):

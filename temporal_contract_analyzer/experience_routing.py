@@ -14,7 +14,7 @@ class CitationError(EvidenceError):
         super().__init__(f"引用未匹配：{first['field']}，{first['file']} 第 {first['line']} 行（共 {len(issues)} 处）")
 
 
-def evidence_issues(evidence, task, sources, field):
+def evidence_issues(evidence, task, sources, field, *, text_grounding=False):
     if not isinstance(evidence, list) or not evidence:
         raise EvidenceError('引用列表缺失：' + field)
     issues = []
@@ -29,7 +29,9 @@ def evidence_issues(evidence, task, sources, field):
         exists = path == 'TASK' or path in sources
         lines = (task if path == 'TASK' else sources.get(path, '')).splitlines()
         actual = lines[line - 1] if line <= len(lines) else ''
-        if not exists or line > len(lines) or quote not in actual:
+        # Model location hints may drift; require the same literal words in the same file.
+        grounded = text_grounding and exists and bool(quote.strip()) and ' '.join(quote.split()) in ' '.join(' '.join(lines).split())
+        if not grounded and (not exists or line > len(lines) or quote not in actual):
             issues.append(dict(field=location, file=path, line=line, quote=quote,
                 reason='file_missing' if not exists else 'line_out_of_range' if line > len(lines) else 'quote_not_on_line',
                 actual_line=actual[:2000], actual_line_truncated=len(actual)>2000,
@@ -110,7 +112,7 @@ Public inputs:
 ''' + canonical(material)
 
 
-def validate_analysis(analysis, task, sources):
+def validate_analysis(analysis, task, sources, *, text_grounding=False):
     source_inputs(task, sources)
     required = {'taxonomy_version', 'contract', 'obligation_labels', 'facts', 'unknowns'}
     if not isinstance(analysis, dict) or set(analysis) != required:
@@ -126,7 +128,7 @@ def validate_analysis(analysis, task, sources):
         if not isinstance(item, dict) or set(item) != {'code', 'statement', 'evidence'} \
                 or not isinstance(item['statement'], str) or not item['statement'].strip() or len(item['statement']) > 600:
             raise EvidenceError('Invalid obligation label')
-        issues.extend(evidence_issues(item['evidence'], task, sources, f'obligation_labels[{index}].evidence'))
+        issues.extend(evidence_issues(item['evidence'], task, sources, f'obligation_labels[{index}].evidence', text_grounding=text_grounding))
         codes.append(item['code'])
     codes = taxonomy.labels(codes)
     if not isinstance(analysis['facts'], list) or not isinstance(analysis['unknowns'], list) \
@@ -147,7 +149,7 @@ def validate_analysis(analysis, task, sources):
                 raise EvidenceError('Invalid unknown-fact evidence')
             if not fact['evidence']:
                 continue
-        issues.extend(evidence_issues(fact['evidence'], task, sources, f'facts[{index}].evidence'))
+        issues.extend(evidence_issues(fact['evidence'], task, sources, f'facts[{index}].evidence', text_grounding=text_grounding))
     if issues:
         raise CitationError(issues)
     return codes
@@ -158,8 +160,8 @@ def input_digest(analysis, task, sources):
     return digest(canonical(inputs))
 
 
-def review_template(analysis, task, sources):
-    validate_analysis(analysis, task, sources)
+def review_template(analysis, task, sources, *, text_grounding=False):
+    validate_analysis(analysis, task, sources, text_grounding=text_grounding)
     return dict(input_sha256=input_digest(analysis, task, sources), reviewer=None, approved=None,
                 blocking_issues=[], scope_unknowns=[], evidence=[], reason='')
 
@@ -186,14 +188,14 @@ def route(analysis, sources, library, *, task, review=None):
     checks = []
     def fallback(reason):
         return dict(condition='AUTO', taxonomy_version=taxonomy.VERSION, reason=reason, selected=None, checks=checks)
+    unreviewed = isinstance(review, dict) and review.get('reviewer') == 'unreviewed_model_analysis' and review.get('approved') is False
     try:
-        codes = validate_analysis(analysis, task, sources)
+        codes = validate_analysis(analysis, task, sources, text_grounding=unreviewed)
     except EvidenceError as error:
         return fallback(str(error))
-    template = review_template(analysis, task, sources)
+    template = review_template(analysis, task, sources, text_grounding=unreviewed)
     if not isinstance(review, dict) or set(review) != set(template) or review['input_sha256'] != template['input_sha256']:
         return fallback('missing_or_drifted_semantic_review')
-    unreviewed=review['reviewer']=='unreviewed_model_analysis' and review['approved'] is False
     if (not unreviewed and (review['reviewer'] not in ('execution_agent_visible_input_only', 'human_visible_input_only','model_evidence_check')
             or review['approved'] is not True or not evidence_valid(review['evidence'], task, sources))) \
             or review['blocking_issues'] != [] \

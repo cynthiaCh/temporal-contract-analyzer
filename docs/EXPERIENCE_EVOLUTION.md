@@ -126,6 +126,11 @@ new for an independent addition, no_update when there is no supported increment.
 Python still checks that the typed delta can be applied to existing rules and
 source evidence IDs. It does not invent policies, repair missing output, or
 manufacture evidence. There is no second candidate AI reviewer in this policy.
+The declared action controls composition: `new` composes only its additive rules;
+a prior reference is retained in raw audit context without inheriting that guide.
+`no_update` with no rule operations creates no candidate and applies no metadata
+changes, even if the response repeats labels or applicability. `revise` is required
+to change an existing guide. Raw model outputs remain intact in every case.
 
 A generated/edited candidate goes directly to the existing Experience Review
 page. The human checks source support, increment, interactions, bounds and claims.
@@ -185,3 +190,5 @@ resumed by this change. New preparations use the current failure-review schema.
 need intermediate review files. `recover-candidate` can materialize a complete
 historical proposal for human content review without a model call. Offline fake
 backends establish controller behavior, not real repair improvement.
+
+Unreviewed model analysis routing accepts a source quotation with an inaccurate line hint or wrapped whitespace only if its literal words occur in the same candidate-visible file. Raw analysis and location warnings are preserved. Missing quotation text or files, unknown prerequisites, and changed input snapshots still prevent selection. Human-reviewed citation checks retain exact line validation. This fallback does not imply semantic review or effectiveness validation.
