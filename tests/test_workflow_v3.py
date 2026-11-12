@@ -160,6 +160,21 @@ class WorkflowTests(unittest.TestCase):
         child,_=self.edit(code);count=len(backend.calls);loop.run(execute=True,backend=backend)
         self.assertEqual(len(backend.calls),count);self.assertEqual(life.metadata(self.store,child['sha256'])['status'],'budget_exhausted')
 
+    def test_reflection_schema_or_composition_failure_stops_without_paid_replay(self):
+        class RejectedDeltaBackend(FakeBackend):
+            def execute(self,p,role,prompt,schema,directory):
+                result=super().execute(p,role,prompt,schema,directory)
+                if role=='reflect' and not self.invalid:
+                    result['output']['changes'].append(deepcopy(result['output']['changes'][0]))
+                return result
+        for invalid_schema in (False,True):
+            loop=self.prepare();backend=RejectedDeltaBackend(invalid=invalid_schema)
+            state=loop.run(execute=True,backend=backend)
+            self.assertEqual(state['status'],'reflection_incomplete',state.get('error'))
+            self.assertFalse((loop.root/'candidate.json').exists())
+            count=len(backend.calls);loop.run(execute=True,backend=backend)
+            self.assertEqual(len(backend.calls),count)
+
     def test_generated_analysis_unknowns_and_fair_old_new_prompts(self):
         config=self.fixture.config();config['visible']=None
         for row in config['cohort']['transfers']:row['visible']=None

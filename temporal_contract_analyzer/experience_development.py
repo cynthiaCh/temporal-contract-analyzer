@@ -373,7 +373,9 @@ class Development(Evolution):
             'falsifiable verification where relevant. Do not include case IDs, source paths, evidence IDs, scorer '
             'names or copyable patches in rule bodies. Unknown causes remain unknown. A prior rule is not normative '
             'proof. Each changed policy needs original-task/source support. Return the typed schema, not a JSON '
-            'string or a second full prose copy. The complete authorized material is below and in read-only '
+            'string. For operation add, rule_id must be null: Python assigns new rule numbers. '
+            'For replace/remove, rule_id identifies an existing parent rule. Return no second full prose copy, '
+            'and use only this schema. The complete authorized material is below and in read-only '
             '/workspace/evidence.json and /workspace/source. Tools may only use closed-grammar workspace reads; '
             'no execution, writes, network, scorer/reference access or additional validation. No retry or extra '
             'organizer session.\n'+canonical(context))

@@ -27,6 +27,22 @@ def schema(visible, ledger, parents):
             causal_status=dict(type='string', enum=['documented_relation', 'observed_relation', 'hypothesis', 'unknown'])),
             required=['operation','rule_id','category','body','support','causal_status'], additionalProperties=False)),
         unresolved=dict(type='array', items=dict(type='string')))
+    # Match the existing composition contract in the actual structured output:
+    # new IDs are assigned by Python; replace/remove identify parent rules.
+    item=fields['changes']['items'];branches=[]
+    parent_ids=sorted({r['id'] for parent in parents.values() for r in parent['rules']})
+    for operation in ('add','replace','remove'):
+        if operation!='add' and not parent_ids:continue
+        branch=deepcopy(item);props=branch['properties']
+        props['operation']=dict(type='string',enum=[operation])
+        props['rule_id']=dict(type='null') if operation=='add' else dict(type='string',enum=parent_ids)
+        if operation=='remove':
+            props['category']=dict(type='null');props['body']=dict(type='null')
+        else:
+            props['category']=dict(type='string',enum=list(memory.CATEGORIES))
+            props['body']=dict(type='string',minLength=1,maxLength=2400)
+        branches.append(branch)
+    fields['changes']['items']=dict(anyOf=branches)
     return dict(type='object', properties=fields, required=list(fields), additionalProperties=False)
 
 

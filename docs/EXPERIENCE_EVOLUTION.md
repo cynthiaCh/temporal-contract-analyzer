@@ -145,6 +145,14 @@ test names, human edits or agent claims alone cannot justify policy. No transfer
 feedback/reference patch enters it. A failed, invalid or incomplete check is not
 no_update. AI checking never creates named human acceptance.
 
+Reflection changes use operation-specific structured schemas: add requires
+rule_id=null and a nonempty body; Python assigns its canonical rule number.
+Replace/remove require a retained parent rule ID, and removal carries no new
+body or category. The local schema validator enforces these anyOf branches too.
+Schema/composition rejection stops as reflection_incomplete for new executions;
+it is not no_update or an observed repair failure. Raw output remains archived,
+without hand-correcting a field or silently replaying an already stopped slot.
+
 ## One human checkpoint and exact-version continuation
 
 Experience Review shows AI findings, Before/current text, evidence, parents,

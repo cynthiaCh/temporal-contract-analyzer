@@ -167,7 +167,7 @@ class Workflow(AutomatedChecks,Development):
         versions=[load(f) for f in (Path(p['store'])/'workflow/versions').glob('*.json') if load(f).get('origin_root')==str(self.root)]
         versions.sort(key=lambda r:(r.get('generation',0),r['candidate_sha256']))
         state['versions']=versions
-        if versions and state['status'] not in ('cancelled','infrastructure_error','ai_contract_failed','ai_check_incomplete','budget_exhausted'):
+        if versions and state['status'] not in ('cancelled','infrastructure_error','reflection_incomplete','ai_contract_failed','ai_check_incomplete','budget_exhausted'):
             state['status']=versions[-1]['status']
         self.save(state);return state
 
@@ -355,7 +355,7 @@ class Workflow(AutomatedChecks,Development):
     def run(self,execute=False,backend=None):
         if not execute:raise EvidenceError('Execution requires explicit --execute; browsing/editing/review never dispatches models')
         p=self.verify();backend=backend or backend_for(p)
-        if self.state()['status'] in ('infrastructure_error','ai_check_incomplete','budget_exhausted','cancelled','ai_contract_failed'):
+        if self.state()['status'] in ('infrastructure_error','reflection_incomplete','ai_check_incomplete','budget_exhausted','cancelled','ai_contract_failed'):
             return self.state()
         auth_path=self.root/'execution-authorization.json'
         if not auth_path.exists():archive.atomic_json(auth_path,dict(root=str(self.root),request_cap=p['global_request_cap'],cancelled=False,at=archive.now()))
@@ -385,7 +385,7 @@ class Workflow(AutomatedChecks,Development):
                     self._status('enabled' if any(r.get('status')=='enabled' for r in values) else 'awaiting_human_review' if any(r.get('ai_status')=='passed' and not life.latest_acceptance(p['store'],r['candidate_sha256']) and r.get('status') not in ('rejected','revision_requested') for r in values) else (values[-1]['status'] if values else self.state()['status']))
             except BaseException as error:
                 state=self.state();last=state['jobs'][-1] if state['jobs'] else {}
-                phase=state['status'];status='revision_requested_or_rejected' if isinstance(error,ReviewWithdrawn) else 'ai_candidate_failed' if isinstance(error,CandidateCheckFailed) else 'cancelled' if isinstance(error,(KeyboardInterrupt,ExecutionCancelled)) else 'budget_exhausted' if 'budget' in str(error).lower() else 'ai_check_incomplete' if last.get('status')=='invalid' and last.get('role') in ('contract_check','candidate_check','analysis') else 'ai_contract_failed' if phase=='ai_contract_checking' else 'ai_candidate_failed' if phase=='ai_candidate_checking' else 'infrastructure_error'
+                phase=state['status'];status='revision_requested_or_rejected' if isinstance(error,ReviewWithdrawn) else 'ai_candidate_failed' if isinstance(error,CandidateCheckFailed) else 'cancelled' if isinstance(error,(KeyboardInterrupt,ExecutionCancelled)) else 'budget_exhausted' if 'budget' in str(error).lower() else 'ai_check_incomplete' if last.get('status')=='invalid' and last.get('role') in ('contract_check','candidate_check','analysis') else 'ai_contract_failed' if phase=='ai_contract_checking' else 'ai_candidate_failed' if phase=='ai_candidate_checking' else 'reflection_incomplete' if phase=='reflecting' and last.get('slot')=='EXTRACT' and (last.get('status')=='valid' or isinstance(error,ValueError)) else 'infrastructure_error'
                 self._status(status,error=repr(error))
                 code=self.state().get('candidate_sha256')
                 if code and phase=='ai_candidate_checking':life.update(p['store'],code,ai_status='failed',status=status,enable_blocker=repr(error))

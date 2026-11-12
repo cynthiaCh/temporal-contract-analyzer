@@ -56,7 +56,7 @@ def run(args):
             result=loop.run(execute=args.execute)
             if action=='work' and args.watch:
                 import time
-                while result['status'] not in ('no_update','cancelled','infrastructure_error','budget_exhausted','ai_contract_failed','ai_candidate_failed','ai_check_incomplete'):
+                while result['status'] not in ('no_update','cancelled','infrastructure_error','reflection_incomplete','budget_exhausted','ai_contract_failed','ai_candidate_failed','ai_check_incomplete'):
                     time.sleep(args.poll_seconds);result=loop.run(execute=True)
         elif action=='cancel':
             if version!='experience-development-v3':raise EvidenceError('Persistent cancellation requires a v3 development root')

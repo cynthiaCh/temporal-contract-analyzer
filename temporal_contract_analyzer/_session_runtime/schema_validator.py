@@ -1,5 +1,11 @@
 """Unmodified validate function extracted from provenance-pinned structured.py."""
 def validate(value,schema,path='$'):
+ if 'anyOf' in schema:
+  for branch in schema['anyOf']:
+   try:validate(value,branch,path)
+   except ValueError:continue
+   break
+  else:raise ValueError(path+': no matching anyOf branch')
  t=schema.get('type')
  ok={'object':lambda:isinstance(value,dict),'array':lambda:isinstance(value,list),
      'string':lambda:isinstance(value,str),'integer':lambda:type(value) is int,
