@@ -17,6 +17,12 @@ from .evolution_backend import NativeBackend, ROLES
 VERSION='experience-development-v3'
 VALIDATION='experience-validation-v3'
 EVALUATION='experience-evaluation-v3'
+HUMAN_ONLY='human-content-only-v1'
+LEGACY_CHECKS='ai-evidence-v3'
+
+
+def human_only(p):
+    return p.get('review_policy')==HUMAN_ONLY
 
 
 class ReviewWithdrawn(EvidenceError):pass
@@ -41,6 +47,10 @@ class AutomatedChecks:
         if checked['task']!=original['task'] or checked['sources']!=original['sources']:
             raise EvidenceError('AI-checked public input differs from the frozen original task/source')
         raw_analysis=load(folder/'raw-analysis.json')
+        if human_only(load(self.root/'protocol.json')):
+            if binding.get('kind')!='not_run' or binding.get('human_acceptance') is not False or checked['analysis']!=raw_analysis:
+                raise EvidenceError('Unreviewed analysis snapshot differs from its archived original')
+            return checked
         policy=load(self.root/'protocol.json').get('contract_check_protocol',checks.CONTRACT_V1)
         if binding.get('kind')!='AI' or binding.get('human_acceptance') is not False \
                 or binding.get('analysis')!=checked['analysis'] \
@@ -81,7 +91,7 @@ class AutomatedChecks:
     def _analysis_setup(self,p):
         from .preanalysis import analyze_candidate
         # Only newly prepared batches opt in. Missing field means the frozen v1 policy.
-        p['contract_check_protocol']=checks.CONTRACT_V2
+        p['contract_check_protocol']='not_run' if human_only(p) else checks.CONTRACT_V2
         for key,c in p['cases'].items():
             directory=self.root/'cases'/key/'analysis';directory.mkdir(parents=True,exist_ok=True)
             if not (directory/'ast-evidence.json').exists():
@@ -95,9 +105,9 @@ class AutomatedChecks:
             write_files(directory,{n:t.encode() for n,t in b['visible']['sources'].items()})
             b.update(input_path=str(directory),candidate_files=inventory({n:t.encode() for n,t in b['visible']['sources'].items()}))
         all_keys=list(p['cases'])+['boundary-'+str(i) for i in range(1,len(p.get('boundaries',[]))+1)]
-        p['slots'] += [dict(name='CONTRACT-CHECK-'+k,role='contract_check',case=k,requests=4) for k in all_keys]
-        p['roles']=deepcopy(ROLES)
-        return 4*len(all_keys)
+        if not human_only(p):p['slots'] += [dict(name='CONTRACT-CHECK-'+k,role='contract_check',case=k,requests=4) for k in all_keys]
+        p['roles']={k:deepcopy(v) for k,v in ROLES.items() if not human_only(p) or k not in ('contract_check','candidate_check')}
+        return 0 if human_only(p) else 4*len(all_keys)
 
     def _analyses(self,backend,p):
         all_cases=list(p['cases'].items())+[(f'boundary-{i}',b) for i,b in enumerate(p.get('boundaries',[]),1)]
@@ -108,7 +118,7 @@ class AutomatedChecks:
                 raw=original['boundaries'][int(key.split('-')[1])-1]['visible'] if key.startswith('boundary-') else original['cases'][key]['visible']
                 checked=self._checked_public_input(key,raw)
             else:
-                self._status('ai_contract_checking',case=key)
+                self._status('analyzing' if human_only(p) else 'ai_contract_checking',case=key)
                 folder=self.root/'cases'/key/'analysis';folder.mkdir(parents=True,exist_ok=True)
                 raw=c['visible'];analysis=raw.get('analysis')
                 if analysis is None:
@@ -118,6 +128,22 @@ class AutomatedChecks:
                 else:
                     archive.atomic_json(folder/'raw-analysis.json',analysis)
                 archive.atomic_json(folder/'analysis-origin.json',dict(kind='model_generated' if c.get('analysis_needed') else 'supplied_proposal',human_review=False))
+                if human_only(p):
+                    # Bad quotation locations are diagnostic only. Preserve the raw
+                    # analysis and let repair inspect the complete actual source.
+                    warnings=[]
+                    try:routing.validate_analysis(analysis,raw['task'],raw['sources'])
+                    except EvidenceError as error:warnings.append(str(error))
+                    review=dict(input_sha256=routing.digest(canonical(dict(task=raw['task'],sources=raw['sources'],
+                        analysis=analysis,taxonomy_sha256=taxonomy.fingerprint()))),reviewer='unreviewed_model_analysis',
+                        approved=False,blocking_issues=[],scope_unknowns=analysis['unknowns'],evidence=[],
+                        reason='AI evidence review not performed under the human-content-only policy; source-premise routing only.')
+                    checked=dict(task=raw['task'],sources=raw['sources'],analysis=analysis,review=review)
+                    archive.atomic_json(folder/'analysis-notes.json',dict(kind='not_run',warnings=warnings,
+                        blocking=False,human_acceptance=False,reason='Citation warnings do not block repair; uncertain routing falls back to AUTO.'))
+                    archive.atomic_json(folder/'check-binding.json',dict(kind='not_run',human_acceptance=False))
+                    archive.atomic_json(target,checked);c['visible']=checked
+                    continue
                 routing.validate_analysis(analysis,raw['task'],raw['sources'])
                 visible=dict(task=raw['task'],sources=raw['sources'],analysis=analysis)
                 ast=load(folder/'ast-evidence.json') if (folder/'ast-evidence.json').exists() else None
@@ -147,15 +173,21 @@ class Workflow(AutomatedChecks,Development):
 
     def prepare_config(self,config):
         config=deepcopy(config);limit=config.pop('max_candidate_versions',2);external=config.pop('candidate_sha256',None)
+        policy=config.pop('review_policy',HUMAN_ONLY)
+        if policy not in (HUMAN_ONLY,LEGACY_CHECKS):raise EvidenceError('Unknown review policy')
         if type(limit) is not int or not 1<=limit<=20:raise EvidenceError('Declare 1..20 bounded candidate versions before execution')
         super().prepare_config(config);p=self.verify()
+        p['review_policy']=policy
         check_cap=self._analysis_setup(p)
-        p['slots'].append(dict(name='CANDIDATE-CHECK',role='candidate_check',case='source',requests=4))
-        initial=300+p['analysis_cap']+check_cap+4
+        if not human_only(p):p['slots'].append(dict(name='CANDIDATE-CHECK',role='candidate_check',case='source',requests=4))
+        candidate_cap=0 if human_only(p) else 4
+        initial=300+p['analysis_cap']+check_cap+candidate_cap
         p.update(max_candidate_versions=limit,initial_request_cap=initial,
-            total_request_cap=initial+(limit-1)*244,global_request_cap=initial+(limit-1)*244,
+            total_request_cap=initial+(limit-1)*(240+candidate_cap),global_request_cap=initial+(limit-1)*(240+candidate_cap),
             external_candidate_sha256=external,check_policy='Separate budgeted semantic model checks; no human intermediate forms')
-        p.update(reflection_delta_protocol=updates.DELTA_V2,candidate_check_protocol=checks.CANDIDATE_V2)
+        p.update(reflection_delta_protocol=updates.DELTA_V1 if human_only(p) else updates.DELTA_V2,
+                 candidate_check_protocol='not_run' if human_only(p) else checks.CANDIDATE_V2,
+                 check_policy='Human content review only; no AI audit calls or citation-admission gate' if human_only(p) else p['check_policy'])
         if external is not None and not any(b['sha256']==external for b in memory.records(p['store'])):
             raise EvidenceError('Unknown supplied candidate; prepare against a store containing its immutable record/evidence')
         archive.atomic_json(self.root/'protocol.json',p)
@@ -226,7 +258,8 @@ class Workflow(AutomatedChecks,Development):
             payload=dict(schema_version=memory.BUNDLE_VERSION_V2,id=parent['id'] if parent else p['batch_id'],version=p['batch_id'],
                 parent_sha256=parent['sha256'] if parent else None,taxonomy_version=taxonomy.VERSION,
                 **{k:value[k] for k in ('labels','requires','excludes','rules')},
-                review=dict(status='candidate',kind='ai_assisted',source_sha256=digests[files[0]],limitations=['Pending AI evidence check and exact-version human content review.']),
+                review=dict(status='candidate',kind='ai_assisted',source_sha256=digests[files[0]],limitations=[
+                    'AI evidence review not performed; pending exact-version human content review.' if human_only(p) else 'Pending AI evidence check and exact-version human content review.']),
                 audit=dict(sources=list({s['sha256']:s for s in sources}.values()),rule_links=links,notes=['V3 reflection candidate; not human approval.'],outcome_refs=[]))
             bundle=memory.seal(payload)
             with life.locked(p['store']):
@@ -234,13 +267,22 @@ class Workflow(AutomatedChecks,Development):
                     # Acceptance uses the same lock: publish pending AI state before
                     # the immutable record becomes visible, closing that race.
                     life._update(p['store'],bundle['sha256'],origin_root=str(self.root),generation=0,
-                        ai_status='pending',status='ai_check_pending',validation_job=None,validation_status='not_started')
+                        review_policy=p.get('review_policy',LEGACY_CHECKS),ai_status='not_run' if human_only(p) else 'pending',
+                        status='awaiting_human_review' if human_only(p) else 'ai_check_pending',validation_job=None,validation_status='not_started')
                     bundle=memory.add(p['store'],payload,files)
         archive.atomic_json(target,bundle)
         state=self.state();state['candidate_sha256']=bundle['sha256'];self.save(state)
         return bundle
 
     def _candidate_check(self,backend,p,bundle):
+        if human_only(p):
+            archive.atomic_json(self.root/'candidate-review-policy.json',dict(candidate_sha256=bundle['sha256'],
+                kind='not_run',policy=HUMAN_ONLY,human_acceptance=False))
+            with life.locked(p['store']):
+                rows=[d for d in approval.decisions(p['store']) if d['candidate_sha256']==bundle['sha256']]
+                status={'accept':'content_accepted_waiting_validation','reject':'rejected','revise':'revision_requested'}[rows[-1]['decision']] if rows else 'awaiting_human_review'
+                life._update(p['store'],bundle['sha256'],review_policy=HUMAN_ONLY,ai_status='not_run',status=status)
+            return
         code=bundle['sha256'];self._status('ai_candidate_checking')
         life.update(p['store'],code,status='ai_candidate_checking')
         origin=Path(p.get('origin_root',self.root));context=load(origin/'reflection-input.json')
@@ -307,7 +349,8 @@ class Workflow(AutomatedChecks,Development):
         existing=life.metadata(p['store'],code)
         if existing and existing.get('origin_root') not in (None,str(self.root)):raise EvidenceError('Candidate already bound to another immutable workflow')
         if not existing or not existing.get('origin_root'):
-            life.update(p['store'],code,origin_root=str(self.root),generation=0,ai_status='pending',validation_job=None,validation_status='not_started')
+            life.update(p['store'],code,origin_root=str(self.root),generation=0,review_policy=p.get('review_policy',LEGACY_CHECKS),
+                ai_status='not_run' if human_only(p) else 'pending',validation_job=None,validation_status='not_started')
         state=self.state();state.update(development_done=True,admitted_versions=[code]);self.save(state)
         self._candidate_check(backend,p,bundle);self._status('awaiting_human_review')
 
@@ -320,10 +363,11 @@ class Workflow(AutomatedChecks,Development):
                     life.update(p['store'],code,status='budget_exhausted',enable_blocker='Declared candidate-version budget exhausted');return None
                 admitted.append(code);state['admitted_versions']=admitted;self.save(state)
             directory.mkdir(parents=True);q=deepcopy(p)
+            cap=240 if human_only(p) else 244
             q.update(schema_version=VALIDATION,execution_policy=VALIDATION,origin_root=str(self.root),candidate_sha256=code,
-                batch_id='validation-'+code,kind='validation',analysis_cap=0,total_request_cap=244,branch_caps=dict(success=244,failure=244))
-            q['slots']=[s for s in q['slots'] if s['role']=='repair' and not s['name'].startswith('START-')]+[
-                dict(name='CANDIDATE-CHECK',role='candidate_check',case='source',requests=4)]
+                batch_id='validation-'+code,kind='validation',analysis_cap=0,total_request_cap=cap,branch_caps=dict(success=cap,failure=cap))
+            q['slots']=[s for s in q['slots'] if s['role']=='repair' and not s['name'].startswith('START-')]
+            if not human_only(p):q['slots'].append(dict(name='CANDIDATE-CHECK',role='candidate_check',case='source',requests=4))
             archive.atomic_json(directory/'protocol.json',q)
             starts=[dict(deepcopy(j),reused=True,requests=0,usage=None,seconds=0) for j in self.state()['jobs'] if j['slot'].startswith('START-')]
             archive.atomic_json(directory/'state.json',dict(status='prepared',jobs=starts,candidate_sha256=code,branch=self.state()['branch']))
@@ -352,7 +396,7 @@ class Workflow(AutomatedChecks,Development):
             if meta.get('ai_status')=='pending':
                 task._candidate_check(backend,q,bundle);task._status(life.metadata(p['store'],code)['status'])
             meta=life.metadata(p['store'],code)
-            if meta.get('ai_status')!='passed':return
+            if not life.content_review_available(meta):return
             accepted=life.latest_acceptance(p['store'],code)
             if not accepted:return
             if meta.get('validation_status') in ('passed','failed','unknown','infrastructure_error','cancelled'): 
@@ -410,10 +454,10 @@ class Workflow(AutomatedChecks,Development):
                     versions.sort(key=lambda r:(r.get('generation',0),r['candidate_sha256']))
                     for meta in versions:
                         code=meta['candidate_sha256']
-                        if meta.get('ai_status')=='pending' or meta.get('ai_status')=='passed' and life.latest_acceptance(p['store'],code):
+                        if meta.get('ai_status')=='pending' or life.content_review_available(meta) and life.latest_acceptance(p['store'],code):
                             self._process(backend,p,code)
                     values=[life.metadata(p['store'],r['candidate_sha256']) for r in versions]
-                    self._status('enabled' if any(r.get('status')=='enabled' for r in values) else 'awaiting_human_review' if any(r.get('ai_status')=='passed' and not life.latest_acceptance(p['store'],r['candidate_sha256']) and r.get('status') not in ('rejected','revision_requested') for r in values) else (values[-1]['status'] if values else self.state()['status']))
+                    self._status('enabled' if any(r.get('status')=='enabled' for r in values) else 'awaiting_human_review' if any(life.content_review_available(r) and not life.latest_acceptance(p['store'],r['candidate_sha256']) and r.get('status') not in ('rejected','revision_requested') for r in values) else (values[-1]['status'] if values else self.state()['status']))
             except BaseException as error:
                 state=self.state();last=state['jobs'][-1] if state['jobs'] else {}
                 phase=state['status'];status='revision_requested_or_rejected' if isinstance(error,ReviewWithdrawn) else 'ai_candidate_failed' if isinstance(error,CandidateCheckFailed) else 'cancelled' if isinstance(error,(KeyboardInterrupt,ExecutionCancelled)) else 'budget_exhausted' if 'budget' in str(error).lower() else 'ai_check_incomplete' if last.get('status')=='invalid' and last.get('role') in ('contract_check','candidate_check','analysis') else 'ai_contract_failed' if phase=='ai_contract_checking' else 'ai_candidate_failed' if phase=='ai_candidate_checking' else 'reflection_incomplete' if phase=='reflecting' and last.get('slot')=='EXTRACT' and (last.get('status')=='valid' or isinstance(error,ValueError)) else 'infrastructure_error'
@@ -425,7 +469,8 @@ class Workflow(AutomatedChecks,Development):
 
     def report(self):
         super().report();p=self.verify();summary=load(self.root/'summary.json')
-        summary.update(schema_version=p['schema_version'],state=self.state()['status'],human_checkpoint='experience content review/editing only')
+        summary.update(schema_version=p['schema_version'],state=self.state()['status'],human_checkpoint='experience content review/editing only',
+            review_policy=p.get('review_policy',LEGACY_CHECKS),AI_audit='not_run' if human_only(p) else 'legacy_budgeted_checks')
         summary['counts_scope']='This task only; root repair reservations are executed in separately reported exact-version validation tasks.'
         actual=[j for j in self.state()['jobs'] if not j.get('reused')]
         summary.update(started=len(actual),valid=sum(j['status']=='valid' for j in actual),invalid=sum(j['status']=='invalid' for j in actual),
@@ -452,7 +497,7 @@ class Workflow(AutomatedChecks,Development):
                 requests_with_unknown_token_usage=sum(unknown) if all(type(n) is int for n in unknown) else None,
                 known_seconds=sum(j['seconds'] for j in jobs if type(j.get('seconds')) in (int,float)),
                 valid_behavior_scores=sum(j['status']=='valid' and 'outcome' in j for j in jobs),jobs=jobs,engineering_usage=None)
-            summary['workflow_usage'].update(planned_max_sessions=len(budget_protocol['slots'])+11*(budget_protocol['max_candidate_versions']-1),
+            summary['workflow_usage'].update(planned_max_sessions=len(budget_protocol['slots'])+(10 if human_only(p) else 11)*(budget_protocol['max_candidate_versions']-1),
                 started=len(jobs),valid=sum(j['status']=='valid' for j in jobs),invalid=sum(j['status']=='invalid' for j in jobs))
         archive.atomic_json(self.root/'summary.json',summary)
         (self.root/'REPORT.md').write_text('# Automated evidence workflow v3\n\nOnly experience content review/editing waits for a human. '
@@ -463,7 +508,9 @@ class FrozenEvaluation(AutomatedChecks,Evaluation):
     PROTOCOL=EVALUATION
 
     def prepare_config(self,config):
-        super().prepare_config(config);p=self.verify();extra=self._analysis_setup(p)
+        config=deepcopy(config);policy=config.pop('review_policy',HUMAN_ONLY)
+        if policy not in (HUMAN_ONLY,LEGACY_CHECKS):raise EvidenceError('Unknown review policy')
+        super().prepare_config(config);p=self.verify();p['review_policy']=policy;extra=self._analysis_setup(p)
         p['total_request_cap']+=extra;p['analysis_cap']+=extra
         archive.atomic_json(self.root/'protocol.json',p);self._status('prepared');self.report();return self.state()
 

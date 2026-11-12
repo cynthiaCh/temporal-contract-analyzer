@@ -306,7 +306,7 @@ class DevelopmentTests(unittest.TestCase):
         self.assertTrue((loop.root/'cases/source/analysis/ast-evidence.json').exists())
         self.assertEqual(loop.verify()['branch_caps']['success'],290)
         self.assertEqual(loop.verify()['schema_version'],'experience-development-v3')
-        self.assertEqual(loop.verify()['global_request_cap'],576)
+        self.assertEqual(loop.verify()['global_request_cap'],552)
         with self.assertRaises(EvidenceError):loop.run()
         invalid=self.config();del invalid['cohort'];path.write_text(json.dumps(invalid))
         with redirect_stdout(StringIO()),redirect_stderr(StringIO()):

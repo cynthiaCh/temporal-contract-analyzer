@@ -37,8 +37,11 @@ def main():
         child=life.edit(store,parent['sha256'],dict(request_id='synthetic-edit',actor='SYNTHETIC_EDITOR_FIXTURE',
             reason='Offline demonstration of the human edit branch.',rules=rules,
             **{k:parent[k] for k in ('labels','requires','excludes')}))
-        loop.run(execute=True,backend=fake)
-        assert life.metadata(store,child['sha256'])['ai_status']=='passed'
+        calls_before=len(fake.calls);loop.run(execute=True,backend=fake)
+        assert len(fake.calls)==calls_before
+        assert life.metadata(store,child['sha256'])['ai_status']=='not_run'
+        assert life.view(store,child['sha256'])['content_review_available']
+        assert not any(c['role'] in ('contract_check','candidate_check') for c in fake.calls)
         decision=approval.review_template(store,child['sha256']);decision.update(reviewer='SYNTHETIC_HUMAN_FIXTURE',
             decision='accept',reason='Simulated content review, not actual expert approval.',auto_enable=True,request_id='synthetic-accept')
         for row in decision['rules']:row.update(supported=True,reason='Synthetic fixture only.')

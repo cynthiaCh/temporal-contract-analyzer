@@ -1,25 +1,42 @@
-# Automated evidence workflow — v3
+# Experience development: human content review, measured effects
 
-The English figures/specs/temporal_workflow.json and SVG are the target design.
-New CLI preparations implement it with the existing Coding Agent and runner:
+New preparations default to `review_policy=human-content-only-v1` in the existing
+v3 controller. This replaces the extra AI audit stages. Historical frozen batches
+retain their original policy, costs, stopped slots and results.
 
 ```text
-Task/source → AST → analysis LLM → automatic AI contract evidence check
-→ frozen M_old retrieval → two independent repairs → actual scores/run records
-→ one reflection: no_update, or one immutable candidate
-→ automatic AI support/novelty/conflict check
-→ HUMAN CONTENT REVIEW / EDITING (the only business checkpoint)
-→ accepted exact version → automatic source/two-transfer effect screening
-→ exact-version authorization + effect gate + active-pointer CAS → enable
-
-Human edit → immutable child → automatic AI check → same human checkpoint
+Task/source → AST → one Contract analysis → frozen old-bank retrieval
+→ two independent starting repairs and actual scores
+→ one reflection: no_update or one incremental candidate
+→ HUMAN CONTENT REVIEW / EDITING
+→ accepted exact version → two source repairs + two-peer old/new comparison
+→ actual effect gate + exact-version human enable grant → enable
 ```
 
-Saving, accepting, passing validation and enabling are separate events. Review-only
-acceptance never enables automatically. Page reads, edits and decisions never
-dispatch a model. A separately authorized worker performs continuation.
+## Removed from the default path
 
-## Prepare, authorize and run
+- No Contract evidence-check model session.
+- No candidate support/novelty/conflict-check model session.
+- Quote/line mismatches are nonblocking notes, not repair admission failures.
+- No exhaustive increment-comparison object or second model review of reflection.
+
+AST evidence, the original task/source, raw analysis, patches, full scores and
+reflection remain archived. The Contract is an unreviewed model proposal: repairs
+must inspect its basis against actual source. Skipped checks are `not_run`, never
+`passed`, and analysis has `approved=false`. The retained compatibility filename
+`approved-visible.json` means the frozen public input, not approval under this policy.
+Quotation warnings appear in `cases/CASE/analysis/analysis-notes.json`. No quote is
+silently corrected, no uncertain premise is promoted, and no human is impersonated.
+
+Routing uses current source-bound labels and mechanism premises, not case IDs or
+history. Invalid evidence, unknown prerequisites, exclusions or conflicts can
+cause AUTO fallback; they do not stop repair. Valid source anchors permit routing
+without claiming independent semantic review. At most one experience is delivered.
+The same original code and frozen public analysis are shared across old/new views;
+new candidate text/results never enter the old-condition prompt or shared analysis.
+Preanalysis has no circular experience retrieval.
+
+## Prepare and explicitly execute
 
 ```sh
 python3 -B -m temporal_contract_analyzer experience-evolution prepare config.json --root /path/to/NEW_BATCH
@@ -28,294 +45,92 @@ python3 -B -m temporal_contract_analyzer experience-memory review --store /path/
 python3 -B -m temporal_contract_analyzer experience-evolution work --root /path/to/NEW_BATCH --execute --watch
 ```
 
-Preparation is offline. The initial run normally returns at awaiting_human_review.
-The worker command keeps a process waiting and continues after exact-version
-decisions/edits; without --watch it drains eligible work once. It actually calls
-the existing NativeBackend/Docker backend and scorer, subject to their runtime
-and calibration requirements. Merely saving pending data is not called execution.
-Restarting it reuses persisted authorization, task bindings and completed slots.
-An interrupted started slot with uncertain completion stops without retry. Use
-cancel --root PATH to cancel future dispatch; an in-flight session archives first.
+Preparation is offline. No paid task starts from page reads, edits or review
+submissions. An explicitly authorized worker continues after an exact-version
+human decision, subject to the frozen budget. Completed slots are reused; started
+incomplete slots are not retried. `cancel --root PATH` stops future dispatch.
+This change does not resume or reclassify a previously stopped batch. A new
+preparation is needed to use the new policy; any real execution needs authorization.
 
-## Configuration and source constraints
+## Configuration and fixed scope
 
-Development retains case_id, store, binary, node, calibration,
-source_relationship, optional visible/backend, and the existing cohort:
+Keep `case_id`, `store`, `binary`, `node`, `calibration`, `source_relationship`,
+optional `visible`/`backend`, and the existing `cohort`:
 
-- source: source_unit, derived_from, prior_exposure and critical obligations.
-- transfers: exactly two other independent registered sources, each with case_id,
-  visible (null or a supplied analysis), calibration and lineage/critical basis.
-- boundaries: at least one visible task/source/analysis and lineage. Its AI check
-  is budgeted; no human analysis-review file is required.
+- Source: source_unit, derived_from, actual prior_exposure, critical obligations.
+- Transfers: exactly two other registered development sources, each with case_id,
+  visible or null, calibration, lineage and source-supported critical obligations.
+- Boundaries: at least one supplied task/source/analysis and actual lineage.
 
-A critical obligation names a scorer relation with literal task/source anchors.
-Families/ancestry cannot overlap, duplicate source snapshots cannot count as
-independent, and language variants are not independent sources. Record exposure
-honestly, including zero-repair boundaries. Source metadata never enters routing.
+Related variants do not count as independent sources. Record authored/shared
+components honestly. Critical preservation obligations and the complete schedule
+are fixed before execution. These peers select experience, so they are development
+data, not final holdouts. Default `max_candidate_versions=2` reserves one initial
+candidate and one edit; allowed range1..20. Further revisions need declared budget
+and explicit execution. `candidate_sha256` can bind an existing eligible proposal
+to a fresh batch; it never transfers acceptance or old effect results to a child.
 
-Optional max_candidate_versions is 1..20, default 2: initial candidate plus one
-edited version. It bounds admitted checks/validation tasks, not successful
-candidates. Further human edits can be saved but need remaining declared budget
-or a new explicitly authorized batch; they cannot expand an old budget.
+## Reflection and human review
 
-Optional candidate_sha256 attaches an existing legacy/unbound candidate to a
-fresh v3 batch in this store. That batch checks public analyses and runs its own
-starting repairs, without reflection. Old uncontrolled baselines are not reused.
-Review and execution use one unified store. V3 bound jobs cannot silently move
-their authorization or acceptance into another store. Legacy/unbound candidate
-submission remains supported; use a fresh v3 batch in the target store if needed.
+Both success and failure permit one reflection; two successes cap reflection at2
+requests, otherwise12. Valid `no_update` is normal. Invalid, incomplete or
+infrastructure-failed reflection is not no_update. The model compares relevant
+prior rules in its reason: use revise for a supported delta to an exact parent,
+new for an independent addition, no_update when there is no supported increment.
+Python still checks that the typed delta can be applied to existing rules and
+source evidence IDs. It does not invent policies, repair missing output, or
+manufacture evidence. There is no second candidate AI reviewer in this policy.
 
-Original inputs, ancestry/exposure, critical obligations, M_old, tools, models,
-limits and schedule are frozen before dependent work. One public analysis per
-case is shared by old/new conditions. Supplied analysis is labeled supplied and
-still AI-checked. AST hints are not defect/safety proofs, and an AST miss is not
-mechanism absence. Nonblocking unknowns remain unknown.
+A generated/edited candidate goes directly to the existing Experience Review
+page. The human checks source support, increment, interactions, bounds and claims.
+Saving an edit creates an immutable child; it is not acceptance. Only the exact
+version actually accepted can enter effect validation. An edit inherits neither
+parent acceptance nor effect qualification. Unchanged eligible rule findings may
+still reference accepted parent findings, with explicit provenance.
 
-Preanalysis retrieval records AUTO: there are not yet independently checked
-mechanism facts, so it cannot query the analysis it is about to generate. After
-the check, existing routing verifies current-source premises/exclusions and
-selects zero or one frozen experience. No match/unknown/conflict means AUTO.
-Only M_old is available to starting repairs. All transfer public analyses finish
-before reflection. Candidate guidance/results never enter old-condition prompts
-or shared analysis. Old/new repairs share task, code, Contract, model/effort,
-tools, limits, scorer and common template; only experience policy/text differs.
+Review-only does not enable. A human may instead accept the exact SHA and persist
+an enable-after-validation grant with the expected active version. Actual source
+and cross-source screening, latest acceptance, unwithdrawn authorization and a
+compatible active pointer are required for automatic enable. Locks, atomic writes,
+CAS and idempotent task bindings remain. Reject/revise/revoke blocks enable;
+concurrent activity cannot silently overwrite another active version.
 
-## Real AI checks and budgets
+## Models, costs and remaining execution constraints
 
-|Role|Model / effort|Requests|Time|
+|Role|Model / effort|Request cap|Time|
 |---|---|---:|---:|
 |Missing public analysis|gpt-6-sol / low|12 per case|600 s|
-|AI contract check|gpt-6-sol / low|4 per case/boundary|600 s|
 |Maintenance|gpt-5.6-terra / low|24|600 s|
-|Reflection: two PASS starts / otherwise|gpt-5.6-terra / medium|2 / 12|600 s|
-|AI candidate check|gpt-5.6-terra / medium|4 per admitted version|600 s|
+|Reflection: two PASS / otherwise|gpt-5.6-terra / medium|2 /12|600 s|
 
-With N missing analyses and B boundaries, the initial worst-case cap is
-300 + 12N + 4(3+B) + 4 requests. Each further admitted edited version reserves
-244 (one AI check plus ten repairs). Default N=3, B=1 and two versions means at
-most 600 requests/32 model sessions, serial. These are ceilings, not actual cost.
-Success reflection, no_update, rejection and blockers reduce consumption. No
-extra judge, regeneration, model switch, hidden retry or candidate search exists.
+No extra review call is budgeted. With N missing public analyses, one candidate's
+full maximum is300+12N requests. Each further admitted version reserves240 requests
+for its ten fresh effect repairs. Three missing analyses and two versions cap at
+576 requests/26 sessions, serial. Unknown token use stays unknown; report known
+subtotals and unknown-request counts separately. Request caps are not actual use.
 
-New preparations additionally freeze contract_check_protocol as
-contract-evidence-check-v2. Already frozen batches without this field retain v1
-semantics; they are not upgraded or resumed by this change. Models, request/time
-limits and the number of AI checks are unchanged.
+Do not remove runtime/isolation checks, input identity, calibrated original scoring,
+request/time limits, tool permissions, completed-candidate scoring admission,
+full behavior vectors, critical behavior protection or exact-version authorization.
+These enforce executable, interpretable results rather than duplicate semantic
+approval. Infrastructure errors stop without retry; invalid/unstarted slots are
+not behavioral failures.
 
-Checks are bounded semantic model calls, not citation validators or renamed human
-decisions. Full raw responses precede parsing. Claims/findings, reasons, evidence,
-unknowns and blockers bind the exact source/analysis or candidate SHA. Mechanical
-citation/ID checks are additional gates, never semantic approval by themselves.
-The native runner distinguishes logical checks from their shared physical
-transports: contract-check.json has no extracted contract field and must not
-produce contract.md; candidate-check.json is not a generated experience.md.
-Real-runner fake-CLI tests cover both payloads, invalid output and receipt
-archival. A valid check response containing block remains a semantic stop even
-when its transport and schema are valid. Fixing an archival bug never rewrites a
-historically failed slot or authorizes another model attempt.
+Actual effect screening is unchanged: two source revalidations without a new
+all-PASS requirement, then each peer in NEW1/OLD1/OLD2/NEW2 order. The new bank may
+not lose whole-task passes on either peer and must gain at least2 overall, with
+no confirmed critical preservation loss. Unknown or mixed benefit stays pending.
+No LLM self-score substitutes for execution. Budget and boundary failures do not
+enable. Final frozen evaluation uses excluded-source/holdout guards, fixed views
+and two repeats; it does not reflect, learn or write back.
 
-The contract check tests task/requirement support, defects versus preservation,
-ordering/negation, ownership, current citations, uncertainty and retained effects.
-V2 supplies the actual taxonomy definitions plus a deterministic catalog of
-current task/source anchors. The model selects snapshot-scoped evidence IDs;
-Python resolves exact file/line/quote triples. It does not rewrite a wrong line
-number or supply missing evidence. V1's original literal-citation gate remains
-unchanged. Valid IDs still do not prove semantic support.
+## Historical compatibility
 
-The original model analysis is immutable. Only when the actual V2 check returns
-pass, confirms substantive requirement support and explicitly marks a descriptive
-fact's uncertainty nonblocking may Python derive that fact's state as unknown.
-It never promotes an unknown, reverses a fact's polarity, edits Contract/label
-wording or overrides block. Unsupported requirements, explicit contradictions,
-invalid IDs or uncertainty needed to justify the Contract/labels stop repairs.
-Unknown routing prerequisites cause conservative fallback. The checked projection
-is labeled program-derived, with raw analysis, AI response, evidence-catalog,
-analysis-derivation and exact input binding saved separately. All unknown reasons
-remain in review.scope_unknowns; raw and effective fact states remain traceable.
-Resume recomputes this derivation and checks its retained binding. The same
-checked public analysis is frozen for all old/new repair conditions.
-
-Historical guidance is not supplied to this check; its applicability is
-subsequently audited by the source-bound router.
-
-The candidate check reads source-side task/docs/code, actual starting patches,
-complete scores, prior guidance and edit provenance. It checks every rule's
-normative support, increment, conflicts, bounds and causal claims. Observations,
-test names, human edits or agent claims alone cannot justify policy. No transfer
-feedback/reference patch enters it. A failed, invalid or incomplete check is not
-no_update. AI checking never creates named human acceptance.
-
-New preparations freeze `reflection_delta_protocol=experience-delta-v2` and
-`candidate_check_protocol=candidate-evidence-check-v2`. These extend the existing
-reflection/check response, not the call count or budget. Reflection must compare
-each proposed change with relevant old rules, record all considered versions,
-already-covered meaning, a concrete uncovered increment and its classification.
-A supported local correction uses `revise` with an exact parent; rewording,
-combining existing rules or restating an implication is not grounds for `new`.
-`no_update` is normal for duplication or insufficient evidence. It retains its
-comparison reason and unknowns; incomplete reflection is never no_update.
-
-Candidate checking independently covers every full-candidate rule. Its
-`increment_review` contains `compared_versions` and ordered `comparisons` with
-`rule_id`, `matches` (exact `experience_sha256`, old `rule_id`, `covered`),
-`uncovered_increment`, `classification` and `reason`. Classifications are
-`duplicate`, `local_revision`, `independent_new`, `unchanged` or
-`insufficient_evidence`. Relevant rules must be compared jointly: separate rules
-on retirement-before-cleanup, retained delayed audits and startup-before-return
-testing may already entail a proposed merged rule. Python validates reference
-pairs, complete target/version coverage and classification consistency. It does
-not calculate string similarity or decide semantic novelty. AI and human content
-review still assess whether the explanation is actually supported.
-
-A positive novelty boolean cannot override an all-duplicate/unchanged or
-insufficient-evidence comparison. A parentless proposal requiring local revision
-is blocked without reparenting. Original actions and candidates remain immutable:
-a duplicate historical `new` is recorded as a blocked proposal, never rewritten
-as retrospective `no_update`. No existing real candidate was reviewed by this
-implementation change; offline synthetic checks do not supply that review.
-
-Historical reflection schemas/results retain v1 interpretation. An unstarted
-candidate check in an older authorized workflow uses v2, pinned in a separate
-`candidate-check-protocol.json` before dispatch; the old frozen protocol and raw
-reflection stay unchanged. Started/completed checks retain their original policy
-and are never implicitly rerun. The exact schema, prompt, result and protocol
-receipt are archived with the existing single check slot. Legacy v1 receipts
-remain readable but are not represented as satisfying v2 comparison requirements.
-
-Reflection changes use operation-specific structured schemas: add requires
-rule_id=null and a nonempty body; Python assigns its canonical rule number.
-Replace/remove require a retained parent rule ID, and removal carries no new
-body or category. The local schema validator enforces these anyOf branches too.
-Schema/composition rejection stops as reflection_incomplete for new executions;
-it is not no_update or an observed repair failure. Raw output remains archived,
-without hand-correcting a field or silently replaying an already stopped slot.
-
-## One human checkpoint and exact-version continuation
-
-Experience Review shows AI findings, Before/current text, evidence, parents,
-edits, human decisions, effect state, enable intent, active version and blockers.
-Body/category and label/predicate edits create immutable children, retaining the
-actual editor/reason and original evidence. Request IDs make repeated saves
-idempotent. Saving accepts nothing and inherits no effect qualification. An
-authorized worker checks the child before content acceptance becomes available.
-Incremental review may reference unchanged accepted parent findings, but changed
-rules/affected context need explicit review and interaction checking. Acceptance
-of a parent never becomes acceptance of its edited descendant.
-
-Choose review-only, or accept and authorize enable after validation. The latter
-persists SHA, authorizer and expected active pointer. Rejection/revision stops
-remaining repair slots. Withdrawal retains content acceptance but prevents
-enable. Decisions and enable/revoke/reject actions serialize under decision.lock.
-If enable wins just before withdrawal/rejection, that automatic selection is
-removed; if the human update wins first, later enable is blocked. Concurrent
-active-pointer changes wait with a reason instead of overwriting another version.
-Repeated requests/restarts do not repeat tasks or enable events. Technical worker
-identity remains distinct from the actual human authorizer. Legacy activate and
-rollback are maintenance commands, not mandatory new workflow stages.
-
-|Stored state / field|Meaning|
-|---|---|
-|ai_contract_checking / ai_candidate_checking|Actual budgeted AI check in progress|
-|ai_contract_failed / ai_candidate_failed|Blocked evidence or consistency check|
-|ai_check_incomplete|Invalid, interrupted or incomplete check; not no_update|
-|awaiting_human_review|The sole normal human checkpoint|
-|revision_requested / rejected|Named human requires revision or rejects this version|
-|content_accepted_waiting_validation|Exact-version acceptance saved, execution still needs permission|
-|effect_validation_running|The version-bound worker task is executing|
-|validation_status: failed / unknown / passed|Actual gate outcome, distinct from human acceptance|
-|waiting_enable_conditions|Valid effects, but active-pointer or enable conditions block selection|
-|authorization_revoked|A persisted enable grant was withdrawn|
-|enabled|This exact version is selected; current activity remains separately visible|
-|no_update|Valid reflection found no supported increment|
-|cancelled / budget_exhausted / infrastructure_error|Explicit stop, not behavioral failure|
-
-The CLI reports AI/infrastructure/budget stop states with a nonzero exit status.
-The worker stops on a failed/incomplete AI check instead of polling it as success.
-
-Each version gets a new protocol under BATCH/validations/SHA. Candidate, human
-acceptance, AI check, actual screening and enable name that same SHA. Edited
-tasks reuse frozen public inputs/M_old and the two valid starting scores, with
-their original costs separate. They never reuse parent new-condition scores or
-overwrite the original batch protocol/candidate/results. Each version receives
-two source repairs and per transfer NEW1 / OLD1 / OLD2 / NEW2, all original starts.
-
-The existing gate requires new whole-task passes no lower at either transfer,
-at least two additional passes overall, no confirmed critical loss or unknown,
-credible complete scores and in-budget accounting. Source critical loss blocks;
-ordinary unresolved items do not add a two-PASS requirement. Boundaries do not
-run extra repairs. Identical-prompt/fallback differences are not experience effects.
-Same-source repeats are not independent transfer evidence. This is an engineering
-screen, not statistical significance. Execution/program checks determine effects.
-
-Version state, edit receipts, withdrawals and exact-task screens use the existing
-store's workflow subtree. Historical screening/SHA.json is not overwritten.
-Root execution authorization/aggregate budgets are persisted. Completed slots
-are reused without dispatch; ambiguous started slots stop. Unknown usage stays
-null, with known subtotals and unknown counts separate. All raw/partial/errors,
-tool events, patches, full vectors and costs remain archived. Invalid/unstarted
-slots are not behavioral failures. Infrastructure, cancellation and budget stops
-are explicit and do not silently reset on restart.
-At an execution/resume boundary the current task's approved analysis is compared
-with its original snapshot and actual retained AI receipt. Edited validation
-tasks must retain that same public analysis. This does not add per-call walks or
-hash chains over historical batches. Reports separate root reservations, actual
-version tasks, reused starts and aggregate actual workflow usage.
-
-## Offline handoff for a legacy numbering interruption
-
-An already completed reflection can have an older schema that allowed a new-rule
-ID while composition required Python numbering. Fixing the future schema does
-not publish that older proposal. Use the explicit offline recovery entry point:
-
-```sh
-python3 -B -m temporal_contract_analyzer experience-evolution recover-candidate --root /path/to/STOPPED_BATCH --handoff-root /path/to/NEW_HANDOFF
-```
-
-This requires two actually scored starts, a complete schema-valid original
-reflection and checked public inputs. It supports only new-only additions whose
-redundant ID exactly matches independently computed canonical numbering. Ambiguous
-IDs, revisions, missing evidence, incomplete sessions and started candidate checks
-are rejected. The original response, body, applicability, source state and costs
-are preserved. Normalized composition input and mechanical derivation are separate
-artifacts; this is not another model output or semantic approval.
-
-The candidate is published in the same store with AI pending before it becomes
-visible. Repeated commands return one immutable candidate. A separate handoff root
-reuses frozen public analyses and the two original scored starts, with old costs
-separate. Only the originally unused candidate check and the original ten effect
-slots remain; its budget cannot exceed the unspent source allowance. Completed
-stages are not executed again. A lost handoff receipt cannot reset a continued job.
-Neither the stopped source batch nor its results is overwritten.
-
-Recovery calls no models and copies no execution authorization. An explicitly
-authorized worker at NEW_HANDOFF can perform the remaining AI check; human content
-acceptance is unavailable until that check actually passes. Effect screening still
-requires the exact-version human decision. The worker rechecks original runtime
-and calibration before dispatch, using inherited scores rather than rescoring
-history. Page reads, refreshes and saves never start execution.
-
-## Frozen evaluation, compatibility and offline demonstration
-
-New evaluations use experience-evaluation-v3 with automatic analysis/checks and
-the existing holdout/source-exclusion, two-repeat and exact-prompt-alias rules.
-They share checked analysis across all frozen AUTO/milestone conditions and never
-reflect, edit, accept or enable experience. Sources used for generation/selection,
-including boundaries, cannot become final holdouts. Feedback used for tuning
-becomes development data and requires another final cohort.
-
-V1/v2 frozen protocols/results remain their own versions. V2 review-analysis and
-review-candidate remain compatibility operations; v3 cannot use them to bypass
-automatic checks. Old stopped batches, unknown costs and approvals are not
-rewritten. Startup checks input/calibration correspondence once; no new repeated
-whole-history hashing or executable hash lock is introduced.
-
-```sh
-python3 -B examples/workflow_v3_demo.py --root /tmp/tca-v3-new-demo
-python3 -B -m unittest discover -s tests -p test_workflow_v3.py
-```
-
-The demo is synthetic: temporary cases/store, fake backend and simulated human
-actions, with native/model execution explicitly blocked. It exercises editing,
-fresh AI checking, exact acceptance/intent, source/two-transfer validation,
-automatic enable and cost-free resume. Its scores/counters are control-flow
-fixtures, not measured model usage, repair gains or generalization evidence.
+Missing `review_policy` retains the old AI evidence workflow. Diagnostic
+`review_policy=ai-evidence-v3` can reproduce it explicitly, including its frozen
+check schemas and original limits. `review-analysis` / `review-candidate` and
+`recover-candidate` remain legacy tools, not required steps in new training.
+Legacy accepted, active and exploratory statuses are not retroactively qualified
+under a new protocol. No existing real record is approved, edited or enabled by
+this implementation change. Offline fake-backend tests establish controller
+behavior only; they establish no real repair improvement.

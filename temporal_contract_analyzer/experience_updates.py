@@ -175,7 +175,8 @@ def route_view(visible, bundles):
     entries = [(routing.freeze_entry(memory.render(b), b['labels'], b['requires'], b['excludes'], b['version']), b)
                for b in bundles if b['taxonomy_version']==taxonomy.VERSION]
     decision = routing.route(visible['analysis'], visible['sources'], [e for e,_ in entries],
-                             task=visible['task'], review=visible['review'])
+                             task=visible['task'], review=visible['review'],
+                             allow_unreviewed=visible['review'].get('reviewer')=='unreviewed_model_analysis')
     selected = next((b for e,b in entries if decision['selected'] and e['sha256']==decision['selected']['sha256']), None)
     return dict(route=decision, selected_sha256=None if selected is None else selected['sha256'],
                 experience_text=None if selected is None else memory.render(selected))

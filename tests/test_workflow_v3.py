@@ -65,7 +65,7 @@ class WorkflowTests(unittest.TestCase):
         self.root=self.fixture.root;self.store=self.fixture.store
 
     def prepare(self,**updates):
-        config=self.fixture.config();config.update(updates)
+        config=self.fixture.config();config['review_policy']='ai-evidence-v3';config.update(updates)
         loop=Workflow(self.root/('flow-'+uuid.uuid4().hex));loop.prepare_config(config);return loop
 
     def accept(self,code,auto=True,decision='accept',request_id=None):
@@ -205,7 +205,7 @@ class WorkflowTests(unittest.TestCase):
     def test_generated_analysis_unknowns_and_fair_old_new_prompts(self):
         config=self.fixture.config();config['visible']=None
         for row in config['cohort']['transfers']:row['visible']=None
-        loop=Workflow(self.root/'generated');loop.prepare_config(config);backend=FakeBackend()
+        config['review_policy']='ai-evidence-v3';loop=Workflow(self.root/'generated');loop.prepare_config(config);backend=FakeBackend()
         state=loop.run(execute=True,backend=backend);self.assertEqual(state['status'],'awaiting_human_review',state.get('error'))
         self.assertEqual(sum(c['role']=='analysis' for c in backend.calls),3)
         self.assertTrue(all('Synthetic unknown retained.' in loop.verify()['cases'][key]['visible']['review']['scope_unknowns'] for key in loop.verify()['cases']))
@@ -332,7 +332,7 @@ class WorkflowTests(unittest.TestCase):
             milestones=[],excluded_source_units=['source','transfer-a','transfer-b'],tasks=[dict(case_id='holdout',visible=None,
                 calibration={'synthetic':True},lineage=dict(source_unit='holdout',derived_from=[],prior_exposure='Synthetic holdout.'),
                 holdout=dict(used_for_generation=False,used_for_selection=False,used_for_tuning=False))])
-        loop=FrozenEvaluation(self.root/'evaluation');loop.prepare_config(cfg);backend=FakeBackend()
+        cfg['review_policy']='ai-evidence-v3';loop=FrozenEvaluation(self.root/'evaluation');loop.prepare_config(cfg);backend=FakeBackend()
         state=loop.run(execute=True,backend=backend)
         self.assertEqual(state['status'],'evaluation_complete',state.get('error'))
         self.assertEqual(sum(c['role']=='contract_check' for c in backend.calls),1)
@@ -351,7 +351,7 @@ class WorkflowTests(unittest.TestCase):
                         if finding['target']=='fact:lazy_consumption':
                             finding.update(status='unknown',evidence_ids=[],blocking=False,reason='Synthetic unused descriptive premise remains unverified.')
                 return result
-        loop=Workflow(self.root/'uncertain-description');loop.prepare_config(config);backend=ConservativeBackend(no_update=True)
+        config['review_policy']='ai-evidence-v3';loop=Workflow(self.root/'uncertain-description');loop.prepare_config(config);backend=ConservativeBackend(no_update=True)
         state=loop.run(execute=True,backend=backend)
         self.assertEqual(state['status'],'no_update',state.get('error'))
         self.assertEqual(sum(c['role']=='repair' for c in backend.calls),2)

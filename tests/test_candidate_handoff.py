@@ -33,7 +33,7 @@ class HandoffTests(unittest.TestCase):
                 result=super().execute(p,role,prompt,schema,directory)
                 if role=='reflect':result['output']['changes'][0]['rule_id']='R01'
                 return result
-        source=Workflow(self.root/'source-batch');source.prepare_config(self.fixture.config())
+        source=Workflow(self.root/'source-batch');source.prepare_config(dict(self.fixture.config(),review_policy='ai-evidence-v3'))
         # This fixture intentionally represents the frozen legacy response protocol.
         protocol=json.loads((source.root/'protocol.json').read_text());protocol.pop('reflection_delta_protocol',None)
         (source.root/'protocol.json').write_text(json.dumps(protocol))

@@ -52,14 +52,18 @@ prompts fixed. Do not generate tasks or search agent architectures. Manual
 checklists are not learned results.
 
 The expert-gated automation entry point is `experience-evolution`; see
-`docs/EXPERIENCE_EVOLUTION.md`. New v3 batches automatically check analysis and
-candidate evidence within explicit budgets. Experience content review/editing is
+`docs/EXPERIENCE_EVOLUTION.md`. New batches use human-content-only-v1: no additional AI analysis/candidate audit
+sessions and no citation-format admission gate. Raw analyses are unreviewed proposals,
+not approved facts. Keep citation issues as nonblocking notes; uncertain routing
+falls back AUTO while repair continues. Historical frozen audit-policy batches
+retain their recorded semantics. Experience content review/editing is
 the sole human business checkpoint. Acceptance is review-only unless the actual
 human explicitly authorizes enable after validation for that exact SHA and
 expected active pointer. An authorized worker then validates that version and
 enables only if the preregistered independent cross-source gate passes. There is
 no second mandatory human activate step. Saving an edit is not acceptance; an
-edited child needs its own AI check, human decision and fresh effect task.
+edited child needs its own human decision and fresh effect task; it inherits neither
+acceptance nor effect qualification.
 Do not manufacture this action or translate AI-assisted checking into human
 approval. Keep active-version decisions separate from candidate lineage: adding
 or rejecting a child does not displace an accepted parent. Freeze the active
@@ -235,13 +239,11 @@ five rules or rewrite the entire memory. Python applies explicit changes and
 preserves untouched text. Evidence reads use only the isolated read-only packet
 and closed reader grammar, not arbitrary program execution.
 
-A candidate must pass the budgeted AI support/novelty/conflict check and receive
-exact-version human content acceptance before two independent source validations. Block
+A candidate must receive exact-version human content acceptance before two independent source validations. Block
 unsupported policy, critical preservation loss or unknown critical evidence;
 do not impose a new two-PASS source gate. Then compare complete old/new retrieval
 strategies on two preregistered other independent development sources, each in
-NEW1/OLD1/OLD2/NEW2 order. All source-only public analyses and their AI checks are
-frozen before reflection and shared across old/new conditions. Retrieval before
+NEW1/OLD1/OLD2/NEW2 order. All source-only public analyses are frozen before reflection and shared across old/new conditions. Retrieval before
 those facts exist falls back AUTO, avoiding circular analysis dependencies.
 Parent revisions replace that identity; additions retain real
 conflict fallbacks. Complete all fixed comparisons before aggregating results.
@@ -353,9 +355,9 @@ The bounded evolution controller is an implemented workflow, not evidence that
 the representation, retrieval policy or class prompts have been shown effective.
 Its operational entry point accepts proposed public inputs or prepares AST-assisted
 analysis when `visible` is omitted. The first explicit run performs missing
-analysis calls and real budgeted AI evidence checks before repairs. AI checking
-never creates human acceptance. It pauses only for experience content review;
-an explicitly authorized worker continues after decisions and rechecks edits.
+analysis calls before repairs, without separate AI review sessions. Skipped AI
+review is recorded as not_run, never as approval. It pauses only for experience content review;
+an explicitly authorized worker continues after exact-version decisions and validates effects of edited versions.
 V1/v2 frozen protocols remain unchanged; their review commands are compatibility
 tools. It never silently restarts historical studies or authorizes its own costs.
 

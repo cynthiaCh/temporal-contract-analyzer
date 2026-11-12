@@ -21,6 +21,7 @@ let selected = new URLSearchParams(location.search).get('record');
 let current;
 let records=[];
 const decisions={accept:'Accepted',revise:'Revision requested',reject:'Rejected'};
+function canReview(w){return !w||w.content_review_available===true||w.ai_status==='passed';}
 function decisionText(decision){return decisions[decision]||decision;}
 function reviewedAt(value){return new Date(value).toLocaleString('en-GB');}
 function el(tag,text,className){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(className)n.className=className;return n;}
@@ -78,7 +79,7 @@ function renderActivation(target,data){
 }
 function renderManualEditor(target,data,draft={}){
  const panel=el('details',undefined,'panel manual-editor');panel.append(el('summary','Edit rules manually'));
- panel.append(el('p','Saving creates an immutable proposal, not acceptance. An authorized worker must check this exact edit before content acceptance and fresh effect validation.','muted'));
+ panel.append(el('p',data.workflow?.review_policy==='human-content-only-v1'?'Saving creates an immutable proposal, not acceptance. Review this exact edited version; fresh effect validation is still required.':'Saving creates an immutable proposal, not acceptance. An authorized worker must check this exact edit before content acceptance and fresh effect validation.','muted'));
  const actor=field(panel,'Editor name',el('input'));actor.value=draft.actor||'';
  const reason=field(panel,'Modification reason',el('textarea'));reason.value=draft.reason||'';
  const editId=draft.request_id||requestId();
@@ -102,7 +103,7 @@ function renderManualEditor(target,data,draft={}){
   const request=capture();
   if(!request.actor.trim()||!request.reason.trim()||request.rules.some(r=>!r.body.trim())){message('Enter your name, modification reason and nonempty rule text.',true);return;}
   save.disabled=true;
-  try{const result=await api('/api/records/'+data.bundle.sha256+'/revise',request);await library();await openRecord(result.sha256);message('New version saved. AI checking is pending on an authorized worker; this page dispatched no model.');}
+  try{const result=await api('/api/records/'+data.bundle.sha256+'/revise',request);await library();await openRecord(result.sha256);message(data.workflow?.review_policy==='human-content-only-v1'?'New version saved for human content review. No model dispatched.':'New version saved. AI checking is pending on an authorized worker; this page dispatched no model.');}
   finally{save.disabled=false;}
  });
  panel.append(save);target.append(panel);return capture;
@@ -110,11 +111,12 @@ function renderManualEditor(target,data,draft={}){
 function renderWorkflow(target,data){
  const w=data.workflow;if(!w)return;
  const last=data.decisions[data.decisions.length-1];const panel=el('div',undefined,'panel workflow-status');
- panel.append(el('h3','Exact-version workflow'),el('p','AI evidence check: '+w.ai_status),el('p','Human content: '+(last?decisionText(last.decision):(w.ai_status==='passed'?'Awaiting human content review':'Not yet eligible for content acceptance'))),el('p','Effect validation: '+w.validation_status),el('p','Workflow state: '+w.status));
+ if(w.review_policy==='human-content-only-v1')panel.append(el('p','AI evidence checks are disabled for this batch. Human content review and actual effect validation remain required.','notice'));
+ panel.append(el('h3','Exact-version workflow'),el('p','AI evidence check: '+w.ai_status),el('p','Human content: '+(last?decisionText(last.decision):(canReview(w)?'Awaiting human content review':'Not yet eligible for content acceptance'))),el('p','Effect validation: '+w.validation_status),el('p','Workflow state: '+w.status));
  const authorized=last?.enable_authorization?.authorized&&w.authorization_withdrawal?.decision_sha256!==last.sha256;
  panel.append(el('p','Enable after validation: '+(authorized?'Authorized by '+last.reviewer:'Not authorized / withdrawn')));
  if(w.enable_blocker)panel.append(el('p',w.enable_blocker,'notice'));
- if(w.ai_status!=='passed')panel.append(el('p','This candidate is visible, but content acceptance waits for its actual AI evidence check. You may inspect, edit, request revision or reject. This page never dispatches models.','notice'));
+ if(!canReview(w))panel.append(el('p','This candidate is visible, but content acceptance waits for its actual AI evidence check. You may inspect, edit, request revision or reject. This page never dispatches models.','notice'));
  if(w.handoff_source)panel.append(el('p','Recovered from the original reflection without changing its rule text: '+w.handoff_source,'meta'));
  if(w.origin_root)panel.append(el('p','Execution needs an explicitly authorized worker. Opening or submitting this page never launches models.','muted'),el('pre',w.worker_command||'python3 -B -m temporal_contract_analyzer experience-evolution work --root '+w.origin_root+' --execute --watch'));
  else panel.append(el('p','No authorized v3 origin is attached. Prepare a new v3 batch with candidate_sha256 to check/validate this proposal.','notice'));
@@ -173,7 +175,7 @@ function render(data,rereview=false,fullReview=false,manualRules=new Set(),draft
  if(incremental&&inheritedCount)form.append(inheritedGroup);
  const all=el('details',undefined,'panel');all.append(el('summary','All retained sources: tasks, code, reviews and outcomes'));const links=el('div',undefined,'actions');for(const source of b.audit.sources)links.append(button(source.path.split('/').pop(),()=>showEvidence(source.sha256)));all.append(links);form.append(all);
  if(readonly){const result=el('div',undefined,'panel');result.append(el('h2','Saved review decision'),el('p',decisionText(last.decision)+' · '+last.reviewer+' · '+reviewedAt(last.at)),el('p','Overall reason: '+(last.reason||'Not provided')),button('Review this version again',()=>render(data,true)));form.append(result);target.append(form);renderHistory(target,data.decisions);return;}
- const decision=el('div',undefined,'panel');decision.append(el('h2','Submit a review decision'));const reviewer=field(decision,'Reviewer name',el('input'));reviewer.required=true;reviewer.autocomplete='name';const choices=[['','Select an option'],['revise','Request revision'],['reject','Reject this version']];if(!data.workflow||data.workflow.ai_status==='passed')choices.splice(1,0,['accept_only','Accept for review only']);if(data.workflow?.ai_status==='passed')choices.splice(2,0,['accept_after_validation','Accept and authorize enable after effect validation']);const choice=field(decision,'Overall decision',select(choices));choice.required=true;const scope=field(decision,'Use scope',select([['exploratory','Exploratory research: effectiveness unverified'],['research','Research use']]));if(incremental)scope.value=delta.parent_decision.scope;const reason=field(decision,'Overall reason (optional)',el('textarea'));
+ const decision=el('div',undefined,'panel');decision.append(el('h2','Submit a review decision'));const reviewer=field(decision,'Reviewer name',el('input'));reviewer.required=true;reviewer.autocomplete='name';const choices=[['','Select an option'],['revise','Request revision'],['reject','Reject this version']];if(canReview(data.workflow))choices.splice(1,0,['accept_only','Accept for review only']);if(data.workflow&&canReview(data.workflow))choices.splice(2,0,['accept_after_validation','Accept and authorize enable after effect validation']);const choice=field(decision,'Overall decision',select(choices));choice.required=true;const scope=field(decision,'Use scope',select([['exploratory','Exploratory research: effectiveness unverified'],['research','Research use']]));if(incremental)scope.value=delta.parent_decision.scope;const reason=field(decision,'Overall reason (optional)',el('textarea'));
  const check=el('label',undefined,'check');const confirmed=el('input');confirmed.type='checkbox';confirmed.required=true;check.append(confirmed,el('span',incremental?'I reviewed the changed rules, their interactions with retained rules, and unchanged labels, applicability, evidence and outcomes. I explicitly reference the displayed parent findings for the unchanged rules.':'I have reviewed all rules, labels, applicability conditions, source evidence and retained repair outcomes for this exact version. These findings reflect my own review.'));decision.append(check);
  if(draft.reviewer!==undefined){reviewer.value=draft.reviewer;choice.value=draft.choice;scope.value=draft.scope;reason.value=draft.reason;confirmed.checked=draft.confirmed;}
  const reviewId=draft.request_id||requestId();

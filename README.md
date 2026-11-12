@@ -45,14 +45,14 @@ python3 -B -m temporal_contract_analyzer experience-memory verify --store /path/
 python3 -B -m temporal_contract_analyzer experience-memory review --store /path/to/memory
 ```
 
-[Architecture and source map](docs/ARCHITECTURE.md), [memory format and retrieval](docs/EXPERIENCE_MEMORY.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [bounded evolution](docs/EXPERIENCE_EVOLUTION.md) document the interfaces. Experience Review is the sole human business checkpoint: edit or accept exact candidate content, optionally authorizing automatic enable after effect validation. The separately authorized worker performs AI checks, actual validation and guarded enable; opening or submitting the page cannot start models. Evaluation uses a frozen snapshot and cannot learn. No paid calls are authorized by reading this README.
+[Architecture and source map](docs/ARCHITECTURE.md), [memory format and retrieval](docs/EXPERIENCE_MEMORY.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [bounded evolution](docs/EXPERIENCE_EVOLUTION.md) document the interfaces. Experience Review is the sole human business checkpoint: edit or accept exact candidate content, optionally authorizing automatic enable after effect validation. New batches omit extra AI audit calls and blocking citation-format checks; the separately authorized worker performs actual effect validation and guarded enable; opening or submitting the page cannot start models. Evaluation uses a frozen snapshot and cannot learn. No paid calls are authorized by reading this README.
 
 ## Optional integrations
 
 For automatic AST-assisted Auto Contract extraction, omit `visible` from an
 `experience-evolution prepare` configuration. The first `run --execute` performs
-one analysis session and a budgeted AI evidence check, then starts repairs when
-valid. Automatic candidate checks precede the single experience-content review.
+one analysis session, then starts repairs. Quote/line mismatches are nonblocking
+notes. Reflection candidates go directly to the single human content review.
 `experience-evolution work --root BATCH --execute --watch` continues an authorized
 batch after edits/decisions; it never invents human acceptance. See the
 [execution flow](docs/EXPERIENCE_EVOLUTION.md).
@@ -82,7 +82,7 @@ one source task, two other independent transfer sources and a boundary
 input. Both successful and failed starts may yield one increment or no_update.
 Default activation requires cross-source whole-task improvement and exact content
 acceptance with persisted authorization. Review-only never enables automatically.
-Edits receive their own AI check, content decision and effect task. Historical
+Edits receive their own exact-version human content decision and fresh effect task. AI audit steps are not part of the new default policy. Historical
 active records are retained without automatic new-protocol
 qualification. Frozen milestone evaluation shares public analyses and never learns.
 Real training/evaluation must be explicitly launched; offline fixtures are not

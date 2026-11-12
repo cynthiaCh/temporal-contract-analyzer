@@ -30,10 +30,16 @@ def metadata(store, code):
     return load(path(store,code))
 
 
+def content_review_available(value):
+    return value.get('ai_status')=='passed' or (
+        value.get('review_policy')=='human-content-only-v1' and value.get('ai_status')=='not_run')
+
+
 def view(store,code):
     value=metadata(store,code)
     if not value:return None
     value=deepcopy(value)
+    value['content_review_available']=content_review_available(value)
     if value.get('origin_root'):
         root=Path(value['origin_root']);auth=load(root/'execution-authorization.json')
         state=load(root/'state.json',{})
@@ -81,8 +87,10 @@ def edit(store,code,request):
         payload={k:deepcopy(v) for k,v in parent.items() if k in memory.FIELDS}
         payload.update(schema_version=memory.BUNDLE_VERSION_V2,version='edit-'+request['request_id'],parent_sha256=code,
             **{k:deepcopy(request[k]) for k in ('rules','labels','requires','excludes')})
+        origin=metadata(store,code) or {}
+        simple=origin.get('review_policy')=='human-content-only-v1'
         payload['review']=dict(status='candidate',kind='human',source_sha256=digest,
-            limitations=['Human edit proposal, not acceptance; AI check and fresh exact-version effects pending.'])
+            limitations=['Human edit proposal, not acceptance; fresh exact-version effects pending. AI review not performed.' if simple else 'Human edit proposal, not acceptance; AI check and fresh exact-version effects pending.'])
         payload['audit']['sources'].append(dict(path=str(evidence_path),sha256=digest))
         payload['audit']['outcome_refs']=[]
         payload['audit']['notes'].append('Edited by '+request['actor']+': '+request['reason'])
@@ -95,9 +103,9 @@ def edit(store,code,request):
             publish(evidence_path,raw)
         existing=next((b for b in memory.records(store) if b['sha256']==sealed['sha256']),None)
         bundle=existing or memory.add(store,payload,[evidence_path])
-        origin=metadata(store,code) or {}
         _update(store,bundle['sha256'],origin_root=origin.get('origin_root'),generation=origin.get('generation',0)+1,
-            ai_status='pending',status='ai_check_pending' if origin.get('origin_root') else 'execution_not_authorized',
+            review_policy=origin.get('review_policy'),ai_status='not_run' if simple else 'pending',
+            status='awaiting_human_review' if simple else 'ai_check_pending' if origin.get('origin_root') else 'execution_not_authorized',
             edit=dict(actor=request['actor'],reason=request['reason'],request_id=request['request_id']),
             validation_job=None,validation_status='not_started')
         archive.atomic_json(receipt_path,dict(request=binding,candidate_sha256=bundle['sha256']))
@@ -106,7 +114,7 @@ def edit(store,code,request):
 
 def check_human_acceptance(store,code,request):
     value=metadata(store,code)
-    if value and request['decision']=='accept' and value.get('ai_status')!='passed':
+    if value and request['decision']=='accept' and not content_review_available(value):
         raise EvidenceError('This exact edited/generated version needs its AI check before content acceptance; run an authorized worker')
 
 
@@ -185,7 +193,7 @@ def maybe_enable(store,code,technical_actor):
         elif not row or row['decision']!='accept':reason='No latest exact-version human acceptance'
         elif not row.get('enable_authorization',{}).get('authorized'):reason='Review-only or automatic enable authorization revoked'
         elif (Path(store)/'workflow/revocations'/(row['sha256']+'.json')).exists():reason='Automatic enable authorization withdrawn'
-        elif value.get('ai_status')!='passed':reason='Exact-version AI check not passed'
+        elif not content_review_available(value):reason='Exact-version content review prerequisites not met'
         elif value.get('validation_status')!='passed' or not screening.qualified(store,code):reason='Exact-version effect validation not passed'
         if reason:
             status='cancelled' if auth and auth.get('cancelled') else 'awaiting_human_review' if not row else 'rejected' if row['decision']=='reject' else 'revision_requested' if row['decision']=='revise' else 'authorization_revoked' if 'withdrawn' in reason else value.get('status','waiting_enable_conditions')

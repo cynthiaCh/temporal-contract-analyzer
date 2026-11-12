@@ -77,8 +77,8 @@ errors. No model is called and no reference patch is sent to a solver.
 Use the existing [evolution configuration](EXPERIENCE_EVOLUTION.md), adding
 `backend` above, selecting the container `node` path, supplying the host public
 `binary`, and assigning the parsed calibration object to `calibration`. One reviewed public task/source/Contract/labels/facts analysis is shared per
-case. Omitted analysis uses AST-assisted extraction; v3 adds a budgeted automatic
-AI evidence check for supplied or generated analyses. The controller's declared deployment requirement remains Python
+case. Omitted analysis uses AST-assisted extraction; new default v3 preparations omit separate AI evidence-check sessions for supplied
+or generated analyses. The controller's declared deployment requirement remains Python
 >=3.9; case code and grading use the checked container runtimes.
 
 Normal `prepare`, `run --execute`, `work --execute --watch`, `status` and `report` commands then
@@ -88,7 +88,7 @@ backends after a failure. Code and transport changes invalidate old preparations
 
 Maintenance stays gpt-5.6-terra/low, 24 requests/600 seconds; reflection stays
 gpt-5.6-terra/medium, 12 requests/600 seconds, no tools. One development round
-uses the current v3 source/two-transfer schedule and explicitly budgeted AI checks,
+uses the current v3 source/two-transfer schedule without extra AI audit sessions,
 not the historical five-session protocol. See the evolution protocol for caps
 and per-edited-version reservations. Independent original starts, serial execution,
 exact-version human acceptance and no-learning evaluation remain unchanged.

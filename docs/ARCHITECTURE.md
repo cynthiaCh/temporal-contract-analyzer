@@ -8,11 +8,10 @@ repair tools, common prompts, taxonomy and manual reminder delivery remain fixed
 Task + original candidate source
   ├─ omit visible: AST scan → selected evidence → explicit analysis LLM call
   └─ or supply candidate Contract + labels + facts
-       → automatic AI semantic contract evidence check
        → frozen qualified default experience snapshot
        → source-bound retrieval: zero or one experience
        ├─ development: two starts → reflection: no_update or one delta
-       │    → automatic AI candidate check → HUMAN content review / edit
+       │    → HUMAN content review / edit
        │    → exact-version source + two-source old/new comparisons
        │    → effect gate + persisted human enable authorization → auto-enable
        └─ evaluation: frozen AUTO/M0/M1/M2, two repeats; no learning
@@ -20,17 +19,17 @@ Task + original candidate source
 
 When `visible` is omitted from preparation, the controller captures the registered
 task/source and generates AST evidence locally. The first explicit `run --execute`
-calls the analysis LLM once and a budgeted AI semantic check; valid analysis flows
-directly into repairs. Supplied analyses also receive that check. The only normal
-human wait is candidate experience content review/editing, in Experience Review.
-An edit creates an immutable child, rechecked by AI, accepted only as that exact
-version, and screened in its own task. Page actions never dispatch paid work.
-New batches freeze the V2 contract-check subprotocol: AI cites snapshot-bound
-evidence IDs from the complete task/source catalog and receives the actual
-mechanism dictionary. Raw analysis stays intact. A separately traced projection
-may only weaken explicitly AI-checked, nonblocking descriptive facts to unknown;
-it cannot change requirements, promote unknowns or override a blocking verdict.
-Frozen older batches keep their original check semantics.
+calls the analysis LLM once and proceeds to repair. Supplied/generated analyses
+remain unreviewed proposals. New batches use `review_policy=human-content-only-v1`:
+no Contract/candidate AI audit sessions, no blocking quote/line admission and no
+required exhaustive increment-comparison object. Source citation issues are
+nonblocking notes; if they prevent reliable retrieval, use AUTO and keep repairing.
+The only normal human wait is exact-version experience content review/editing.
+An edit creates an immutable child requiring its own human acceptance and fresh
+effect screening. Page actions never dispatch paid work. Skipped checks are
+`not_run`, never AI approval. Input identity, budget, isolation, complete-candidate
+scoring, critical behavior protection and exact-version activation guards remain.
+Frozen older batches keep their original semantics; they are not upgraded or retried.
 An explicitly authorized `experience-evolution work --execute --watch` process
 continues after review and enables only when its exact-version grant and actual
 cross-source effect gate pass. Review-only does not enable. Legacy v1/v2 batches
@@ -67,7 +66,7 @@ and the native backend's prerequisites.
 | Vocabulary and static reminders | `taxonomy.py`, `taxonomy_cli.py`, `reminders.py` | Seven-label definitions, material commands and authored checklists; reminders are not learned experience |
 | Shared knowledge | `experience_memory.py`, `experience_memory_cli.py`, `experience_recoding.py`, `experience_routing.py` | Immutable records, evidence closure, label recoding, discovery and conditional delivery |
 | Expert decisions and effect gate | `experience_approval.py`, `experience_screening.py`, `memory_review.py` | Separate content acceptance, cross-source qualification and explicit active versions |
-| Automatic evidence and continuation | `experience_checks.py`, `experience_workflow.py`, `experience_lifecycle.py`, `experience_candidate_handoff.py` | Bounded semantic AI checks; one human checkpoint; immutable edit tasks, offline recovery of existing reflection proposals, persisted permission/enable intent, exact-version validation and locked enable/revoke |
+| Automatic evidence and continuation | `experience_checks.py`, `experience_workflow.py`, `experience_lifecycle.py`, `experience_candidate_handoff.py` | Human-only default review policy; legacy AI checks remain readable; one human checkpoint; immutable edit tasks, offline recovery of existing reflection proposals, persisted permission/enable intent, exact-version validation and locked enable/revoke |
 | Development/evaluation | `experience_development.py`, `experience_updates.py`, `experience_evaluation.py`, `evolution_cli.py`, `evolution_backend.py`, `preanalysis.py` | Public analysis, typed incremental extraction, source/transfer screening and frozen milestone comparison; v1 reader remains in `experience_evolution.py` |
 | Candidate snapshots | `candidate_files.py` | Candidate-visible file capture, hashes, modes and independent workspace copies |
 | Trusted scoring | `case_catalog.py`, `case_evaluation.py` | Registered task inputs, scorer binding, runtime checks, oracle invocation, effect-vector comparisons and process termination |

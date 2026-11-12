@@ -81,8 +81,8 @@ The browser has no hard-coded list of known experience IDs.
 List and detail views separate title, stable experience identity, version/digest,
 source batch (when recorded) and parent. A parentless model proposal does not
 establish novelty. “Latest record” describes lineage recency, not qualification.
-AI-pending, running, incomplete and failed states are explicit. Only AI-passed
-unreviewed workflow records say “Awaiting human content review”; old records with
+AI-pending, running, incomplete and failed states are explicit. New human-only records say “Awaiting human content review · AI check not performed”.
+In legacy audit-policy workflows only AI-passed records await human content review; old records with
 no AI receipt say “AI check not recorded”. Existing human decisions remain visible.
 Rule-by-rule novelty comparisons appear beside the complete AI result, including
 old-version/rule references, covered obligations and specific uncovered increments.
@@ -124,24 +124,21 @@ activation requirements.
 
 ## Automated v3 handoff and human edits
 
-New development batches run real budgeted AI contract and candidate semantic
-checks; no human analysis-review or candidate AI-review JSON file is required.
-The current contract check uses snapshot-scoped evidence IDs and the actual
-taxonomy definitions. Original analysis and its conservative checked projection
-are separately retained. Only explicit nonblocking AI uncertainty may weaken a
-descriptive premise to unknown; such a premise cannot authorize experience
-delivery. A block or unsupported Contract/label always stops execution.
-Their findings, evidence, unknowns and blockers are distinct from named content
-decisions. The page shows these AI results alongside the actual human decision,
-effect-validation state, enable authorization, active pointer and blocker.
+New batches default to `human-content-only-v1`: no separate AI contract/candidate
+review calls and no blocking quote-format admission. AI checks show `not_run`,
+never passed. Candidates go directly to human content review. Raw analysis remains
+unreviewed, citation warnings are retained, and unreliable routing falls back AUTO
+without blocking repair. Existing frozen audit-policy batches retain their own
+pending/passed/failed states; they are not automatically upgraded.
 
 The existing editor supports Before/current text, rule bodies and categories,
 plus labels and mechanism predicates. Saving creates an immutable child with
 editor, reason, parent and original evidence. It neither accepts content nor
 inherits the parent's effect qualification. Repeated saves with the same request
 ID return the same version. Changes to rule evidence or shared applicability
-invalidate affected inherited content findings. An authorized worker checks the
-edited version before its own exact-version acceptance becomes available.
+invalidate affected inherited content findings. The new policy allows direct content review of the edited version. A separate
+authorized worker performs fresh effects only after exact-version acceptance.
+Legacy audit-policy edits still need their original AI check.
 
 Acceptance can persist an optional enable authorization (candidate SHA, actual
 human authorizer, expected active version). Review-only stores no enable grant.
@@ -153,7 +150,8 @@ candidate/results is overwritten. Verification status and results appear on the
 same candidate page.
 
 Enable requires the latest exact-version acceptance, unwithdrawn explicit grant,
-AI check, qualifying actual effect screen and compatible expected active pointer.
+qualifying actual effect screen and compatible expected active pointer. Legacy
+audit-policy versions also require their original AI check.
 The same decision lock serializes acceptance/rejection/withdrawal and enable.
 Rejecting or withdrawing even just after automatic enable removes that automatic
 selection; an active-pointer race waits without replacing another version.
