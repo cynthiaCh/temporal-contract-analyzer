@@ -105,12 +105,6 @@ async function main(){
  vm.runInContext('render(DATA)',context);
  assert.ok(all(roots.detail,tag('h4')).some(p=>p.textContent==='R01 · duplicate'));
  assert.ok(all(roots.detail,tag('p')).some(p=>p.textContent.includes('/ R03: Synthetic existing admission duty.')));
- context.DATA.workflow={ai_status:'not_run',review_policy:'human-content-only-v1',content_review_available:true,status:'awaiting_human_review',validation_status:'not_started'};
- context.DATA.display.state='Awaiting human content review · AI check not performed';
- vm.runInContext('render(DATA)',context);
- assert.ok(all(roots.detail,tag('select')).some(s=>s.children.some(o=>o.value==='accept_after_validation')),'Human-only proposals can be reviewed without another AI call');
- assert.ok(!all(roots.detail,tag('p')).some(p=>p.textContent.includes('content acceptance waits')));
- assert.ok(all(roots.detail,tag('p')).some(p=>p.textContent.includes('AI evidence checks are disabled')));
  console.log('incremental DOM passed: one explicit rule, six parent references, full-review toggle, exact base sent');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

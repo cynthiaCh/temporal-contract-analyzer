@@ -177,7 +177,7 @@ def freeze_entry(text, obligation_labels, requires, excludes, version):
     return entry
 
 
-def route(analysis, sources, library, *, task, review=None, allow_unreviewed=False):
+def route(analysis, sources, library, *, task, review=None):
     """Multi-label retrieval followed by verified mechanism prerequisites; at most one entry."""
     checks = []
     def fallback(reason):
@@ -189,12 +189,11 @@ def route(analysis, sources, library, *, task, review=None, allow_unreviewed=Fal
     template = review_template(analysis, task, sources)
     if not isinstance(review, dict) or set(review) != set(template) or review['input_sha256'] != template['input_sha256']:
         return fallback('missing_or_drifted_semantic_review')
-    unreviewed=allow_unreviewed and review['reviewer']=='unreviewed_model_analysis' and review['approved'] is False
-    if not unreviewed and (review['reviewer'] not in ('execution_agent_visible_input_only', 'human_visible_input_only','model_evidence_check') \
+    if review['reviewer'] not in ('execution_agent_visible_input_only', 'human_visible_input_only','model_evidence_check') \
             or review['approved'] is not True or review['blocking_issues'] != [] \
             or not isinstance(review['scope_unknowns'], list) or any(not isinstance(x, str) for x in review['scope_unknowns']) \
             or not isinstance(review['reason'], str) \
-            or not review['reason'].strip() or not evidence_valid(review['evidence'], task, sources)):
+            or not review['reason'].strip() or not evidence_valid(review['evidence'], task, sources):
         return fallback('unresolved_semantic_review')
     if not codes:
         return fallback('unknown_obligation_labels')
@@ -230,7 +229,7 @@ def route(analysis, sources, library, *, task, review=None, allow_unreviewed=Fal
     if not eligible:
         return fallback('empty_or_inapplicable_library')
     entry = eligible[0]
-    return dict(condition='ROUTED', taxonomy_version=taxonomy.VERSION, reason='unreviewed_analysis_source_premises' if unreviewed else 'source_bound_obligations_and_premises',
+    return dict(condition='ROUTED', taxonomy_version=taxonomy.VERSION, reason='source_bound_obligations_and_premises',
                 selected=dict(version=entry['version'], obligation_labels=entry['obligation_labels'],
                               sha256=entry['sha256'], text_sha256=entry['text_sha256']), checks=checks)
 
