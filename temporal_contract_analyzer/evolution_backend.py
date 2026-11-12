@@ -13,20 +13,21 @@ import sys
 import threading
 
 from . import archive
+from ._session_runtime.model_settings import MODEL, EFFORT
 from .core import EvidenceError, sha, canonical
 from .candidate_files import capture, inventory, file_modes, write_files
 from .case_evaluation import scoring_inputs, terminate
 
 SOURCE = Path(__file__).resolve().parent/'_session_runtime'
-DEPENDENCIES = ('runner.py','native_backend.py','archive.py','guard_server.py','guard_client.py',
+DEPENDENCIES = ('model_settings.py','runner.py','native_backend.py','archive.py','guard_server.py','guard_client.py',
                 'request_guard.py','read_policy.py','usage.py','structured.py','schema_validator.py','docker_transport.py',
                 'research-config.toml','maintenance.schema.json','extraction.schema.json')
 ROLES = {
-    'analysis':dict(model='gpt-6-sol', effort='low', requests=12, seconds=600),
-    'repair':dict(model='gpt-5.6-terra', effort='low', requests=24, seconds=600),
-    'reflect':dict(model='gpt-5.6-terra', effort='medium', requests=12, seconds=600)}
-ROLES.update(contract_check=dict(model='gpt-6-sol',effort='low',requests=4,seconds=600),
-             candidate_check=dict(model='gpt-5.6-terra',effort='medium',requests=4,seconds=600))
+    'analysis':dict(model=MODEL, effort=EFFORT, requests=12, seconds=600),
+    'repair':dict(model=MODEL, effort=EFFORT, requests=24, seconds=600),
+    'reflect':dict(model=MODEL, effort=EFFORT, requests=12, seconds=600)}
+ROLES.update(contract_check=dict(model=MODEL,effort=EFFORT,requests=4,seconds=600),
+             candidate_check=dict(model=MODEL,effort=EFFORT,requests=4,seconds=600))
 DRIVER = '''import json,sys
 from pathlib import Path
 import runner

@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 from temporal_contract_analyzer import taxonomy
-from temporal_contract_analyzer.evolution_backend import DEPENDENCIES, SOURCE
+from temporal_contract_analyzer.evolution_backend import DEPENDENCIES, SOURCE, ROLES
 
 
 DRIVER = '''import json,sys,tempfile
@@ -37,7 +37,7 @@ def hook(event):
  with socket.socket(socket.AF_UNIX) as connection:
   connection.connect(sys.argv[1]);connection.sendall(json.dumps(event).encode()+b'\\n')
   assert not json.loads(connection.recv(4096))['deny']
-model='gpt-5.6-terra' if sys.argv[5]=='reflect' else 'gpt-6-sol'
+model='gpt-6.1-sol'
 for _ in range(int(sys.argv[6])):
  hook(dict(hook_event_name='PreModelRequest',model=model))
  hook(dict(hook_event_name='PostModelRequest',model=model,status='completed'))
@@ -95,7 +95,7 @@ class AnalysisRunnerTests(unittest.TestCase):
         self.assertTrue(receipt['infrastructure_valid'],receipt)
         self.assertEqual(json.loads((root/'run/archive/analysis.json').read_text()),analysis)
         self.assertEqual((root/'run/archive/contract.md').read_text(),analysis['contract'])
-        self.assertEqual(json.loads((root/'run/archive/input/config.json').read_text())['model'],'gpt-6-sol')
+        self.assertEqual(json.loads((root/'run/archive/input/config.json').read_text())['model'],'gpt-6.1-sol')
         self.assertEqual(receipt['native']['started'],1)
         self.assertNotIn('preanalysis_error',receipt)
 
@@ -198,6 +198,11 @@ class AnalysisRunnerTests(unittest.TestCase):
         temporary=tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup)
         root=Path(temporary.name);backend=root/'backend';backend.mkdir()
         for name in DEPENDENCIES:shutil.copyfile(SOURCE/name,backend/name)
+        for settings in ROLES.values():
+            self.assertEqual((settings['model'],settings['effort']),('gpt-6.1-sol','medium'))
+        profile=(SOURCE/'research-config.toml').read_text()
+        self.assertIn('model = "gpt-6.1-sol"',profile)
+        self.assertIn('model_reasoning_effort = "medium"',profile)
         for phase in ('analysis','repair','reflect'):
             result=subprocess.run([sys.executable,'-B','-c',COMMAND_DRIVER,str(backend),str(root),phase],
                                   capture_output=True,text=True,timeout=10)
@@ -208,12 +213,14 @@ class AnalysisRunnerTests(unittest.TestCase):
             mounts=[value for value in command['docker'] if 'dst=/workspace' in value]
             self.assertEqual(len(mounts),1)
             self.assertEqual(mounts[0].endswith(',readonly'),phase!='repair')
+            self.assertEqual(native[native.index('-m')+1],'gpt-6.1-sol')
+            self.assertIn('model_reasoning_effort="medium"',native)
             if phase=='analysis':
                 self.assertEqual(Path(native[native.index('/format.json')-1]).resolve(),
                                  (backend/'analysis.schema.json').resolve())
-                self.assertEqual(native[native.index('-m')+1],'gpt-6-sol')
+                self.assertEqual(native[native.index('-m')+1],'gpt-6.1-sol')
             elif phase=='reflect':
-                self.assertEqual(native[native.index('-m')+1],'gpt-5.6-terra')
+                self.assertEqual(native[native.index('-m')+1],'gpt-6.1-sol')
                 self.assertIn('model_reasoning_effort="medium"',native)
                 self.assertEqual(Path(native[native.index('/format.json')-1]).name,'reflection.schema.json')
 
