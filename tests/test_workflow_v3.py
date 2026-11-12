@@ -35,6 +35,13 @@ class FakeBackend(fixtures.Backend):
                 normative_support=not self.contract_block,no_unfounded_certainty=True,historical_guidance='not_supplied',
                 findings=[dict(target=t,status='unknown' if t in unknown else 'supported',evidence=[] if t in unknown else [anchor],reason='Synthetic meaning check, not citation-only approval.') for t in v['targets']],
                 unknowns=['Synthetic unknown retained.'],blocking_issues=['Synthetic unsupported requirement.'] if self.contract_block else [])
+            if v.get('check_protocol'):
+                catalog=v['evidence_catalog']
+                key=next(k for k,a in catalog.items() if a['file']=='main.py' and a['line']==1)
+                out['schema_version']=v['check_protocol']
+                for finding in out['findings']:
+                    finding.pop('evidence');finding['blocking']=self.contract_block
+                    finding['evidence_ids']=[] if finding['status']=='unknown' else ['INVALID-ID' if self.bad_citation else key]
         else:
             ids=schema['properties']['rules']['items']['properties']['rule_id']['enum']
             out=dict(verdict='block' if self.candidate_block else 'pass',reason='Synthetic candidate meaning check.',
@@ -82,7 +89,7 @@ class WorkflowTests(unittest.TestCase):
     def test_contract_block_or_drift_stops_before_repair(self):
         for change in ('contract_block','bad_citation'):
             loop=self.prepare();backend=FakeBackend(**{change:True});state=loop.run(execute=True,backend=backend)
-            self.assertEqual(state['status'],'ai_contract_failed',state.get('error'))
+            self.assertEqual(state['status'],'ai_check_incomplete' if change=='bad_citation' else 'ai_contract_failed',state.get('error'))
             self.assertFalse(any(c['role']=='repair' for c in backend.calls));self.assertEqual(memory.records(self.store),[])
 
     def test_candidate_block_is_not_no_update_or_human_acceptance(self):
@@ -289,6 +296,40 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(sum(c['role']=='contract_check' for c in backend.calls),1)
         self.assertFalse(any(c['role'] in ('reflect','candidate_check') for c in backend.calls))
         self.assertEqual(memory.records(self.store),[]);self.assertEqual(approval.decisions(self.store),[])
+
+    def test_nonblocking_descriptive_unknown_reaches_repairs_with_raw_derivation_retained(self):
+        config=self.fixture.config()
+        config['visible']['analysis']['facts'].append(dict(predicate='lazy_consumption',state='known',
+            evidence=[dict(file='main.py',line=1,quote='accepted = True')]))
+        class ConservativeBackend(FakeBackend):
+            def execute(self,p,role,prompt,schema,directory):
+                result=super().execute(p,role,prompt,schema,directory)
+                if role=='contract_check':
+                    for finding in result['output']['findings']:
+                        if finding['target']=='fact:lazy_consumption':
+                            finding.update(status='unknown',evidence_ids=[],blocking=False,reason='Synthetic unused descriptive premise remains unverified.')
+                return result
+        loop=Workflow(self.root/'uncertain-description');loop.prepare_config(config);backend=ConservativeBackend(no_update=True)
+        state=loop.run(execute=True,backend=backend)
+        self.assertEqual(state['status'],'no_update',state.get('error'))
+        self.assertEqual(sum(c['role']=='repair' for c in backend.calls),2)
+        folder=loop.root/'cases/source/analysis';raw=json.loads((folder/'raw-analysis.json').read_text())
+        effective=loop.verify()['cases']['source']['visible']['analysis']
+        self.assertEqual(raw['facts'][-1]['state'],'known');self.assertEqual(effective['facts'][-1]['state'],'unknown')
+        self.assertEqual(raw['contract'],effective['contract']);self.assertEqual(raw['obligation_labels'],effective['obligation_labels'])
+        self.assertEqual(json.loads((folder/'analysis-derivation.json').read_text())['fact_changes'][0]['predicate'],'lazy_consumption')
+        loop._checked_public_inputs(loop.verify())
+        self.assertEqual(approval.decisions(self.store),[])
+
+    def test_frozen_missing_check_policy_keeps_legacy_contract_review(self):
+        loop=self.prepare();file=loop.root/'protocol.json';p=json.loads(file.read_text())
+        p.pop('contract_check_protocol');file.write_text(json.dumps(p))  # Synthetic old-protocol fixture only.
+        backend=FakeBackend();state=loop.run(execute=True,backend=backend)
+        self.assertEqual(state['status'],'awaiting_human_review',state.get('error'))
+        binding=json.loads((loop.root/'cases/source/analysis/check-binding.json').read_text())
+        self.assertNotIn('check_protocol',binding)
+        self.assertFalse((loop.root/'cases/source/analysis/analysis-derivation.json').exists())
+        loop._checked_public_inputs(loop.verify())
 
     def test_browser_edit_and_review_queue_without_model_execution(self):
         loop=self.prepare();backend=FakeBackend();code=loop.run(execute=True,backend=backend)['candidate_sha256']

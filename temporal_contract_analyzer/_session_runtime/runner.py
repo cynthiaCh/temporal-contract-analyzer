@@ -204,7 +204,11 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
         if not a.final.is_dir() or inventory(a.final)!=inventory(a.original):
             rec.update(candidate_complete=False,infrastructure_valid=False,
                        preanalysis_error='Read-only analysis/evidence session changed its workspace')
-    if phase=='analysis':
+    if phase=='analysis' and slot.get('logical_role')=='contract_check':
+        # Checks share the bounded analysis transport, not the analysis payload.
+        # Preserve their own typed result; a check has no extracted Contract.
+        save(a.root/'contract-check.json',ans)
+    elif phase=='analysis':
         save(a.root/'analysis.json',ans)
         if format_ok:(a.root/'contract.md').write_text(ans['contract'])
         if not a.final.is_dir() or inventory(a.final)!=inventory(a.original):
@@ -233,5 +237,8 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
             rec['contract_sha256']=backend.sha(analysis['contract']);rec['preanalysis_valid']=True
         except (ValueError,TypeError,KeyError,AttributeError) as exc:
             rec.update(preanalysis_valid=False,preanalysis_error=repr(exc))
+    elif phase=='reflect' and slot.get('logical_role')=='candidate_check':
+        # A candidate check is evidence, never generated experience or acceptance.
+        save(a.root/'candidate-check.json',ans)
     elif phase=='reflect':(a.root/'experience.md').write_text(raw)
     save(a.root/'model-outcome.json',outcome);save(a.root/'receipt.json',rec);a.write_manifest();return rec

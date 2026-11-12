@@ -25,6 +25,12 @@ directly into repairs. Supplied analyses also receive that check. The only norma
 human wait is candidate experience content review/editing, in Experience Review.
 An edit creates an immutable child, rechecked by AI, accepted only as that exact
 version, and screened in its own task. Page actions never dispatch paid work.
+New batches freeze the V2 contract-check subprotocol: AI cites snapshot-bound
+evidence IDs from the complete task/source catalog and receives the actual
+mechanism dictionary. Raw analysis stays intact. A separately traced projection
+may only weaken explicitly AI-checked, nonblocking descriptive facts to unknown;
+it cannot change requirements, promote unknowns or override a blocking verdict.
+Frozen older batches keep their original check semantics.
 An explicitly authorized `experience-evolution work --execute --watch` process
 continues after review and enables only when its exact-version grant and actual
 cross-source effect gate pass. Review-only does not enable. Legacy v1/v2 batches

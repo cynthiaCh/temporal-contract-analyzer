@@ -106,6 +106,11 @@ activation requirements.
 
 New development batches run real budgeted AI contract and candidate semantic
 checks; no human analysis-review or candidate AI-review JSON file is required.
+The current contract check uses snapshot-scoped evidence IDs and the actual
+taxonomy definitions. Original analysis and its conservative checked projection
+are separately retained. Only explicit nonblocking AI uncertainty may weaken a
+descriptive premise to unknown; such a premise cannot authorize experience
+delivery. A block or unsupported Contract/label always stops execution.
 Their findings, evidence, unknowns and blockers are distinct from named content
 decisions. The page shows these AI results alongside the actual human decision,
 effect-validation state, enable authorization, active pointer and blocker.

@@ -101,6 +101,10 @@ Distinguish readiness R, ordering/reentrancy O, barriers B, lifecycle L, identit
 Lifecycle invalidation does not additionally count as freshness within the same owner; ordinary regression equivalence does not automatically qualify as A.
 Use dictionary-defined mechanism predicates with states known/unknown/contradicted. Known or contradicted premises require citations from the current inputs.
 Check ownership of records and physical resources separately; distinguish accepted work, completion, display, and cache writes.
+Describe cleanup and publication permissions independently. Do not compress separate owners or conditions into a joint rule unless every resulting implication is supported.
+Cancellation or detachment alone does not establish revocation of previously accepted work or of another owner's publication permission; derive each obligation from current requirements and source evidence.
+For every predicate, known asserts its full dictionary meaning and contradicted asserts that meaning is false, including any negation in the predicate. Unknown is not false.
+Evidence for one component of a compound mechanism does not establish the other components or either polarity of the whole mechanism. When the full meaning cannot be established or refuted, use unknown and retain the evidence gap.
 Do not access hidden scores, reference patches, case/cluster labels, or historical results. AST does not prove complete execution relationships.
 Public inputs:
 ''' + canonical(material)

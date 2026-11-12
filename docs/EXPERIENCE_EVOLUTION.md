@@ -97,16 +97,46 @@ most 600 requests/32 model sessions, serial. These are ceilings, not actual cost
 Success reflection, no_update, rejection and blockers reduce consumption. No
 extra judge, regeneration, model switch, hidden retry or candidate search exists.
 
+New preparations additionally freeze contract_check_protocol as
+contract-evidence-check-v2. Already frozen batches without this field retain v1
+semantics; they are not upgraded or resumed by this change. Models, request/time
+limits and the number of AI checks are unchanged.
+
 Checks are bounded semantic model calls, not citation validators or renamed human
 decisions. Full raw responses precede parsing. Claims/findings, reasons, evidence,
 unknowns and blockers bind the exact source/analysis or candidate SHA. Mechanical
 citation/ID checks are additional gates, never semantic approval by themselves.
+The native runner distinguishes logical checks from their shared physical
+transports: contract-check.json has no extracted contract field and must not
+produce contract.md; candidate-check.json is not a generated experience.md.
+Real-runner fake-CLI tests cover both payloads, invalid output and receipt
+archival. A valid check response containing block remains a semantic stop even
+when its transport and schema are valid. Fixing an archival bug never rewrites a
+historically failed slot or authorizes another model attempt.
 
 The contract check tests task/requirement support, defects versus preservation,
 ordering/negation, ownership, current citations, uncertainty and retained effects.
-Unknown facts cannot be promoted. Unsupported/drifted evidence or semantic
-blockers stop repairs. Historical guidance is not supplied to this check; its
-applicability is subsequently audited by the source-bound router.
+V2 supplies the actual taxonomy definitions plus a deterministic catalog of
+current task/source anchors. The model selects snapshot-scoped evidence IDs;
+Python resolves exact file/line/quote triples. It does not rewrite a wrong line
+number or supply missing evidence. V1's original literal-citation gate remains
+unchanged. Valid IDs still do not prove semantic support.
+
+The original model analysis is immutable. Only when the actual V2 check returns
+pass, confirms substantive requirement support and explicitly marks a descriptive
+fact's uncertainty nonblocking may Python derive that fact's state as unknown.
+It never promotes an unknown, reverses a fact's polarity, edits Contract/label
+wording or overrides block. Unsupported requirements, explicit contradictions,
+invalid IDs or uncertainty needed to justify the Contract/labels stop repairs.
+Unknown routing prerequisites cause conservative fallback. The checked projection
+is labeled program-derived, with raw analysis, AI response, evidence-catalog,
+analysis-derivation and exact input binding saved separately. All unknown reasons
+remain in review.scope_unknowns; raw and effective fact states remain traceable.
+Resume recomputes this derivation and checks its retained binding. The same
+checked public analysis is frozen for all old/new repair conditions.
+
+Historical guidance is not supplied to this check; its applicability is
+subsequently audited by the source-bound router.
 
 The candidate check reads source-side task/docs/code, actual starting patches,
 complete scores, prior guidance and edit provenance. It checks every rule's

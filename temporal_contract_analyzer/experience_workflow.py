@@ -40,13 +40,21 @@ class AutomatedChecks:
         checked=load(directory/'approved-visible.json');binding=load(folder/'check-binding.json')
         if checked['task']!=original['task'] or checked['sources']!=original['sources']:
             raise EvidenceError('AI-checked public input differs from the frozen original task/source')
+        raw_analysis=load(folder/'raw-analysis.json')
+        policy=load(self.root/'protocol.json').get('contract_check_protocol',checks.CONTRACT_V1)
         if binding.get('kind')!='AI' or binding.get('human_acceptance') is not False \
-                or binding.get('analysis')!=checked['analysis'] or load(folder/'raw-analysis.json')!=checked['analysis'] \
+                or binding.get('analysis')!=checked['analysis'] \
+                or binding.get('check_protocol',checks.CONTRACT_V1)!=policy \
+                or (binding.get('raw_analysis') if policy==checks.CONTRACT_V2 else checked['analysis'])!=raw_analysis \
                 or binding.get('source_snapshot_sha256')!=sha(canonical(original['sources']).encode()):
             raise EvidenceError('Public analysis differs from its retained AI/source binding')
-        proposal={k:checked[k] for k in ('task','sources','analysis')}
-        if checks.accept_contract(load(folder/'ai-check.json'),proposal)!=checked:
+        proposal=dict(task=checked['task'],sources=checked['sources'],analysis=raw_analysis)
+        if checks.accept_contract(load(folder/'ai-check.json'),proposal,protocol=policy)!=checked:
             raise EvidenceError('Checked analysis differs from its actual AI semantic check')
+        if policy==checks.CONTRACT_V2 and load(folder/'analysis-derivation.json')!=checks.contract_derivation(raw_analysis,checked['analysis']):
+            raise EvidenceError('Conservative analysis derivation drifted')
+        if policy==checks.CONTRACT_V2 and load(folder/'evidence-catalog.json')!=checks.evidence_catalog(proposal):
+            raise EvidenceError('Archived evidence catalog drifted')
         return checked
 
     def _checked_public_inputs(self,p):
@@ -72,6 +80,8 @@ class AutomatedChecks:
 
     def _analysis_setup(self,p):
         from .preanalysis import analyze_candidate
+        # Only newly prepared batches opt in. Missing field means the frozen v1 policy.
+        p['contract_check_protocol']=checks.CONTRACT_V2
         for key,c in p['cases'].items():
             directory=self.root/'cases'/key/'analysis';directory.mkdir(parents=True,exist_ok=True)
             if not (directory/'ast-evidence.json').exists():
@@ -113,11 +123,16 @@ class AutomatedChecks:
                 ast=load(folder/'ast-evidence.json') if (folder/'ast-evidence.json').exists() else None
                 archive.atomic_json(folder/'preanalysis-retrieval.json',dict(condition='AUTO',experience=None,
                     reason='No independently checked mechanism facts before analysis; avoid circular retrieval and keep old/new common analysis independent of candidate guidance.'))
+                policy=p.get('contract_check_protocol',checks.CONTRACT_V1)
+                if policy==checks.CONTRACT_V2:archive.atomic_json(folder/'evidence-catalog.json',checks.evidence_catalog(visible))
                 result=self._session(backend,p,'CONTRACT-CHECK-'+key,'contract_check',key,
-                    checks.contract_prompt(visible,ast),checks.contract_schema(analysis))
+                    checks.contract_prompt(visible,ast,protocol=policy),checks.contract_schema(analysis,visible=visible,protocol=policy))
                 archive.atomic_json(folder/'ai-check.json',result['output'])
-                checked=checks.accept_contract(result['output'],visible)
-                archive.atomic_json(folder/'check-binding.json',dict(kind='AI',analysis=analysis,
+                checked=checks.accept_contract(result['output'],visible,protocol=policy)
+                if policy==checks.CONTRACT_V2:
+                    archive.atomic_json(folder/'analysis-derivation.json',checks.contract_derivation(analysis,checked['analysis']))
+                archive.atomic_json(folder/'check-binding.json',dict(kind='AI',analysis=checked['analysis'],
+                    **(dict(check_protocol=policy,raw_analysis=analysis) if policy==checks.CONTRACT_V2 else {}),
                     source_snapshot_sha256=sha(canonical(raw['sources']).encode()),slot='CONTRACT-CHECK-'+key,
                     historical_guidance='not_supplied',human_acceptance=False))
                 archive.atomic_json(target,checked)
