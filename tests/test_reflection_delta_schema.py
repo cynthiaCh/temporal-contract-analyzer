@@ -28,6 +28,28 @@ class DeltaSchemaTests(unittest.TestCase):
         self.assertEqual(result['rules'],[dict(id='R01',category='verification',body='Synthetic new rule.')])
         self.assertEqual(self.value,before)
 
+    def test_no_update_can_reference_existing_guidance_without_mutating_it(self):
+        value=deepcopy(self.value)
+        value.update(action='no_update',parent_sha256='a'*64,changes=[],
+                     labels=None,requires=None,excludes=None)
+        before=deepcopy(value);parents=deepcopy(self.parents)
+        self.assertIsNone(updates.compose(value,self.visible,self.ledger,self.parents))
+        self.assertEqual(value,before)
+        self.assertEqual(self.parents,parents)
+        value['parent_sha256']='b'*64
+        with self.assertRaises(EvidenceError):
+            updates.compose(value,self.visible,self.ledger,self.parents)
+
+    def test_no_update_reference_cannot_hide_rule_or_applicability_changes(self):
+        value=deepcopy(self.value)
+        value.update(action='no_update',parent_sha256='a'*64,changes=[],
+                     labels=None,requires=None,excludes=None)
+        for field,hidden in [('changes',self.value['changes']),('labels',['I']),
+                             ('requires',['entry_snapshot']),('excludes',[])]:
+            bad=deepcopy(value);bad[field]=hidden
+            with self.subTest(field=field),self.assertRaises(EvidenceError):
+                updates.compose(bad,self.visible,self.ledger,self.parents)
+
     def test_parent_replacement_requires_actual_parent_id(self):
         value=deepcopy(self.value);value.update(action='revise',parent_sha256='a'*64)
         value['changes'][0].update(operation='replace',rule_id='R01')

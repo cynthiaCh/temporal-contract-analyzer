@@ -81,7 +81,10 @@ def compose(value, visible, ledger, parents, *, protocol=DELTA_V1, prior_experie
                             for m in row['matches']):
                         raise EvidenceError('A changed parent rule needs a direct comparison to that rule')
     if value['action'] == 'no_update':
-        if value['changes'] or any(value[k] is not None for k in ('parent_sha256','labels','requires','excludes')):
+        # The schema permits a retained parent reference. With no operations or
+        # applicability edits, it identifies existing guidance rather than a
+        # revision. Keep the raw reference for audit; do not compose a candidate.
+        if value['changes'] or any(value[k] is not None for k in ('labels','requires','excludes')):
             raise EvidenceError('no_update cannot carry a hidden change')
         return None
     parent = parents.get(value['parent_sha256'])
