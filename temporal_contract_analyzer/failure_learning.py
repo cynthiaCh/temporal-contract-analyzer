@@ -7,11 +7,11 @@ from . import archive
 from .case_evaluation import relation_states
 from .core import EvidenceError, canonical, sha
 
-DIAGNOSES = ('retrieval_gap', 'execution_gap', 'rule_gap', 'unknown')
+DIAGNOSES = ('approval_gap', 'retrieval_gap', 'execution_gap', 'rule_gap', 'unknown')
 INSTRUCTIONS = (
     'For EVERY failure_observation return one failure_review row. Compare the actual '
     'delivered guidance with the actual patch and the scored execution; prior rules '
-    'elsewhere in the bank were not necessarily delivered. Identify a retrieval gap, '
+    'elsewhere in the bank were not necessarily delivered. Identify an approval gap, a retrieval gap, '
     'an execution gap, a rule gap, or unknown. A failed assertion name alone does not '
     'prove a cause. Cite the observation and task/source evidence; for an execution '
     'gap name a delivered rule and explain the concrete patch mismatch. When causes '
@@ -26,6 +26,72 @@ INSTRUCTIONS = (
 )
 
 
+AVAILABILITY_INSTRUCTIONS = (
+    'Distinguish stored guidance, approval in the frozen bank, matching, and actual delivery. '
+    'Consult experience_availability for those observed states; a pending matching candidate '
+    'is an approval gap, not proof that approved retrieval failed. Existing text alone does '
+    'not close an unresolved failure. no_update means no rule-text/applicability delta only; '
+    'unresolved failures still require concrete follow-up. Prefer reviewing an existing '
+    'matching pending candidate over duplicating its rules. If an approved rule is excluded '
+    'by unnecessarily broad applicability, consider a source-supported applicability-only '
+    'revise with changes=[] and an exact parent, keeping all inherited rule bodies. '
+    'Never promote unknown premises, broaden applicability without evidence, or imply approval. '
+    'If delivered guidance was ignored, identify the actual patch mismatch and a concrete '
+    'implementation/check change rather than inventing a duplicate rule. If the existing '
+    'checks were already attempted and failed, explain what the next check distinguishes. '
+    'Treat every diagnosis as a hypothesis until supported by observations.\n'
+)
+
+
+def bank_availability(visible, bundles, approved, route, reviews=()):
+    """Observe delivery gates offline, without certifying semantic coverage or benefit."""
+    from .experience_updates import route_view
+    accepted={b['sha256'] for b in approved}
+    delivered=set(route.get('selected_sha256s',[route.get('selected_sha256')]))
+    latest={r['candidate_sha256']:r['decision'] for r in reviews}
+    rows=[]
+    for bundle in bundles:
+        code=bundle['sha256'];decision=route_view(visible,[bundle])
+        matches=decision['selected_sha256']==code
+        approved_here=code in accepted
+        review=latest.get(code)
+        gate=('delivered' if code in delivered else
+              'pending_review' if not approved_here and review is None and bundle['review']['status']!='rejected' else
+              'not_approved' if not approved_here else
+              'matching' if not matches else 'selection')
+        rows.append(dict(sha256=code,id=bundle['id'],approved_in_snapshot=approved_here,
+            latest_decision=review,matches=matches,delivered=code in delivered,gate=gate,
+            route_reason=decision['route']['reason'],checks=decision['route']['checks']))
+    return rows
+
+
+def followups(record, availability):
+    """A no-rule-delta can still create an actionable, evidence-linked learning result."""
+    unresolved=fix_status(record) not in ('fixed','no_observed_failure')
+    if not unresolved:return []
+    pending=[r['sha256'] for r in availability if r['matches'] and r['gate']=='pending_review']
+    actions=[]
+    if pending:
+        actions.append(dict(kind='review_existing_candidates',status='awaiting_content_review',
+            candidate_sha256s=pending,reason='Matching stored proposals are not approved in the frozen bank. Matching alone does not certify their rules or usefulness.'))
+    blocked=[r['sha256'] for r in availability if r['approved_in_snapshot'] and not r['matches']]
+    if blocked:
+        actions.append(dict(kind='inspect_applicability',status='proposed',candidate_sha256s=blocked,
+            reason='Inspect source-supported requirements/exclusions; do not weaken matching or convert unknown to known automatically.'))
+    actions.append(dict(kind='repair_and_recheck',status='proposed',candidate_sha256s=[],
+        checks=[dict(failure_id=r['failure_id'],next_check=r['next_check'],diagnosis=r['diagnosis'],
+                     qualification='Model proposal, not an executed check or verified cause') for r in record.get('review') or []],
+        reason='Failures remain unresolved; rule delta and implementation resolution are separate.'))
+    return actions
+
+
+def attach_availability(root, protocol, availability):
+    path=Path(root)/'failure-learning.json'
+    if not path.exists():return
+    record=json.loads(path.read_text());record['experience_availability']=availability
+    _save(protocol['store'],root,record)
+
+
 def source_key(visible):
     return sha(canonical(dict(task=visible['task'], sources=visible['sources'])).encode())
 
@@ -34,8 +100,12 @@ def prior(store, visible):
     """Same-input observations are reflection material, not repair instructions."""
     key = source_key(visible)
     records = [json.loads(p.read_text()) for p in (Path(store)/'failure-learning').glob('*.json')]
-    return sorted([r for r in records if r['source_key'] == key and r['failures']],
-                  key=lambda r: r['at'])[-20:]
+    selected=sorted([r for r in records if r['source_key'] == key and r['failures']],
+                    key=lambda r:r['at'])[-20:]
+    for record in selected:
+        sidecar=Path(store)/'failure-followups'/(record['batch_id']+'.json')
+        if sidecar.exists():record['followup_snapshot']=json.loads(sidecar.read_text())
+    return selected
 
 
 def observations(jobs):
@@ -124,6 +194,7 @@ def finish(root, protocol, value):
         return None
     record = json.loads(path.read_text())
     record.update(review=value['failure_review'], candidate_action=value['action'], status=fix_status(record))
+    record['learning_followups']=followups(record,record.get('experience_availability',[]))
     _save(protocol['store'], root, record)
     return record
 

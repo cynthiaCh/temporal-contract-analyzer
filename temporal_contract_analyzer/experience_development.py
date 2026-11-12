@@ -417,6 +417,12 @@ class Development(Evolution):
             failure_context = load(self.root/'failure-learning.json') if (self.root/'failure-learning.json').exists() else failure_learning.capture(self.root,p,starting,load(self.root/'starting-route.json'),old)
             context['failure_observations'] = failure_context
             context['previous_failed_attempts'] = load(self.root/'prior-failures.json')
+        if failure_context is not None:
+            availability=failure_learning.bank_availability(p['cases']['source']['visible'],list(parents.values()),old,
+                load(self.root/'starting-route.json'),load(self.root/'prior-reviews.json'))
+            context['experience_availability']=availability
+            failure_context['experience_availability']=availability
+            failure_learning.attach_availability(self.root,p,availability)
         delta_protocol=p.get('reflection_delta_protocol',updates.DELTA_V1)
         increment_instructions=''
         if delta_protocol==updates.DELTA_V2:
@@ -438,7 +444,7 @@ class Development(Evolution):
                     target=evidence/'starting'/job['slot']/name;target.parent.mkdir(parents=True,exist_ok=True)
                     shutil.copyfile(path,target);retained.append(str(target.relative_to(evidence)))
         archive.atomic_json(evidence/'index.json',dict(source='Only this source task and its two starting repairs',files=retained))
-        prompt=((failure_learning.INSTRUCTIONS if failure_context is not None else '')+increment_instructions+'Extract either no_update with a specific reason, or ONE evidence-backed incremental new/revised '
+        prompt=((failure_learning.INSTRUCTIONS+failure_learning.AVAILABILITY_INSTRUCTIONS if failure_context is not None else '')+increment_instructions+'Extract either no_update with a specific reason, or ONE evidence-backed incremental new/revised '
             'text experience in English. Success does not establish the cause of success; failure does not establish '
             'a cause from assertion names or agent claims. Check novelty against prior guidance. Do not relabel '
             'the fixed manual reminders as learned results. Add a genuinely supported mechanism check or '

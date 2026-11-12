@@ -75,6 +75,9 @@ class FailureLoopTests(unittest.TestCase):
         self.assertTrue(stored['failures'])
         self.assertEqual(len(stored['review']),len(stored['failures']))
         self.assertEqual(stored['review'][0]['diagnosis'],'unknown')
+        self.assertTrue(stored['learning_followups'])
+        self.assertEqual(stored['learning_followups'][-1]['kind'],'repair_and_recheck')
+        self.assertEqual(len(stored['learning_followups'][-1]['checks']),len(stored['review']))
         second=self.fixture.prepare('second')
         prior=json.loads((second.root/'prior-failures.json').read_text())
         self.assertEqual(prior,[stored])
@@ -156,3 +159,61 @@ class FailureLoopTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+class AvailabilityFollowupTests(unittest.TestCase):
+    def setUp(self):
+        from test_experience_memory import MemoryTests
+        self.fixture=MemoryTests('test_storage_preserves_single_source_body_and_evidence')
+        self.fixture.setUp();self.addCleanup(self.fixture.doCleanups)
+
+    def test_pending_match_is_not_approved_or_delivered_and_is_linked_for_review(self):
+        from temporal_contract_analyzer import experience_memory as memory
+        bundle=memory.add(self.fixture.store,self.fixture.payload,[self.fixture.source])
+        availability=learning.bank_availability(self.fixture.visible(),[bundle],[],dict(selected_sha256s=[]))
+        row=availability[0]
+        self.assertTrue(row['matches']);self.assertFalse(row['approved_in_snapshot']);self.assertFalse(row['delivered'])
+        self.assertEqual(row['gate'],'pending_review')
+        record=dict(failures=[dict(slot='START-1')],review=[],repair_limit=2)
+        actions=learning.followups(record,availability)
+        self.assertEqual(actions[0]['kind'],'review_existing_candidates')
+        self.assertEqual(actions[0]['candidate_sha256s'],[bundle['sha256']])
+        self.assertEqual(actions[0]['status'],'awaiting_content_review')
+
+    def test_rejected_match_does_not_become_an_approval_task(self):
+        from temporal_contract_analyzer import experience_memory as memory
+        bundle=memory.add(self.fixture.store,self.fixture.payload,[self.fixture.source])
+        rows=learning.bank_availability(self.fixture.visible(),[bundle],[],dict(selected_sha256s=[]),
+            [dict(candidate_sha256=bundle['sha256'],decision='reject')])
+        self.assertEqual(rows[0]['gate'],'not_approved')
+        record=dict(failures=[dict(slot='START-1')],review=[])
+        self.assertFalse(any(r['kind']=='review_existing_candidates' for r in learning.followups(record,rows)))
+
+    def test_approved_unmatched_guidance_requests_inspection_not_weakened_matching(self):
+        bundle=self.fixture.add()
+        rows=learning.bank_availability(self.fixture.visible('unknown'),[bundle],[bundle],dict(selected_sha256s=[]))
+        self.assertEqual(rows[0]['gate'],'matching');self.assertFalse(rows[0]['matches'])
+        record=dict(failures=[dict(slot='START-1')],review=[])
+        actions=learning.followups(record,rows)
+        self.assertEqual(actions[0]['kind'],'inspect_applicability')
+        self.assertEqual(learning.followups(dict(failures=[],review=[]),rows),[])
+
+    def test_followup_sidecar_is_consumed_without_rewriting_the_original(self):
+        from temporal_contract_analyzer import archive
+        store=self.fixture.store;visible=self.fixture.visible()
+        record=dict(batch_id='synthetic-failure',source_key=learning.source_key(visible),
+            failures=[dict(slot='START-1')],at='2026-01-01T00:00:00Z')
+        path=store/'failure-learning/synthetic-failure.json';archive.atomic_json(path,record);before=path.read_bytes()
+        sidecar=dict(learning_followups=[dict(kind='review_existing_candidates',candidate_sha256s=['fixture'])])
+        archive.atomic_json(store/'failure-followups/synthetic-failure.json',sidecar)
+        result=learning.prior(store,visible)
+        self.assertEqual(result[0]['followup_snapshot'],sidecar)
+        self.assertEqual(path.read_bytes(),before)
+
+    def test_applicability_only_revision_keeps_all_rule_bodies(self):
+        parent=self.fixture.add();visible=self.fixture.visible()
+        visible['analysis']['facts'].append(dict(predicate='inline_reentry',state='contradicted',evidence=[]))
+        value=dict(action='revise',reason='Synthetic source-supported boundary update.',basis=['TASK'],
+            parent_sha256=parent['sha256'],labels=None,requires=None,excludes=['inline_reentry'],changes=[],unresolved=[])
+        result=updates.compose(value,visible,dict(TASK=dict(kind='original_task')),{parent['sha256']:parent})
+        self.assertEqual(result['rules'],parent['rules'])
+        self.assertEqual(result['excludes'],['inline_reentry'])
