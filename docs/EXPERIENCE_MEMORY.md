@@ -152,6 +152,15 @@ Without a running worker the page records pending work honestly. Restart reuses
 completed slots, with no paid replay. Unknown/incomplete or infrastructure-failed
 slots stop without hidden retry. See [execution and budgets](EXPERIENCE_EVOLUTION.md).
 
+An original reflection left outside the store by a legacy numbering interruption
+can be materialized using experience-evolution recover-candidate (see that
+protocol). It becomes a visible AI-pending candidate, not an accepted or enabled
+experience. Its original model text and the explicit numbering derivation are
+retained. Acceptance controls remain unavailable until an authorized worker
+actually completes its AI check. Refresh queue reloads the list while retaining
+the current form. Restart a long-running review service after Python upgrades;
+the page detects older APIs instead of silently omitting workflow gates.
+
 ## Submit a candidate from an isolated development store
 
 A candidate record, a named content-review decision, and an active retrieval

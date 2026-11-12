@@ -117,6 +117,31 @@ def compose(value, visible, ledger, parents):
     return result
 
 
+def recover_program_numbering(value, visible, ledger, parents):
+    """Explicit derived repair for a complete legacy new-only proposal.
+
+    No rule text/policy is edited. An existing canonical hint may be discarded
+    only when it equals the ID Python independently assigns at that position.
+    Parent revisions and ambiguous references are never guessed.
+    """
+    if value.get('action')!='new' or value.get('parent_sha256') is not None:
+        raise EvidenceError('Numbering recovery supports new proposals only; revisions need explicit rule identities')
+    derived=deepcopy(value);changes=[]
+    for index,change in enumerate(derived.get('changes',[]),1):
+        if change.get('operation')!='add':raise EvidenceError('Numbering recovery cannot retarget a rule operation')
+        code=change.get('rule_id');canonical=f'R{index:02d}'
+        if code is not None:
+            if code!=canonical:raise EvidenceError('Ambiguous model rule numbering cannot be recovered')
+            changes.append(dict(pointer=f'/changes/{index-1}/rule_id',before=code,after=None,assigned_by_python=canonical))
+            change['rule_id']=None
+    if not changes:raise EvidenceError('No legacy numbering conflict to recover')
+    composed=compose(derived,visible,ledger,parents)
+    return derived,composed,dict(schema_version='program-numbering-recovery-v1',changes=changes,
+        body_unchanged=[r['body'] for r in value['changes']]==[r['body'] for r in derived['changes']],
+        applicability_unchanged=all(value[k]==derived[k] for k in ('labels','requires','excludes')),
+        original_output_preserved=True,semantic_review='not_performed')
+
+
 def route_view(visible, bundles):
     """Same router over a controlled prospective view; not expert activation."""
     from . import experience_routing as routing

@@ -62,7 +62,7 @@ class ReviewHandler(LocalHandler):
             active = {r['bundle']['sha256'] for r in approval.active(self.server.store)}
             from .experience_screening import qualified
             tips = {r['sha256'] for r in memory.tips(bundles)}
-            self.send(dict(store=str(self.server.store), records=[dict(
+            self.send(dict(review_api_version='experience-review-v3',store=str(self.server.store), records=[dict(
                 id=b['id'], version=b['version'], sha256=b['sha256'], labels=b['labels'],
                 status=b['review']['status'], active=b['sha256'] in active,
                 default_eligible=qualified(self.server.store, b['sha256']),

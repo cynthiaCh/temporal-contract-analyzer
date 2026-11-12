@@ -210,6 +210,9 @@ class Workflow(AutomatedChecks,Development):
         else:
             value=load(self.root/'composed-candidate.json');parent=value['parent']
             files=[self.root/'raw-reflection.json',self.root/'reflection-input.json']
+            if p.get('candidate_handoff'):
+                files += [self.root/name for name in ('composition-derivation.json','original-response-schema.json','handoff.json')]
+                if (self.root/'original-reflection-response.txt').is_file():files.append(self.root/'original-reflection-response.txt')
             digests={f:sha(f.read_bytes()) for f in files}
             sources=deepcopy(parent['audit']['sources']) if parent else []
             sources += [dict(path=str(f),sha256=digests[f]) for f in files]
@@ -227,6 +230,10 @@ class Workflow(AutomatedChecks,Development):
             bundle=memory.seal(payload)
             with life.locked(p['store']):
                 if not any(b['sha256']==bundle['sha256'] for b in memory.records(p['store'])):
+                    # Acceptance uses the same lock: publish pending AI state before
+                    # the immutable record becomes visible, closing that race.
+                    life._update(p['store'],bundle['sha256'],origin_root=str(self.root),generation=0,
+                        ai_status='pending',status='ai_check_pending',validation_job=None,validation_status='not_started')
                     bundle=memory.add(p['store'],payload,files)
         archive.atomic_json(target,bundle)
         state=self.state();state['candidate_sha256']=bundle['sha256'];self.save(state)
@@ -242,8 +249,11 @@ class Workflow(AutomatedChecks,Development):
         life.update(p['store'],code,ai_result=result['output'],ai_check_path=str(self.root/'candidate-ai-check.json'))
         try:checks.accept_candidate(result['output'],bundle,context,p['cases']['source']['visible'])
         except EvidenceError as error:raise CandidateCheckFailed(str(error)) from error
-        life.update(p['store'],code,ai_status='passed',ai_check_path=str(self.root/'candidate-ai-check.json'),
-            status='awaiting_human_review',ai_unknowns=result['output']['unknowns'])
+        with life.locked(p['store']):
+            decisions=[row for row in approval.decisions(p['store']) if row['candidate_sha256']==code]
+            status={'accept':'content_accepted_waiting_validation','reject':'rejected','revise':'revision_requested'}[decisions[-1]['decision']] if decisions else 'awaiting_human_review'
+            life._update(p['store'],code,ai_status='passed',ai_check_path=str(self.root/'candidate-ai-check.json'),
+                status=status,ai_unknowns=result['output']['unknowns'])
 
     def _develop(self,backend,p):
         self._boundary(p,backend);self._analyses(backend,p)
@@ -318,12 +328,14 @@ class Workflow(AutomatedChecks,Development):
         return task
 
     def _process(self,backend,p,code):
-        meta=life.metadata(p['store'],code);task=self._task(p,code)
+        meta=life.metadata(p['store'],code)
+        if meta.get('status') in ('rejected','revision_requested'):return
+        task=self._task(p,code)
         if task is None:return
         q=task.verify();task._boundary(q,backend);bundle=task._store_candidate(q)
         try:
             if meta.get('ai_status')=='pending':
-                task._candidate_check(backend,q,bundle);task._status('awaiting_human_review')
+                task._candidate_check(backend,q,bundle);task._status(life.metadata(p['store'],code)['status'])
             meta=life.metadata(p['store'],code)
             if meta.get('ai_status')!='passed':return
             accepted=life.latest_acceptance(p['store'],code)
@@ -368,6 +380,10 @@ class Workflow(AutomatedChecks,Development):
             except BlockingIOError as error:raise EvidenceError('A workflow is already executing; no duplicate dispatch') from error
             try:
                 if load(auth_path).get('cancelled'):self._status('cancelled');return self.state()
+                if p.get('candidate_handoff') and not (self.root/'handoff-preflight.json').exists():
+                    for key in p['cases']:backend.preflight(self._case_protocol(p,key))
+                    archive.atomic_json(self.root/'handoff-preflight.json',dict(at=archive.now(),
+                        scope='Revalidate original calibration/runtime for the explicitly authorized continuation; reuse original scores.'))
                 if not self.state().get('development_done') and self.state()['status'] not in ('ai_contract_failed','ai_check_incomplete','infrastructure_error','budget_exhausted','cancelled'):
                     self._develop(backend,p)
                 if self.state().get('development_done') and self.state()['status']!='no_update':

@@ -9,11 +9,12 @@ from .experience_evolution import Evolution
 def register(sub):
     parser=sub.add_parser('experience-evolution',help='Bounded automation with unified memory review')
     actions=parser.add_subparsers(dest='evolution_action',required=True)
-    for name in ('prepare','run','work','cancel','status','report','review-analysis','review-candidate','docker-check','docker-calibrate'):
+    for name in ('prepare','run','work','cancel','status','report','review-analysis','review-candidate','recover-candidate','docker-check','docker-calibrate'):
         action=actions.add_parser(name)
         action.add_argument('--root',type=Path,required=True)
         if name in ('prepare','review-analysis','review-candidate','docker-check','docker-calibrate'):action.add_argument('input',type=Path)
         if name in ('run','work'):action.add_argument('--execute',action='store_true')
+        if name=='recover-candidate':action.add_argument('--handoff-root',type=Path)
         if name=='work':
             action.add_argument('--watch',action='store_true')
             action.add_argument('--poll-seconds',type=float,default=2)
@@ -33,6 +34,9 @@ def run(args):
             loop=FrozenEvaluation(args.root)
         else:raise EvidenceError('Choose development or evaluation')
         result=loop.prepare_config(data)
+    elif action=='recover-candidate':
+        from .experience_candidate_handoff import materialize
+        result=materialize(args.root,args.handoff_root)
     elif action in ('docker-check','docker-calibrate'):
         from .docker_backend import offline
         result=offline(json.loads(args.input.read_text(encoding='utf-8')),args.root,

@@ -13,13 +13,13 @@ class Element {
  close(){this.open=false;}
 }
 const roots={};
-for(const id of ['detail','message','evidence','evidence-title','evidence-body','store','library','counts','review-filter','close-evidence'])roots[id]=new Element('div');
+for(const id of ['detail','message','evidence','evidence-title','evidence-body','store','library','counts','review-filter','refresh-library','close-evidence'])roots[id]=new Element('div');
 roots['review-filter'].value='all';
 const document={createElement:tag=>new Element(tag),querySelector:s=>roots[s.slice(1)],querySelectorAll:()=>[]};
-let posted;
+let posted,postCount=0,apiVersion='experience-review-v3';
 const fetch=async(path,options={})=>{
- if(options.method==='POST'){posted=JSON.parse(options.body);return {ok:true,json:async()=>({sha256:input.data.bundle.sha256,default_active:false,directory:'/synthetic/decisions'})};}
- return {ok:true,json:async()=>path==='/api/library'?{store:'/synthetic/memory',records:[]}:input.data};
+ if(options.method==='POST'){postCount++;posted=JSON.parse(options.body);return {ok:true,json:async()=>({sha256:input.data.bundle.sha256,default_active:false,directory:'/synthetic/decisions'})};}
+ return {ok:true,json:async()=>path==='/api/library'?{review_api_version:apiVersion,store:'/synthetic/memory',records:[]}:input.data};
 };
 const context=vm.createContext({document,fetch,location:{search:''},history:{replaceState(){}},URLSearchParams,DATA:input.data,console});
 vm.runInContext(fs.readFileSync(input.source,'utf8'),context);
@@ -37,6 +37,13 @@ async function main(){
  assert.equal(all(roots.detail,node=>node.className==='rule-diff').length,1,'R02 before/after is shown');
  ruleInputs()[0].value='yes';
  all(roots.detail,article).flatMap(node=>all(node,tag('textarea')))[0].value='SYNTHETIC preserved draft';
+ const detailBefore=roots.detail.children[0],postsBefore=postCount;
+ await roots['refresh-library'].listeners.click();
+ assert.equal(roots.detail.children[0],detailBefore,'Queue refresh does not rerender a draft');
+ assert.equal(ruleInputs()[0].value,'yes');assert.equal(postCount,postsBefore,'Refresh only reads');
+ apiVersion='old-api';await roots['refresh-library'].listeners.click();
+ assert.match(roots.message.textContent,/older Python code/);assert.equal(postCount,postsBefore);
+ apiVersion='experience-review-v3';
  let override=all(roots.detail,tag('button')).find(b=>b.textContent==='Review R03 explicitly');
  await override.listeners.click();assert.equal(ruleInputs().length,2,'Reviewer can identify an affected unchanged rule');
  assert.equal(ruleInputs()[0].value,'yes','Changing review granularity retains existing draft');
@@ -79,6 +86,10 @@ async function main(){
  assert.equal(posted.rules[1].body,'SYNTHETIC generalized mechanism');
  assert.equal(posted.rules.length,7);
  assert.equal(posted.activate,undefined,'Saving wording does not request activation');
+ context.DATA.workflow={ai_status:'pending',status:'ai_check_pending',validation_status:'not_started'};
+ vm.runInContext('current=DATA.bundle;render(DATA)',context);
+ assert.equal(all(roots.detail,tag('select')).some(s=>s.children.some(o=>o.value.startsWith('accept'))),false,'AI-pending workflow cannot offer acceptance');
+ assert.ok(all(roots.detail,tag('p')).some(p=>p.textContent.includes('content acceptance waits')));
  console.log('incremental DOM passed: one explicit rule, six parent references, full-review toggle, exact base sent');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

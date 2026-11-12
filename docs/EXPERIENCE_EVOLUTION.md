@@ -224,6 +224,39 @@ tasks must retain that same public analysis. This does not add per-call walks or
 hash chains over historical batches. Reports separate root reservations, actual
 version tasks, reused starts and aggregate actual workflow usage.
 
+## Offline handoff for a legacy numbering interruption
+
+An already completed reflection can have an older schema that allowed a new-rule
+ID while composition required Python numbering. Fixing the future schema does
+not publish that older proposal. Use the explicit offline recovery entry point:
+
+```sh
+python3 -B -m temporal_contract_analyzer experience-evolution recover-candidate --root /path/to/STOPPED_BATCH --handoff-root /path/to/NEW_HANDOFF
+```
+
+This requires two actually scored starts, a complete schema-valid original
+reflection and checked public inputs. It supports only new-only additions whose
+redundant ID exactly matches independently computed canonical numbering. Ambiguous
+IDs, revisions, missing evidence, incomplete sessions and started candidate checks
+are rejected. The original response, body, applicability, source state and costs
+are preserved. Normalized composition input and mechanical derivation are separate
+artifacts; this is not another model output or semantic approval.
+
+The candidate is published in the same store with AI pending before it becomes
+visible. Repeated commands return one immutable candidate. A separate handoff root
+reuses frozen public analyses and the two original scored starts, with old costs
+separate. Only the originally unused candidate check and the original ten effect
+slots remain; its budget cannot exceed the unspent source allowance. Completed
+stages are not executed again. A lost handoff receipt cannot reset a continued job.
+Neither the stopped source batch nor its results is overwritten.
+
+Recovery calls no models and copies no execution authorization. An explicitly
+authorized worker at NEW_HANDOFF can perform the remaining AI check; human content
+acceptance is unavailable until that check actually passes. Effect screening still
+requires the exact-version human decision. The worker rechecks original runtime
+and calibration before dispatch, using inherited scores rather than rescoring
+history. Page reads, refreshes and saves never start execution.
+
 ## Frozen evaluation, compatibility and offline demonstration
 
 New evaluations use experience-evaluation-v3 with automatic analysis/checks and
