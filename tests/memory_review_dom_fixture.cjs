@@ -6,6 +6,7 @@ class Element {
  constructor(tag){this.tagName=tag;this.children=[];this.listeners={};this.dataset={};this.className='';this.value='';this.textContent='';this.checked=false;this.classList={toggle(){}};}
  append(...items){for(const item of items){this.children.push(item);if(this.tagName==='select'&&this.children.length===1)this.value=item.value;}}
  replaceChildren(...items){this.children=[];this.append(...items);}
+ setAttribute(name,value){this[name]=value;}
  addEventListener(type,callback){this.listeners[type]=callback;}
  get childElementCount(){return this.children.length;}
  reportValidity(){return true;}
@@ -56,13 +57,15 @@ async function main(){
  await toggle.listeners.click();assert.equal(ruleInputs().length,1);
  const form=all(roots.detail,tag('form'))[0];
  ruleInputs()[0].value='yes';
- const selects=all(form,tag('select'));selects.find(s=>s.children.some(o=>o.value==='accept_only')).value='accept_only';
+ const selects=all(form,tag('select'));selects.find(s=>s.children.some(o=>o.value==='accept')).value='accept';
  const inputs=all(form,tag('input'));inputs.find(i=>i.type!=='checkbox').value='SYNTHETIC_BROWSER_REVIEWER';inputs.find(i=>i.type==='checkbox').checked=true;
  await form.listeners.submit({preventDefault(){}});
  assert.equal(posted.decision.rules.length,1);
  assert.equal(posted.decision.rules[0].rule_id,'R02');
  assert.deepEqual(posted.decision.inherit_from,input.data.review_plan.inherit_from);
  assert.equal(posted.activate,false);
+ assert.equal(posted.decision.decision,'accept');
+ assert.equal(posted.decision.auto_enable,false,'Approval alone does not grant version selection');
  assert.equal(posted.reviewed,true);
  context.READONLY=input.readonly;vm.runInContext('current=READONLY.bundle;render(READONLY)',context);
  assert.equal(ruleInputs().length,0,'Saved review is read-only');
@@ -101,6 +104,28 @@ async function main(){
  assert.ok(all(roots.library,tag('span')).some(p=>p.textContent==='Awaiting human content review'));
  assert.ok(all(roots.library,tag('span')).some(p=>p.textContent.includes('Latest record')));
  assert.ok(!all(roots.library,tag('span')).some(p=>p.textContent.includes('Latest version')));
+ let approvalChoice=all(roots.detail,tag('select')).find(s=>s.children.some(o=>o.value==='accept'));
+ assert.equal(approvalChoice.children.filter(o=>o.value.startsWith('accept')).length,1,'Only one approval option');
+ let authorization=all(roots.detail,tag('input')).find(i=>i['aria-describedby']==='preferred-selection-help');
+ assert.equal(authorization.checked,false);assert.equal(authorization.disabled,true);
+ approvalChoice.value='accept';approvalChoice.listeners.change();
+ assert.equal(authorization.disabled,false);authorization.checked=true;
+ await all(roots.detail,tag('button')).find(b=>b.textContent==='Review all rules instead').listeners.click();
+ authorization=all(roots.detail,tag('input')).find(i=>i['aria-describedby']==='preferred-selection-help');
+ assert.equal(authorization.checked,true,'Review toggles preserve explicit authorization');
+ approvalChoice=all(roots.detail,tag('select')).find(s=>s.children.some(o=>o.value==='accept'));
+ approvalChoice.value='reject';approvalChoice.listeners.change();
+ assert.equal(authorization.disabled,true);assert.equal(authorization.checked,false,'Rejection clears authorization');
+ approvalChoice.value='accept';approvalChoice.listeners.change();
+ assert.equal(authorization.checked,false,'Returning to approval requires a fresh opt-in');
+ authorization.checked=true;
+ const approvalForm=all(roots.detail,tag('form'))[0];
+ for(const selector of ruleInputs())selector.value='yes';
+ all(approvalForm,tag('input')).find(i=>i.type!=='checkbox').value='SYNTHETIC_BROWSER_REVIEWER';
+ all(approvalForm,tag('input')).find(i=>i.required&&i.type==='checkbox').checked=true;
+ await approvalForm.listeners.submit({preventDefault(){}});
+ assert.equal(posted.decision.decision,'accept');assert.equal(posted.decision.auto_enable,true);
+ assert.equal(posted.activate,false,'Authorization does not activate on submit');
  context.DATA.workflow.ai_result={increment_review:{comparisons:[{rule_id:'R01',classification:'duplicate',matches:[{experience_sha256:'a'.repeat(64),rule_id:'R03',covered:'Synthetic existing admission duty.'}],uncovered_increment:'',reason:'Synthetic jointly covered rule.'}]}};
  vm.runInContext('render(DATA)',context);
  assert.ok(all(roots.detail,tag('h4')).some(p=>p.textContent==='R01 · duplicate'));
