@@ -77,19 +77,23 @@ errors. No model is called and no reference patch is sent to a solver.
 Use the existing [evolution configuration](EXPERIENCE_EVOLUTION.md), adding
 `backend` above, selecting the container `node` path, supplying the host public
 `binary`, and assigning the parsed calibration object to `calibration`. One reviewed public task/source/Contract/labels/facts analysis is shared per
-case. Omitted analysis uses the existing AST-assisted extraction and review path. The controller's declared deployment requirement remains Python
+case. Omitted analysis uses AST-assisted extraction; v3 adds a budgeted automatic
+AI evidence check for supplied or generated analyses. The controller's declared deployment requirement remains Python
 >=3.9; case code and grading use the checked container runtimes.
 
-Normal `prepare`, `run --execute`, `status` and `report` commands then
+Normal `prepare`, `run --execute`, `work --execute --watch`, `status` and `report` commands then
 apply. Omitting `backend` retains native execution. Backend/image/runtime choices
 are frozen before any session; do not change old prepared protocols or switch
 backends after a failure. Code and transport changes invalidate old preparations.
 
 Maintenance stays gpt-5.6-terra/low, 24 requests/600 seconds; reflection stays
 gpt-5.6-terra/medium, 12 requests/600 seconds, no tools. One development round
-remains five sessions/108 requests; evaluation remains B1/A1/A2/B2, four
-sessions/96 requests. Independent original starts, serial execution, exact-version
-expert activation and no-learning evaluation remain unchanged. A/B share the
+uses the current v3 source/two-transfer schedule and explicitly budgeted AI checks,
+not the historical five-session protocol. See the evolution protocol for caps
+and per-edited-version reservations. Independent original starts, serial execution,
+exact-version human acceptance and no-learning evaluation remain unchanged.
+The worker can enable after actual qualification only under a persisted human
+authorization; page actions alone cannot start model execution. A/B share the
 actual container runtime instruction; only selected experience text differs.
 
 ## Isolation and retained results
@@ -120,9 +124,10 @@ Partial responses and null usage remain unknown. There are no hidden retries,
 replacement slots or implicit expert approvals. Offline/synthetic validation
 does not establish live provider availability, repair benefit or generalization.
 
-## V2 development limits and evidence reads
+## Development limits and evidence reads
 
-The maintained CLI now prepares the [v2 protocol](EXPERIENCE_EVOLUTION.md).
+The maintained CLI prepares the [v3 protocol](EXPERIENCE_EVOLUTION.md); historical
+v2 batches retain their own limits and results.
 Maintenance remains unchanged (gpt-5.6-terra/low, 24 requests, 600 seconds).
 Extraction uses gpt-5.6-terra/medium, capped at 2 requests after two PASS starts
 or 12 after valid non-PASS starts. Its evidence workspace is read-only. The

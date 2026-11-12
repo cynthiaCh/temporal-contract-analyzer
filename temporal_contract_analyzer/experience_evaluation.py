@@ -69,7 +69,7 @@ class Evaluation(Development):
             visible=item['visible'] or dict(task=inputs['task'],sources=sources)
             if visible.get('task')!=inputs['task'] or visible.get('sources')!=sources:
                 raise EvidenceError('Evaluation inputs must be the original candidate/task')
-            if item['visible'] is not None:reviewed(visible)
+            if item['visible'] is not None and not getattr(self,'AUTOMATED_CHECKS',False):reviewed(visible)
             key=f'task-{index}';directory=self.root/'cases'/key
             cases[key]=dict(case=record,visible=visible,lineage=provenance,input_path=str(directory/'input'),
                 candidate_files=inventory(files),candidate_sha256=sha(canonical(sources).encode()),
@@ -97,7 +97,7 @@ class Evaluation(Development):
             for repeat in (1,2):
                 for name in (list(views) if repeat==1 else list(reversed(views))):
                     slots.append(dict(name=f'{key}-{name}-{repeat}',role='repair',case=key,condition=name,repeat=repeat,requests=24))
-        p=dict(schema_version=VERSION,execution_policy=VERSION,batch_id='eval-'+uuid.uuid4().hex[:16],kind='evaluation',
+        p=dict(schema_version=self.PROTOCOL,execution_policy=self.PROTOCOL,batch_id='eval-'+uuid.uuid4().hex[:16],kind='evaluation',
             implementation=implementation_record(),
             cases=cases,store=str(Path(config['store']).resolve()),binary=str(Path(config['binary']).resolve()),
             node=str(Path(config['node']).resolve()),roles=ROLES,slots=slots,runtime_source=str(runtime),

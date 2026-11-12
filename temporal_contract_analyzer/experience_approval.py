@@ -54,17 +54,22 @@ def _index(store, bundles, rows):
                   'source_decision_sha256', 'actor', 'reason', 'at'}
         for sequence, event in enumerate(value['history'], 1):
             memory.object_fields(event, fields, 'activation event')
-            if event['sequence'] != sequence or event['action'] not in ('migrate', 'activate', 'rollback', 'deactivate') \
+            if event['sequence'] != sequence or event['action'] not in ('migrate', 'activate', 'rollback', 'deactivate','withdraw_enable') \
                     or not memory.text(event['actor']) or not isinstance(event['reason'], str) \
                     or not memory.text(event['at']) or not isinstance(event['id'], str) \
                     or event['previous_sha256'] != replay.get(event['id']):
                 raise EvidenceError('Invalid activation history or previous pointer')
             decision = by_decision[event['source_decision_sha256']]
             code = event['candidate_sha256']
-            if event['action'] == 'deactivate':
-                if code is not None or event['previous_sha256'] is None or decision['decision'] != 'reject' \
+            if event['action'] in ('deactivate','withdraw_enable'):
+                if code is not None or event['previous_sha256'] is None or decision['decision'] != ('reject' if event['action']=='deactivate' else 'accept') \
                         or decision['candidate_sha256'] != event['previous_sha256']:
                     raise EvidenceError('Invalid deactivation evidence')
+                if event['action']=='withdraw_enable':
+                    from .experience_lifecycle import load
+                    withdrawn=load(Path(store)/'workflow/revocations'/(decision['sha256']+'.json'))
+                    if not withdrawn or withdrawn['actor']!=event['actor'] or withdrawn['candidate_sha256']!=event['previous_sha256']:
+                        raise EvidenceError('Invalid enable withdrawal evidence')
                 replay.pop(event['id'])
             else:
                 bundle = bundles[code]
@@ -97,7 +102,7 @@ def _index(store, bundles, rows):
 def _change(store, index, bundle, decision, action, actor, reason):
     value = deepcopy(index)
     identifier = bundle['id']
-    code = None if action == 'deactivate' else bundle['sha256']
+    code = None if action in ('deactivate','withdraw_enable') else bundle['sha256']
     previous = value['versions'].get(identifier)
     if previous == code:
         return value
@@ -216,12 +221,12 @@ def validate_decision(row, bundle, bundles=None, prior=None):
         raise EvidenceError('Expert rule findings must match the frozen candidate order')
     for finding in findings:
         fields = {'rule_id', 'supported', 'reason'}
-        if row.get('schema_version') == 'experience-expert-decision-v2' and 'inherited_from' in finding:
+        if row.get('schema_version') in ('experience-expert-decision-v2','experience-expert-decision-v3') and 'inherited_from' in finding:
             fields.add('inherited_from')
         if set(finding) != fields or type(finding['supported']) is not bool \
                 or not isinstance(finding['reason'], str):
             raise EvidenceError('Each rule needs a support finding and a text reason, which may be empty')
-    if row.get('schema_version') == 'experience-expert-decision-v2':
+    if row.get('schema_version') == 'experience-expert-decision-v2' or row.get('schema_version')=='experience-expert-decision-v3' and 'inherit_from' in row:
         if bundles is None or prior is None:
             raise EvidenceError('Inherited review findings require retained parent decision history')
         from .experience_review_delta import resolve
@@ -231,6 +236,17 @@ def validate_decision(row, bundle, bundles=None, prior=None):
             raise EvidenceError('Inherited findings differ from the unchanged accepted parent rules')
     elif 'inherit_from' in row:
         raise EvidenceError('Review inheritance requires the v2 decision schema')
+    if row.get('schema_version')=='experience-expert-decision-v3':
+        intent=row.get('enable_authorization')
+        if not isinstance(intent,dict) or set(intent)!={'authorized','expected_current','authorized_by','candidate_sha256'} \
+                or type(intent['authorized']) is not bool or intent['authorized_by']!=row['reviewer'] \
+                or intent['candidate_sha256']!=bundle['sha256'] or intent['authorized']!=(row['decision']=='accept' and row.get('auto_enable') is True):
+            raise EvidenceError('Invalid exact-version automatic enable authorization')
+        if intent['expected_current'] is not None and (not isinstance(intent['expected_current'],str) or len(intent['expected_current'])!=64):
+            raise EvidenceError('Invalid expected active version in authorization')
+        submitted=row.get('submitted_request',{})
+        if any(submitted.get(k)!=row.get(k) for k in ('reviewer','decision','reason','scope','auto_enable','request_id')):
+            raise EvidenceError('Human authorization differs from its original submitted request')
     if row['decision'] == 'accept' and (not all(r['supported'] for r in findings)
             or bundle['review']['status'] == 'rejected'):
         raise EvidenceError('Unsupported or rejected rules cannot be accepted')
@@ -243,7 +259,7 @@ def decide(store, candidate_sha256, request, report_sha256=None, *, activate_ver
            expected_current=UNSPECIFIED):
     """Operator entry point. Never called by automatic reflection or repair."""
     fields = {'reviewer', 'decision', 'reason', 'scope', 'rules'}
-    if not isinstance(request, dict) or set(request) not in (fields, fields | {'inherit_from'}):
+    if not isinstance(request, dict) or not fields<=set(request) or set(request)-fields-{'inherit_from','auto_enable','request_id'}:
         raise EvidenceError('Expert request must contain reviewer, decision, reason, scope and per-rule findings')
     store = Path(store)
     if type(activate_version) is not bool:
@@ -254,6 +270,17 @@ def decide(store, candidate_sha256, request, report_sha256=None, *, activate_ver
         if candidate_sha256 not in bundles:
             raise EvidenceError('Unknown expert-review candidate')
         prior = decisions(store)
+        from . import experience_lifecycle as lifecycle
+        if 'auto_enable' in request and type(request['auto_enable']) is not bool:raise EvidenceError('auto_enable must be an explicit boolean')
+        if 'request_id' in request:
+            lifecycle.nonce(request['request_id'])
+            repeated=[r for r in prior if r.get('request_id')==request['request_id']]
+            if repeated:
+                row=repeated[0]
+                if row['candidate_sha256']!=candidate_sha256 or row.get('submitted_request')!=request:
+                    raise EvidenceError('Review request_id reused with different content')
+                return row
+        lifecycle.check_human_acceptance(store,candidate_sha256,request)
         index = _index(store, bundles, prior)
         bundle = bundles[candidate_sha256]
         previous = index['versions'].get(bundle['id'])
@@ -263,6 +290,10 @@ def decide(store, candidate_sha256, request, report_sha256=None, *, activate_ver
         row = dict(deepcopy(request), schema_version='experience-expert-decision-v2' if 'inherit_from' in request else 'experience-expert-decision-v1',
                    actor='named_operator', candidate_sha256=candidate_sha256,
                    report_sha256=report_sha256, at=archive.now(), sequence=len(prior)+1)
+        if 'auto_enable' in request or 'request_id' in request:
+            row.update(schema_version='experience-expert-decision-v3',submitted_request=deepcopy(request),
+                enable_authorization=dict(authorized=request['decision']=='accept' and request.get('auto_enable') is True,
+                    expected_current=previous,authorized_by=request['reviewer'],candidate_sha256=candidate_sha256))
         if 'inherit_from' in request:
             from .experience_review_delta import resolve
             row['rules'] = resolve(bundle, bundles, prior, request['inherit_from'], request['rules'], request['scope'])
@@ -278,6 +309,7 @@ def decide(store, candidate_sha256, request, report_sha256=None, *, activate_ver
                 and screening.qualified(store, candidate_sha256) \
                 and (previous is None or _descendant(bundles, candidate_sha256, previous)):
             _change(store, index, bundle, row, 'activate', row['reviewer'], row['reason'])
+        lifecycle.on_decision(store,row)
         return row
 
 
@@ -331,7 +363,7 @@ def validate_snapshot(store, snapshot):
         memory.object_fields(entry, {'bundle', 'expert_decision'}, 'active snapshot entry')
         bundle, decision = entry['bundle'], entry['expert_decision']
         memory.validate(bundle, lambda code:(Path(store)/'sources'/code).read_bytes())
-        if decision.get('schema_version') == 'experience-expert-decision-v2':
+        if decision.get('schema_version') in ('experience-expert-decision-v2','experience-expert-decision-v3'):
             if history is None:
                 history = decisions(store)
                 bundles = {b['sha256']:b for b in memory.records(store)}

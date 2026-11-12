@@ -29,6 +29,10 @@ def submit(source_store, target_store, code):
     source, target = (Path(p).expanduser().resolve() for p in (source_store, target_store))
     if source == target:
         raise EvidenceError('Candidate is already in this store; open its content review directly')
+    from .experience_lifecycle import metadata
+    workflow=metadata(source,code)
+    if workflow and workflow.get('origin_root'):
+        raise EvidenceError('V3 review and execution use one store. Review this bound version there, or prepare a new v3 batch against the target store with candidate_sha256; do not orphan its worker authorization')
     bundles = {b['sha256']: b for b in memory.records(source)}
     candidate = bundles.get(code)
     if candidate is None or candidate['review']['status'] != 'candidate':

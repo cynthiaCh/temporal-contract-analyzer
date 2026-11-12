@@ -45,14 +45,17 @@ python3 -B -m temporal_contract_analyzer experience-memory verify --store /path/
 python3 -B -m temporal_contract_analyzer experience-memory review --store /path/to/memory
 ```
 
-[Architecture and source map](docs/ARCHITECTURE.md), [memory format and retrieval](docs/EXPERIENCE_MEMORY.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [bounded evolution](docs/EXPERIENCE_EVOLUTION.md) document the interfaces. Candidates are reviewed and activated in the single `experience-memory review` page, with rules and retained outcomes available together. Evaluation uses a frozen snapshot and cannot learn. No paid calls are authorized by reading this README.
+[Architecture and source map](docs/ARCHITECTURE.md), [memory format and retrieval](docs/EXPERIENCE_MEMORY.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [bounded evolution](docs/EXPERIENCE_EVOLUTION.md) document the interfaces. Experience Review is the sole human business checkpoint: edit or accept exact candidate content, optionally authorizing automatic enable after effect validation. The separately authorized worker performs AI checks, actual validation and guarded enable; opening or submitting the page cannot start models. Evaluation uses a frozen snapshot and cannot learn. No paid calls are authorized by reading this README.
 
 ## Optional integrations
 
 For automatic AST-assisted Auto Contract extraction, omit `visible` from an
 `experience-evolution prepare` configuration. The first `run --execute` performs
-one analysis session and pauses for `review-analysis`; a subsequent run starts
-repairs. See the [execution flow](docs/EXPERIENCE_EVOLUTION.md).
+one analysis session and a budgeted AI evidence check, then starts repairs when
+valid. Automatic candidate checks precede the single experience-content review.
+`experience-evolution work --root BATCH --execute --watch` continues an authorized
+batch after edits/decisions; it never invents human acceptance. See the
+[execution flow](docs/EXPERIENCE_EVOLUTION.md).
 
 - The report UI can be opened with `python3 -B -m temporal_contract_analyzer reports open`.
 - On macOS, double-click `launch-ast-review.command` to open AST evidence review. It restarts the configured report service in the foreground; keep the terminal open and press Ctrl+C to stop it. Report annotations, analysis review and experience activation use separate records.
@@ -64,6 +67,7 @@ repairs. See the [execution flow](docs/EXPERIENCE_EVOLUTION.md).
 
 ```sh
 python3 -B -m unittest discover -s tests
+python3 -B examples/workflow_v3_demo.py --root /tmp/tca-v3-demo-new
 python3 -B tools/export-release.py /path/to/new-clean-export
 ```
 
@@ -73,11 +77,13 @@ Tests use synthetic runners and fixtures. They do not establish repair benefit o
 
 This is a prepared source tree, not a published release. The owner has not selected a project license. Preserve upstream notices for any separately redistributed third-party code. No license grant or venue acceptance is implied. The exported source excludes exposed research memory, original experiment data, installed dependencies and Git history.
 
-The current [v2 development protocol](docs/EXPERIENCE_EVOLUTION.md) preregisters
-one source task, two other independent transfer sources and a reviewed boundary
+The current [v3 development protocol](docs/EXPERIENCE_EVOLUTION.md) preregisters
+one source task, two other independent transfer sources and a boundary
 input. Both successful and failed starts may yield one increment or no_update.
 Default activation requires cross-source whole-task improvement and exact content
-acceptance. Historical active records are retained without automatic v2
+acceptance with persisted authorization. Review-only never enables automatically.
+Edits receive their own AI check, content decision and effect task. Historical
+active records are retained without automatic new-protocol
 qualification. Frozen milestone evaluation shares public analyses and never learns.
 Real training/evaluation must be explicitly launched; offline fixtures are not
 repair-benefit evidence.

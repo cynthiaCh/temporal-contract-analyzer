@@ -25,6 +25,8 @@ ROLES = {
     'analysis':dict(model='gpt-6-sol', effort='low', requests=12, seconds=600),
     'repair':dict(model='gpt-5.6-terra', effort='low', requests=24, seconds=600),
     'reflect':dict(model='gpt-5.6-terra', effort='medium', requests=12, seconds=600)}
+ROLES.update(contract_check=dict(model='gpt-6-sol',effort='low',requests=4,seconds=600),
+             candidate_check=dict(model='gpt-5.6-terra',effort='medium',requests=4,seconds=600))
 DRIVER = '''import json,sys
 from pathlib import Path
 import runner
@@ -109,6 +111,8 @@ class NativeBackend:
         pass
 
     def execute(self, protocol, role, prompt, schema, directory):
+        logical_role=role
+        role={'contract_check':'analysis','candidate_check':'reflect'}.get(role,role)
         if not protocol.get('boundary_preflight_complete'):self.preflight(protocol)
         directory = Path(directory)
         backend = directory/'backend'
@@ -118,19 +122,20 @@ class NativeBackend:
         schema_name='analysis.schema.json' if role=='analysis' else 'reflection.schema.json'
         archive.atomic_json(backend/schema_name, schema or dict(type='object'))
         (backend/'driver.py').write_text(DRIVER, encoding='utf-8')
-        lightweight=protocol.get('execution_policy') in ('experience-development-v2','experience-evaluation-v2')
+        lightweight=protocol.get('execution_policy') in ('experience-development-v2','experience-evaluation-v2',
+            'experience-development-v3','experience-validation-v3','experience-evaluation-v3')
         frozen = {} if lightweight else {str(p.resolve()):sha(p.read_bytes()) for p in backend.iterdir() if p.is_file()}
         task_path=directory/'task.md'
         task_path.write_text(protocol['visible']['task'],encoding='utf-8')
         task_sha=sha(task_path.read_bytes())
         if not lightweight:frozen[str(task_path.resolve())]=task_sha
-        limits=protocol.get('session_limits',ROLES[role])
-        if type(limits['requests']) is not int or not 0<limits['requests']<=ROLES[role]['requests'] \
+        limits=protocol.get('session_limits',ROLES[logical_role])
+        if type(limits['requests']) is not int or not 0<limits['requests']<=ROLES[logical_role]['requests'] \
                 or not 0<limits['seconds']<=ROLES[role]['seconds']:
             raise EvidenceError('Session limits cannot exceed the fixed role budget')
         evidence=protocol.get('reflection_evidence_path') if role=='reflect' else None
         request = dict(binary=protocol['binary'], node=protocol['node'],
-            slot=dict(slot=directory.name, phase=role), prompt=prompt, task=str(task_path.resolve()),
+            slot=dict(slot=directory.name, phase=role,logical_role=logical_role), prompt=prompt, task=str(task_path.resolve()),
             task_sha256=task_sha,candidate_files=None if evidence else protocol.get('candidate_files'),
             candidate=evidence or protocol['input_path'], run_dir=str((directory/'native').resolve()),
             config=dict(frozen_files=frozen,seconds_per_session=limits['seconds'],

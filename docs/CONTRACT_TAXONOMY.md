@@ -84,8 +84,12 @@ python3 -B -m temporal_contract_analyzer route-experience route-input.json --out
 
 The integrated alternative is `experience-evolution prepare` with `visible`
 omitted: it builds AST evidence automatically, and the first `run --execute`
-performs the analysis model call. `review-analysis` supplies source-bound review
-before a subsequent run starts repairs. See [the execution flow](EXPERIENCE_EVOLUTION.md).
+performs the analysis model call and an automatic budgeted AI semantic evidence
+check before repairs. Supplied analyses receive the same check. No manual
+review-analysis step is needed in v3; that command remains a v2 compatibility
+entry point. The actual checker is recorded as model_evidence_check with current
+source citations, reasons, unknowns and blockers, not as human approval. See
+[the execution flow](EXPERIENCE_EVOLUTION.md).
 
 模型分析对象必须包含 `taxonomy_version`、`contract`、`obligation_labels`、`facts`、`unknowns`。标签逐条包含 `code`、义务 `statement` 和 `evidence`；机制事实包含 `predicate`、`state` 和 `evidence`。状态为 `known`／`unknown`／`contradicted`。引用为 `{file, line, quote}`，行号从 1 开始，`TASK` 表示原任务；文本必须出现在该行。源码中的现象不自动成为应保留的政策，AST 也不证明完整可达性。
 

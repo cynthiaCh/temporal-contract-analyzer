@@ -30,6 +30,7 @@ async function api(path,body){const response=await fetch(path,body===undefined?{
 function button(text,fn){const b=el('button',text);b.type='button';b.addEventListener('click',()=>Promise.resolve().then(fn).catch(e=>message(e.message,true)));return b;}
 function field(parent,label,node){const id='field-'+Math.random().toString(36).slice(2);node.id=id;const l=el('label',label);l.htmlFor=id;parent.append(l,node);return node;}
 function select(options){const n=el('select');for(const [value,text] of options){const o=el('option',text);o.value=value;n.append(o);}return n;}
+function requestId(){return globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);}
 function sourceName(code){return (current.audit.sources.find(s=>s.sha256===code)?.path||code).split('/').pop();}
 async function showEvidence(code,pointer='',line=null,recordCode=current.sha256){
  const path='/api/records/'+recordCode+'/sources/'+code+'?pointer='+encodeURIComponent(pointer)+(line===null?'':'&line='+line);
@@ -78,9 +79,13 @@ function renderActivation(target,data){
 }
 function renderManualEditor(target,data,draft={}){
  const panel=el('details',undefined,'panel manual-editor');panel.append(el('summary','Edit rules manually'));
- panel.append(el('p','Save your wording as a new version, then review it against the retained evidence.','muted'));
+ panel.append(el('p','Saving creates an immutable proposal, not acceptance. An authorized worker must check this exact edit before content acceptance and fresh effect validation.','muted'));
  const actor=field(panel,'Editor name',el('input'));actor.value=draft.actor||'';
  const reason=field(panel,'Modification reason',el('textarea'));reason.value=draft.reason||'';
+ const editId=draft.request_id||requestId();
+ const labels=field(panel,'Obligation labels (comma-separated R/O/B/L/I/F/A)',el('input'));labels.value=(draft.labels||data.bundle.labels).join(', ');
+ const requires=field(panel,'Required mechanism predicates (comma-separated)',el('input'));requires.value=(draft.requires||data.bundle.requires).join(', ');
+ const excludes=field(panel,'Excluded predicates (comma-separated)',el('input'));excludes.value=(draft.excludes||data.bundle.excludes).join(', ');
  const editors=data.bundle.rules.map(rule=>{
   const box=el('div',undefined,'manual-rule');box.append(el('h3',rule.id));
   const category=field(box,'Category',select(Object.entries(categories)));
@@ -92,19 +97,35 @@ function renderManualEditor(target,data,draft={}){
   actions.append(button('Use current text for '+rule.id,()=>{body.value=rule.body;category.value=rule.category;}));box.append(actions);panel.append(box);
   return {id:rule.id,category,body};
  });
- const capture=()=>({actor:actor.value,reason:reason.value,rules:editors.map(r=>({id:r.id,category:r.category.value,body:r.body.value}))});
+ const tokens=node=>node.value.split(',').map(x=>x.trim()).filter(Boolean);
+ const capture=()=>({actor:actor.value,reason:reason.value,request_id:editId,labels:tokens(labels),requires:tokens(requires),excludes:tokens(excludes),rules:editors.map(r=>({id:r.id,category:r.category.value,body:r.body.value}))});
  const save=button('Save as new version',async()=>{
   const request=capture();
   if(!request.actor.trim()||!request.reason.trim()||request.rules.some(r=>!r.body.trim())){message('Enter your name, modification reason and nonempty rule text.',true);return;}
   save.disabled=true;
-  try{const result=await api('/api/records/'+data.bundle.sha256+'/revise',request);await library();await openRecord(result.sha256);message('Manual revision saved. Review the new version against its evidence.');}
+  try{const result=await api('/api/records/'+data.bundle.sha256+'/revise',request);await library();await openRecord(result.sha256);message('New version saved. AI checking is pending on an authorized worker; this page dispatched no model.');}
   finally{save.disabled=false;}
  });
  panel.append(save);target.append(panel);return capture;
 }
+function renderWorkflow(target,data){
+ const w=data.workflow;if(!w)return;
+ const last=data.decisions[data.decisions.length-1];const panel=el('div',undefined,'panel workflow-status');
+ panel.append(el('h3','Exact-version workflow'),el('p','AI evidence check: '+w.ai_status),el('p','Human content: '+(last?decisionText(last.decision):'Awaiting review')),el('p','Effect validation: '+w.validation_status),el('p','Workflow state: '+w.status));
+ const authorized=last?.enable_authorization?.authorized&&w.authorization_withdrawal?.decision_sha256!==last.sha256;
+ panel.append(el('p','Enable after validation: '+(authorized?'Authorized by '+last.reviewer:'Not authorized / withdrawn')));
+ if(w.enable_blocker)panel.append(el('p',w.enable_blocker,'notice'));
+ if(w.origin_root)panel.append(el('p','Execution needs the previously authorized worker. Opening or submitting this page never launches models.','muted'),el('pre','python3 -B -m temporal_contract_analyzer experience-evolution work --root '+w.origin_root+' --execute --watch'));
+ else panel.append(el('p','No authorized v3 origin is attached. Prepare a new v3 batch with candidate_sha256 to check/validate this proposal.','notice'));
+ if(w.ai_result){const detail=el('details');detail.append(el('summary','AI check: evidence, limits and blockers'),el('pre',JSON.stringify(w.ai_result,null,2)));panel.append(detail);}
+ if(w.edit)panel.append(el('p','Edited by '+w.edit.actor+': '+w.edit.reason,'meta'));
+ if(authorized){const actor=field(panel,'Operator withdrawing enable authorization',el('input'));const reason=field(panel,'Withdrawal reason (optional)',el('textarea'));panel.append(button('Withdraw automatic enable authorization',async()=>{if(!actor.value.trim())throw Error('Enter the actual operator name.');await api('/api/records/'+data.bundle.sha256+'/revoke-enable',{actor:actor.value.trim(),reason:reason.value.trim()});await openRecord(data.bundle.sha256);message('Enable authorization withdrawn. Content acceptance is retained.');}));}
+ target.append(panel);
+}
 function render(data,rereview=false,fullReview=false,manualRules=new Set(),draft={}){
  const b=data.bundle;const target=$('#detail');target.replaceChildren();const intro=el('div',undefined,'panel');intro.append(el('h2',names[b.id]||b.id),el('p',b.version,'meta'),el('code',b.sha256),el('p',b.labels.join(' / '),'meta'),el('p','Review the rules, labels, applicability and evidence for this exact version. Acceptance permits research use; repair benefit requires evaluation.','notice'));target.append(intro);
  renderActivation(target,data);
+ renderWorkflow(target,data);
  const captureManual=renderManualEditor(target,data,draft.manual);
  const last=data.decisions[data.decisions.length-1];const readonly=Boolean(last)&&!rereview;
  intro.append(el('p',last?'✓ Reviewed · '+decisionText(last.decision)+' · '+last.reviewer+' · '+reviewedAt(last.at):'Awaiting review','review-state '+(last?'reviewed':'pending')));
@@ -150,13 +171,14 @@ function render(data,rereview=false,fullReview=false,manualRules=new Set(),draft
  if(incremental&&inheritedCount)form.append(inheritedGroup);
  const all=el('details',undefined,'panel');all.append(el('summary','All retained sources: tasks, code, reviews and outcomes'));const links=el('div',undefined,'actions');for(const source of b.audit.sources)links.append(button(source.path.split('/').pop(),()=>showEvidence(source.sha256)));all.append(links);form.append(all);
  if(readonly){const result=el('div',undefined,'panel');result.append(el('h2','Saved review decision'),el('p',decisionText(last.decision)+' · '+last.reviewer+' · '+reviewedAt(last.at)),el('p','Overall reason: '+(last.reason||'Not provided')),button('Review this version again',()=>render(data,true)));form.append(result);target.append(form);renderHistory(target,data.decisions);return;}
- const decision=el('div',undefined,'panel');decision.append(el('h2','Submit a review decision'));const reviewer=field(decision,'Reviewer name',el('input'));reviewer.required=true;reviewer.autocomplete='name';const choices=[['','Select an option'],['accept_only','Accept for review only'],['revise','Request revision'],['reject','Reject this version']];if(data.activation.default_eligible)choices.splice(2,0,['accept','Accept and activate a compatible upgrade']);const choice=field(decision,'Overall decision',select(choices));choice.required=true;const scope=field(decision,'Use scope',select([['exploratory','Exploratory research: effectiveness unverified'],['research','Research use']]));if(incremental)scope.value=delta.parent_decision.scope;const reason=field(decision,'Overall reason (optional)',el('textarea'));
+ const decision=el('div',undefined,'panel');decision.append(el('h2','Submit a review decision'));const reviewer=field(decision,'Reviewer name',el('input'));reviewer.required=true;reviewer.autocomplete='name';const choices=[['','Select an option'],['accept_only','Accept for review only'],['revise','Request revision'],['reject','Reject this version']];if(data.workflow?.ai_status==='passed')choices.splice(2,0,['accept_after_validation','Accept and authorize enable after effect validation']);const choice=field(decision,'Overall decision',select(choices));choice.required=true;const scope=field(decision,'Use scope',select([['exploratory','Exploratory research: effectiveness unverified'],['research','Research use']]));if(incremental)scope.value=delta.parent_decision.scope;const reason=field(decision,'Overall reason (optional)',el('textarea'));
  const check=el('label',undefined,'check');const confirmed=el('input');confirmed.type='checkbox';confirmed.required=true;check.append(confirmed,el('span',incremental?'I reviewed the changed rules, their interactions with retained rules, and unchanged labels, applicability, evidence and outcomes. I explicitly reference the displayed parent findings for the unchanged rules.':'I have reviewed all rules, labels, applicability conditions, source evidence and retained repair outcomes for this exact version. These findings reflect my own review.'));decision.append(check);
  if(draft.reviewer!==undefined){reviewer.value=draft.reviewer;choice.value=draft.choice;scope.value=draft.scope;reason.value=draft.reason;confirmed.checked=draft.confirmed;}
- captureDraft=()=>({manual:captureManual(),rules:{...(draft.rules||{}),...Object.fromEntries(fields.map(f=>[f.id,{supported:f.support.value,reason:f.reason.value}]))},reviewer:reviewer.value,choice:choice.value,scope:scope.value,reason:reason.value,confirmed:confirmed.checked});
+ const reviewId=draft.request_id||requestId();
+ captureDraft=()=>({request_id:reviewId,manual:captureManual(),rules:{...(draft.rules||{}),...Object.fromEntries(fields.map(f=>[f.id,{supported:f.support.value,reason:f.reason.value}]))},reviewer:reviewer.value,choice:choice.value,scope:scope.value,reason:reason.value,confirmed:confirmed.checked});
  const submit=el('button','Submit decision','primary');submit.type='submit';decision.append(submit,el('p','Reviews remain in decisions/. Active retrieval is selected in active.json. Reaccepting an older or incompatible version records review without replacing the active version. Use the explicit rollback action for an accepted compatible ancestor. No model call or Git commit is made.','muted'));form.append(decision);target.append(form);
  renderHistory(target,data.decisions);
- form.addEventListener('submit',async event=>{event.preventDefault();if(!form.reportValidity())return;if(choice.value.startsWith('accept')&&fields.some(f=>f.support.value!=='yes')){message('Acceptance requires supported new findings and accepted inherited findings. Otherwise, request revision or reject this version.',true);return;}if(incremental&&scope.value!==delta.parent_decision.scope){message('Changing the review scope requires choosing “Review all rules instead”.',true);return;}submit.disabled=true;try{const request={reviewer:reviewer.value.trim(),decision:choice.value==='accept_only'?'accept':choice.value,reason:reason.value.trim(),scope:scope.value,rules:fields.map(f=>({rule_id:f.id,supported:f.support.value==='yes',reason:f.reason.value.trim()}))};if(incremental)request.inherit_from=delta.inherit_from;const result=await api('/api/records/'+b.sha256+'/decision',{reviewed:confirmed.checked,activate:choice.value==='accept',expected_current:data.activation.current_sha256,decision:request});await library();render(await api('/api/records/'+b.sha256));message((result.default_active?'Review saved. This exact version is active in default retrieval.':'Review saved. This version is not enabled in default retrieval.')+' Saved to: '+result.directory);}catch(error){message(error.message,true);}finally{submit.disabled=false;}});
+ form.addEventListener('submit',async event=>{event.preventDefault();if(!form.reportValidity())return;if(choice.value.startsWith('accept')&&fields.some(f=>f.support.value!=='yes')){message('Acceptance requires supported new findings and accepted inherited findings. Otherwise, request revision or reject this version.',true);return;}if(incremental&&scope.value!==delta.parent_decision.scope){message('Changing the review scope requires choosing “Review all rules instead”.',true);return;}submit.disabled=true;try{const request={request_id:reviewId,auto_enable:choice.value==='accept_after_validation',reviewer:reviewer.value.trim(),decision:choice.value.startsWith('accept')?'accept':choice.value,reason:reason.value.trim(),scope:scope.value,rules:fields.map(f=>({rule_id:f.id,supported:f.support.value==='yes',reason:f.reason.value.trim()}))};if(incremental)request.inherit_from=delta.inherit_from;const result=await api('/api/records/'+b.sha256+'/decision',{reviewed:confirmed.checked,activate:false,expected_current:data.activation.current_sha256,decision:request});await library();render(await api('/api/records/'+b.sha256));message((result.default_active?'Review saved. This exact version is active in default retrieval.':'Review saved. Validation/enable intent is persisted; authorized workers continue separately.')+' Saved to: '+result.directory);}catch(error){message(error.message,true);}finally{submit.disabled=false;}});
 }
 function renderHistory(target,rows){if(!rows.length)return;const history=el('div',undefined,'panel history');history.append(el('h3','Review history'));for(const d of rows)history.append(el('p',d.reviewer+' · '+decisionText(d.decision)+' · '+reviewedAt(d.at)+(d.reason?' · '+d.reason:'')));target.append(history);}
 $('#close-evidence').addEventListener('click',()=>$('#evidence').close());

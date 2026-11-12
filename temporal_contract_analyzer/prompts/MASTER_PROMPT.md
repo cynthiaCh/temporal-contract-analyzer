@@ -1,6 +1,6 @@
 # Experience Research Controller — Master Prompt
 
-Version: `experience-research-controller-v5`
+Version: `experience-research-controller-v6`
 
 ## 1. Your role, responsibilities and operating rules
 
@@ -52,11 +52,14 @@ prompts fixed. Do not generate tasks or search agent architectures. Manual
 checklists are not learned results.
 
 The expert-gated automation entry point is `experience-evolution`; see
-`docs/EXPERIENCE_EVOLUTION.md`. Candidate storage and development validation may
-be automatic within a prepared budget. Default activation requires both passing preregistered cross-source development
-screening and an explicit named operator's content decision on the exact rules
-and retained outcomes. Content acceptance is review-only by default; activation
-is a separate explicit action or an expressly combined UI/CLI choice.
+`docs/EXPERIENCE_EVOLUTION.md`. New v3 batches automatically check analysis and
+candidate evidence within explicit budgets. Experience content review/editing is
+the sole human business checkpoint. Acceptance is review-only unless the actual
+human explicitly authorizes enable after validation for that exact SHA and
+expected active pointer. An authorized worker then validates that version and
+enables only if the preregistered independent cross-source gate passes. There is
+no second mandatory human activate step. Saving an edit is not acceptance; an
+edited child needs its own AI check, human decision and fresh effect task.
 Do not manufacture this action or translate AI-assisted checking into human
 approval. Keep active-version decisions separate from candidate lineage: adding
 or rejecting a child does not displace an accepted parent. Freeze the active
@@ -223,7 +226,7 @@ tool isolation, prompt composition, schema support, request metering, exceptiona
 archive paths, scorer version and reusable calibration. Reuse valid calibration;
 do not run extra connection probes or historical rescoring as a substitute.
 
-In v2 development use two independent starting repairs, using the frozen old
+In v3 development use two independent starting repairs, using the frozen old
 memory view. Call them AUTO or ROUTED truthfully. Both PASS still permit one
 extraction, capped at 2 requests; valid non-PASS starts permit 12. Extraction
 returns either a complete no_update or one evidence-linked incremental candidate.
@@ -232,12 +235,15 @@ five rules or rewrite the entire memory. Python applies explicit changes and
 preserves untouched text. Evidence reads use only the isolated read-only packet
 and closed reader grammar, not arbitrary program execution.
 
-A source-reviewed candidate receives two independent source validations. Block
+A candidate must pass the budgeted AI support/novelty/conflict check and receive
+exact-version human content acceptance before two independent source validations. Block
 unsupported policy, critical preservation loss or unknown critical evidence;
 do not impose a new two-PASS source gate. Then compare complete old/new retrieval
 strategies on two preregistered other independent development sources, each in
-NEW1/OLD1/OLD2/NEW2 order. Transfer analyses are source-only, shared and deferred
-until needed. Parent revisions replace that identity; additions retain real
+NEW1/OLD1/OLD2/NEW2 order. All source-only public analyses and their AI checks are
+frozen before reflection and shared across old/new conditions. Retrieval before
+those facts exist falls back AUTO, avoiding circular analysis dependencies.
+Parent revisions replace that identity; additions retain real
 conflict fallbacks. Complete all fixed comparisons before aggregating results.
 
 Default qualification requires no lower new whole-task pass count at either
@@ -245,7 +251,7 @@ transfer source, at least two additional whole-task passes across both, complete
 valid evidence/accounting, and no critical preservation loss or unknown. This is
 an engineering screen, not statistical significance. Identical-prompt random wins
 are not experience benefit. Named expert content review is also required. Old
-acceptance/active/exploratory records remain historical, not retroactive v2
+acceptance/active/exploratory records remain historical, not retroactive v3
 qualification. Store candidate rules and screening separately, without rewriting
 raw rules after outcomes. Do not fabricate expert findings.
 
@@ -345,10 +351,13 @@ cross-version acceptance suite. Stages 2–4 remain unvalidated proposals.
 
 The bounded evolution controller is an implemented workflow, not evidence that
 the representation, retrieval policy or class prompts have been shown effective.
-Its operational entry point accepts reviewed case inputs or prepares AST-assisted
-analysis when `visible` is omitted. The first explicit run then performs one
-analysis call and pauses for `review-analysis` before any repairs. It does not
-silently restart historical studies or approve its own analysis.
+Its operational entry point accepts proposed public inputs or prepares AST-assisted
+analysis when `visible` is omitted. The first explicit run performs missing
+analysis calls and real budgeted AI evidence checks before repairs. AI checking
+never creates human acceptance. It pauses only for experience content review;
+an explicitly authorized worker continues after decisions and rechecks edits.
+V1/v2 frozen protocols remain unchanged; their review commands are compatibility
+tools. It never silently restarts historical studies or authorizes its own costs.
 
 First establish and verify the output contracts. Then study the representation,
 then retrieval, then shared class-prompt evolution. Reading this prompt is not an

@@ -96,7 +96,7 @@ class Development(Evolution):
             for critical in provenance['critical']:
                 issues = routing.evidence_issues(critical['basis'], inputs['task'], sources, 'critical basis')
                 if issues:raise EvidenceError('Critical preservation basis is not candidate-visible')
-            if spec['visible'] is not None:reviewed(visible)
+            if spec['visible'] is not None and not getattr(self,'AUTOMATED_CHECKS',False):reviewed(visible)
             directory = self.root/'cases'/key
             cases[key] = dict(case=record,visible=visible,lineage=provenance,
                 input_path=str(directory/'input'),candidate_files=inventory(files),
@@ -111,7 +111,8 @@ class Development(Evolution):
             raise EvidenceError('Derived variants or identical source cannot count as independent sources')
         for boundary in cohort['boundaries']:
             memory.object_fields(boundary,{'visible','lineage'},'boundary input')
-            lineage(boundary['lineage'],critical=False);reviewed(boundary['visible'])
+            lineage(boundary['lineage'],critical=False)
+            if not getattr(self,'AUTOMATED_CHECKS',False):reviewed(boundary['visible'])
         with (Path(config['store'])/'decision.lock').open('a') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX)
             frozen = approval.freeze(config['store'])
@@ -144,7 +145,7 @@ class Development(Evolution):
         slots += [dict(name=f'SOURCE-NEW-{n}',role='repair',case='source',requests=24) for n in (1,2)]
         for key in ('transfer-1','transfer-2'):
             slots += [dict(name=f'{key}-{name}',role='repair',case=key,requests=24) for name in ('NEW-1','OLD-1','OLD-2','NEW-2')]
-        protocol = dict(schema_version=VERSION,execution_policy=VERSION,batch_id='dev-'+uuid.uuid4().hex[:16],
+        protocol = dict(schema_version=self.PROTOCOL,execution_policy=self.PROTOCOL,batch_id='dev-'+uuid.uuid4().hex[:16],
             implementation=implementation_record(),
             kind='development',max_rounds=1,cases=cases,store=str(Path(config['store']).resolve()),
             binary=str(Path(config['binary']).resolve()),node=str(Path(config['node']).resolve()),
@@ -386,8 +387,8 @@ class Development(Evolution):
         (self.root/'candidate-experience.md').write_text(memory.render(composed),encoding='utf-8')
         review=dict(reviewer=None,approved=None,blocking_issues=[],novelty_reason='',
             rules=[dict(rule_id=r['id'],supported=None,reason='') for r in composed['rules']])
-        archive.atomic_json(self.root/'candidate-review-input.json',review)
-        state=self.state();state['status']='candidate_review';self.save(state)
+        if not getattr(self,'AUTOMATED_CHECKS',False):archive.atomic_json(self.root/'candidate-review-input.json',review)
+        state=self.state();state['status']='candidate_prepared' if getattr(self,'AUTOMATED_CHECKS',False) else 'candidate_review';self.save(state)
 
     def review_candidate(self, request):
         if self.state()['status']!='candidate_review':raise EvidenceError('No candidate review is pending')
@@ -515,6 +516,7 @@ class Development(Evolution):
             source_relationships=dict({key:c['lineage'] for key,c in p['cases'].items()},
                 **{f'boundary-{i}':b['lineage'] for i,b in enumerate(p['boundaries'],1)}),slots=state['jobs'],
             raw_artifacts=str(self.root),no_final_test_feedback=True)
+        if p['schema_version']=='experience-validation-v3':report['workflow_task_id']=p['batch_id']
         result=screening.save(p['store'],report)
         archive.atomic_json(self.root/'development-screening.json',result)
         state=self.state();state['status']='awaiting_review' if result['gate']['status']=='qualified' else 'pending_validation'

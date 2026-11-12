@@ -1,275 +1,213 @@
-# Bounded experience development and frozen evaluation — v2
+# Automated evidence workflow — v3
 
-TempoEvo enhances the existing general Coding Agent with source-grounded temporal
-analysis and optional text experience. It does not change the Coding Agent,
-train model weights, generate tasks or search agent architectures. The taxonomy,
-fixed reminders, models, repair template, tools and routing rules stay fixed.
-Manual checks are not learned experience. There is no new class-reminder delivery
-policy in this implementation.
-
-## One development task
+The English figures/specs/temporal_workflow.json and SVG are the target design.
+New CLI preparations implement it with the existing Coding Agent and runner:
 
 ```text
-Capture original inputs, source lineage/exposure, critical obligations and M_old
-  -> one reviewed public analysis for the source task
-  -> two independent starting repairs using M_old (AUTO or ROUTED)
-  -> one extraction: both PASS = 2 requests; otherwise valid failures = 12
-       no_update -> stop normally
-       one delta -> deterministic composition -> AI-assisted source/novelty review
-         -> M_new: only this change; a revision replaces its parent identity
-         -> two source validations
-         -> critical loss/unknown or invalid material -> stop or pending
-         -> public analyses of two preregistered independent transfer sources
-         -> for each source: NEW1 / OLD1 / OLD2 / NEW2
-         -> complete whole-task/critical/cost screening
-         -> named expert content acceptance + screening -> explicit activation
+Task/source → AST → analysis LLM → automatic AI contract evidence check
+→ frozen M_old retrieval → two independent repairs → actual scores/run records
+→ one reflection: no_update, or one immutable candidate
+→ automatic AI support/novelty/conflict check
+→ HUMAN CONTENT REVIEW / EDITING (the only business checkpoint)
+→ accepted exact version → automatic source/two-transfer effect screening
+→ exact-version authorization + effect gate + active-pointer CAS → enable
+
+Human edit → immutable child → automatic AI check → same human checkpoint
 ```
 
-Both successful starts still permit extraction. A success is not a verified cause;
-a failure is not a causal explanation. `no_update` is a typed complete response
-with a specific reason and existing basis IDs. Invalid, truncated, over-budget or
-infrastructure-failed extraction is `reflection_incomplete`, never `no_update`.
+Saving, accepting, passing validation and enabling are separate events. Review-only
+acceptance never enables automatically. Page reads, edits and decisions never
+dispatch a model. A separately authorized worker performs continuation.
 
-The extraction schema permits one new bundle or one exact-parent delta: add,
-replace or remove identified rules, and optionally update supported labels,
-requires or excludes. Metadata-only revisions are possible. There is no five-rule
-minimum or separate organizer call. Python validates IDs, applies explicit edits,
-renumbers rules and renders text; it neither supplies missing evidence nor adds
-business policy. Untouched rule bodies and unchanged applicability remain exact.
-Necessary applicability, preservation, exclusions and verification must remain
-supported and present in the delivered guidance where relevant; category counting
-is not semantic approval.
-
-Source-bound AI-assisted candidate review is a checkpoint before maintenance,
-not named expert approval. The actual reviewer records a finding for every rule,
-novelty, conflicts and blocking issues. A rejected candidate stops; it is not
-rewritten or replaced automatically. Revisions need a separately prepared,
-explicitly executed batch and budget. Historical v1 batches remain readable;
-the CLI cannot resume them or start another v1 live loop.
-
-After that AI-assisted check passes, the controller immediately writes the
-immutable candidate record to the configured store, before source validations.
-Validation reuses that exact record rather than creating or rewriting a version.
-The report's `candidate_handoff` identifies this store. If it is an isolated
-research store, use `experience-memory submit` to hand the exact candidate,
-retained evidence, screen and development exposure to a shared review store.
-This is an explicit zero-model operation; neither submission nor a pending
-effect screen blocks content review. Submission never grants approval or changes
-active retrieval. See [candidate submission](EXPERIENCE_MEMORY.md#submit-a-candidate-from-an-isolated-development-store).
-
-Named content review supports [incremental findings](EXPERIENCE_MEMORY.md#incremental-content-review).
-Unchanged rules may reference the exact accepted parent's findings only after
-evidence and shared applicability checks; the reviewer explicitly reviews changes
-and their interactions. The final decision retains every finding and its source.
-This does not alter AI-assisted candidate checking, model budgets, development
-scores, frozen prompts or activation gates.
-
-## Preparation contract
-
-Use the maintained CLI; preparation never calls a model:
+## Prepare, authorize and run
 
 ```sh
 python3 -B -m temporal_contract_analyzer experience-evolution prepare config.json --root /path/to/NEW_BATCH
-python3 -B -m temporal_contract_analyzer experience-evolution status --root /path/to/NEW_BATCH
 python3 -B -m temporal_contract_analyzer experience-evolution run --root /path/to/NEW_BATCH --execute
+python3 -B -m temporal_contract_analyzer experience-memory review --store /path/to/SHARED_MEMORY
+python3 -B -m temporal_contract_analyzer experience-evolution work --root /path/to/NEW_BATCH --execute --watch
 ```
 
-A development config has `kind: development` (default), `case_id`, `visible`
-(optional/null), `store`, `binary`, `node`, `calibration`, `source_relationship`,
-`cohort` and optional `backend`. `max_rounds` is currently 1. Backend fields and
-real calibration are described in [DOCKER_BACKEND.md](DOCKER_BACKEND.md); the
-same native/Docker backend and scoring adapters are reused.
+Preparation is offline. The initial run normally returns at awaiting_human_review.
+The worker command keeps a process waiting and continues after exact-version
+decisions/edits; without --watch it drains eligible work once. It actually calls
+the existing NativeBackend/Docker backend and scorer, subject to their runtime
+and calibration requirements. Merely saving pending data is not called execution.
+Restarting it reuses persisted authorization, task bindings and completed slots.
+An interrupted started slot with uncertain completion stops without retry. Use
+cancel --root PATH to cancel future dispatch; an in-flight session archives first.
 
-`cohort` has:
+## Configuration and source constraints
 
-- `source`: the source task lineage object.
-- `transfers`: exactly two objects with `case_id`, `visible` (null or a reviewed
-  public input), genuine `calibration`, and `lineage`.
-- `boundaries`: at least one already reviewed visible input for an inapplicable,
-  unknown-premise or excluded boundary check. These are zero-model checks, not
-  extra analysis/repair slots. Missing boundary material blocks preparation;
-  resolve it offline rather than enlarging the paid-call budget. Each boundary
-  is `{visible, lineage}`, with the same lineage fields except `critical`.
-  Boundary sources also count as development-used sources even with zero model
-  calls and cannot later be advertised as independent final holdout.
+Development retains case_id, store, binary, node, calibration,
+source_relationship, optional visible/backend, and the existing cohort:
 
-Each development lineage object contains:
+- source: source_unit, derived_from, prior_exposure and critical obligations.
+- transfers: exactly two other independent registered sources, each with case_id,
+  visible (null or a supplied analysis), calibration and lineage/critical basis.
+- boundaries: at least one visible task/source/analysis and lineage. Its AI check
+  is budgeted; no human analysis-review file is required.
 
-```json
-{
-  "source_unit": "REGISTERED_SOURCE_UNIT",
-  "derived_from": [],
-  "prior_exposure": "Actual known exposure and source relationship",
-  "critical": [
-    {
-      "relation": "REGISTERED_PRESERVATION_RELATION",
-      "basis": [{"file": "TASK", "line": 1, "quote": "EXACT CURRENT TASK TEXT"}]
-    }
-  ]
-}
-```
+A critical obligation names a scorer relation with literal task/source anchors.
+Families/ancestry cannot overlap, duplicate source snapshots cannot count as
+independent, and language variants are not independent sources. Record exposure
+honestly, including zero-repair boundaries. Source metadata never enters routing.
 
-These are placeholders, not admission evidence. Critical relation keys must exist
-in the original scorer, and their cited basis must match the visible task/source.
-Source units, ancestry and exposure are management metadata, never routing input.
-Shared declared ancestors, duplicate source units, identical candidate snapshots
-and contradictions with registered source units are rejected. Metadata checks
-cannot discover every undocumented derivation: accurate provenance registration
-remains required. Language variants are not independent source units.
+Optional max_candidate_versions is 1..20, default 2: initial candidate plus one
+edited version. It bounds admitted checks/validation tasks, not successful
+candidates. Further human edits can be saved but need remaining declared budget
+or a new explicitly authorized batch; they cannot expand an old budget.
 
-All original tasks/code, source units, analysis roles, critical obligations,
-calibrations and branch budgets are captured before dependent repairs. Omitted
-public analyses are generated once per case from task/source/AST only and pause
-for an actual review. Source analysis comes first; transfer analysis is deferred
-until a candidate passes its source checks. Do not adjust an analysis to match a
-candidate. No mechanism finding is required for ordinary Coding Agent work;
-unknown/empty labels can fall back to AUTO and extraction can return no_update.
+Optional candidate_sha256 attaches an existing legacy/unbound candidate to a
+fresh v3 batch in this store. That batch checks public analyses and runs its own
+starting repairs, without reflection. Old uncontrolled baselines are not reused.
+Review and execution use one unified store. V3 bound jobs cannot silently move
+their authorization or acceptance into another store. Legacy/unbound candidate
+submission remains supported; use a fresh v3 batch in the target store if needed.
 
-Read the generated `cases/KEY/analysis/review-input.json`, supply its actual
-AI-assisted or human source review, and submit a new review-input file:
+Original inputs, ancestry/exposure, critical obligations, M_old, tools, models,
+limits and schedule are frozen before dependent work. One public analysis per
+case is shared by old/new conditions. Supplied analysis is labeled supplied and
+still AI-checked. AST hints are not defect/safety proofs, and an AST miss is not
+mechanism absence. Nonblocking unknowns remain unknown.
 
-```sh
-python3 -B -m temporal_contract_analyzer experience-evolution review-analysis review.json --root /path/to/NEW_BATCH
-```
+Preanalysis retrieval records AUTO: there are not yet independently checked
+mechanism facts, so it cannot query the analysis it is about to generate. After
+the check, existing routing verifies current-source premises/exclusions and
+selects zero or one frozen experience. No match/unknown/conflict means AUTO.
+Only M_old is available to starting repairs. All transfer public analyses finish
+before reflection. Candidate guidance/results never enter old-condition prompts
+or shared analysis. Old/new repairs share task, code, Contract, model/effort,
+tools, limits, scorer and common template; only experience policy/text differs.
 
-The v2 review contains `case` (`source`, `transfer-1` or `transfer-2`) alongside
-analysis/reviewer/approved/blocking_issues/scope_unknowns/evidence/reason. Raw
-analysis is preserved; an approved public input and its common repair prompt are
-then retained for both conditions. No repeated extraction or hidden reviewer.
-
-After extraction, fill `candidate-review-input.json` with the actual executor's
-per-rule source/novelty/boundary findings. This checkpoint is explicitly
-`execution_agent_visible_input_only`, not independent human approval:
-
-```sh
-python3 -B -m temporal_contract_analyzer experience-evolution review-candidate candidate-review.json --root /path/to/NEW_BATCH
-python3 -B -m temporal_contract_analyzer experience-evolution run --root /path/to/NEW_BATCH --execute
-```
-
-If execution ends at `transfer_analysis_prepared`, the next explicit run performs
-only the two preregistered analyses, then pauses for review. Submit both reviews
-and execute the fixed comparisons. No starting repair, extraction or source
-validation is repeated. There is no implicit resume after failure.
-
-## Evidence access and budgets
-
-Models and effort remain:
+## Real AI checks and budgets
 
 |Role|Model / effort|Requests|Time|
 |---|---|---:|---:|
-|Public analysis|gpt-6-sol / low|12 per case|600 seconds|
-|Maintenance|gpt-5.6-terra / low|24 per session|600 seconds|
-|Extraction after two PASS starts|gpt-5.6-terra / medium|2|600 seconds|
-|Extraction after a valid non-PASS start|gpt-5.6-terra / medium|12|600 seconds|
+|Missing public analysis|gpt-6-sol / low|12 per case|600 s|
+|AI contract check|gpt-6-sol / low|4 per case/boundary|600 s|
+|Maintenance|gpt-5.6-terra / low|24|600 s|
+|Reflection: two PASS starts / otherwise|gpt-5.6-terra / medium|2 / 12|600 s|
+|AI candidate check|gpt-5.6-terra / medium|4 per admitted version|600 s|
 
-|Branch|Sessions excluding analysis|Request ceiling excluding analysis|
-|---|---:|---:|
-|Success then no_update|3|50|
-|Failure then no_update|3|60|
-|Success through comparisons|13|290|
-|Failure through comparisons|13|300|
+With N missing analyses and B boundaries, the initial worst-case cap is
+300 + 12N + 4(3+B) + 4 requests. Each further admitted edited version reserves
+244 (one AI check plus ten repairs). Default N=3, B=1 and two versions means at
+most 600 requests/32 model sessions, serial. These are ceilings, not actual cost.
+Success reflection, no_update, rejection and blockers reduce consumption. No
+extra judge, regeneration, model switch, hidden retry or candidate search exists.
 
-At most three analyses add 3 sessions/36 requests: full ceilings are 16 sessions
-and 326/336 requests. These are ceilings, not actual cost. All sessions are serial.
-The runner passes the branch cap to the real request guard; it is not merely a
-post-hoc counter. There are no retries, extra judges, diagnostic model calls,
-replacement tasks or hidden candidates.
+Checks are bounded semantic model calls, not citation validators or renamed human
+decisions. Full raw responses precede parsing. Claims/findings, reasons, evidence,
+unknowns and blockers bind the exact source/analysis or candidate SHA. Mechanical
+citation/ID checks are additional gates, never semantic approval by themselves.
 
-Reflection defaults to the complete archived source evidence. Its isolated
-read-only workspace contains this source task, the two actual starting patches,
-full scores/schedules, deltas, public self-reports marked unverified, prior
-experience/reviews frozen at preparation, and selected starting tool events.
-The existing tool transport is restricted to its closed reader-command grammar.
-Python/program execution, writes, out-of-workspace reads, network commands and
-newline command injection are denied. No scorer/reference, transfer result or
-final-test feedback is supplied. Any execution validation must use registered
-controller slots; reading evidence does not authorize an extra validation session.
+The contract check tests task/requirement support, defects versus preservation,
+ordering/negation, ownership, current citations, uncertainty and retained effects.
+Unknown facts cannot be promoted. Unsupported/drifted evidence or semantic
+blockers stop repairs. Historical guidance is not supplied to this check; its
+applicability is subsequently audited by the source-bound router.
 
-## Development qualification and activation
+The candidate check reads source-side task/docs/code, actual starting patches,
+complete scores, prior guidance and edit provenance. It checks every rule's
+normative support, increment, conflicts, bounds and causal claims. Observations,
+test names, human edits or agent claims alone cannot justify policy. No transfer
+feedback/reference patch enters it. A failed, invalid or incomplete check is not
+no_update. AI checking never creates named human acceptance.
 
-The source check blocks invalid structure, unsupported policy, confirmed loss of
-preregistered critical preservation, and infrastructure/scorer errors. Unknown
-critical behavior stays pending. Ordinary unresolved behavior does not impose a
-new two-PASS requirement. Boundary checks never launch models and explicitly
-record not_run; identical guidance is not an empirical equivalence result.
+## One human checkpoint and exact-version continuation
 
-The two transfer sources receive the full M_old/M_new retrieval policy. A revised
-identity is replaced, not double-activated. Independent additions retain real
-conflicts; unresolved conditions/conflicts return AUTO rather than forced text.
-Repair inputs share original source, public analysis, common prompt, tools,
-models and budgets. Only selected guidance differs. All valid behavior failures
-continue; infrastructure errors stop immediately. Summaries are formed after
-all fixed comparisons, never fed into another repair condition.
+Experience Review shows AI findings, Before/current text, evidence, parents,
+edits, human decisions, effect state, enable intent, active version and blockers.
+Body/category and label/predicate edits create immutable children, retaining the
+actual editor/reason and original evidence. Request IDs make repeated saves
+idempotent. Saving accepts nothing and inherits no effect qualification. An
+authorized worker checks the child before content acceptance becomes available.
+Incremental review may reference unchanged accepted parent findings, but changed
+rules/affected context need explicit review and interaction checking. Acceptance
+of a parent never becomes acceptance of its edited descendant.
 
-A candidate passes the engineering screen only if:
+Choose review-only, or accept and authorize enable after validation. The latter
+persists SHA, authorizer and expected active pointer. Rejection/revision stops
+remaining repair slots. Withdrawal retains content acceptance but prevents
+enable. Decisions and enable/revoke/reject actions serialize under decision.lock.
+If enable wins just before withdrawal/rejection, that automatic selection is
+removed; if the human update wins first, later enable is blocked. Concurrent
+active-pointer changes wait with a reason instead of overwriting another version.
+Repeated requests/restarts do not repeat tasks or enable events. Technical worker
+identity remains distinct from the actual human authorizer. Legacy activate and
+rollback are maintenance commands, not mandatory new workflow stages.
 
-1. New whole-task pass counts are no lower at either transfer source.
-2. Across the four new repairs, there are at least two additional whole-task
-   passes over the four old repairs.
-3. No confirmed critical preservation loss or unknown critical behavior remains.
-4. Every required score and request-accounting record is valid, complete and
-   within the registered budget.
+|Stored state / field|Meaning|
+|---|---|
+|ai_contract_checking / ai_candidate_checking|Actual budgeted AI check in progress|
+|ai_contract_failed / ai_candidate_failed|Blocked evidence or consistency check|
+|ai_check_incomplete|Invalid, interrupted or incomplete check; not no_update|
+|awaiting_human_review|The sole normal human checkpoint|
+|revision_requested / rejected|Named human requires revision or rejects this version|
+|content_accepted_waiting_validation|Exact-version acceptance saved, execution still needs permission|
+|effect_validation_running|The version-bound worker task is executing|
+|validation_status: failed / unknown / passed|Actual gate outcome, distinct from human acceptance|
+|waiting_enable_conditions|Valid effects, but active-pointer or enable conditions block selection|
+|authorization_revoked|A persisted enable grant was withdrawn|
+|enabled|This exact version is selected; current activity remains separately visible|
+|no_update|Valid reflection found no supported increment|
+|cancelled / budget_exhausted / infrastructure_error|Explicit stop, not behavioral failure|
 
-Whole-task outcomes, not assertion gains, determine this gate. Identical-prompt
-random wins cannot establish experience benefit. If old passes are already 3/4
-or 4/4, a two-pass gain is unattainable; retain pending status without changing
-tasks or the threshold. This is a conservative development filter, not a
-significance test or generalization result.
+The CLI reports AI/infrastructure/budget stop states with a nonzero exit status.
+The worker stops on a failed/incomplete AI check instead of polling it as success.
 
-Screening is retained separately under `store/screening/VERSION_ID.json`, linked
-to the immutable experience. Actual rule bodies are not rewritten after outcomes.
-The review UI exposes the report and complete vectors. Expert content acceptance
-can be recorded without activation; the CLI defaults to review-only. Explicit
-`activate`, `rollback`, or UI accept-and-activate checks both content acceptance
-and recomputed screening. A named expert cannot bypass missing effect evidence.
-Historical acceptance/active pointers remain intact but are excluded from the new
-default view unless they independently meet this protocol. M0 can be empty.
+Each version gets a new protocol under BATCH/validations/SHA. Candidate, human
+acceptance, AI check, actual screening and enable name that same SHA. Edited
+tasks reuse frozen public inputs/M_old and the two valid starting scores, with
+their original costs separate. They never reuse parent new-condition scores or
+overwrite the original batch protocol/candidate/results. Each version receives
+two source repairs and per transfer NEW1 / OLD1 / OLD2 / NEW2, all original starts.
 
-## Milestones and final evaluation
+The existing gate requires new whole-task passes no lower at either transfer,
+at least two additional passes overall, no confirmed critical loss or unknown,
+credible complete scores and in-budget accounting. Source critical loss blocks;
+ordinary unresolved items do not add a two-PASS requirement. Boundaries do not
+run extra repairs. Identical-prompt/fallback differences are not experience effects.
+Same-source repeats are not independent transfer evidence. This is an engineering
+screen, not statistical significance. Execution/program checks determine effects.
 
-Save approved default snapshots with the existing `experience-memory freeze`
-command and name them M0/M1/M2 in an evaluation config. Final config fields are
-`kind: evaluation`, `store`, `binary`, `node`, optional `backend`, `milestones`,
-`tasks`, and `excluded_source_units`. Each milestone is `{name, snapshot}`;
-`snapshot` is the frozen snapshot object, not a changing live-store reference.
-Each task has `case_id`, `visible` (null or reviewed), genuine `calibration`,
-`lineage: {source_unit, derived_from, prior_exposure}`, and:
+Version state, edit receipts, withdrawals and exact-task screens use the existing
+store's workflow subtree. Historical screening/SHA.json is not overwritten.
+Root execution authorization/aggregate budgets are persisted. Completed slots
+are reused without dispatch; ambiguous started slots stop. Unknown usage stays
+null, with known subtotals and unknown counts separate. All raw/partial/errors,
+tool events, patches, full vectors and costs remain archived. Invalid/unstarted
+slots are not behavioral failures. Infrastructure, cancellation and budget stops
+are explicit and do not silently reset on restart.
+At an execution/resume boundary the current task's approved analysis is compared
+with its original snapshot and actual retained AI receipt. Edited validation
+tasks must retain that same public analysis. This does not add per-call walks or
+hash chains over historical batches. Reports separate root reservations, actual
+version tasks, reused starts and aggregate actual workflow usage.
 
-```json
-{"holdout": {"used_for_generation": false, "used_for_selection": false, "used_for_tuning": false}}
+## Frozen evaluation, compatibility and offline demonstration
+
+New evaluations use experience-evaluation-v3 with automatic analysis/checks and
+the existing holdout/source-exclusion, two-repeat and exact-prompt-alias rules.
+They share checked analysis across all frozen AUTO/milestone conditions and never
+reflect, edit, accept or enable experience. Sources used for generation/selection,
+including boundaries, cannot become final holdouts. Feedback used for tuning
+becomes development data and requires another final cohort.
+
+V1/v2 frozen protocols/results remain their own versions. V2 review-analysis and
+review-candidate remain compatibility operations; v3 cannot use them to bypass
+automatic checks. Old stopped batches, unknown costs and approvals are not
+rewritten. Startup checks input/calibration correspondence once; no new repeated
+whole-history hashing or executable hash lock is introduced.
+
+```sh
+python3 -B examples/workflow_v3_demo.py --root /tmp/tca-v3-new-demo
+python3 -B -m unittest discover -s tests -p test_workflow_v3.py
 ```
 
-Register the complete known excluded source set, including prior research outside
-this store. The controller also excludes sources in its development usage and
-screening records, and rechecks usage before final repairs. Honest exposure
-registration is required; this is not a claim that a foundation model never saw
-similar code. Selected transfer tasks are development data, never final holdout.
-
-Prepare/run/review-analysis use the same CLI with an evaluation config. AUTO is
-always present. One public analysis per task is shared by all milestone conditions.
-Each distinct condition has two independent original starts; declared order then
-reverse order is fixed before calls and does not control sampling randomness.
-Conditions producing identical complete prompts across the fixed cohort merge
-before repair; aliases explicitly have no extra executed/scored sessions.
-
-Evaluation never extracts, updates memory or activates versions. It reports
-whole-task passes/valid scores, per-source results, newly solved/failed cases,
-full vectors, costs, delivery/fallback reasons and missing data. Assertion counts
-are not independent samples. Two repeats remain descriptive. If final feedback
-is used to revise the method, reclassify those sources as development and reserve
-another final cohort. No final evaluation was launched by implementing this code.
-
-## Lightweight records and historical compatibility
-
-Keep original inputs, public analysis, memory versions, prompts, patches, scores,
-usage and partial errors connected. Check input/calibration correspondence once
-at batch startup; reuse the captured session runtime and trusted scoring source.
-Do not walk/re-hash the entire batch or all approval history before every call.
-Existing experience/source digests remain identity fields. There is no new log
-hash chain or comprehensive implementation/executable hash lock. Per-candidate
-archival/admission and atomic writes, source isolation and store locks remain.
-
-v1 directories can still be inspected with status/report. Their stored outcomes,
-unknown costs, freezes and stopped slots are not rewritten or resumed. New CLI
-preparations require v2 metadata. Offline synthetic fixtures validate control
-logic; they are neither new trained experiences nor real transfer evidence.
+The demo is synthetic: temporary cases/store, fake backend and simulated human
+actions, with native/model execution explicitly blocked. It exercises editing,
+fresh AI checking, exact acceptance/intent, source/two-transfer validation,
+automatic enable and cost-free resume. Its scores/counters are control-flow
+fixtures, not measured model usage, repair gains or generalization evidence.

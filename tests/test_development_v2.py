@@ -289,16 +289,19 @@ class DevelopmentTests(unittest.TestCase):
                     holdout=dict(used_for_generation=False,used_for_selection=False,used_for_tuning=False))])
             with self.subTest(case=case),self.assertRaises(EvidenceError):Evaluation(self.root/'eval').prepare_config(cfg)
 
-    def test_cli_requires_v2_cohort_and_preparation_never_calls_models(self):
+    def test_cli_defaults_to_v3_with_same_cohort_guards_and_no_model_preparation(self):
         cfg=self.config();cfg['visible']=None
         path=self.root/'config.json';path.write_text(json.dumps(cfg))
         with redirect_stdout(StringIO()),redirect_stderr(StringIO()):
             self.assertEqual(main(['experience-evolution','prepare',str(path),'--root',str(self.root/'cli')]),0)
-        loop=Development(self.root/'cli')
+        from temporal_contract_analyzer.experience_workflow import Workflow
+        loop=Workflow(self.root/'cli')
         self.assertEqual(loop.state()['jobs'],[])
-        self.assertEqual(loop.state()['status'],'analysis_prepared')
+        self.assertEqual(loop.state()['status'],'prepared')
         self.assertTrue((loop.root/'cases/source/analysis/ast-evidence.json').exists())
         self.assertEqual(loop.verify()['branch_caps']['success'],290)
+        self.assertEqual(loop.verify()['schema_version'],'experience-development-v3')
+        self.assertEqual(loop.verify()['global_request_cap'],576)
         with self.assertRaises(EvidenceError):loop.run()
         invalid=self.config();del invalid['cohort'];path.write_text(json.dumps(invalid))
         with redirect_stdout(StringIO()),redirect_stderr(StringIO()):

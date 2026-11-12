@@ -185,7 +185,7 @@ def route(analysis, sources, library, *, task, review=None):
     template = review_template(analysis, task, sources)
     if not isinstance(review, dict) or set(review) != set(template) or review['input_sha256'] != template['input_sha256']:
         return fallback('missing_or_drifted_semantic_review')
-    if review['reviewer'] not in ('execution_agent_visible_input_only', 'human_visible_input_only') \
+    if review['reviewer'] not in ('execution_agent_visible_input_only', 'human_visible_input_only','model_evidence_check') \
             or review['approved'] is not True or review['blocking_issues'] != [] \
             or not isinstance(review['scope_unknowns'], list) or any(not isinstance(x, str) for x in review['scope_unknowns']) \
             or not isinstance(review['reason'], str) \

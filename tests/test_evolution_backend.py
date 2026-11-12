@@ -69,6 +69,28 @@ class BackendTests(unittest.TestCase):
             with self.assertRaisesRegex(EvidenceError, 'requires the explicit Codex binary, node and bwrap'):
                 NativeBackend().preflight(self.protocol)
 
+    def test_v3_check_roles_reuse_bounded_physical_runner_without_extra_permissions(self):
+        protocol=dict(self.protocol,execution_policy='experience-development-v3',boundary_preflight_complete=True,
+            session_limits=dict(requests=4,seconds=600))
+        for logical,physical in [('contract_check','analysis'),('candidate_check','reflect')]:
+            class FakeProcess:
+                returncode=0
+                def __init__(self,*args,**kwargs):pass
+                def communicate(self,payload,timeout):
+                    request=json.loads(payload)
+                    assert request['slot']['phase']==physical and request['slot']['logical_role']==logical
+                    assert request['config']['requests_per_session']==4
+                    assert request['config']['reflection_readonly'] is False
+                    archive=Path(request['run_dir'])/'archive';archive.mkdir(parents=True)
+                    (archive/'raw-answer.txt').write_text('{}')
+                    (archive/'usage.json').write_text(json.dumps(dict(requests_started=1,total_usage=None,usage_unknown_requests=1)))
+                    return json.dumps(dict(candidate_complete=True,infrastructure_valid=True)),''
+            directory=self.root/logical;directory.mkdir()
+            with patch('temporal_contract_analyzer.evolution_backend.subprocess.Popen',FakeProcess):
+                result=NativeBackend().execute(protocol,logical,'Synthetic check',dict(type='object'),directory)
+            self.assertTrue(result['completed'])
+            self.assertEqual(result['usage']['usage_unknown_requests'],1)
+
     def test_runtime_error_is_not_a_credible_degenerate_failure(self):
         source=self.protocol['calibration']['evidence']['degenerate']
         path=Path(source['path']);value=json.loads(path.read_text())

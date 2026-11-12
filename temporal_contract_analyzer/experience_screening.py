@@ -100,6 +100,13 @@ def read(store, code):
     if not isinstance(code,str) or len(code)!=64 or any(c not in '0123456789abcdef' for c in code):
         raise EvidenceError('Invalid screened version ID')
     path = Path(store)/'screening'/(code+'.json')
+    from .experience_lifecycle import metadata
+    version=metadata(store,code)
+    if version and version.get('origin_root'):
+        task=version.get('validation_job')
+        if not task:return None
+        if task!='validation-'+code:raise EvidenceError('Validation job does not bind this exact candidate')
+        path=Path(store)/'workflow/screens'/code/(task+'.json')
     if not path.exists():
         return None
     value = json.loads(path.read_text(encoding='utf-8'))
@@ -123,6 +130,11 @@ def save(store, report):
     if not isinstance(code, str) or len(code) != 64 or any(c not in '0123456789abcdef' for c in code):
         raise EvidenceError('Invalid candidate version')
     path = Path(store)/'screening'/(code+'.json')
+    if report.get('workflow_task_id'):
+        from .experience_lifecycle import metadata
+        version=metadata(store,code) or {}
+        if version.get('validation_job')!=report['workflow_task_id']:raise EvidenceError('Validation task/version binding mismatch')
+        path=Path(store)/'workflow/screens'/code/(report['workflow_task_id']+'.json')
     with (Path(store)/'decision.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX)
         if path.exists():

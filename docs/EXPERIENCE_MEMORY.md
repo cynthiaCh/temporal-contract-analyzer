@@ -21,7 +21,9 @@ in the repository root. It opens the local review queue in your browser and
 works regardless of the terminal's starting directory. The queue shows pending
 and reviewed counts; use the Pending filter to find versions that need review.
 Keep its terminal open while reviewing, then press Ctrl+C to stop the service.
-Candidates from isolated development stores must first be submitted as described below.
+Open the store actually used by the worker. Legacy/unbound candidates from
+isolated stores may be submitted as described below; a v3 execution-bound record
+remains in its store so that review and worker authorization cannot diverge.
 
 For a local visual review, run from the repository root:
 
@@ -52,8 +54,11 @@ Choose findings for affected rules, optionally write review reasons, enter your
 actual name and overall decision, then explicitly confirm the exact changes,
 their interactions and any displayed parent findings. Full review remains an
 option. Clicking submit records the decision through the existing expert
-interface. Choose review-only acceptance or acceptance plus a compatible forward
-activation. Reaccepting an older version does not roll back retrieval. Explicit
+interface. Choose review-only acceptance or acceptance with authorization to
+enable this exact version after effect validation. An authorized v3 worker
+continues validation and performs the guarded enable; the page cannot dispatch
+models. Legacy immediate activation remains a maintenance option. Reaccepting
+an older version does not roll back retrieval. Explicit
 rollback has its own action; the page shows the active version separately from
 the latest review. Revision/rejection are recorded without accepting it. Opening the page never creates approval or calls
 a model. The result displays the decision directory and activation status.
@@ -97,13 +102,58 @@ history. New-version acceptance still needs the current operator's explicit
 decision, and neither inheritance nor content acceptance bypasses effect-based
 activation requirements.
 
+## Automated v3 handoff and human edits
+
+New development batches run real budgeted AI contract and candidate semantic
+checks; no human analysis-review or candidate AI-review JSON file is required.
+Their findings, evidence, unknowns and blockers are distinct from named content
+decisions. The page shows these AI results alongside the actual human decision,
+effect-validation state, enable authorization, active pointer and blocker.
+
+The existing editor supports Before/current text, rule bodies and categories,
+plus labels and mechanism predicates. Saving creates an immutable child with
+editor, reason, parent and original evidence. It neither accepts content nor
+inherits the parent's effect qualification. Repeated saves with the same request
+ID return the same version. Changes to rule evidence or shared applicability
+invalidate affected inherited content findings. An authorized worker checks the
+edited version before its own exact-version acceptance becomes available.
+
+Acceptance can persist an optional enable authorization (candidate SHA, actual
+human authorizer, expected active version). Review-only stores no enable grant.
+The worker screens each accepted version in a new BATCH/validations/SHA task:
+two source repairs and old/new comparisons on two independent transfer sources.
+It reuses frozen public analyses, original inputs and old-bank starts, never the
+parent's new-condition results. Neither the original batch nor its frozen
+candidate/results is overwritten. Verification status and results appear on the
+same candidate page.
+
+Enable requires the latest exact-version acceptance, unwithdrawn explicit grant,
+AI check, qualifying actual effect screen and compatible expected active pointer.
+The same decision lock serializes acceptance/rejection/withdrawal and enable.
+Rejecting or withdrawing even just after automatic enable removes that automatic
+selection; an active-pointer race waits without replacing another version.
+Technical worker identity and human authorizer remain separate. A canceled batch
+cannot subsequently enable. Legacy activate/rollback remain maintenance actions.
+
+Page reads, saves, decisions and refreshes never start a paid task. Run a worker
+only with explicit execution permission and the declared protocol budget:
+
+```sh
+python3 -B -m temporal_contract_analyzer experience-memory review --store /path/to/SHARED_MEMORY
+python3 -B -m temporal_contract_analyzer experience-evolution work --root /path/to/V3_BATCH --execute --watch
+```
+
+Without a running worker the page records pending work honestly. Restart reuses
+completed slots, with no paid replay. Unknown/incomplete or infrastructure-failed
+slots stop without hidden retry. See [execution and budgets](EXPERIENCE_EVOLUTION.md).
+
 ## Submit a candidate from an isolated development store
 
 A candidate record, a named content-review decision, and an active retrieval
 version are separate artifacts. A pending effect screen does not prohibit
 record submission or content review. AI-assisted admission is not a named expert
-decision. The development controller records an AI-approved candidate before any
-source validation, even if later validation is incomplete or unsuccessful.
+decision. The v3 controller records the candidate before its AI check; neither
+record creation nor a passed AI check accepts or enables content.
 
 When a run uses an isolated store, its record is not automatically present in
 the repository's review page. Submit that exact version explicitly:
@@ -121,9 +171,15 @@ change the originating experiment. Repeated submission is idempotent; conflictin
 versions or screening evidence are rejected before publishing records. Evidence
 files are published completely before the candidate becomes visible.
 
+This submission path is for legacy/unbound candidates. A v3 execution-bound
+record cannot be copied into a different review store with an orphaned job or
+grant. Review it in the originating store. To use a legacy/unbound record in a
+new authorized v3 batch, set candidate_sha256 to its exact version in that store;
+the new batch obtains its own common checks, starts and validation evidence.
+
 The development report's `candidate_handoff` names the actual record store and
 provides review/submission arguments. A named reviewer can record a review-only
-acceptance while effect evidence is pending. Explicit activation still requires
+acceptance while effect evidence is pending. Enable still requires
 both content acceptance and qualifying development evidence. Submitting into a
 Git-tracked review store creates new Git-visible data; keeping an isolated store
 outside the repository does not.
@@ -214,8 +270,9 @@ implicitly restoring an older version. Multiple eligible identities remain a
 delivery conflict; lexical score cannot settle a policy conflict.
 
 The library itself does not launch models or evolve ranking, taxonomy or prompts.
-The separate [expert-gated controller](EXPERIENCE_EVOLUTION.md) can automatically
-develop and validate candidates, then pause for a named operator's expert review.
+The separate [expert-gated controller](EXPERIENCE_EVOLUTION.md) automatically
+develops and AI-checks candidates, pauses for named content review, then validates
+accepted exact versions. It enables only when that human also authorized it.
 `research_admitted` metadata alone does not activate delivery. Research activation
 may be exploratory and is not production admission or proof of benefit.
 
@@ -237,19 +294,24 @@ The automated controller never calls this approval action on its own.
 
 ### Development qualification is separate from historical activity
 
-The default delivery view now requires complete v2 cross-source development
+The default delivery view requires complete cross-source development
 screening as well as exact-version content acceptance. `active.json` retains
 historical operator selections; activity alone does not confer eligibility.
 `freeze` filters out legacy or pending-validation entries. `list` and the review
 page show `default_eligible` independently of the retained active flag.
 
-`screening/<experience-id>.json` stores the immutable candidate-linked source and
+Legacy `screening/<candidate-SHA>.json` stores the immutable candidate-linked source and
 two-transfer outcomes, preregistered critical obligations, prompt-difference
 checks and request budget. The gate is recomputed from those outcomes, not trusted
 from a saved qualified boolean. The review page exposes it. Both the HTTP and CLI
 activation/rollback paths require this gate; content acceptance cannot bypass it.
 An exploratory, plausible or source-only improvement stays out of default
 retrieval. This does not erase any historical review or old frozen experiment.
+
+V3 screens live under workflow/screens/CANDIDATE_SHA/VALIDATION_JOB.json with
+exact candidate/job bindings. Old or parent screens cannot qualify a bound v3
+version. The latest named decision, immutable evidence and active pointer remain
+separate from these workflow projections.
 
 New v2 bundles allow one or more evidence-backed rules rather than requiring all
 five category headings. Applicability remains structured in requires/excludes;

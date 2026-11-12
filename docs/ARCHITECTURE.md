@@ -1,25 +1,35 @@
 # Maintained workflow and source map
 
 TempoEvo uses one versioned experience store. Obligation labels organize candidate
-guidance; source-bound mechanism premises and exclusions govern delivery. The current v2 intervention evolves text experience only; Coding Agent models,
+guidance; source-bound mechanism premises and exclusions govern delivery. The current v3 intervention evolves text experience only; Coding Agent models,
 repair tools, common prompts, taxonomy and manual reminder delivery remain fixed.
 
 ```text
 Task + original candidate source
   ├─ omit visible: AST scan → selected evidence → explicit analysis LLM call
-  │     → source-bound analysis review
-  └─ or supply reviewed automatic Contract + labels + facts
+  └─ or supply candidate Contract + labels + facts
+       → automatic AI semantic contract evidence check
        → frozen qualified default experience snapshot
        → source-bound retrieval: zero or one experience
-       ├─ development: two starts → no_update or one delta → source checks
-       │    → two-source old/new comparisons → effect gate + expert → activation
+       ├─ development: two starts → reflection: no_update or one delta
+       │    → automatic AI candidate check → HUMAN content review / edit
+       │    → exact-version source + two-source old/new comparisons
+       │    → effect gate + persisted human enable authorization → auto-enable
        └─ evaluation: frozen AUTO/M0/M1/M2, two repeats; no learning
 ```
 
 When `visible` is omitted from preparation, the controller captures the registered
 task/source and generates AST evidence locally. The first explicit `run --execute`
-calls the analysis LLM once and pauses for `review-analysis`; no repairs start
-before that review. Existing configs may instead supply reviewed visible analysis.
+calls the analysis LLM once and a budgeted AI semantic check; valid analysis flows
+directly into repairs. Supplied analyses also receive that check. The only normal
+human wait is candidate experience content review/editing, in Experience Review.
+An edit creates an immutable child, rechecked by AI, accepted only as that exact
+version, and screened in its own task. Page actions never dispatch paid work.
+An explicitly authorized `experience-evolution work --execute --watch` process
+continues after review and enables only when its exact-version grant and actual
+cross-source effect gate pass. Review-only does not enable. Legacy v1/v2 batches
+retain their own frozen protocols; manual semantic review remains diagnostic or
+compatibility functionality.
 `experience-prompt` remains an offline prompt generator and never calls a model.
 See [taxonomy and analysis](CONTRACT_TAXONOMY.md), [experience storage and
 retrieval](EXPERIENCE_MEMORY.md), and [execution protocol](EXPERIENCE_EVOLUTION.md).
@@ -34,7 +44,7 @@ retrieval](EXPERIENCE_MEMORY.md), and [execution protocol](EXPERIENCE_EVOLUTION.
 | Analysis materials and offline routing | `taxonomy`, `experience-prompt`, `experience-review-template`, `route-experience`, `maintenance-prompt` | `taxonomy_cli.py`, `experience_routing.py` |
 | Unified memory and activation | `experience-memory …` | `experience_memory.py`, `experience_approval.py`, `experience_memory_cli.py` |
 | Human review queue | `experience-memory review --store PATH` | `memory_review.py`, `web/memory-review.*` |
-| Bounded development / frozen testing | `experience-evolution prepare/run/review-analysis/review-candidate/status/report` | `experience_development.py`, `experience_evaluation.py`, `evolution_cli.py` |
+| Bounded development / frozen testing | `experience-evolution prepare/run/work/cancel/status/report` | `experience_workflow.py`, `experience_development.py`, `experience_evaluation.py`, `evolution_cli.py` |
 
 Opening a browser, reading memory, preparing prompts and preparing an evolution
 batch do not call a model. Live execution requires the explicit execution switch
@@ -51,6 +61,7 @@ and the native backend's prerequisites.
 | Vocabulary and static reminders | `taxonomy.py`, `taxonomy_cli.py`, `reminders.py` | Seven-label definitions, material commands and authored checklists; reminders are not learned experience |
 | Shared knowledge | `experience_memory.py`, `experience_memory_cli.py`, `experience_recoding.py`, `experience_routing.py` | Immutable records, evidence closure, label recoding, discovery and conditional delivery |
 | Expert decisions and effect gate | `experience_approval.py`, `experience_screening.py`, `memory_review.py` | Separate content acceptance, cross-source qualification and explicit active versions |
+| Automatic evidence and continuation | `experience_checks.py`, `experience_workflow.py`, `experience_lifecycle.py` | Bounded semantic AI checks; one human checkpoint; immutable edit tasks, persisted permission/enable intent, exact-version validation and locked enable/revoke |
 | Development/evaluation | `experience_development.py`, `experience_updates.py`, `experience_evaluation.py`, `evolution_cli.py`, `evolution_backend.py`, `preanalysis.py` | Public analysis, typed incremental extraction, source/transfer screening and frozen milestone comparison; v1 reader remains in `experience_evolution.py` |
 | Candidate snapshots | `candidate_files.py` | Candidate-visible file capture, hashes, modes and independent workspace copies |
 | Trusted scoring | `case_catalog.py`, `case_evaluation.py` | Registered task inputs, scorer binding, runtime checks, oracle invocation, effect-vector comparisons and process termination |
@@ -89,16 +100,16 @@ or executable contents to preparation-time hashes. Code and prompt edits do not
 require preparing a new batch; legacy implementation hashes are ignored. Input
 and saved-artifact integrity, scoring calibration and batch-state checks remain.
 
-Multi-case consolidation and automatic old-case replay are not implemented by
-this refactor. Current development updates shared experience through bounded
-per-case evidence and expert admission; generalization needs separate evidence.
+Automatic old-case replay beyond the preregistered source and two independent
+transfer sources is not implemented. Development screens whole-task improvement
+and critical losses before enable; generalization needs frozen holdout evidence.
 
 `docker_backend.py` adds the optional pinned SWE-TempoC transport and offline
 runtime/calibration entry points. `_session_runtime/docker_transport.py` replaces
 the namespace envelope while retaining the original guarded runner and archiver.
 See [Docker backend](DOCKER_BACKEND.md) for its explicit scope and isolation.
 
-## Refactor validation
+## Earlier refactor validation
 
 - 355 Python tests passed, including bounded development, frozen evaluation,
   activation, retrieval, source evidence and shared transport checks.
@@ -114,3 +125,14 @@ See [Docker backend](DOCKER_BACKEND.md) for its explicit scope and isolation.
 No live model session was run. Backend tests use synthetic scorer fixtures and
 mock isolation-tool availability where required; missing isolation is tested as
 a blocking error. These checks establish workflow integrity, not repair benefit.
+
+## V3 offline verification
+
+`tests/test_workflow_v3.py` exercises automatic checks, the sole human checkpoint,
+immutable edits, exact-version effect tasks, review-only, automatic enable,
+rejection/revocation races, active-pointer conflicts, cancellation, budget and
+resume guards, and frozen evaluation. The HTTP test confirms that saving or
+reviewing never calls a backend. `examples/workflow_v3_demo.py` runs the edited
+branch in a new temporary store with native model dispatch explicitly disabled.
+See the execution protocol for reproducible commands. These are synthetic control
+flow checks, not real repair-effect measurements.
