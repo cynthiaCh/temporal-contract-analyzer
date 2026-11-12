@@ -56,7 +56,7 @@ actual name and overall decision, then explicitly confirm the exact changes,
 their interactions and any displayed parent findings. Full review remains an
 option. Clicking submit records the decision through the existing expert
 interface. Choose review-only acceptance or acceptance with authorization to
-enable this exact version after effect validation. An authorized v3 worker
+select the accepted content for preferred retrieval. An authorized v3 worker
 continues validation and performs the guarded enable; the page cannot dispatch
 models. Legacy immediate activation remains a maintenance option. Reaccepting
 an older version does not roll back retrieval. Explicit

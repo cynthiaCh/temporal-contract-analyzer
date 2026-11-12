@@ -6,8 +6,8 @@ from pathlib import Path
 import shutil
 
 from . import archive, taxonomy, experience_memory as memory, experience_approval as approval
-from . import experience_updates as updates, experience_checks as checks, experience_lifecycle as life
-from . import experience_routing as routing, experience_screening as screening
+from . import experience_updates as updates, experience_lifecycle as life
+from . import experience_routing as routing
 from .candidate_files import write_files, inventory
 from .core import EvidenceError, canonical, sha
 from .experience_development import Development, load
@@ -17,10 +17,10 @@ from .evolution_backend import NativeBackend, ROLES
 VERSION='experience-development-v3'
 VALIDATION='experience-validation-v3'
 EVALUATION='experience-evaluation-v3'
+HUMAN_ONLY='human-content-only-v1'
 
 
 class ReviewWithdrawn(EvidenceError):pass
-class CandidateCheckFailed(EvidenceError):pass
 class ExecutionCancelled(EvidenceError):pass
 
 
@@ -31,31 +31,21 @@ def backend_for(p):
     return NativeBackend()
 
 
-class AutomatedChecks:
-    AUTOMATED_CHECKS=True
+class PublicInputs:
+    PUBLIC_ANALYSIS_PIPELINE=True
 
     def _checked_public_input(self,key,original):
-        """Check this task's retained AI receipt at the execution boundary, not per call."""
+        """Keep task/source and retained analysis consistent without an AI audit."""
         directory=self.root/'cases'/key;folder=directory/'analysis'
-        checked=load(directory/'approved-visible.json');binding=load(folder/'check-binding.json')
-        if checked['task']!=original['task'] or checked['sources']!=original['sources']:
-            raise EvidenceError('AI-checked public input differs from the frozen original task/source')
-        raw_analysis=load(folder/'raw-analysis.json')
-        policy=load(self.root/'protocol.json').get('contract_check_protocol',checks.CONTRACT_V1)
-        if binding.get('kind')!='AI' or binding.get('human_acceptance') is not False \
-                or binding.get('analysis')!=checked['analysis'] \
-                or binding.get('check_protocol',checks.CONTRACT_V1)!=policy \
-                or (binding.get('raw_analysis') if policy==checks.CONTRACT_V2 else checked['analysis'])!=raw_analysis \
-                or binding.get('source_snapshot_sha256')!=sha(canonical(original['sources']).encode()):
-            raise EvidenceError('Public analysis differs from its retained AI/source binding')
-        proposal=dict(task=checked['task'],sources=checked['sources'],analysis=raw_analysis)
-        if checks.accept_contract(load(folder/'ai-check.json'),proposal,protocol=policy)!=checked:
-            raise EvidenceError('Checked analysis differs from its actual AI semantic check')
-        if policy==checks.CONTRACT_V2 and load(folder/'analysis-derivation.json')!=checks.contract_derivation(raw_analysis,checked['analysis']):
-            raise EvidenceError('Conservative analysis derivation drifted')
-        if policy==checks.CONTRACT_V2 and load(folder/'evidence-catalog.json')!=checks.evidence_catalog(proposal):
-            raise EvidenceError('Archived evidence catalog drifted')
-        return checked
+        visible=load(directory/'approved-visible.json')
+        if visible['task']!=original['task'] or visible['sources']!=original['sources']:
+            raise EvidenceError('Public input differs from the frozen original task/source')
+        binding=load(folder/'check-binding.json') if (folder/'check-binding.json').exists() else {}
+        if binding.get('kind')=='not_run':
+            if visible['analysis']!=load(folder/'raw-analysis.json') or binding.get('input_sha256')!=routing.input_digest(
+                    visible['analysis'],visible['task'],visible['sources']):
+                raise EvidenceError('Public analysis differs from its retained input snapshot')
+        return visible
 
     def _checked_public_inputs(self,p):
         original=load(self.root/'protocol.json')
@@ -66,8 +56,8 @@ class AutomatedChecks:
     def verify(self):
         p=super().verify()
         for i,b in enumerate(p.get('boundaries',[]),1):
-            approved=self.root/'cases'/('boundary-'+str(i))/'approved-visible.json'
-            if approved.exists():b['visible']=load(approved)
+            path=self.root/'cases'/('boundary-'+str(i))/'approved-visible.json'
+            if path.exists():b['visible']=load(path)
         return p
 
     def _case_protocol(self,p,key,cap=None):
@@ -80,24 +70,20 @@ class AutomatedChecks:
 
     def _analysis_setup(self,p):
         from .preanalysis import analyze_candidate
-        # Only newly prepared batches opt in. Missing field means the frozen v1 policy.
-        p['contract_check_protocol']=checks.CONTRACT_V2
+        p.update(review_policy=HUMAN_ONLY,contract_check_protocol='not_run')
         for key,c in p['cases'].items():
-            directory=self.root/'cases'/key/'analysis';directory.mkdir(parents=True,exist_ok=True)
-            if not (directory/'ast-evidence.json').exists():
+            folder=self.root/'cases'/key/'analysis';folder.mkdir(parents=True,exist_ok=True)
+            if not (folder/'ast-evidence.json').exists():
                 full,ast=analyze_candidate(c['visible']['sources'],node=None if p.get('backend') else p['node'])
-                archive.atomic_json(directory/'ast-report.json',full);archive.atomic_json(directory/'ast-evidence.json',ast)
-            # Supplied analyses are proposals too; their old review never bypasses v3 AI checking.
-            approved=self.root/'cases'/key/'approved-visible.json'
-            if approved.exists():approved.unlink()
+                archive.atomic_json(folder/'ast-report.json',full);archive.atomic_json(folder/'ast-evidence.json',ast)
+            supplied=self.root/'cases'/key/'approved-visible.json'
+            if supplied.exists():supplied.unlink()
         for i,b in enumerate(p.get('boundaries',[]),1):
-            directory=self.root/'cases'/('boundary-'+str(i))/'input'
-            write_files(directory,{n:t.encode() for n,t in b['visible']['sources'].items()})
-            b.update(input_path=str(directory),candidate_files=inventory({n:t.encode() for n,t in b['visible']['sources'].items()}))
-        all_keys=list(p['cases'])+['boundary-'+str(i) for i in range(1,len(p.get('boundaries',[]))+1)]
-        p['slots'] += [dict(name='CONTRACT-CHECK-'+k,role='contract_check',case=k,requests=4) for k in all_keys]
-        p['roles']=deepcopy(ROLES)
-        return 4*len(all_keys)
+            folder=self.root/'cases'/('boundary-'+str(i))/'input'
+            write_files(folder,{n:t.encode() for n,t in b['visible']['sources'].items()})
+            b.update(input_path=str(folder),candidate_files=inventory({n:t.encode() for n,t in b['visible']['sources'].items()}))
+        p['slots']=[s for s in p['slots'] if s['role'] not in ('contract_check','candidate_check')]
+        p['roles']={k:deepcopy(v) for k,v in ROLES.items() if k in ('analysis','repair','reflect')}
 
     def _analyses(self,backend,p):
         all_cases=list(p['cases'].items())+[(f'boundary-{i}',b) for i,b in enumerate(p.get('boundaries',[]),1)]
@@ -106,56 +92,45 @@ class AutomatedChecks:
             if target.exists():
                 original=load(self.root/'protocol.json')
                 raw=original['boundaries'][int(key.split('-')[1])-1]['visible'] if key.startswith('boundary-') else original['cases'][key]['visible']
-                checked=self._checked_public_input(key,raw)
-            else:
-                self._status('ai_contract_checking',case=key)
-                folder=self.root/'cases'/key/'analysis';folder.mkdir(parents=True,exist_ok=True)
-                raw=c['visible'];analysis=raw.get('analysis')
-                if analysis is None:
-                    result=self._session(backend,p,'ANALYSIS-'+key,'analysis',key,
-                        (folder/'prompt.md').read_text(),taxonomy.analysis_schema())
-                    analysis=result['output'];archive.atomic_json(folder/'raw-analysis.json',analysis)
-                else:
-                    archive.atomic_json(folder/'raw-analysis.json',analysis)
-                archive.atomic_json(folder/'analysis-origin.json',dict(kind='model_generated' if c.get('analysis_needed') else 'supplied_proposal',human_review=False))
-                routing.validate_analysis(analysis,raw['task'],raw['sources'])
-                visible=dict(task=raw['task'],sources=raw['sources'],analysis=analysis)
-                ast=load(folder/'ast-evidence.json') if (folder/'ast-evidence.json').exists() else None
-                archive.atomic_json(folder/'preanalysis-retrieval.json',dict(condition='AUTO',experience=None,
-                    reason='No independently checked mechanism facts before analysis; avoid circular retrieval and keep old/new common analysis independent of candidate guidance.'))
-                policy=p.get('contract_check_protocol',checks.CONTRACT_V1)
-                if policy==checks.CONTRACT_V2:archive.atomic_json(folder/'evidence-catalog.json',checks.evidence_catalog(visible))
-                result=self._session(backend,p,'CONTRACT-CHECK-'+key,'contract_check',key,
-                    checks.contract_prompt(visible,ast,protocol=policy),checks.contract_schema(analysis,visible=visible,protocol=policy))
-                archive.atomic_json(folder/'ai-check.json',result['output'])
-                checked=checks.accept_contract(result['output'],visible,protocol=policy)
-                if policy==checks.CONTRACT_V2:
-                    archive.atomic_json(folder/'analysis-derivation.json',checks.contract_derivation(analysis,checked['analysis']))
-                archive.atomic_json(folder/'check-binding.json',dict(kind='AI',analysis=checked['analysis'],
-                    **(dict(check_protocol=policy,raw_analysis=analysis) if policy==checks.CONTRACT_V2 else {}),
-                    source_snapshot_sha256=sha(canonical(raw['sources']).encode()),slot='CONTRACT-CHECK-'+key,
-                    historical_guidance='not_supplied',human_acceptance=False))
-                archive.atomic_json(target,checked)
-            c['visible']=checked
+                c['visible']=self._checked_public_input(key,raw)
+                continue
+            self._status('analyzing',case=key)
+            folder=self.root/'cases'/key/'analysis';folder.mkdir(parents=True,exist_ok=True)
+            raw=c['visible'];analysis=raw.get('analysis')
+            if analysis is None:
+                result=self._session(backend,p,'ANALYSIS-'+key,'analysis',key,
+                    (folder/'prompt.md').read_text(),taxonomy.analysis_schema())
+                analysis=result['output']
+            archive.atomic_json(folder/'raw-analysis.json',analysis)
+            archive.atomic_json(folder/'analysis-origin.json',dict(kind='model_generated' if c.get('analysis_needed') else 'supplied_proposal',human_review=False))
+            warnings=[]
+            try:routing.validate_analysis(analysis,raw['task'],raw['sources'])
+            except EvidenceError as error:warnings.append(str(error))
+            review=dict(input_sha256=routing.input_digest(analysis,raw['task'],raw['sources']),
+                reviewer='unreviewed_model_analysis',approved=False,blocking_issues=[],evidence=[],
+                scope_unknowns=analysis['unknowns'],reason='Unreviewed analysis; retrieval uses current source premises. Verify the proposal during repair.')
+            visible=dict(task=raw['task'],sources=raw['sources'],analysis=analysis,review=review)
+            archive.atomic_json(folder/'analysis-notes.json',dict(kind='not_run',warnings=warnings,blocking=False,human_acceptance=False))
+            archive.atomic_json(folder/'check-binding.json',dict(kind='not_run',input_sha256=review['input_sha256'],human_acceptance=False))
+            archive.atomic_json(target,visible);c['visible']=visible
 
     def _status(self,status,**values):
         state=self.state();state.update(status=status,**values);self.save(state)
 
-
-class Workflow(AutomatedChecks,Development):
+class Workflow(PublicInputs,Development):
     PROTOCOL=VERSION
 
     def prepare_config(self,config):
-        config=deepcopy(config);limit=config.pop('max_candidate_versions',2);external=config.pop('candidate_sha256',None)
+        config=deepcopy(config);config.pop('review_policy',None)
+        limit=config.pop('max_candidate_versions',2);external=config.pop('candidate_sha256',None)
         if type(limit) is not int or not 1<=limit<=20:raise EvidenceError('Declare 1..20 bounded candidate versions before execution')
         super().prepare_config(config);p=self.verify()
-        check_cap=self._analysis_setup(p)
-        p['slots'].append(dict(name='CANDIDATE-CHECK',role='candidate_check',case='source',requests=4))
-        initial=300+p['analysis_cap']+check_cap+4
+        self._analysis_setup(p)
+        initial=300+p['analysis_cap']+p.get('fix_request_cap',0)
         p.update(max_candidate_versions=limit,initial_request_cap=initial,
-            total_request_cap=initial+(limit-1)*244,global_request_cap=initial+(limit-1)*244,
-            external_candidate_sha256=external,check_policy='Separate budgeted semantic model checks; no human intermediate forms')
-        p.update(reflection_delta_protocol=updates.DELTA_V2,candidate_check_protocol=checks.CANDIDATE_V2)
+            total_request_cap=initial+(limit-1)*240,global_request_cap=initial+(limit-1)*240,
+            external_candidate_sha256=external,check_policy='Source analysis, actual repairs, failure review, then human content acceptance')
+        p.update(reflection_delta_protocol=updates.DELTA_V1,candidate_check_protocol='not_run')
         if external is not None and not any(b['sha256']==external for b in memory.records(p['store'])):
             raise EvidenceError('Unknown supplied candidate; prepare against a store containing its immutable record/evidence')
         archive.atomic_json(self.root/'protocol.json',p)
@@ -180,7 +155,7 @@ class Workflow(AutomatedChecks,Development):
                 for j in state['jobs'] if not j.get('reused'))
         return jobs
 
-    def _session(self,backend,p,name,role,key,prompt,schema=None,cap=None):
+    def _session(self,backend,p,name,role,key,prompt,schema=None,cap=None,repair_from=None):
         previous=next((j for j in self.state()['jobs'] if j['slot']==name),None)
         if previous:
             if previous['status']=='valid':return load(self.root/'runs'/name/'result.json')
@@ -195,7 +170,7 @@ class Workflow(AutomatedChecks,Development):
             raise EvidenceError('Declared workflow budget exhausted')
         if p.get('schema_version')==VALIDATION and role=='repair' and not life.latest_acceptance(p['store'],p['candidate_sha256']):
             raise ReviewWithdrawn('Human acceptance withdrawn during validation; stop remaining slots')
-        return super()._session(backend,p,name,role,key,prompt,schema,cap)
+        return super()._session(backend,p,name,role,key,prompt,schema,cap,repair_from=repair_from)
 
     def _store_candidate(self,p):
         target=self.root/'candidate.json'
@@ -226,7 +201,7 @@ class Workflow(AutomatedChecks,Development):
             payload=dict(schema_version=memory.BUNDLE_VERSION_V2,id=parent['id'] if parent else p['batch_id'],version=p['batch_id'],
                 parent_sha256=parent['sha256'] if parent else None,taxonomy_version=taxonomy.VERSION,
                 **{k:value[k] for k in ('labels','requires','excludes','rules')},
-                review=dict(status='candidate',kind='ai_assisted',source_sha256=digests[files[0]],limitations=['Pending AI evidence check and exact-version human content review.']),
+                review=dict(status='candidate',kind='ai_assisted',source_sha256=digests[files[0]],limitations=['AI evidence review not performed; pending human content review.']),
                 audit=dict(sources=list({s['sha256']:s for s in sources}.values()),rule_links=links,notes=['V3 reflection candidate; not human approval.'],outcome_refs=[]))
             bundle=memory.seal(payload)
             with life.locked(p['store']):
@@ -234,39 +209,19 @@ class Workflow(AutomatedChecks,Development):
                     # Acceptance uses the same lock: publish pending AI state before
                     # the immutable record becomes visible, closing that race.
                     life._update(p['store'],bundle['sha256'],origin_root=str(self.root),generation=0,
-                        ai_status='pending',status='ai_check_pending',validation_job=None,validation_status='not_started')
+                        review_policy=HUMAN_ONLY,ai_status='not_run',content_review_available=True,status='awaiting_human_review',validation_job=None,validation_status='not_started')
                     bundle=memory.add(p['store'],payload,files)
         archive.atomic_json(target,bundle)
         state=self.state();state['candidate_sha256']=bundle['sha256'];self.save(state)
         return bundle
 
-    def _candidate_check(self,backend,p,bundle):
-        code=bundle['sha256'];self._status('ai_candidate_checking')
-        life.update(p['store'],code,status='ai_candidate_checking')
-        origin=Path(p.get('origin_root',self.root));context=load(origin/'reflection-input.json')
-        # Freeze this unstarted check's protocol without rewriting an old batch.
-        # Existing checks retain their original response contract on recovery.
-        binding=self.root/'candidate-check-protocol.json'
-        if binding.exists():policy=load(binding)['protocol']
-        else:
-            already_started=any(j['slot']=='CANDIDATE-CHECK' for j in self.state()['jobs'])
-            policy=p.get('candidate_check_protocol',checks.CANDIDATE_V1 if already_started else checks.CANDIDATE_V2)
-            archive.atomic_json(binding,dict(candidate_sha256=code,protocol=policy,
-                prior_versions=list(context.get('prior_experiences',{})),
-                scope='This check only; historical reflection/action and earlier checks are unchanged'))
-        if load(binding)['candidate_sha256']!=code:raise EvidenceError('Candidate check protocol belongs to another version')
-        result=self._session(backend,p,'CANDIDATE-CHECK','candidate_check','source',
-            checks.candidate_prompt(bundle,context,protocol=policy),checks.candidate_schema(bundle,context['ledger'],
-                protocol=policy,prior_experiences=context.get('prior_experiences',{})))
-        archive.atomic_json(self.root/'candidate-ai-check.json',dict(candidate_sha256=code,kind='AI',protocol=policy,result=result['output'],human_acceptance=False))
-        life.update(p['store'],code,ai_result=result['output'],ai_check_path=str(self.root/'candidate-ai-check.json'))
-        try:checks.accept_candidate(result['output'],bundle,context,p['cases']['source']['visible'],protocol=policy)
-        except EvidenceError as error:raise CandidateCheckFailed(str(error)) from error
+    def _prepare_content_review(self,p,bundle):
+        code=bundle['sha256']
         with life.locked(p['store']):
             decisions=[row for row in approval.decisions(p['store']) if row['candidate_sha256']==code]
-            status={'accept':'content_accepted_waiting_validation','reject':'rejected','revise':'revision_requested'}[decisions[-1]['decision']] if decisions else 'awaiting_human_review'
-            life._update(p['store'],code,ai_status='passed',ai_check_path=str(self.root/'candidate-ai-check.json'),
-                status=status,ai_unknowns=result['output']['unknowns'])
+            status={'accept':'content_accepted','reject':'rejected','revise':'revision_requested'}[decisions[-1]['decision']] if decisions else 'awaiting_human_review'
+            life._update(p['store'],code,review_policy=HUMAN_ONLY,ai_status='not_run',
+                         content_review_available=True,status=status)
 
     def _develop(self,backend,p):
         self._boundary(p,backend);self._analyses(backend,p)
@@ -275,6 +230,8 @@ class Workflow(AutomatedChecks,Development):
         route=updates.route_view(p['cases']['source']['visible'],old);archive.atomic_json(self.root/'starting-route.json',route)
         self._status('starting_repairs')
         for n in (1,2):self._session(backend,p,'START-'+str(n),'repair','source',self.common(self._case_protocol(p,'source'),route['experience_text']))
+        self._status('repairing_failures')
+        self._repair_failed_starts(backend,p)
         if not p.get('external_candidate_sha256'):
             self._status('reflecting')
             if not (self.root/'raw-reflection.json').exists():
@@ -288,7 +245,7 @@ class Workflow(AutomatedChecks,Development):
                     else:
                         self._finish_no_update(result['output']);self._status(self.state()['status'],development_done=True);return
                 else:self._extract(backend,p,old)
-            if self.state()['status'] in ('no_update','needs_followup'):
+            if self.state()['status'] in ('no_update','needs_followup','repaired','repair_exhausted'):
                 self._status(self.state()['status'],development_done=True);return
             if not (self.root/'composed-candidate.json').exists():
                 context=load(self.root/'reflection-input.json');parents={b['sha256']:b for b in load(self.root/'prior-experiences.json')}
@@ -310,9 +267,9 @@ class Workflow(AutomatedChecks,Development):
         existing=life.metadata(p['store'],code)
         if existing and existing.get('origin_root') not in (None,str(self.root)):raise EvidenceError('Candidate already bound to another immutable workflow')
         if not existing or not existing.get('origin_root'):
-            life.update(p['store'],code,origin_root=str(self.root),generation=0,ai_status='pending',validation_job=None,validation_status='not_started')
+            life.update(p['store'],code,origin_root=str(self.root),generation=0,review_policy=HUMAN_ONLY,ai_status='not_run',content_review_available=True,validation_job=None,validation_status='not_started')
         state=self.state();state.update(development_done=True,admitted_versions=[code]);self.save(state)
-        self._candidate_check(backend,p,bundle);self._status('awaiting_human_review')
+        self._prepare_content_review(p,bundle);self._status('awaiting_human_review')
 
     def _task(self,p,code):
         directory=self.root/'validations'/code
@@ -324,9 +281,8 @@ class Workflow(AutomatedChecks,Development):
                 admitted.append(code);state['admitted_versions']=admitted;self.save(state)
             directory.mkdir(parents=True);q=deepcopy(p)
             q.update(schema_version=VALIDATION,execution_policy=VALIDATION,origin_root=str(self.root),candidate_sha256=code,
-                batch_id='validation-'+code,kind='validation',analysis_cap=0,total_request_cap=244,branch_caps=dict(success=244,failure=244))
-            q['slots']=[s for s in q['slots'] if s['role']=='repair' and not s['name'].startswith('START-')]+[
-                dict(name='CANDIDATE-CHECK',role='candidate_check',case='source',requests=4)]
+                batch_id='validation-'+code,kind='validation',analysis_cap=0,total_request_cap=240,branch_caps=dict(success=240,failure=240))
+            q['slots']=[s for s in q['slots'] if s['role']=='repair' and not s['name'].startswith(('START-','FIX-'))]
             archive.atomic_json(directory/'protocol.json',q)
             starts=[dict(deepcopy(j),reused=True,requests=0,usage=None,seconds=0) for j in self.state()['jobs'] if j['slot'].startswith('START-')]
             archive.atomic_json(directory/'state.json',dict(status='prepared',jobs=starts,candidate_sha256=code,branch=self.state()['branch']))
@@ -348,19 +304,15 @@ class Workflow(AutomatedChecks,Development):
     def _process(self,backend,p,code):
         meta=life.metadata(p['store'],code)
         if meta.get('status') in ('rejected','revision_requested'):return
+        bundle=next(b for b in memory.records(p['store']) if b['sha256']==code)
+        self._prepare_content_review(p,bundle)
+        if not life.latest_acceptance(p['store'],code):return
+        life.maybe_enable(p['store'],code,'workflow-worker:'+p['batch_id'])
+        if meta.get('validation_status') in ('passed','failed','unknown','infrastructure_error','cancelled'):return
         task=self._task(p,code)
         if task is None:return
-        q=task.verify();task._boundary(q,backend);bundle=task._store_candidate(q)
+        q=task.verify();task._boundary(q,backend);task._store_candidate(q)
         try:
-            if meta.get('ai_status')=='pending':
-                task._candidate_check(backend,q,bundle);task._status(life.metadata(p['store'],code)['status'])
-            meta=life.metadata(p['store'],code)
-            if meta.get('ai_status')!='passed':return
-            accepted=life.latest_acceptance(p['store'],code)
-            if not accepted:return
-            if meta.get('validation_status') in ('passed','failed','unknown','infrastructure_error','cancelled'): 
-                if meta['validation_status']=='passed':life.maybe_enable(p['store'],code,'workflow-worker:'+p['batch_id'])
-                return
             life.update(p['store'],code,validation_status='running',status='effect_validation_running')
             self._status('effect_validation_running',validating_sha256=code)
             result_file=task.root/'development-screening.json'
@@ -370,22 +322,17 @@ class Workflow(AutomatedChecks,Development):
                 life.validation_finished(p['store'],code,status,effect_gate=gate)
             else:
                 result=task.state();status='failed' if result['status']=='source_blocked' else 'unknown'
-                life.validation_finished(p['store'],code,status,enable_blocker=result.get('error','Critical preservation or applicability did not establish qualification'))
-            if status=='passed':life.maybe_enable(p['store'],code,'workflow-worker:'+p['batch_id'])
+                life.validation_finished(p['store'],code,status,validation_note=result.get('error','Critical behavior or applicability remains unresolved'))
+            life.maybe_enable(p['store'],code,'workflow-worker:'+p['batch_id'])
         except BaseException as error:
-            meta=life.metadata(p['store'],code)
-            if isinstance(error,(ReviewWithdrawn,ExecutionCancelled)):life.update(p['store'],code,validation_status='cancelled',enable_blocker=repr(error))
-            elif meta.get('ai_status')=='pending':
-                incomplete=task.state()['jobs'][-1].get('status')=='invalid'
-                life.update(p['store'],code,ai_status='incomplete' if incomplete else 'failed',status='ai_check_incomplete' if incomplete else 'ai_candidate_failed',enable_blocker=repr(error))
-            else:life.update(p['store'],code,validation_status='infrastructure_error',status='infrastructure_error',enable_blocker=repr(error))
+            life.update(p['store'],code,validation_status='cancelled' if isinstance(error,(ReviewWithdrawn,ExecutionCancelled)) else 'infrastructure_error',validation_error=repr(error))
             task._status('stopped',error=repr(error));raise
         finally:task.report()
 
     def run(self,execute=False,backend=None):
         if not execute:raise EvidenceError('Execution requires explicit --execute; browsing/editing/review never dispatches models')
         p=self.verify();backend=backend or backend_for(p)
-        if self.state()['status'] in ('needs_followup','infrastructure_error','reflection_incomplete','ai_check_incomplete','budget_exhausted','cancelled','ai_contract_failed'):
+        if self.state()['status'] in ('needs_followup','repaired','repair_exhausted','infrastructure_error','reflection_incomplete','ai_check_incomplete','budget_exhausted','cancelled','ai_contract_failed'):
             return self.state()
         auth_path=self.root/'execution-authorization.json'
         if not auth_path.exists():archive.atomic_json(auth_path,dict(root=str(self.root),request_cap=p['global_request_cap'],cancelled=False,at=archive.now()))
@@ -404,7 +351,7 @@ class Workflow(AutomatedChecks,Development):
                         scope='Revalidate original calibration/runtime for the explicitly authorized continuation; reuse original scores.'))
                 if not self.state().get('development_done') and self.state()['status'] not in ('ai_contract_failed','ai_check_incomplete','infrastructure_error','budget_exhausted','cancelled'):
                     self._develop(backend,p)
-                if self.state().get('development_done') and self.state()['status'] not in ('no_update','needs_followup'):
+                if self.state().get('development_done') and self.state()['status'] not in ('no_update','needs_followup','repaired','repair_exhausted'):
                     self._checked_public_inputs(p)
                     versions=[]
                     for file in (Path(p['store'])/'workflow/versions').glob('*.json'):
@@ -413,23 +360,21 @@ class Workflow(AutomatedChecks,Development):
                     versions.sort(key=lambda r:(r.get('generation',0),r['candidate_sha256']))
                     for meta in versions:
                         code=meta['candidate_sha256']
-                        if meta.get('ai_status')=='pending' or meta.get('ai_status')=='passed' and life.latest_acceptance(p['store'],code):
+                        if meta.get('status') not in ('rejected','revision_requested','authorization_revoked'):
                             self._process(backend,p,code)
                     values=[life.metadata(p['store'],r['candidate_sha256']) for r in versions]
-                    self._status('enabled' if any(r.get('status')=='enabled' for r in values) else 'awaiting_human_review' if any(r.get('ai_status')=='passed' and not life.latest_acceptance(p['store'],r['candidate_sha256']) and r.get('status') not in ('rejected','revision_requested') for r in values) else (values[-1]['status'] if values else self.state()['status']))
+                    self._status('enabled' if any(r.get('status')=='enabled' for r in values) else 'awaiting_human_review' if any(r.get('content_review_available') and not life.latest_acceptance(p['store'],r['candidate_sha256']) and r.get('status') not in ('rejected','revision_requested') for r in values) else (values[-1]['status'] if values else self.state()['status']))
             except BaseException as error:
                 state=self.state();last=state['jobs'][-1] if state['jobs'] else {}
-                phase=state['status'];status='revision_requested_or_rejected' if isinstance(error,ReviewWithdrawn) else 'ai_candidate_failed' if isinstance(error,CandidateCheckFailed) else 'cancelled' if isinstance(error,(KeyboardInterrupt,ExecutionCancelled)) else 'budget_exhausted' if 'budget' in str(error).lower() else 'ai_check_incomplete' if last.get('status')=='invalid' and last.get('role') in ('contract_check','candidate_check','analysis') else 'ai_contract_failed' if phase=='ai_contract_checking' else 'ai_candidate_failed' if phase=='ai_candidate_checking' else 'reflection_incomplete' if phase=='reflecting' and last.get('slot')=='EXTRACT' and (last.get('status')=='valid' or isinstance(error,ValueError)) else 'infrastructure_error'
+                status='revision_requested_or_rejected' if isinstance(error,ReviewWithdrawn) else 'cancelled' if isinstance(error,(KeyboardInterrupt,ExecutionCancelled)) else 'budget_exhausted' if 'budget' in str(error).lower() else 'reflection_incomplete' if state['status']=='reflecting' else 'infrastructure_error'
                 self._status(status,error=repr(error))
-                code=self.state().get('candidate_sha256')
-                if code and phase=='ai_candidate_checking':life.update(p['store'],code,ai_status='failed',status=status,enable_blocker=repr(error))
             if load(auth_path).get('cancelled'):self._status('cancelled')
             self.report();return self.state()
 
     def report(self):
         super().report();p=self.verify();summary=load(self.root/'summary.json')
         summary.update(schema_version=p['schema_version'],state=self.state()['status'],human_checkpoint='experience content review/editing only',
-            review_policy=p.get('review_policy',LEGACY_CHECKS),AI_audit='not_run' if human_only(p) else 'legacy_budgeted_checks')
+            review_policy=HUMAN_ONLY,AI_audit='not_run')
         summary['counts_scope']='This task only; root repair reservations are executed in separately reported exact-version validation tasks.'
         actual=[j for j in self.state()['jobs'] if not j.get('reused')]
         summary.update(started=len(actual),valid=sum(j['status']=='valid' for j in actual),invalid=sum(j['status']=='invalid' for j in actual),
@@ -456,19 +401,19 @@ class Workflow(AutomatedChecks,Development):
                 requests_with_unknown_token_usage=sum(unknown) if all(type(n) is int for n in unknown) else None,
                 known_seconds=sum(j['seconds'] for j in jobs if type(j.get('seconds')) in (int,float)),
                 valid_behavior_scores=sum(j['status']=='valid' and 'outcome' in j for j in jobs),jobs=jobs,engineering_usage=None)
-            summary['workflow_usage'].update(planned_max_sessions=len(budget_protocol['slots'])+11*(budget_protocol['max_candidate_versions']-1),
+            summary['workflow_usage'].update(planned_max_sessions=len(budget_protocol['slots'])+10*(budget_protocol['max_candidate_versions']-1),
                 started=len(jobs),valid=sum(j['status']=='valid' for j in jobs),invalid=sum(j['status']=='invalid' for j in jobs))
         archive.atomic_json(self.root/'summary.json',summary)
-        (self.root/'REPORT.md').write_text('# Automated evidence workflow v3\n\nOnly experience content review/editing waits for a human. '
+        (self.root/'REPORT.md').write_text('# Experience learning workflow v3\n\nOnly experience content review/editing waits for a human. '
             'No paid execution follows page reads, edits or review submissions without an authorized worker.\n\n```json\n'+json.dumps(summary,indent=2)+'\n```\n')
 
 
-class FrozenEvaluation(AutomatedChecks,Evaluation):
+class FrozenEvaluation(PublicInputs,Evaluation):
     PROTOCOL=EVALUATION
 
     def prepare_config(self,config):
-        super().prepare_config(config);p=self.verify();extra=self._analysis_setup(p)
-        p['total_request_cap']+=extra;p['analysis_cap']+=extra
+        config=deepcopy(config);config.pop('review_policy',None)
+        super().prepare_config(config);p=self.verify();self._analysis_setup(p)
         archive.atomic_json(self.root/'protocol.json',p);self._status('prepared');self.report();return self.state()
 
     def run(self,execute=False,backend=None):
@@ -480,6 +425,6 @@ class FrozenEvaluation(AutomatedChecks,Evaluation):
             except BlockingIOError as error:raise EvidenceError('Another task is executing') from error
             try:self._boundary(p,backend);self._analyses(backend,p);self._status('prepared')
             except BaseException as error:
-                self._status('ai_contract_failed',error=repr(error));self.report();return self.state()
+                self._status('stopped',error=repr(error));self.report();return self.state()
         # Existing frozen evaluator performs actual scoring and never reflects or enables versions.
         return super().run(execute=True,backend=backend)

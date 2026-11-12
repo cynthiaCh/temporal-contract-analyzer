@@ -9,7 +9,7 @@ from . import archive,experience_updates as updates,experience_memory as memory,
 from .core import EvidenceError,sha
 from ._session_runtime.schema_validator import validate
 from .experience_development import implementation_record
-from .experience_workflow import Workflow,VERSION
+from .experience_workflow import Workflow,VERSION,HUMAN_ONLY
 from .evolution_backend import DEPENDENCIES,SOURCE
 
 
@@ -41,7 +41,6 @@ def materialize(source_root,handoff_root=None):
         if len(reflection)!=1 or reflection[0]['status']!='valid' or len(starts)!=2 or any(
                 j['status']!='valid' or type(j.get('requests')) is not int for j in jobs) or any('outcome' not in j for j in starts):
             raise EvidenceError('Recovery requires complete valid original sessions and two actually scored starts')
-        if any(j['slot']=='CANDIDATE-CHECK' for j in jobs):raise EvidenceError('Do not recover or retry a started candidate check')
         result=life.load(source.root/'runs/EXTRACT/result.json')
         if not result or result.get('output')!=raw or result.get('completed') is not True or result.get('infrastructure_valid') is not True:
             raise EvidenceError('Raw reflection does not match its completed original result')
@@ -51,12 +50,12 @@ def materialize(source_root,handoff_root=None):
         source._checked_public_inputs(p)
         context=life.load(source.root/'reflection-input.json')
         parents={b['sha256']:b for b in life.load(source.root/'prior-experiences.json')}
-        derived,composed,derivation=updates.recover_program_numbering(raw,p['cases']['source']['visible'],context['ledger'],parents)
+        derived,composed,derivation=updates.recover_program_numbering(raw,p['cases']['source']['visible'],context['ledger'],parents,failure_context=context.get('failure_observations'))
         remaining=p['global_request_cap']-sum(j['requests'] for j in jobs)
-        # Exactly the unused candidate check and original 2+8 effect slots.
-        slots=[s for s in p['slots'] if s['name']=='CANDIDATE-CHECK' or s['role']=='repair' and not s['name'].startswith('START-')]
+        # Reuse the original starts and reserve only the 2+8 actual effect slots.
+        slots=[s for s in p['slots'] if s['role']=='repair' and not s['name'].startswith(('START-','FIX-'))]
         reserved=sum(s['requests'] for s in slots)
-        if reserved>remaining or len(slots)!=11:raise EvidenceError('Original remaining budget/schedule cannot fund this handoff')
+        if reserved>remaining or len(slots)!=10:raise EvidenceError('Original remaining budget/schedule cannot fund this handoff')
         manifest=dict(binding=binding,original_state=state['status'],original_error=state.get('error'),
             original_requests=sum(j['requests'] for j in jobs),original_budget=p['global_request_cap'],
             remaining_request_cap=reserved,original_sessions=deepcopy(jobs),
@@ -92,6 +91,7 @@ def materialize(source_root,handoff_root=None):
         archive.atomic_json(destination/'composition-derivation.json',derivation)
         archive.atomic_json(destination/'composed-candidate.json',composed)
         q=deepcopy(p);q.update(implementation=implementation_record(),slots=slots,analysis_cap=0,
+            review_policy=HUMAN_ONLY,candidate_check_protocol='not_run',
             total_request_cap=reserved,global_request_cap=reserved,initial_request_cap=reserved,max_candidate_versions=1,
             branch_caps=dict(success=reserved,failure=reserved),candidate_handoff=binding)
         for key,case in q['cases'].items():
@@ -109,7 +109,7 @@ def materialize(source_root,handoff_root=None):
                 original_requests=job['requests'],original_usage=job.get('usage'),original_seconds=job.get('seconds'),requests=0,usage=None,seconds=0)
             reused.append(row)
         target=Workflow(destination)
-        target.save(dict(status='ai_check_pending',jobs=reused,branch=state['branch'],candidate_sha256=None,
+        target.save(dict(status='awaiting_human_review',jobs=reused,branch=state['branch'],candidate_sha256=None,
             development_done=True,admitted_versions=[],round=1,source_handoff=str(source.root)))
         bundle=target._store_candidate(q)
         if [r['body'] for r in bundle['rules']]!=[c['body'] for c in raw['changes']]:raise EvidenceError('Handoff changed rule text')
@@ -129,4 +129,4 @@ def materialize(source_root,handoff_root=None):
         answer=dict(binding=binding,candidate_sha256=bundle['sha256'])
         archive.atomic_json(receipt,answer)
         return dict(status='candidate_materialized',candidate_sha256=bundle['sha256'],store=str(store),
-            handoff_root=str(destination),ai_status='pending',already_materialized=False,model_calls=0)
+            handoff_root=str(destination),ai_status='not_run',already_materialized=False,model_calls=0)

@@ -80,7 +80,7 @@ class MemoryReviewTests(unittest.TestCase):
         with self.assertRaises(HTTPError):
             self.call(self.base+'/sources/'+source+'?pointer=/rules/0&line=1')
 
-    def test_titles_are_separate_metadata_and_status_follows_real_ai_state(self):
+    def test_titles_are_separate_metadata_and_old_ai_states_do_not_gate_review(self):
         from temporal_contract_analyzer import experience_lifecycle as life
         original=(self.store/'records'/(self.bundle['sha256']+'.json')).read_bytes()
         (self.store/'display.json').write_text(json.dumps(dict(schema_version='experience-display-v1',
@@ -88,12 +88,12 @@ class MemoryReviewTests(unittest.TestCase):
         life.update(self.store,self.bundle['sha256'],ai_status='pending',status='ai_check_pending',validation_status='not_started')
         with self.call('/api/library') as response:item=json.load(response)['records'][0]
         self.assertEqual(item['display']['title'],'Synthetic readable title for any identity')
-        self.assertEqual(item['display']['state'],'Candidate proposal · AI check pending')
+        self.assertEqual(item['display']['state'],'Awaiting human content review')
         self.assertFalse(item['reviewed'])
         with self.call(self.base) as response:detail=json.load(response)
         self.assertEqual(detail['display'],item['display'])
         self.assertEqual(detail['bundle'],self.bundle)
-        for ai,label in [('failed','Candidate proposal · AI check failed'),('incomplete','Candidate proposal · AI check incomplete'),
+        for ai,label in [('failed','Awaiting human content review'),('incomplete','Awaiting human content review'),
                          ('passed','Awaiting human content review')]:
             life.update(self.store,self.bundle['sha256'],ai_status=ai,status='ai_'+ai)
             with self.call('/api/library') as response:self.assertEqual(json.load(response)['records'][0]['display']['state'],label)
@@ -104,7 +104,7 @@ class MemoryReviewTests(unittest.TestCase):
         with self.call(self.base) as response:data=json.load(response)
         self.assertEqual(data['display']['title_source'],'derived_rule_excerpt')
         self.assertNotEqual(data['display']['title'],self.bundle['id'])
-        self.assertEqual(data['display']['state'],'AI check not recorded')
+        self.assertEqual(data['display']['state'],'Awaiting human content review')
         self.assertIsNone(data['display']['source_batch'])
 
     def test_manual_revision_preserves_history_and_requires_new_review(self):

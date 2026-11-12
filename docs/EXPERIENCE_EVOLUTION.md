@@ -1,19 +1,21 @@
 # Experience development: human content review, measured effects
 
-New preparations default to `review_policy=human-content-only-v1` in the existing
-v3 controller. This replaces the extra AI audit stages. Historical frozen batches
-retain their original policy, costs, stopped slots and results.
+V3 uses one workflow: `review_policy=human-content-only-v1`. Contract and candidate
+AI audit stages have been removed. Older configuration values do not re-enable
+them. Historical costs, stopped slots and raw results remain retained.
 
 ```text
 Task/source → AST → one Contract analysis → frozen old-bank retrieval
 → two independent starting repairs and actual scores
-→ one reflection: no_update or one incremental candidate
-→ HUMAN CONTENT REVIEW / EDITING
-→ accepted exact version → two source repairs + two-peer old/new comparison
-→ actual effect gate + exact-version human enable grant → enable
+→ fix each failed implementation and rescore (up to two corrective attempts per failed start)
+→ one reflection with original failures, actual corrective patches and full scores
+→ no rule delta: no_update if all original starts PASS, repaired if defects are fixed, otherwise repair_exhausted
+→ proposed rule delta: HUMAN CONTENT REVIEW / EDITING
+→ accepted guidance becomes eligible for retrieval
+→ authorized worker may measure source/peer effects and record follow-up evidence
 ```
 
-## Removed from the default path
+## Removed stages
 
 - No Contract evidence-check model session.
 - No candidate support/novelty/conflict-check model session.
@@ -81,8 +83,24 @@ Diagnoses are `retrieval_gap`, `execution_gap`, `rule_gap`, or `unknown`; non-un
 attributions also need task/source evidence. These are model hypotheses, not
 verified causal findings. An execution-gap claim must name a delivered rule.
 
-`no_update` means no proposed rule change. If failures remain, the run instead
-ends as `needs_followup`, and `work --watch` stops without another model call.
+`no_update` means no proposed rule change, not permission to leave a bug uncorrected.
+New preparations default to `max_fix_attempts=2` per failed starting implementation.
+The controller copies the actual failed candidate, sends it to the repair agent
+with the original public task and approved guidance, and scores the correction
+using the unchanged full evaluator. A failed correction becomes the next attempt's
+input. Grader internals and hidden failure lists are not supplied to the agent.
+Passing candidates stop immediately; failures may use the next reserved attempt.
+Infrastructure-invalid sessions are never retried as a behavioral correction.
+The setting accepts 0..5; zero explicitly disables corrective execution.
+
+Corrective attempts are separate `FIX-*` slots, never independent source starts.
+The original patches and scores remain intact, and reflection receives both the
+original failure and the corrective patch/score. All required behaviors must pass
+without losing originally correct behavior before a defect is marked fixed.
+Without a rule delta, the final state is `repaired` when corrections pass, or
+`repair_exhausted` when the declared attempts did not fix the defect. Exhaustion
+returns a failing CLI exit status and never masquerades as success. A legacy
+batch without reserved fix slots is not silently given a larger paid budget.
 An accepted candidate is likewise not proof that the failures are resolved.
 The summary exposes `followup_required` and the failure record. All-PASS runs can
 still finish with ordinary `no_update` and an empty failure review.
@@ -93,9 +111,8 @@ failure records for the same original task/source into `prior-failures.json`;
 the next reflection receives them and their proposed checks. They never become
 repair instructions or approved experience automatically. Repair prompts instead
 ask the agent to map the delivered approved rules to the patch and check actual
-implementation before finishing. A new authorized execution is still needed to
-test a proposed remedy; this mechanism does not certify improvement or schedule
-automatic paid retries. Existing frozen batches keep their original schema.
+implementation before finishing. The declared corrective slots execute within the authorized batch budget.
+Measured source correction does not by itself certify an experience effect. Existing frozen batches keep their original schema.
 When the existing authorized source-validation stage actually executes, its two
 scores and critical-preservation check are attached to the originating failure
 record under the candidate identity. `not_reproduced` is an observation, not proof
@@ -117,12 +134,12 @@ version actually accepted can enter effect validation. An edit inherits neither
 parent acceptance nor effect qualification. Unchanged eligible rule findings may
 still reference accepted parent findings, with explicit provenance.
 
-Review-only does not enable. A human may instead accept the exact SHA and persist
-an enable-after-validation grant with the expected active version. Actual source
-and cross-source screening, latest acceptance, unwithdrawn authorization and a
-compatible active pointer are required for automatic enable. Locks, atomic writes,
-CAS and idempotent task bindings remain. Reject/revise/revoke blocks enable;
-concurrent activity cannot silently overwrite another active version.
+Human acceptance makes the reviewed content eligible for default retrieval,
+including review-only decisions and historical records. Neither an AI check nor
+positive cross-source results are admission requirements. Optional preferred
+selection remains separate from eligibility; a human can authorize the worker to
+update it. Writes retain locking and stale-view protection. Reject/revise/revoke
+prevents automatic selection, and execution cancellation stops future dispatch.
 
 ## Models, costs and remaining execution constraints
 
@@ -132,10 +149,11 @@ concurrent activity cannot silently overwrite another active version.
 |Maintenance|gpt-5.6-terra / low|24|600 s|
 |Reflection: two PASS / otherwise|gpt-5.6-terra / medium|2 /12|600 s|
 
-No extra review call is budgeted. With N missing public analyses, one candidate's
-full maximum is300+12N requests. Each further admitted version reserves240 requests
+No extra AI review call is budgeted. With N missing public analyses, one candidate's
+full maximum is396+12N requests with the default corrective budget (up to96
+requests across four fix sessions). Each further admitted version reserves240 requests
 for its ten fresh effect repairs. Three missing analyses and two versions cap at
-576 requests/26 sessions, serial. Unknown token use stays unknown; report known
+672 requests/30 sessions, serial. Unknown token use stays unknown; report known
 subtotals and unknown-request counts separately. Request caps are not actual use.
 
 Do not remove runtime/isolation checks, input identity, calibrated original scoring,
@@ -149,17 +167,21 @@ Actual effect screening is unchanged: two source revalidations without a new
 all-PASS requirement, then each peer in NEW1/OLD1/OLD2/NEW2 order. The new bank may
 not lose whole-task passes on either peer and must gain at least2 overall, with
 no confirmed critical preservation loss. Unknown or mixed benefit stays pending.
-No LLM self-score substitutes for execution. Budget and boundary failures do not
-enable. Final frozen evaluation uses excluded-source/holdout guards, fixed views
+These thresholds describe measured effectiveness, not admission to retrieval.
+No LLM self-score substitutes for execution. Budget and boundary failures stop
+further execution. Final frozen evaluation uses excluded-source/holdout guards, fixed views
 and two repeats; it does not reflect, learn or write back.
 
-## Historical compatibility
+## Historical records and configuration
 
-Missing `review_policy` retains the old AI evidence workflow. Diagnostic
-`review_policy=ai-evidence-v3` can reproduce it explicitly, including its frozen
-check schemas and original limits. `review-analysis` / `review-candidate` and
-`recover-candidate` remain legacy tools, not required steps in new training.
-Legacy accepted, active and exploratory statuses are not retroactively qualified
-under a new protocol. No existing real record is approved, edited or enabled by
-this implementation change. Offline fake-backend tests establish controller
-behavior only; they establish no real repair improvement.
+Old review-policy fields are accepted as configuration input and normalized to
+human content review. They do not dispatch Contract or candidate AI audits.
+Historical raw analyses and scores remain readable, and completed sessions are
+not retried. An explicitly executed old batch may reuse retained public inputs;
+it cannot re-enable removed audit stages. Stopped batches are not automatically
+resumed by this change. New preparations use the current failure-review schema.
+
+`review-analysis` and `review-candidate` are V2 diagnostic commands; V3 does not
+need intermediate review files. `recover-candidate` can materialize a complete
+historical proposal for human content review without a model call. Offline fake
+backends establish controller behavior, not real repair improvement.

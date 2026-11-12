@@ -60,14 +60,14 @@ def run(args):
             result=loop.run(execute=args.execute)
             if action=='work' and args.watch:
                 import time
-                while result['status'] not in ('no_update','needs_followup','cancelled','infrastructure_error','reflection_incomplete','budget_exhausted','ai_contract_failed','ai_candidate_failed','ai_check_incomplete'):
+                while result['status'] not in ('no_update','needs_followup','repaired','repair_exhausted','cancelled','infrastructure_error','reflection_incomplete','budget_exhausted','ai_contract_failed','ai_candidate_failed','ai_check_incomplete'):
                     time.sleep(args.poll_seconds);result=loop.run(execute=True)
         elif action=='cancel':
             if version!='experience-development-v3':raise EvidenceError('Persistent cancellation requires a v3 development root')
             from . import experience_lifecycle
             result=experience_lifecycle.cancel(args.root)
         elif action=='review-analysis':
-            if version in ('experience-development-v3','experience-evaluation-v3'):raise EvidenceError('V3 semantic checks execute automatically; manual review files cannot bypass them')
+            if version in ('experience-development-v3','experience-evaluation-v3'):raise EvidenceError('V3 uses source analysis and human experience review; intermediate AI review files are no longer required')
             result=loop.review_analysis(json.loads(args.input.read_text(encoding='utf-8')))
         elif action=='review-candidate':
             if version!='experience-development-v2':raise EvidenceError('Evaluation never learns')
@@ -77,5 +77,5 @@ def run(args):
             if action=='report':loop.report()
             result=loop.sync_review()
     print(json.dumps(result,ensure_ascii=False,indent=2))
-    return 1 if result['status'] in ('stopped','cancelled','reflection_incomplete','infrastructure_error',
+    return 1 if result['status'] in ('stopped','repair_exhausted','cancelled','reflection_incomplete','infrastructure_error',
         'budget_exhausted','ai_contract_failed','ai_candidate_failed','ai_check_incomplete') else 0

@@ -22,7 +22,7 @@ INSTRUCTIONS = (
     'a new rule just to satisfy this review. Read previous_failed_attempts and their '
     'next checks; explain recurring mismatches rather than repeating an unsupported '
     '"already covered" conclusion. No outcome here establishes a verified '
-    'cause or an improvement; follow-up requires actual execution.\n'
+    'cause or an improvement; Use the scored corrective repairs in this context to explain what was actually fixed. Do not claim that an executed repair is still only a proposed next step.\n'
 )
 
 
@@ -121,9 +121,37 @@ def finish(root, protocol, value):
     if not path.exists():
         return None
     record = json.loads(path.read_text())
-    record.update(review=value['failure_review'], candidate_action=value['action'],
-                  status='needs_followup' if record['failures'] else 'no_observed_failure')
+    record.update(review=value['failure_review'], candidate_action=value['action'], status=fix_status(record))
     _save(protocol['store'], root, record)
+    return record
+
+
+def fix_status(record):
+    if not record['failures']:
+        return 'no_observed_failure'
+    latest={row['source_slot']: row for row in record.get('repairs',[])}
+    failed={row['slot'] for row in record['failures']}
+    if all(slot in latest and latest[slot]['fixed'] for slot in failed):
+        return 'fixed'
+    return 'repair_exhausted' if 'repair_limit' in record else 'needs_followup'
+
+
+def record_fix(root, protocol, source_slot, slot, candidate, outcome, original_delta, score_path, requests):
+    path=Path(root)/'failure-learning.json'
+    record=json.loads(path.read_text())
+    states=relation_states(outcome)
+    fixed=outcome['verdict']=='PASS' and bool(states) and all(v is True for v in states.values()) \
+        and not outcome.get('runtime_errors') and not original_delta.get('lost')
+    repair=dict(source_slot=source_slot,slot=slot,candidate=str(candidate),verdict=outcome['verdict'],
+        fixed=fixed,states=states,original_delta=original_delta,requests=requests,
+        score=dict(path=str(score_path),sha256=sha(Path(score_path).read_bytes())))
+    previous=next((r for r in record.get('repairs',[]) if r['slot']==slot),None)
+    if previous is not None:
+        if previous!=repair:raise EvidenceError('Cannot replace a recorded bugfix attempt')
+        return record
+    record.setdefault('repairs',[]).append(repair)
+    record['status']=fix_status(record)
+    _save(protocol['store'],root,record)
     return record
 
 

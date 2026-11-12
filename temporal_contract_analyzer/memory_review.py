@@ -25,13 +25,7 @@ def presentation(store, bundle, workflow, decision):
         title=bundle['rules'][0]['body'].split('. ',1)[0]
         if len(title)>100:title=title[:97].rsplit(' ',1)[0]+'…'
     ai=(workflow or {}).get('ai_status','not_recorded')
-    state={'pending':'Candidate proposal · AI check pending',
-           'running':'Candidate proposal · AI check running',
-           'incomplete':'Candidate proposal · AI check incomplete',
-           'failed':'Candidate proposal · AI check failed',
-           'passed':'Awaiting human content review',
-           'not_recorded':'AI check not recorded'}[ai]
-    if (workflow or {}).get('status')=='ai_candidate_checking':state='Candidate proposal · AI check running'
+    state='Awaiting human content review'
     if decision:state={'accept':'Content accepted','reject':'Rejected','revise':'Revision requested'}[decision['decision']]
     if (workflow or {}).get('status')=='enabled':state='Enabled'
     origin=(workflow or {}).get('origin_root')

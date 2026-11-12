@@ -117,7 +117,8 @@ class DevelopmentTests(unittest.TestCase):
         review.update(reviewer='execution_agent_visible_input_only',approved=True,reason='Synthetic unknown-premise boundary fixture.',
                       evidence=[dict(file='main.py',line=1,quote='accepted = True')])
         boundary['review']=review
-        return dict(case_id='source',store=str(self.store),binary='/synthetic/codex',node='/synthetic/node',
+        # These fixtures isolate reflection/acceptance; automatic bugfixes have dedicated default-path tests.
+        return dict(max_fix_attempts=0,case_id='source',store=str(self.store),binary='/synthetic/codex',node='/synthetic/node',
             calibration={'synthetic':True},visible=self.visible('source'),source_relationship='Synthetic independent sources.',
             cohort=dict(source=self.lineage('source'),transfers=[dict(case_id=name,visible=self.visible(name),
                 calibration={'synthetic':True},lineage=self.lineage(name)) for name in ('transfer-a','transfer-b')],
@@ -137,7 +138,7 @@ class DevelopmentTests(unittest.TestCase):
         for success,cap in [(True,2),(False,12)]:
             loop=self.prepare('success' if success else 'failure');backend=Backend(no_update=True,success=success)
             result=loop.run(backend=backend)
-            self.assertEqual(result['status'],'no_update' if success else 'needs_followup',result.get('error'))
+            self.assertEqual(result['status'],'no_update' if success else 'repair_exhausted',result.get('error'))
             self.assertEqual(len(backend.calls),3)
             self.assertEqual(backend.calls[-1]['cap'],cap)
             self.assertEqual(memory.records(self.store),[])
@@ -259,7 +260,7 @@ class DevelopmentTests(unittest.TestCase):
             with redirect_stdout(StringIO()),redirect_stderr(StringIO()):
                 self.assertEqual(main(['experience-evolution','review-analysis',str(path),'--root',str(loop.root)]),0)
         self.assertEqual(loop.state()['status'],'prepared')
-        self.assertEqual(loop.run(backend=b)['status'],'needs_followup')
+        self.assertEqual(loop.run(backend=b)['status'],'repair_exhausted')
         self.assertEqual(sum(c['role']=='analysis' for c in b.calls),1)
 
     def test_transfer_analysis_is_deferred_until_source_checks_pass(self):
@@ -325,7 +326,7 @@ class DevelopmentTests(unittest.TestCase):
         cfg=self.config();cfg.update(backend=CONFIG,node='/runtime/node16/bin/node')
         loop=self.prepare(config=cfg);agent=Backend(no_update=True)
         with patch('temporal_contract_analyzer.docker_backend.DockerBackend',return_value=agent) as factory:
-            self.assertEqual(loop.run(execute=True)['status'],'needs_followup')
+            self.assertEqual(loop.run(execute=True)['status'],'repair_exhausted')
         self.assertEqual(factory.call_count,1)
         self.assertIn('/runtime/node16/bin/node',agent.calls[0]['prompt'])
         other=self.prepare('blocked');broken=Backend()

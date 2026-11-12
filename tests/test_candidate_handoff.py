@@ -54,33 +54,33 @@ class HandoffTests(unittest.TestCase):
         bundle=memory.records(self.store)[0];value=json.loads(raw)
         self.assertEqual(bundle['rules'][0]['body'],value['changes'][0]['body'])
         self.assertEqual(bundle['labels'],value['labels']);self.assertEqual(bundle['requires'],value['requires'])
-        self.assertEqual(life.metadata(self.store,bundle['sha256'])['ai_status'],'pending')
+        self.assertEqual(life.metadata(self.store,bundle['sha256'])['ai_status'],'not_run')
         self.assertEqual((source.root/'state.json').read_bytes(),before);self.assertEqual((source.root/'raw-reflection.json').read_bytes(),raw)
         self.assertFalse((source.root/'candidate.json').exists());self.assertFalse((destination/'execution-authorization.json').exists())
         self.assertEqual(approval.decisions(self.store),[]);self.assertEqual(approval.active(self.store),[])
         request=approval.review_template(self.store,bundle['sha256']);request.update(decision='accept',reviewer='SYNTHETIC_OPERATOR')
         for row in request['rules']:row['supported']=True
-        with self.assertRaises(EvidenceError):approval.decide(self.store,bundle['sha256'],request)
+        self.assertTrue(life.view(self.store,bundle['sha256'])['content_review_available'])
         server=ReviewServer(self.store);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         try:
             opener=build_opener(ProxyHandler({}))
             with opener.open(server.url+'/api/library') as response:library=json.load(response)
             self.assertEqual(library['records'][0]['sha256'],bundle['sha256'])
             with opener.open(server.url+'/api/records/'+bundle['sha256']) as response:record=json.load(response)
-            self.assertEqual(record['workflow']['ai_status'],'pending');self.assertFalse(record['workflow']['execution_authorized'])
+            self.assertEqual(record['workflow']['ai_status'],'not_run');self.assertFalse(record['workflow']['execution_authorized'])
         finally:server.shutdown();server.server_close();thread.join(3)
 
-    def test_explicit_worker_only_runs_remaining_check_and_never_repeats_source_starts(self):
+    def test_worker_waits_for_human_review_without_a_check_or_repeated_starts(self):
         source=self.stopped();destination=self.root/'handoff';result=materialize(source.root,destination)
         loop=Workflow(destination);backend=FakeBackend()
         with self.assertRaises(EvidenceError):loop.run(backend=backend)
         self.assertEqual(backend.calls,[])
         state=loop.run(execute=True,backend=backend)
         self.assertEqual(state['status'],'awaiting_human_review',state.get('error'))
-        self.assertEqual([c['role'] for c in backend.calls],['candidate_check'])
-        self.assertEqual(life.metadata(self.store,result['candidate_sha256'])['ai_status'],'passed')
+        self.assertEqual(backend.calls,[])
+        self.assertEqual(life.metadata(self.store,result['candidate_sha256'])['ai_status'],'not_run')
         self.assertEqual(approval.decisions(self.store),[])
-        loop.run(execute=True,backend=backend);self.assertEqual(len(backend.calls),1)
+        loop.run(execute=True,backend=backend);self.assertEqual(len(backend.calls),0)
         self.assertTrue(all(destination in Path(c['input_path']).parents for c in loop.verify()['cases'].values()))
 
     def test_lost_receipt_does_not_reset_completed_authorized_task(self):
@@ -92,7 +92,7 @@ class HandoffTests(unittest.TestCase):
         self.assertTrue(again['already_materialized']);self.assertEqual(again['candidate_sha256'],result['candidate_sha256'])
         self.assertEqual((destination/'state.json').read_bytes(),state_before)
         self.assertEqual((destination/'execution-authorization.json').read_bytes(),authorization)
-        loop.run(execute=True,backend=backend);self.assertEqual(len(backend.calls),1)
+        loop.run(execute=True,backend=backend);self.assertEqual(len(backend.calls),0)
 
     def test_ambiguous_ids_or_policy_changes_do_not_publish(self):
         source=self.stopped();p=source.verify();context=json.loads((source.root/'reflection-input.json').read_text())
@@ -119,18 +119,16 @@ class HandoffTests(unittest.TestCase):
         request=approval.review_template(self.store,code);request.update(decision='revise',reviewer='SYNTHETIC_REVIEWER')
         approval.decide(self.store,code,request);loop.run(execute=True,backend=backend);self.assertEqual(backend.calls,[])
 
-    def test_rejection_during_check_is_not_overwritten_by_AI_completion(self):
+    def test_archived_ai_failure_does_not_gate_current_human_acceptance(self):
         source=self.stopped();destination=self.root/'handoff';result=materialize(source.root,destination)
-        code=result['candidate_sha256'];loop=Workflow(destination)
-        def reject(slot,p):
-            if slot=='CANDIDATE-CHECK':
-                request=approval.review_template(self.store,code)
-                request.update(decision='reject',reviewer='SYNTHETIC_REVIEWER')
-                approval.decide(self.store,code,request)
-        backend=FakeBackend(hook=reject);state=loop.run(execute=True,backend=backend)
-        self.assertEqual([c['role'] for c in backend.calls],['candidate_check'])
-        self.assertEqual(state['status'],'rejected');self.assertEqual(life.metadata(self.store,code)['status'],'rejected')
-        self.assertEqual(approval.active(self.store),[])
+        code=result['candidate_sha256'];life.update(self.store,code,ai_status='failed',status='ai_candidate_failed')
+        request=approval.review_template(self.store,code);request.update(decision='accept',reviewer='SYNTHETIC_REVIEWER')
+        for row in request['rules']:row['supported']=True
+        approval.decide(self.store,code,request)
+        self.assertEqual(approval.freeze(self.store)['entries'][0]['bundle']['sha256'],code)
+        backend=FakeBackend();state=Workflow(destination).run(execute=True,backend=backend)
+        self.assertFalse(any(call['role'].endswith('_check') for call in backend.calls))
+        self.assertEqual(life.metadata(self.store,code)['ai_status'],'not_run')
 
 
 if __name__=='__main__':unittest.main()

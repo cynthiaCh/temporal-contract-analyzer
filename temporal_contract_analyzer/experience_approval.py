@@ -267,7 +267,6 @@ def decide(store, candidate_sha256, request, report_sha256=None, *, activate_ver
                 if row['candidate_sha256']!=candidate_sha256 or row.get('submitted_request')!=request:
                     raise EvidenceError('Review request_id reused with different content')
                 return row
-        lifecycle.check_human_acceptance(store,candidate_sha256,request)
         index = _index(store, bundles, prior)
         bundle = bundles[candidate_sha256]
         previous = index['versions'].get(bundle['id'])

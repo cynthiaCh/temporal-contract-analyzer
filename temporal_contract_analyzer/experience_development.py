@@ -58,17 +58,21 @@ def reviewed(visible):
 
 
 class Development(Evolution):
-    """One source, two independent transfer sources, one candidate and no retries."""
+    """Bounded source development with corrective repairs and reviewed guidance."""
 
     PROTOCOL = VERSION
 
     def prepare_config(self, config):
         if self.root.exists():raise EvidenceError('Use a new batch directory')
         required = {'case_id','store','binary','node','calibration','source_relationship','cohort'}
-        if not required <= set(config) or set(config)-required-{'visible','kind','max_rounds','backend'}:
+        if not required <= set(config) or set(config)-required-{'visible','kind','max_rounds','backend','max_fix_attempts'}:
             raise EvidenceError('Invalid v2 development configuration')
         if config.get('kind','development') != 'development' or config.get('max_rounds',1) != 1:
             raise EvidenceError('V2 defaults to one round; revisions need a separately prepared explicit batch')
+        fixes=config.get('max_fix_attempts',2)
+        if type(fixes) is not int or not 0<=fixes<=5:
+            raise EvidenceError('Declare 0..5 bugfix attempts per failed start')
+        fix_cap=2*fixes*24
         cohort = config['cohort']
         memory.object_fields(cohort, {'source','transfers','boundaries'}, 'development cohort')
         if not isinstance(cohort['transfers'],list) or len(cohort['transfers']) != 2:
@@ -97,7 +101,7 @@ class Development(Evolution):
             for critical in provenance['critical']:
                 issues = routing.evidence_issues(critical['basis'], inputs['task'], sources, 'critical basis')
                 if issues:raise EvidenceError('Critical preservation basis is not candidate-visible')
-            if spec['visible'] is not None and not getattr(self,'AUTOMATED_CHECKS',False):reviewed(visible)
+            if spec['visible'] is not None and not getattr(self,'PUBLIC_ANALYSIS_PIPELINE',False):reviewed(visible)
             directory = self.root/'cases'/key
             cases[key] = dict(case=record,visible=visible,lineage=provenance,
                 input_path=str(directory/'input'),candidate_files=inventory(files),
@@ -113,7 +117,7 @@ class Development(Evolution):
         for boundary in cohort['boundaries']:
             memory.object_fields(boundary,{'visible','lineage'},'boundary input')
             lineage(boundary['lineage'],critical=False)
-            if not getattr(self,'AUTOMATED_CHECKS',False):reviewed(boundary['visible'])
+            if not getattr(self,'PUBLIC_ANALYSIS_PIPELINE',False):reviewed(boundary['visible'])
         with (Path(config['store'])/'decision.lock').open('a') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX)
             frozen = approval.freeze(config['store'])
@@ -143,6 +147,8 @@ class Development(Evolution):
         archive.atomic_json(self.root/'prior-failures.json',failure_learning.prior(config['store'], cases['source']['visible']))
         slots = [dict(name=f'ANALYSIS-{k}',role='analysis',case=k,requests=12) for k,c in cases.items() if c['analysis_needed']]
         slots += [dict(name=f'START-{n}',role='repair',case='source',requests=24) for n in (1,2)]
+        slots += [dict(name=f'FIX-START-{n}-{attempt}',role='repair',case='source',requests=24)
+                  for n in (1,2) for attempt in range(1,fixes+1)]
         slots += [dict(name='EXTRACT',role='reflect',case='source',requests=12)]
         slots += [dict(name=f'SOURCE-NEW-{n}',role='repair',case='source',requests=24) for n in (1,2)]
         for key in ('transfer-1','transfer-2'):
@@ -152,7 +158,8 @@ class Development(Evolution):
             kind='development',max_rounds=1,cases=cases,store=str(Path(config['store']).resolve()),
             binary=str(Path(config['binary']).resolve()),node=str(Path(config['node']).resolve()),
             roles=ROLES,slots=slots,runtime_source=str(runtime),boundaries=cohort['boundaries'],
-            branch_caps=dict(success=290,failure=300,success_no_update=50,failure_no_update=60),
+            branch_caps=dict(success=290,failure=300+fix_cap,success_no_update=50,failure_no_update=60+fix_cap),
+            max_fix_attempts=fixes,fix_request_cap=fix_cap,
             analysis_cap=12*sum(c['analysis_needed'] for c in cases.values()),
             source_relationship=config['source_relationship'],no_retry=True,concurrency=1,
             failure_learning=True,
@@ -227,7 +234,7 @@ class Development(Evolution):
             'in the final maintenance report; do not claim unexecuted checks passed.'
             if protocol.get('failure_learning') else '')
 
-    def _session(self, backend, p, name, role, key, prompt, schema=None, cap=None):
+    def _session(self, backend, p, name, role, key, prompt, schema=None, cap=None, repair_from=None):
         state = self.state()
         slot = next((s for s in p['slots'] if s['name']==name and s['role']==role and s['case']==key),None)
         if slot is None or any(j['slot']==name for j in state['jobs']):raise EvidenceError('Unplanned slot or prohibited retry')
@@ -240,9 +247,16 @@ class Development(Evolution):
         (directory/'prompt.md').write_text(prompt,encoding='utf-8')
         if schema is not None:archive.atomic_json(directory/'schema.json',schema)
         job = dict(slot=name,role=role,case=key,status='started',requests=None,usage=None,seconds=None,request_cap=cap)
+        if repair_from is not None:job.update(kind='bugfix',based_on=str(repair_from),independent_start=False)
         state['jobs'].append(job);self.save(state);started=time.monotonic()
         try:
             local = self._case_protocol(p,key,cap)
+            if repair_from is not None:
+                files,_=capture(Path(repair_from));folder=directory/'input'
+                write_files(folder,files,file_modes(Path(repair_from),files))
+                sources={name:body.decode('utf-8') for name,body in files.items()}
+                local.update(input_path=str(folder),candidate_files=inventory(files),
+                    candidate_sha256=sha(canonical(sources).encode()),visible=dict(local['visible'],sources=sources))
             if role=='reflect':local['reflection_evidence_path']=str(self.root/'reflection-evidence')
             result=backend.execute(local,role,prompt,schema,directory)
             archive.atomic_json(directory/'result.json',result)
@@ -308,6 +322,7 @@ class Development(Evolution):
                     for n in (1,2):
                         self._session(backend,p,f'START-{n}','repair','source',
                             self.common(self._case_protocol(p,'source'),route['experience_text']))
+                    self._repair_failed_starts(backend,p)
                     self._extract(backend,p,old)
                 elif entering=='candidate_approved':
                     self._validate_candidate(backend,p)
@@ -340,6 +355,33 @@ class Development(Evolution):
             state['status']='transfer_prepared' if state.get('analysis_stage')=='transfer' else 'prepared'
         self.save(state);self.report();return state
 
+    def _repair_failed_starts(self,backend,p):
+        if 'max_fix_attempts' not in p:return
+        path=self.root/'failure-learning.json'
+        if not path.exists():return
+        record=load(path);record['repair_limit']=p['max_fix_attempts']
+        failure_learning._save(p['store'],self.root,record)
+        failed=[j for j in self.state()['jobs'] if j['slot'].startswith('START-') and j['status']=='valid'
+                and (j['outcome']['verdict']!='PASS' or any(v is not True for v in relation_states(j['outcome']).values()))]
+        route=load(self.root/'starting-route.json')
+        prompt=self.common(self._case_protocol(p,'source'),route['experience_text'])+(
+            '\n\nCorrect the implementation already in this workspace. It did not satisfy the original task. '
+            'Inspect the actual code against the public requirements and approved guidance. Fix concrete bugs '
+            'and preserve existing behavior. Do not merely repeat the guidance or change the task, tests, '
+            'public interfaces, or evaluation. This is a corrective repair of a previous implementation, '
+            'not another independent starting attempt. Report the concrete defect and correction.')
+        for source in failed:
+            previous=load(self.root/'runs'/source['slot']/'result.json')['final_candidate']
+            for attempt in range(1,p['max_fix_attempts']+1):
+                name='FIX-'+source['slot']+'-'+str(attempt)
+                result=self._session(backend,p,name,'repair','source',prompt,repair_from=previous)
+                job=next(j for j in self.state()['jobs'] if j['slot']==name)
+                record=failure_learning.record_fix(self.root,p,source['slot'],name,result['final_candidate'],
+                    job['outcome'],job.get('original_delta',{}),self.root/'runs'/name/'score.json',job['requests'])
+                previous=result['final_candidate']
+                if next(r for r in record['repairs'] if r['slot']==name)['fixed']:break
+        state=self.state();state['bugfix_status']=failure_learning.fix_status(load(path));self.save(state)
+
     def _extract(self, backend, p, old):
         state=self.state();starting=[j for j in state['jobs'] if j['slot'].startswith('START-')]
         state['branch']='success' if all(j['outcome']['verdict']=='PASS' for j in starting) else 'failure';self.save(state)
@@ -351,6 +393,12 @@ class Development(Evolution):
             ledger['O-'+job['slot']]=dict(kind='execution_observation',outcome=job['outcome'],
                 original_delta=job['original_delta'],patch=result.get('patch',''),agent_claim=result.get('output'),
                 claim_status='Unverified self-report',verified_causes=[])
+        for job in state['jobs']:
+            if job.get('kind')=='bugfix' and job['status']=='valid':
+                result=load(self.root/'runs'/job['slot']/'result.json')
+                ledger['R-'+job['slot']]=dict(kind='execution_observation',outcome=job['outcome'],
+                    original_delta=job.get('original_delta'),patch=result.get('patch',''),based_on=job['based_on'],
+                    qualification='Corrective repair, not an independent starting trial or proof of experience benefit')
         parents={b['sha256']:b for b in load(self.root/'prior-experiences.json')}
         selectable={code:b for code,b in parents.items() if b['id'] not in p['parent_selection'] or p['parent_selection'][b['id']]==code}
         context=dict(ledger=ledger,analysis=p['cases']['source']['visible']['analysis'],
@@ -366,7 +414,7 @@ class Development(Evolution):
             qualification='Human-authored fixed checks are not learned experience')
         failure_context = None
         if p.get('failure_learning'):
-            failure_context = failure_learning.capture(self.root,p,starting,load(self.root/'starting-route.json'),old)
+            failure_context = load(self.root/'failure-learning.json') if (self.root/'failure-learning.json').exists() else failure_learning.capture(self.root,p,starting,load(self.root/'starting-route.json'),old)
             context['failure_observations'] = failure_context
             context['previous_failed_attempts'] = load(self.root/'prior-failures.json')
         delta_protocol=p.get('reflection_delta_protocol',updates.DELTA_V1)
@@ -413,23 +461,24 @@ class Development(Evolution):
                                  prior_experiences=context['prior_experiences'],failure_context=failure_context)
         if failure_context is not None:
             failure_learning.finish(self.root,p,raw)
-            state=self.state();state['followup_required']=bool(failure_context['failures']);self.save(state)
+            state=self.state();state['followup_required']=failure_learning.fix_status(load(self.root/'failure-learning.json')) not in ('fixed','no_observed_failure');self.save(state)
         if composed is None:
             self._finish_no_update(raw);return
         archive.atomic_json(self.root/'composed-candidate.json',composed)
         (self.root/'candidate-experience.md').write_text(memory.render(composed),encoding='utf-8')
         review=dict(reviewer=None,approved=None,blocking_issues=[],novelty_reason='',
             rules=[dict(rule_id=r['id'],supported=None,reason='') for r in composed['rules']])
-        if not getattr(self,'AUTOMATED_CHECKS',False):archive.atomic_json(self.root/'candidate-review-input.json',review)
-        state=self.state();state['status']='candidate_prepared' if getattr(self,'AUTOMATED_CHECKS',False) else 'candidate_review';self.save(state)
+        if not getattr(self,'PUBLIC_ANALYSIS_PIPELINE',False):archive.atomic_json(self.root/'candidate-review-input.json',review)
+        state=self.state();state['status']='candidate_prepared' if getattr(self,'PUBLIC_ANALYSIS_PIPELINE',False) else 'candidate_review';self.save(state)
 
     def _finish_no_update(self, raw):
         path=self.root/'failure-learning.json'
         if path.exists() and 'failure_review' in raw:
             failure_learning.finish(self.root,self.verify(),raw)
         failure=load(path) if path.exists() else None
-        state=self.state();state.update(status='needs_followup' if failure and failure['failures'] else 'no_update',
-            no_update_reason=raw['reason'],followup_required=bool(failure and failure['failures']))
+        status=failure_learning.fix_status(failure) if failure else 'no_observed_failure'
+        state=self.state();state.update(status='repaired' if status=='fixed' else 'no_update' if status=='no_observed_failure' else status,
+            no_update_reason=raw['reason'],followup_required=status not in ('fixed','no_observed_failure'))
         self.save(state)
 
     def review_candidate(self, request):
@@ -602,7 +651,9 @@ class Development(Evolution):
             known_seconds=sum(j['seconds'] for j in jobs if type(j.get('seconds')) in (int,float)),
             candidate_sha256=state.get('candidate_sha256'),screening=state.get('screening'),
             no_update_reason=state.get('no_update_reason'),error=state.get('error'),
-            followup_required=state.get('followup_required',False),
+            followup_required=state.get('followup_required',False),bugfix_status=state.get('bugfix_status'),
+            starting_repairs=[j for j in jobs if j['slot'].startswith('START-')],
+            corrective_repairs=[j for j in jobs if j.get('kind')=='bugfix'],
             failure_learning=load(self.root/'failure-learning.json') if (self.root/'failure-learning.json').exists() else None,
             qualification='Development only; no final evaluation or generalization claim',
             financial_cost=None,engineering_agent_usage=None)

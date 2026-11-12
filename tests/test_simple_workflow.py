@@ -55,7 +55,7 @@ class SimpleWorkflowTests(unittest.TestCase):
         cfg=self.fixture.config();cfg['visible']=None;cfg['cohort']['transfers'][1]['visible']=None
         loop=self.prepare(**cfg);backend=BadQuoteBackend(no_update=True)
         state=loop.run(execute=True,backend=backend)
-        self.assertEqual(state['status'],'no_update',state.get('error'))
+        self.assertEqual(state['status'],'repair_exhausted',state.get('error'))
         self.assertEqual(sum(c['role']=='repair' for c in backend.calls),2)
         self.assertFalse(any(c['role'] in ('contract_check','candidate_check') for c in backend.calls))
         for key in ('source','transfer-2'):

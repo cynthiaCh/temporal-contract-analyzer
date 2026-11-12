@@ -21,7 +21,7 @@ let selected = new URLSearchParams(location.search).get('record');
 let current;
 let records=[];
 const decisions={accept:'Accepted',revise:'Revision requested',reject:'Rejected'};
-function canReview(w){return !w||w.content_review_available===true||w.ai_status==='passed';}
+function canReview(w){return true;}
 function decisionText(decision){return decisions[decision]||decision;}
 function reviewedAt(value){return new Date(value).toLocaleString('en-GB');}
 function el(tag,text,className){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(className)n.className=className;return n;}
@@ -53,7 +53,7 @@ function renderLibrary(){
  for(const reviewed of [false,true]){
   if(filter==='pending'&&reviewed||filter==='reviewed'&&!reviewed)continue;
   const group=records.filter(r=>r.reviewed===reviewed);if(!group.length)continue;list.append(el('h3',(reviewed?'Reviewed records':'Unreviewed records')+' ('+group.length+')','group-heading'));
-  for(const item of group){const b=button('',()=>openRecord(item.sha256));b.className='version'+(item.sha256===selected?' selected':'');const state=item.display?.state||(reviewed?'Content '+decisionText(item.last_decision.decision):'AI check not recorded');b.append(el('strong',item.display?.title||'Experience record'),el('span',state,'review-state '+(reviewed?'reviewed':'pending')),el('span',item.labels.join(' / ')+' · '+(item.latest?'Latest record':'Historical record')+(item.active?(item.default_eligible?' · Default active':' · Historical selection (not default)'):''),'meta'),el('small',item.version));if(reviewed)b.append(el('small',item.last_decision.reviewer+' · '+reviewedAt(item.last_decision.at)));b.dataset.sha=item.sha256;b.dataset.reviewed=String(reviewed);list.append(b);}
+  for(const item of group){const b=button('',()=>openRecord(item.sha256));b.className='version'+(item.sha256===selected?' selected':'');const state=item.display?.state||(reviewed?'Content '+decisionText(item.last_decision.decision):'Awaiting human content review');b.append(el('strong',item.display?.title||'Experience record'),el('span',state,'review-state '+(reviewed?'reviewed':'pending')),el('span',item.labels.join(' / ')+' · '+(item.latest?'Latest record':'Historical record')+(item.active?(item.default_eligible?' · Default active':' · Historical selection (not default)'):''),'meta'),el('small',item.version));if(reviewed)b.append(el('small',item.last_decision.reviewer+' · '+reviewedAt(item.last_decision.at)));b.dataset.sha=item.sha256;b.dataset.reviewed=String(reviewed);list.append(b);}
  }
  if(!list.childElementCount)list.append(el('p',filter==='pending'?'No unreviewed records.':'No versions have been reviewed yet.','muted'));
 }
@@ -79,7 +79,7 @@ function renderActivation(target,data){
 }
 function renderManualEditor(target,data,draft={}){
  const panel=el('details',undefined,'panel manual-editor');panel.append(el('summary','Edit rules manually'));
- panel.append(el('p',data.workflow?.review_policy==='human-content-only-v1'?'Saving creates an immutable proposal, not acceptance. Review the edited content to make it available for retrieval.':'Saving creates an immutable proposal, not acceptance. An authorized worker must check this exact edit before content acceptance. Effect validation is optional.','muted'));
+ panel.append(el('p','Saving creates an immutable proposal for human content review. Approved guidance is available for retrieval; effect measurement is optional.','muted'));
  const actor=field(panel,'Editor name',el('input'));actor.value=draft.actor||'';
  const reason=field(panel,'Modification reason',el('textarea'));reason.value=draft.reason||'';
  const editId=draft.request_id||requestId();
@@ -103,7 +103,7 @@ function renderManualEditor(target,data,draft={}){
   const request=capture();
   if(!request.actor.trim()||!request.reason.trim()||request.rules.some(r=>!r.body.trim())){message('Enter your name, modification reason and nonempty rule text.',true);return;}
   save.disabled=true;
-  try{const result=await api('/api/records/'+data.bundle.sha256+'/revise',request);await library();await openRecord(result.sha256);message(data.workflow?.review_policy==='human-content-only-v1'?'New version saved for human content review. No model dispatched.':'New version saved. AI checking is pending on an authorized worker; this page dispatched no model.');}
+  try{const result=await api('/api/records/'+data.bundle.sha256+'/revise',request);await library();await openRecord(result.sha256);message('New version saved for human content review. No model dispatched.');}
   finally{save.disabled=false;}
  });
  panel.append(save);target.append(panel);return capture;
@@ -111,17 +111,16 @@ function renderManualEditor(target,data,draft={}){
 function renderWorkflow(target,data){
  const w=data.workflow;if(!w)return;
  const last=data.decisions[data.decisions.length-1];const panel=el('div',undefined,'panel workflow-status');
- if(w.review_policy==='human-content-only-v1')panel.append(el('p','AI evidence checks are disabled for this batch. Human content review makes approved guidance available; effect validation is optional.','notice'));
- panel.append(el('h3','Exact-version workflow'),el('p','AI evidence check: '+w.ai_status),el('p','Human content: '+(last?decisionText(last.decision):(canReview(w)?'Awaiting human content review':'Not yet eligible for content acceptance'))),el('p','Effect validation: '+w.validation_status),el('p','Workflow state: '+w.status));
+ panel.append(el('p','Human content review makes approved guidance available. Effect measurement records actual results.','notice'));
+ panel.append(el('h3','Experience workflow'),el('p','Human content: '+(last?decisionText(last.decision):(canReview(w)?'Awaiting human content review':'Not yet eligible for content acceptance'))),el('p','Effect validation: '+w.validation_status),el('p','Workflow state: '+w.status));
  const authorized=last?.enable_authorization?.authorized&&w.authorization_withdrawal?.decision_sha256!==last.sha256;
  panel.append(el('p','Preferred selection authorization: '+(authorized?'Authorized by '+last.reviewer:'Not authorized / withdrawn')));
  if(w.enable_blocker)panel.append(el('p',w.enable_blocker,'notice'));
- if(!canReview(w))panel.append(el('p','This candidate is visible, but content acceptance waits for its actual AI evidence check. You may inspect, edit, request revision or reject. This page never dispatches models.','notice'));
  if(w.handoff_source)panel.append(el('p','Recovered from the original reflection without changing its rule text: '+w.handoff_source,'meta'));
  if(w.origin_root)panel.append(el('p','Execution needs an explicitly authorized worker. Opening or submitting this page never launches models.','muted'),el('pre',w.worker_command||'python3 -B -m temporal_contract_analyzer experience-evolution work --root '+w.origin_root+' --execute --watch'));
- else panel.append(el('p','No authorized v3 origin is attached. Prepare a new v3 batch with candidate_sha256 to check/validate this proposal.','notice'));
+ else panel.append(el('p','Human content review is available. Attach an authorized v3 batch to measure proposal effects.','notice'));
  if(w.ai_result?.increment_review){const comparisons=el('div',undefined,'increment-comparisons');comparisons.append(el('h4','Rule-by-rule increment comparison'));for(const row of w.ai_result.increment_review.comparisons){const box=el('article');box.append(el('h4',row.rule_id+' · '+row.classification));for(const match of row.matches)box.append(el('p','Prior '+match.experience_sha256+' / '+match.rule_id+': '+match.covered));box.append(el('p','Uncovered increment: '+(row.uncovered_increment||'None stated')),el('p',row.reason));comparisons.append(box);}panel.append(comparisons);}
- if(w.ai_result){const detail=el('details');detail.append(el('summary','AI check: evidence, limits and blockers'),el('pre',JSON.stringify(w.ai_result,null,2)));panel.append(detail);}
+ if(w.ai_result){const detail=el('details');detail.append(el('summary','Archived AI evidence'),el('pre',JSON.stringify(w.ai_result,null,2)));panel.append(detail);}
  if(w.edit)panel.append(el('p','Edited by '+w.edit.actor+': '+w.edit.reason,'meta'));
  if(authorized){const actor=field(panel,'Operator withdrawing enable authorization',el('input'));const reason=field(panel,'Withdrawal reason (optional)',el('textarea'));panel.append(button('Withdraw automatic enable authorization',async()=>{if(!actor.value.trim())throw Error('Enter the actual operator name.');await api('/api/records/'+data.bundle.sha256+'/revoke-enable',{actor:actor.value.trim(),reason:reason.value.trim()});await openRecord(data.bundle.sha256);message('Enable authorization withdrawn. Content acceptance is retained.');}));}
  target.append(panel);
@@ -132,7 +131,7 @@ function render(data,rereview=false,fullReview=false,manualRules=new Set(),draft
  renderWorkflow(target,data);
  const captureManual=renderManualEditor(target,data,draft.manual);
  const last=data.decisions[data.decisions.length-1];const readonly=Boolean(last)&&!rereview;
- intro.append(el('p',last?'✓ Reviewed · '+decisionText(last.decision)+' · '+last.reviewer+' · '+reviewedAt(last.at):(data.display?.state||'AI check not recorded'),'review-state '+(last?'reviewed':'pending')));
+ intro.append(el('p',last?'✓ Reviewed · '+decisionText(last.decision)+' · '+last.reviewer+' · '+reviewedAt(last.at):(data.display?.state||'Awaiting human content review'),'review-state '+(last?'reviewed':'pending')));
  const meta=el('div',undefined,'metadata');for(const [key,title] of [['requires','Required mechanism premises'],['excludes','Exclusions that must be contradicted']]){const box=el('div');box.append(el('h3',title));const ul=el('ul');for(const v of b[key])ul.append(el('li',predicateDescriptions[v]||v));if(!b[key].length)ul.append(el('li','None registered. Check the boundaries in the rules as well.'));box.append(ul);meta.append(box);}intro.append(meta);
  const limitations=el('details');limitations.append(el('summary','Review provenance and limitations'));limitations.append(el('pre',JSON.stringify(b.review,null,2)));intro.append(limitations);
  const delta=data.review_plan;

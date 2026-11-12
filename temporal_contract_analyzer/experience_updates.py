@@ -153,7 +153,7 @@ def compose(value, visible, ledger, parents, *, protocol=DELTA_V1, prior_experie
     return result
 
 
-def recover_program_numbering(value, visible, ledger, parents):
+def recover_program_numbering(value, visible, ledger, parents, *, failure_context=None):
     """Explicit derived repair for a complete legacy new-only proposal.
 
     No rule text/policy is edited. An existing canonical hint may be discarded
@@ -171,7 +171,7 @@ def recover_program_numbering(value, visible, ledger, parents):
             changes.append(dict(pointer=f'/changes/{index-1}/rule_id',before=code,after=None,assigned_by_python=canonical))
             change['rule_id']=None
     if not changes:raise EvidenceError('No legacy numbering conflict to recover')
-    composed=compose(derived,visible,ledger,parents)
+    composed=compose(derived,visible,ledger,parents,failure_context=failure_context)
     return derived,composed,dict(schema_version='program-numbering-recovery-v1',changes=changes,
         body_unchanged=[r['body'] for r in value['changes']]==[r['body'] for r in derived['changes']],
         applicability_unchanged=all(value[k]==derived[k] for k in ('labels','requires','excludes')),

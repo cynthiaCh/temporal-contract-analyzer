@@ -70,7 +70,7 @@ class Evaluation(Development):
             visible=item['visible'] or dict(task=inputs['task'],sources=sources)
             if visible.get('task')!=inputs['task'] or visible.get('sources')!=sources:
                 raise EvidenceError('Evaluation inputs must be the original candidate/task')
-            if item['visible'] is not None and not getattr(self,'AUTOMATED_CHECKS',False):reviewed(visible)
+            if item['visible'] is not None and not getattr(self,'PUBLIC_ANALYSIS_PIPELINE',False):reviewed(visible)
             key=f'task-{index}';directory=self.root/'cases'/key
             cases[key]=dict(case=record,visible=visible,lineage=provenance,input_path=str(directory/'input'),
                 candidate_files=inventory(files),candidate_sha256=sha(canonical(sources).encode()),

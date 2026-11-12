@@ -68,10 +68,10 @@ class FailureLoopTests(unittest.TestCase):
     def test_failed_no_update_persists_and_reaches_the_next_reflection(self):
         first=self.fixture.prepare('first');backend=fixtures.Backend(no_update=True)
         result=first.run(backend=backend)
-        self.assertEqual(result['status'],'needs_followup',result.get('error'))
+        self.assertEqual(result['status'],'repair_exhausted',result.get('error'))
         self.assertTrue(result['followup_required'])
         stored=json.loads((first.root/'failure-learning.json').read_text())
-        self.assertEqual(stored['status'],'needs_followup')
+        self.assertEqual(stored['status'],'repair_exhausted')
         self.assertTrue(stored['failures'])
         self.assertEqual(len(stored['review']),len(stored['failures']))
         self.assertEqual(stored['review'][0]['diagnosis'],'unknown')
@@ -121,11 +121,11 @@ class FailureLoopTests(unittest.TestCase):
         from temporal_contract_analyzer.evolution_cli import run
         root=self.fixture.root/'watch';root.mkdir()
         (root/'protocol.json').write_text(json.dumps(dict(schema_version='experience-development-v3')))
-        worker=MagicMock();worker.run.return_value=dict(status='needs_followup')
+        worker=MagicMock();worker.run.return_value=dict(status='repair_exhausted')
         args=SimpleNamespace(root=root,evolution_action='work',execute=True,watch=True,poll_seconds=1)
         with patch('temporal_contract_analyzer.experience_workflow.Workflow',return_value=worker), \
                 patch('time.sleep') as sleep,redirect_stdout(StringIO()):
-            self.assertEqual(run(args),0)
+            self.assertEqual(run(args),1)
         self.assertEqual(worker.run.call_count,1)
         sleep.assert_not_called()
 
@@ -148,7 +148,7 @@ class FailureLoopTests(unittest.TestCase):
         self.assertEqual(check['actual_scores'],2)
         self.assertFalse(check['prompt_changed'])
         self.assertEqual(check['effect_attribution'],'not_established')
-        self.assertEqual(record['status'],'needs_followup')
+        self.assertEqual(record['status'],'repair_exhausted')
         learning.record_validation(loop.root,p,'synthetic-pending',
             [fixtures.outcome(True)],dict(lost=[],unknown=[]),True)
         record=json.loads((loop.root/'failure-learning.json').read_text())
