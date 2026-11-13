@@ -1,6 +1,6 @@
 # TempoEvo V5: training acceptance and independent testing
 
-New roots use `tempoevo-trajectory-v5`. Module names `tempoevo_v4.py` and
+This document preserves the V5 acceptance design. New execution uses [V6](TEMPOEVO_V6.md); V5 roots are read-only. V5 roots used `tempoevo-trajectory-v5`. Module names `tempoevo_v4.py` and
 `tempoevo_backend.py` remain to avoid an unrelated rename. V4 frozen runs cannot
 be resumed, cancelled or published through the new controller. `tempoevo status`
 continues to inspect retained V4 summaries without rewriting them. No historical

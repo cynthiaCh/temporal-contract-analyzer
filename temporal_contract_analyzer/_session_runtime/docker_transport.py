@@ -87,7 +87,9 @@ class Launcher:
                               PYTHONDONTWRITEBYTECODE='1').items():
             args.extend(['--env', key + '=' + value])
         # Forward proxy values by name, without embedding credentials in command logs.
-        for key in ('HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy'):
+        credentials=self.config.get('credential_env',[])
+        if not isinstance(credentials,list) or any(not isinstance(k,str) or not re.fullmatch(r'[A-Z][A-Z0-9_]*',k) for k in credentials):raise ValueError('Invalid provider credential environment names')
+        for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy']+credentials:
             if key in os.environ:
                 args.extend(['--env', key])
         return args + ['--entrypoint', cli[0], self.config['solver_image']] + cli[1:]

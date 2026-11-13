@@ -1,22 +1,30 @@
-"""Explicit V4 entrypoint; preparation, status and review never call a model."""
+"""Explicit trajectory entrypoint; preparation, status and review never call a model."""
 import json
 from pathlib import Path
 from .tempoevo_v4 import Trajectory
 
 
 def register(sub):
-    parser=sub.add_parser('tempoevo',help='V4 three-Action learning/testing trajectories')
+    parser=sub.add_parser('tempoevo',help='V6 three-Action learning/testing trajectories')
     actions=parser.add_subparsers(dest='tempo_action',required=True)
     for name in ('prepare','run','status','cancel','expert-summary','publish-candidate'):
         p=actions.add_parser(name);p.add_argument('--root',type=Path,required=True)
         if name in ('prepare','expert-summary'):p.add_argument('input',type=Path)
+        if name=='prepare':
+            p.add_argument('--model-config',type=Path)
+            p.add_argument('--model-profile')
         if name=='run':p.add_argument('--execute',action='store_true')
         if name=='publish-candidate':p.add_argument('name',choices=('success','expert'))
 
 
 def run(args):
     loop=Trajectory(args.root)
-    if args.tempo_action=='prepare':result=loop.prepare(json.loads(args.input.read_text()))
+    if args.tempo_action=='prepare':
+        config=json.loads(args.input.read_text())
+        for key in ('model_config','model_profile'):
+            value=getattr(args,key,None)
+            if value is not None:config[key]=str(value)
+        result=loop.prepare(config)
     elif args.tempo_action=='status':
         # Historical inspection must not execute, rewrite archives, or require
         # today's runtime to match a completed trajectory's implementation.

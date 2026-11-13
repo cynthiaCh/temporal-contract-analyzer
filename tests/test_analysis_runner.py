@@ -20,13 +20,14 @@ runner.tempfile.tempdir='/tmp'
 def fake_command(archive,runtime,guard):
  return [sys.executable,'-B',str(base/'fake_cli.py'),str(guard.directory/'hook.sock'),
          str(archive.workspace),json.dumps(payload['analysis']),str(payload['mutate']),
-         payload.get('phase','analysis'),str(payload.get('requests',1)),payload.get('tool','')]
+         payload.get('phase','analysis'),str(payload.get('requests',1)),payload.get('tool',''),
+         (payload.get('model_settings') or {}).get('model','gpt-6.1-sol')]
 phase=payload.get('phase','analysis')
 slot=dict(slot='ANALYSIS',phase=phase)
 if payload.get('logical_role'):slot['logical_role']=payload['logical_role']
 receipt=runner.session(slot,'Synthetic task and numbered source',
  case={},candidate=base/'candidate',task=base/'task.md',config=dict(seconds_per_session=20,
- requests_per_session=payload.get('cap',12),reflection_readonly=payload.get('readonly',False)),
+ requests_per_session=payload.get('cap',12),reflection_readonly=payload.get('readonly',False),model_settings=payload.get('model_settings')),
  run_dir=base/'run',command_factory=fake_command)
 print(json.dumps(receipt))
 '''
@@ -37,7 +38,7 @@ def hook(event):
  with socket.socket(socket.AF_UNIX) as connection:
   connection.connect(sys.argv[1]);connection.sendall(json.dumps(event).encode()+b'\\n')
   assert not json.loads(connection.recv(4096))['deny']
-model='gpt-6.1-sol'
+model=sys.argv[8]
 for _ in range(int(sys.argv[6])):
  hook(dict(hook_event_name='PreModelRequest',model=model))
  hook(dict(hook_event_name='PostModelRequest',model=model,status='completed'))
@@ -70,7 +71,7 @@ print(json.dumps(dict(native=native,docker=docker)))
 
 
 class AnalysisRunnerTests(unittest.TestCase):
-    def run_fixture(self,mutate=False,phase='analysis',cap=12,readonly=False,requests=1,tool='',logical_role=None,output=None,schema=None):
+    def run_fixture(self,mutate=False,phase='analysis',cap=12,readonly=False,requests=1,tool='',logical_role=None,output=None,schema=None,model_settings=None):
         temporary=tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup)
         root=Path(temporary.name);backend=root/'backend';backend.mkdir()
         for name in DEPENDENCIES:shutil.copyfile(SOURCE/name,backend/name)
@@ -84,10 +85,18 @@ class AnalysisRunnerTests(unittest.TestCase):
         if output is not None:analysis=output
         completed=subprocess.run([sys.executable,'-B','-c',DRIVER,str(backend),
             json.dumps(dict(base=str(root),analysis=analysis,mutate=mutate,phase=phase,cap=cap,
-                            readonly=readonly,requests=requests,tool=tool,logical_role=logical_role))],
+                            readonly=readonly,requests=requests,tool=tool,logical_role=logical_role,model_settings=model_settings))],
             capture_output=True,text=True,timeout=30)
         self.assertEqual(completed.returncode,0,completed.stderr)
         return root,analysis,json.loads(completed.stdout)
+
+    def test_custom_model_hooks_match_frozen_session_profile(self):
+        from temporal_contract_analyzer._session_runtime.model_settings import resolve_profile
+        settings=resolve_profile();settings.update(model='synthetic-custom-model',reasoning_effort=None)
+        root,_,receipt=self.run_fixture(model_settings=settings)
+        self.assertTrue(receipt['candidate_complete'],receipt)
+        config=json.loads((root/'run/archive/input/config.json').read_text())
+        self.assertEqual(config['model'],'synthetic-custom-model');self.assertIsNone(config['effort'])
 
     def test_analysis_schema_and_role_run_through_real_archive_and_meter(self):
         root,analysis,receipt=self.run_fixture()
@@ -220,9 +229,11 @@ class AnalysisRunnerTests(unittest.TestCase):
         for name in DEPENDENCIES:shutil.copyfile(SOURCE/name,backend/name)
         for settings in ROLES.values():
             self.assertEqual((settings['model'],settings['effort']),('gpt-6.1-sol','medium'))
-        profile=(SOURCE/'research-config.toml').read_text()
-        self.assertIn('model = "gpt-6.1-sol"',profile)
-        self.assertIn('model_reasoning_effort = "medium"',profile)
+        profiles=json.loads((SOURCE/'model-profiles.json').read_text())
+        profile=profiles['profiles'][profiles['default_profile']]
+        self.assertEqual(profile['model'],'gpt-6.1-sol')
+        self.assertEqual(profile['reasoning_effort'],'medium')
+        self.assertNotIn('model =',(SOURCE/'research-config.toml').read_text())
         for phase in ('analysis','repair','reflect'):
             result=subprocess.run([sys.executable,'-B','-c',COMMAND_DRIVER,str(backend),str(root),phase],
                                   capture_output=True,text=True,timeout=10)

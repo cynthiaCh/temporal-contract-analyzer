@@ -13,7 +13,7 @@ import sys
 import threading
 
 from . import archive
-from ._session_runtime.model_settings import MODEL, EFFORT
+from ._session_runtime.model_settings import MODEL, EFFORT, resolve_profile, validate_settings
 from .core import EvidenceError, sha, canonical
 from .candidate_files import capture, inventory, file_modes, write_files
 from .case_evaluation import scoring_inputs, terminate
@@ -21,7 +21,7 @@ from .case_evaluation import scoring_inputs, terminate
 SOURCE = Path(__file__).resolve().parent/'_session_runtime'
 DEPENDENCIES = ('model_settings.py','runner.py','native_backend.py','archive.py','guard_server.py','guard_client.py',
                 'request_guard.py','read_policy.py','usage.py','structured.py','schema_validator.py','docker_transport.py',
-                'research-config.toml','maintenance.schema.json','extraction.schema.json')
+                'research-config.toml','model-profiles.json','maintenance.schema.json','extraction.schema.json')
 ROLES = {
     'analysis':dict(model=MODEL, effort=EFFORT, requests=12, seconds=600),
     'repair':dict(model=MODEL, effort=EFFORT, requests=24, seconds=600),
@@ -110,7 +110,7 @@ class NativeBackend:
         pass
 
     def execute(self, protocol, role, prompt, schema, directory):
-        if protocol.get('execution_policy') not in ('tempoevo-trajectory-v4','tempoevo-trajectory-v5'):raise EvidenceError('Legacy execution retired; only V4 sessions may execute')
+        if protocol.get('execution_policy') != 'tempoevo-trajectory-v6':raise EvidenceError('Historical execution retired; only V6 sessions may execute')
         if role not in ROLES:raise EvidenceError('Unsupported shared execution role')
         logical_role=role
         if not protocol.get('boundary_preflight_complete'):self.preflight(protocol)
@@ -138,7 +138,7 @@ class NativeBackend:
             candidate=evidence or protocol['input_path'], run_dir=str((directory/'native').resolve()),
             config=dict(frozen_files=frozen,seconds_per_session=limits['seconds'],
                         requests_per_session=limits['requests'],protocol_schema=protocol.get('execution_policy'),
-                        reflection_readonly=bool(evidence)))
+                        reflection_readonly=bool(evidence),model_settings=validate_settings(protocol.get('model_settings') or resolve_profile())))
         request.update(self.session_options(protocol))
         archive.atomic_json(directory/'native-request.json',request)
         cleanup_error=None
@@ -146,7 +146,7 @@ class NativeBackend:
             stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,
             cwd=str(backend),start_new_session=True)
         try:
-            stdout,stderr=process.communicate(json.dumps(request),timeout=ROLES[role]['seconds']+90)
+            stdout,stderr=process.communicate(json.dumps(request),timeout=limits['seconds']+90)
         except subprocess.TimeoutExpired as error:
             stop_tree(process)
             stdout,stderr=process.communicate()

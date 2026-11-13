@@ -7,7 +7,7 @@ import importlib.util,json,os,re,shutil,signal,subprocess,sys,tempfile,time,shle
 from pathlib import Path
 from archive import Archive,inventory,digest,save,sha
 from guard_server import GuardServer
-from model_settings import MODEL, EFFORT
+from model_settings import MODEL, EFFORT, resolve_profile, validate_settings
 from structured import parse_response
 
 O=Path(__file__).resolve().parent
@@ -19,7 +19,7 @@ def command(call,folder,phase,case,*,runtime,socket_dir,copy_auth=True):
     """Original autonomous Codex CLI and role flags, no host archive bind mounts."""
     readonly_evidence = phase=='reflect' and case.get('reflection_readonly') is True
     backend_mode='reflection' if phase=='reflect' and not readonly_evidence else 'extraction'
-    cmd=backend.command(call,folder,backend_mode,copy_auth=copy_auth,runtime=runtime,socket_dir=socket_dir)
+    cmd=backend.command(call,folder,backend_mode,copy_auth=copy_auth,runtime=runtime,socket_dir=socket_dir,settings=case.get('model_settings'))
     if phase in ['repair','reflect']:
         if phase=='repair':
             i=cmd.index(str(folder/'workspace'));assert cmd[i-1]=='--ro-bind';cmd[i-1]='--bind'
@@ -81,6 +81,8 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
     frozen final candidate and score destination after all actor processes stop.
     """
     phase=slot['phase'];model,effort,cap,mode=ROLE[phase]
+    settings=validate_settings(config.get('model_settings') or resolve_profile())
+    model,effort=settings['model'],settings['reasoning_effort'];case=dict(case,model_settings=settings)
     requested_cap=config.get('requests_per_session',cap)
     if type(requested_cap) is not int or not 0<requested_cap<=cap:
         raise ValueError('cannot increase the role request limit')
@@ -90,7 +92,7 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
     fixture=command_factory is not None
     if not fixture and not allow_model_execution:raise RuntimeError('model execution disabled; this change is offline-only')
     if not fixture:
-        if config.get('protocol_schema') not in ('tempoevo-trajectory-v4','tempoevo-trajectory-v5'):raise ValueError('Legacy execution retired; V4 protocol required')
+        if config.get('protocol_schema')!='tempoevo-trajectory-v6':raise ValueError('Historical execution retired; V6 protocol required')
         verify(config.get('frozen_files',{}))
     seconds=config.get('seconds_per_session',600);stdout_limit=config.get('stdout_bytes',16777216)
     if not 0<seconds<=600 or not 0<stdout_limit<=16777216:raise ValueError('cannot increase original resource limits')

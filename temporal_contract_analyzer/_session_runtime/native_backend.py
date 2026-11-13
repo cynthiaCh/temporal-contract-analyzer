@@ -1,7 +1,7 @@
 """Reused native CLI namespace; host archives are never mounted into the actor."""
 import json,hashlib,os,shutil,subprocess,time,signal,sys
 from pathlib import Path
-from model_settings import MODEL, EFFORT
+from model_settings import resolve_profile, validate_settings
 OUT=Path(__file__).resolve().parent;ROOT=OUT.parent.parent
 BINARY=None  # Supplied explicitly by the prepared, hash-bound protocol.
 DISABLE=['code_mode','apps','plugins','multi_agent','browser_use','computer_use','sleep_tool','tool_suggest']
@@ -9,7 +9,8 @@ def read(p):return json.loads(Path(p).read_text())
 def save(p,d):p=Path(p);p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n')
 def sha(b):return hashlib.sha256(b if isinstance(b,bytes) else b.encode()).hexdigest()
 def hashes(root):return {str(p.relative_to(root)):sha(p.read_bytes()) for p in root.rglob('*') if p.is_file()}
-def command(call,folder,mode,copy_auth=True,meter=None,*,runtime=None,socket_dir=None):
+def command(call,folder,mode,copy_auth=True,meter=None,*,runtime=None,socket_dir=None,settings=None):
+ settings=validate_settings(settings or resolve_profile());provider=settings['provider']
  if BINARY is None:raise ValueError('explicit prepared Codex binary required')
  if runtime is None or socket_dir is None:raise ValueError('explicit external runtime and hook endpoint required')
  work=folder/'workspace';archive=folder/'archive';profile=Path(runtime)/'.runtime'/call
@@ -26,11 +27,15 @@ def command(call,folder,mode,copy_auth=True,meter=None,*,runtime=None,socket_dir
  save(profile/'hooks.json',hooks);save(archive/'hooks.json',hooks)
  ns=['bwrap','--die-with-parent','--new-session','--unshare-user','--unshare-pid','--unshare-ipc','--unshare-uts','--cap-drop','ALL','--ro-bind','/usr','/usr','--ro-bind','/lib','/lib','--ro-bind','/lib64','/lib64','--symlink','usr/bin','/bin','--symlink','usr/sbin','/sbin','--proc','/proc','--dev','/dev','--tmpfs','/tmp','--dir','/home/agent','--dir','/etc','--ro-bind','/etc/resolv.conf','/etc/resolv.conf','--ro-bind','/etc/ssl','/etc/ssl','--ro-bind',str(BINARY.parent),'/opt','--bind',str(profile),'/home/agent/.codex','--ro-bind',str(work),'/workspace','--ro-bind',str(OUT/'request_guard.py'),'/request_guard.py','--ro-bind',str(OUT/('reflection.schema.json' if mode=='reflection' else 'extraction.schema.json')),'/format.json','--ro-bind',str(socket_dir),'/hook-control','--ro-bind',str(OUT/'guard_client.py'),'/guard_client.py','--ro-bind',str(OUT/'read_policy.py'),'/read_policy.py','--chdir','/workspace','--setenv','HOME','/home/agent','--setenv','CODEX_HOME','/home/agent/.codex','--setenv','PATH','/usr/bin:/bin:/opt','--setenv','LANG','C.UTF-8']
  for k in sorted(os.environ):
-  if k not in ['HOME','CODEX_HOME','PATH','LANG']:ns+=['--unsetenv',k]
+  if k not in ['HOME','CODEX_HOME','PATH','LANG',provider.get('env_key')]:ns+=['--unsetenv',k]
  for k in ['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy']:
   if k in os.environ:ns+=['--setenv',k,os.environ[k]]
  ns+=['--setenv','DIAG_CALL_ID',call,'--']
- cmd=ns+['/opt/codex','exec','--ignore-rules','--ephemeral','--json','--color','never','--skip-git-repo-check','--sandbox','read-only','-c','approval_policy="never"','-m',MODEL,'-c','model_reasoning_effort="'+EFFORT+'"','-c','web_search="disabled"','-c','service_tier="priority"','-c','model_provider="experiment_no_retry"','-c','model_providers.experiment_no_retry.name="OpenAI"','-c','model_providers.experiment_no_retry.wire_api="responses"','-c','model_providers.experiment_no_retry.requires_openai_auth=true','-c','model_providers.experiment_no_retry.request_max_retries=0','-c','model_providers.experiment_no_retry.stream_max_retries=0','--dangerously-bypass-hook-trust','--output-schema','/format.json']
+ cmd=ns+['/opt/codex','exec','--ignore-rules','--ephemeral','--json','--color','never','--skip-git-repo-check','--sandbox','read-only','-c','approval_policy="never"','-m',settings['model'],'-c','web_search="disabled"','-c','model_provider="tempoevo_configured"','--dangerously-bypass-hook-trust','--output-schema','/format.json']
+ for key in ['reasoning_effort','service_tier']:
+  if settings[key] is not None:cmd+=['-c',('model_reasoning_effort' if key=='reasoning_effort' else key)+'='+json.dumps(settings[key])]
+ for key,value in dict(provider,request_max_retries=0,stream_max_retries=0).items():
+  cmd+=['-c','model_providers.tempoevo_configured.'+key+'='+json.dumps(value)]
  for feature in DISABLE+(['shell_tool','code_mode_host'] if mode=='reflection' else []):cmd+=['--disable',feature]
  if mode=='extraction':cmd+=['--enable','code_mode_host','--enable','shell_tool']
  return cmd+['-C','/workspace','-']

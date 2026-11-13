@@ -1,11 +1,13 @@
-"""Prepare frozen independent V4 trajectories; never starts a model."""
+"""Prepare frozen independent trajectories; never starts a model."""
 import csv,json,os,sys,shutil,datetime
 from pathlib import Path
 import argparse
-parser=argparse.ArgumentParser(description='Zero-model Docker calibration and preparation of the selected case prefix')
+parser=argparse.ArgumentParser(description='Zero-model Docker calibration and preparation of the selected case rank range')
 parser.add_argument('--root',type=Path,required=True);parser.add_argument('--solver-image',required=True);parser.add_argument('--grader-image',required=True);parser.add_argument('--limit',type=int,default=10)
 parser.add_argument('--start-rank',type=int,default=1,help='First one-based CSV rank to prepare')
 parser.add_argument('--training-feedback',type=Path,help='Explicit public feedback mapping JSON, frozen in every trajectory')
+parser.add_argument('--model-config',type=Path,help='Model profiles JSON file')
+parser.add_argument('--model-profile',help='Named model profile; defaults to the configuration default')
 args=parser.parse_args()
 if args.start_rank<1 or args.limit<1:parser.error('--start-rank and --limit must be positive')
 repo=Path(__file__).resolve().parents[2];sys.path.insert(0,str(repo))
@@ -15,6 +17,8 @@ from temporal_contract_analyzer.case_catalog import case_input
 from temporal_contract_analyzer.tempoevo_backend import NativeV4Backend
 from temporal_contract_analyzer import experience_approval as approval
 from temporal_contract_analyzer.tempoevo_v4 import Trajectory,MODEL
+from temporal_contract_analyzer._session_runtime.model_settings import resolve_profile,identity
+settings=resolve_profile(args.model_profile,args.model_config)
 from temporal_contract_analyzer.core import sha
 all_rows=list(csv.DictReader((repo/'examples/tempoevo-v4/case-selections/gpt61-sol-medium-hardest50-20261029/selected_50_cases.csv').open(encoding='utf-8-sig')))
 rows=[row for row in all_rows if args.start_rank<=int(row['rank'])<args.start_rank+args.limit]
@@ -49,6 +53,8 @@ for row in rows:
    controls.append(record)
   entry['controls']=controls
   config=dict(task_id=cid,task=c['task'],candidate=str(r/'public'),store=str(repo/'experience-memory'),mode='learning',condition='structured',max_attempts=3,model=MODEL,binary=shutil.which('codex'),backend=dict(kind='docker',solver_image=solver,grader_image=grader,solver_node='/runtime/node16/bin/node'),memory_snapshot=bank,visible_evaluator=visible,training_evaluator=gold,required_visible_checks=True,training_feedback=feedback,protected_paths=['README.md','VISIBLE_CHECKS.md'])
+  config.update(model=identity(settings),model_profile=settings['profile'])
+  if args.model_config:config['model_config']=str(args.model_config.resolve())
   (r/'config.json').write_text(json.dumps(config,indent=2)+'\n');Trajectory(r/'trajectory').prepare(config);entry['status']='prepared'
  except Exception as e:entry.update(status='preflight_failed',error=repr(e))
  (root/'progress.json').write_text(json.dumps(out,indent=2)+'\n');print(json.dumps(entry),flush=True)

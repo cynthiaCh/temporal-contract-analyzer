@@ -1,4 +1,4 @@
-# V5 Docker training
+# V6 Docker training
 
 New live `tempoevo run --execute` runs require Docker. The host schedules bounded
 stages and preserves archives; AST extraction, every model role and both
@@ -18,7 +18,7 @@ image ID, not the tag. The provisioned base is
 `sha256:ed6905e35d7447258027d595beb5f04ec902fd4235ceeac9e5eb120d40124b16`.
 The derived image supplies `/runtime/node` and retains Node16/18/24, Python, Go,
 Ruby, PHP, Java and frontend dependencies. Model configuration always comes from
-V5 (`gpt-6.1-sol / medium`), never an image's historical name.
+the frozen V6 model profile (default `gpt-6.1-sol / medium`), never an image's historical name.
 
 Configuration examples are under `examples/tempoevo-v4/`. `backend` selects the
 solver/grader immutable IDs and `solver_node`. Each evaluator declares `image`,
@@ -53,9 +53,8 @@ language RPC scaffolding stays in the grader, separate from hidden assertions,
 schedules and scoring. The unchanged original Gold probe serves per-round training acceptance in learning and final independent scoring in testing.
 Neither scaffold nor hidden gold is mounted into the model's solver workspace.
 
-Each trajectory retains the same maximum three Actions, fixed model, training-Gold-plus-required-public acceptance in learning, public-only stop and
-final independent Gold in testing, manual review and bounded request limits. There are no
-automatic paid retries or extra attempts when infrastructure fails.
+Each trajectory retains the same maximum three Actions, one frozen model profile, training-Gold-plus-required-public acceptance in learning, public-only stop and
+final independent Gold in testing, manual review and bounded request limits. Transient connection failures permit at most two archived stage restarts within the original stage request/time caps. Other invalid executions stop; no extra evaluated Actions are added.
 
 Prepare and run a selected rank range (preparation is zero-model):
 
@@ -75,11 +74,11 @@ trusted framework loader solely to mount candidate public APIs; hidden schedules
 and assertions remain separate in the unchanged Gold probe. All three calibration
 controls must complete before a case is prepared for paid execution.
 
-The launcher invokes the public V5 CLI serially. Partial started stages are never
+The launcher invokes the public V6 CLI serially. Partial started stages are never
 replayed. Every case has a separate archive; the batch shares one approved frozen
 snapshot and never approves its newly extracted candidates. Calibration failures
 remain `not_started`; execution failures retain their actual requests and errors.
 
 Learning configurations require `training_evaluator`, not only `gold_evaluator`.
-See [V5 feedback, stop and split boundaries](TEMPOEVO_V5.md). Historical Docker
+See [V6 feedback, stop and split boundaries](TEMPOEVO_V6.md). Historical Docker
 batches and candidates are retained unchanged; no automatic replay or acceptance.

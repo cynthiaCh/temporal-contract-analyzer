@@ -6,7 +6,7 @@ import time
 from . import archive
 from .candidate_files import capture, inventory, write_files
 from .core import EvidenceError, canonical
-from .tempoevo_v4 import MODEL, VERSION
+from .tempoevo_v4 import VERSION
 
 
 class NativeV4Backend:
@@ -14,12 +14,13 @@ class NativeV4Backend:
 
     def execute(self, kind, payload, model, limits, directory):
         from .execution_backend import NativeBackend
-        from ._session_runtime.model_settings import MODEL as actual_model, EFFORT
-        if model!=MODEL or (actual_model,EFFORT)!=('gpt-6.1-sol','medium'):raise EvidenceError('Native model drift')
+        from ._session_runtime.model_settings import resolve_profile,validate_settings,identity
+        settings=validate_settings(self.protocol.get('model_settings') or resolve_profile())
+        if model!=identity(settings):raise EvidenceError('Native model drift')
         role='repair' if kind=='action' else 'analysis'
         source=directory/'public-input';write_files(source,{k:v.encode() for k,v in payload.get('candidate_sources',payload['sources']).items()})
         protocol=dict(binary=self.protocol['binary'],node=self.protocol.get('node','/usr/bin/node'),case=dict(id=self.protocol.get('task_id','v4-task')),
-            execution_policy=VERSION,visible=dict(task=payload['task']),input_path=str(source),
+            execution_policy=VERSION,model_settings=settings,visible=dict(task=payload['task']),input_path=str(source),
             candidate_files=inventory(capture(source)[0]),session_limits=limits,boundary_preflight_complete=True)
         prompt=('Use only the original task and supplied public code/documents as normative evidence. '
             'Experience and automatic Contract are fallible guidance. Evaluation observations do not create business requirements. '
@@ -38,7 +39,7 @@ class NativeV4Backend:
         result=backend.execute(protocol,role,prompt,payload.get('schema'),directory/'native-stage')
         usage=result.get('usage') or {};tokens=usage.get('total_usage')
         valid=result.get('completed') is True and result.get('infrastructure_valid') is True
-        out=dict(valid=valid,model=MODEL,requests=usage.get('requests_started'),tokens=tokens,output=result.get('output'),
+        out=dict(valid=valid,model=identity(settings),requests=usage.get('requests_started'),tokens=tokens,output=result.get('output'),
             observed_tokens=usage.get('observed_usage_subtotal'),usage_incomplete=usage.get('usage_incomplete',False),
             unknown_usage_requests=usage.get('usage_unknown_requests',0),
             failure_type=('timeout' if result.get('receipt',{}).get('stop_reason')=='timeout' else result.get('receipt',{}).get('failure_class') or 'invalid_output'),
@@ -49,6 +50,8 @@ class NativeV4Backend:
                 events=json.loads(errors.read_text()).get('raw_cli_errors',[])
                 if events:
                     event=events[-1]['event'];out['error']=event.get('message') or (event.get('error') or {}).get('message') or out['error']
+            from .stage_retry import transient_transport
+            if transient_transport(result,out['error']):out['failure_type']='transient_transport_error'
         if kind=='action' and valid:
             if result.get('scoring_admissible') is not True:out.update(valid=False,error='No admissible source-reading/candidate proof')
             out['candidate_sources']={k:v.decode() for k,v in capture(Path(result['final_candidate']))[0].items()}

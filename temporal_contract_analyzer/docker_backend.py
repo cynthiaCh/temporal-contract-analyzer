@@ -91,8 +91,11 @@ class DockerBackend(NativeBackend):
     kind='swe_tempoc_docker'
 
     def session_options(self, protocol):
-        return dict(transport=dict(solver_image=protocol['backend']['solver_image'],
-            node=protocol['node'],name='tca-session-'+uuid.uuid4().hex))
+        from ._session_runtime.model_settings import resolve_profile
+        provider=(protocol.get('model_settings') or resolve_profile())['provider']
+        transport=dict(solver_image=protocol['backend']['solver_image'],node=protocol['node'],name='tca-session-'+uuid.uuid4().hex)
+        if provider.get('env_key'):transport['credential_env']=[provider['env_key']]
+        return dict(transport=transport)
 
     def stop_external(self, request, directory):
         stop(request['transport']['name'],Path(directory)/'bridge-container.json')

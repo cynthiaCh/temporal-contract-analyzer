@@ -1,4 +1,4 @@
-"""V4 within-task trajectories. Imports never execute a model or candidate."""
+"""Within-task trajectories. Imports never execute a model or candidate."""
 from copy import deepcopy
 from pathlib import Path
 import difflib
@@ -12,9 +12,10 @@ import time
 from . import archive, experience_approval as approval, experience_memory as memory, taxonomy
 from .candidate_files import capture, inventory, write_files
 from .core import EvidenceError, canonical, sha
+from ._session_runtime.model_settings import resolve_profile, identity
 
-VERSION = 'tempoevo-trajectory-v5'
-MODEL = dict(model='gpt-6.1-sol', reasoning_effort='medium')
+VERSION = 'tempoevo-trajectory-v6'
+MODEL = identity(resolve_profile())
 CONDITIONS = ('baseline', 'contract', 'bm25', 'structured', 'fixed_contract')
 LIMITS = dict(routing=dict(requests=12, seconds=600), contract=dict(requests=12, seconds=600), action=dict(requests=24, seconds=600),
               diagnosis=dict(requests=12, seconds=600), extract=dict(requests=12, seconds=600))
@@ -102,7 +103,12 @@ class Trajectory:
             if registry.exists() and cfg.get('task_id') in {r['id'] for r in read(registry)['cases']}:raise EvidenceError('Known exposed development case cannot be an independent test')
         attempts=cfg.get('max_attempts',3)
         if type(attempts) is not int or not 1<=attempts<=3:raise EvidenceError('At most three Actions total')
-        if cfg.get('model',MODEL)!=MODEL:raise EvidenceError('Model/effort fixed by V4')
+        try:settings=resolve_profile(cfg.get('model_profile'),cfg.get('model_config'))
+        except (ValueError,TypeError,OSError) as error:raise EvidenceError('Invalid model configuration: '+str(error)) from error
+        if cfg.get('model',identity(settings))!=identity(settings):raise EvidenceError('Model must match the selected profile')
+        cfg['model_settings']=settings
+        cfg['model_profile']=settings['profile']
+        cfg.pop('model_config',None)  # Freeze resolved values, not a mutable external file.
         if cfg['mode']=='testing' and not cfg.get('gold_evaluator'):raise EvidenceError('Testing requires a separate gold evaluator')
         if cfg['mode']=='testing' and not cfg.get('memory_snapshot'):raise EvidenceError('Testing requires explicit frozen approved bank')
         source=Path(cfg['candidate']).resolve()
@@ -154,7 +160,7 @@ class Trajectory:
         uses_contract=cfg['condition']!='baseline'
         total=attempts*limits['action']['requests']+((attempts-1)*limits['diagnosis']['requests']+limits['contract']['requests'] if uses_contract else 0)+(limits['extract']['requests'] if cfg['mode']=='learning' else 0)
         if cfg['condition'] in ('structured','fixed_contract') and not cfg.get('routing_analysis'):total+=limits['routing']['requests']
-        cfg.update(schema_version=VERSION,model=MODEL,max_attempts=attempts,limits=limits,total_request_cap=total,
+        cfg.update(schema_version=VERSION,model=identity(settings),max_attempts=attempts,limits=limits,total_request_cap=total,
             store=str(store),original_inventory=inventory(files),feedback_fields=['observations','regressions','unknowns'],
             required_visible_checks=cfg.get('required_visible_checks',True),
             acceptance_policy='training_gold_and_required_visible' if cfg['mode']=='learning' else 'visible_stop_then_independent_gold',
@@ -166,12 +172,12 @@ class Trajectory:
         self.save('binding.json',dict(protocol=sha((self.root/'protocol.json').read_bytes()),
             bank=sha((self.root/'memory-snapshot.json').read_bytes()),ast=sha((self.root/'ast-evidence.json').read_bytes()),
             implementation=sha(Path(__file__).read_bytes()),evaluators=evaluator_hashes,
-            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py')]+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
+            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
         self.report();return self.state()
 
     def verify(self):
         p=read(self.root/'protocol.json')
-        if p.get('schema_version')!=VERSION:raise EvidenceError('Historical protocol is read-only; prepare a new V5 root')
+        if p.get('schema_version')!=VERSION:raise EvidenceError('Historical protocol is read-only; prepare a new V6 root')
         binding=read(self.root/'binding.json')
         for name,key in [('protocol.json','protocol'),('memory-snapshot.json','bank'),('ast-evidence.json','ast')]:
             if sha((self.root/name).read_bytes())!=binding[key]:raise EvidenceError('Frozen V4 input drift')
@@ -222,7 +228,7 @@ class Trajectory:
             try:result=backend.evaluate(kind,payload,directory)
             except Exception as error:
                 result=dict(valid=False,error=repr(error),failure_type='timeout' if isinstance(error,(TimeoutError,subprocess.TimeoutExpired)) else 'infrastructure_error')
-        else:result=backend.execute(kind,payload,p['model'],limit,directory)
+        else:result=self._execute_stage(p,backend,key,kind,payload,limit,directory)
         if kind=='gold':
             self.save(directory.relative_to(self.root)/'raw-result.json',result)
             from .training_acceptance import normalize
@@ -240,9 +246,41 @@ class Trajectory:
             row['failure_type']=result.get('failure_type','invalid_output');self.save('state.json',state)
             raise EvidenceError('Invalid '+kind+' execution: '+str(result.get('error')))
         if type(requests) is not int or requests<0 or requests>limit['requests']:raise EvidenceError('Invalid measured request count')
-        if kind in p['limits'] and result.get('model')!=MODEL:raise EvidenceError('Actual model settings mismatch')
+        if kind in p['limits'] and result.get('model')!=p['model']:raise EvidenceError('Actual model settings mismatch')
         row['status']='complete';self.save('state.json',state)
         return result
+
+    def _execute_stage(self,p,backend,key,kind,payload,limit,directory):
+        from .stage_retry import aggregate
+        policy=p['model_settings']['retry_policy'];results=[];started=time.monotonic()
+        for index in range(policy['max_retries']+1):
+            if self.state()['cancelled']:raise EvidenceError('Cancelled before transport execution')
+            used=sum(r['requests'] for r in results)
+            remaining=dict(requests=limit['requests']-used,seconds=limit['seconds']-(time.monotonic()-started))
+            trial=directory/'executions'/str(index+1);trial.mkdir(parents=True)
+            state=self.state();row=next(s for s in state['stages'] if s['key']==key)
+            execution=dict(number=index+1,status='started',limits=remaining,input_sha256=sha(canonical(payload).encode()))
+            row.setdefault('executions',[]).append(execution);self.save('state.json',state)
+            result=backend.execute(kind,deepcopy(payload),p['model'],remaining,trial)
+            self.save(trial.relative_to(self.root)/'result.json',result)
+            state=self.state();row=next(s for s in state['stages'] if s['key']==key)
+            execution=row['executions'][-1];execution.update(status='complete',valid=result.get('valid'),requests=result.get('requests'),
+                failure_type=result.get('failure_type'),result_sha256=sha((trial/'result.json').read_bytes()))
+            results.append(result);row.update(aggregate(results));self.save('state.json',state)
+            requests=result.get('requests')
+            if type(requests) is not int or not 0<=requests<=remaining['requests']:
+                raise EvidenceError('Invalid measured request count; transport retry prohibited')
+            if result.get('model')!=p['model']:raise EvidenceError('Actual model settings mismatch')
+            if result.get('valid') is True or result.get('failure_type')!='transient_transport_error':break
+            if index==policy['max_retries']:break
+            delay=policy['backoff_seconds']*(index+1)
+            if sum(r['requests'] for r in results)>=limit['requests'] or time.monotonic()-started+delay>=limit['seconds']:break
+            until=time.monotonic()+delay
+            while time.monotonic()<until:
+                if self.state()['cancelled']:raise EvidenceError('Cancelled during transport backoff')
+                time.sleep(min(.1,until-time.monotonic()) if time.monotonic()<until else 0)
+            self.verify()  # Recheck frozen bindings before spending another request.
+        return dict(result,**aggregate(results),transport_executions=len(results),transport_retries=len(results)-1)
 
     def run(self, backend, execute=False):
         if not execute:raise EvidenceError('Explicit execution authorization required')
@@ -393,11 +431,11 @@ class Trajectory:
         experience=record['experience'];source=self.root/'candidate-pool'/(name+'-evidence.json')
         self.save(source.relative_to(self.root),record);code=sha(source.read_bytes())
         rules=[dict(id='R%02d'%i,**rule) for i,rule in enumerate(experience['rules'],1)]
-        payload=dict(schema_version=memory.BUNDLE_VERSION_V2,id='v5-'+sha(str(self.root).encode())[:16]+'-'+name,version='v1',parent_sha256=None,
+        payload=dict(schema_version=memory.BUNDLE_VERSION_V2,id='v6-'+sha(str(self.root).encode())[:16]+'-'+name,version='v1',parent_sha256=None,
             taxonomy_version=__import__('temporal_contract_analyzer.taxonomy',fromlist=['VERSION']).VERSION,
             labels=experience['labels'],requires=experience['requires'],excludes=experience['excludes'],rules=rules,
             review=dict(status='candidate',kind='human' if name=='expert' else 'ai_assisted',source_sha256=code,limitations=experience.get('limitations',[])),
-            audit=dict(sources=[dict(path=str(source),sha256=code)],rule_links=[dict(rule_id=r['id'],source_sha256=code,pointer='/experience/rules/'+str(i)) for i,r in enumerate(rules)],notes=['V5 origin: '+record['origin'],'Not approved; training acceptance or expert summary does not verify cross-task effectiveness'],outcome_refs=[]))
+            audit=dict(sources=[dict(path=str(source),sha256=code)],rule_links=[dict(rule_id=r['id'],source_sha256=code,pointer='/experience/rules/'+str(i)) for i,r in enumerate(rules)],notes=['V6 origin: '+record['origin'],'Not approved; training acceptance or expert summary does not verify cross-task effectiveness'],outcome_refs=[]))
         with (Path(p['store'])/'decision.lock').open('a') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX)
             expected=memory.seal(payload)
@@ -414,7 +452,12 @@ class Trajectory:
             path=self.root/'stages'/row['key']/'result.json'
             if path.exists() and 'requests' not in row:
                 result=read(path);row['measured_requests']=result.get('requests');row['measured_tokens']=result.get('tokens')
-        result=dict(protocol=p['schema_version'],mode=p['mode'],condition=p['condition'],status=state['status'],
+        result=dict(protocol=p['schema_version'],model=p['model'],model_profile=p['model_profile'],mode=p['mode'],condition=p['condition'],status=state['status'],
+            transport_executions=sum(len(s.get('executions',[])) for s in state['stages']),
+            transport_retries=sum(max(len(s.get('executions',[]))-1,0) for s in state['stages']),
+            known_tokens=sum((s.get('observed_tokens') or s.get('tokens') or {}).get('total_tokens') or 0 for s in state['stages']),
+            unknown_usage_requests=None if any(s.get('unknown_usage_requests',0) is None for s in state['stages']) else sum(s.get('unknown_usage_requests',0) for s in state['stages']),
+            usage_incomplete=any(s.get('usage_incomplete',False) for s in state['stages']),
             cumulative_visible_pass=[any(a['visible_passed'] for a in attempts[:n]) if len(attempts)>=n or any(a['visible_passed'] for a in attempts) else None for n in (1,2,3)],
             unstarted_actions=p['max_attempts']-sum(s['kind']=='action' for s in state['stages']),
             missing_action_evaluations=sum(s['kind']=='action' for s in state['stages'])-len(attempts),
@@ -429,7 +472,7 @@ class Trajectory:
             held_out_eligible=p.get('held_out_eligible',False),split_status=p.get('split_status','unverified'),
             gold_result=state.get('gold_result'),attempts_started=sum(s['kind']=='action' for s in state['stages']),valid_attempts=len(attempts),
             contract_changes=sum(d['contract_changed'] for d in state['diagnoses']),
-            diagnoses=[d['diagnosis'] for d in state['diagnoses']],requests=sum(s.get('requests',0) for s in state['stages']),
+            diagnoses=[d['diagnosis'] for d in state['diagnoses']],requests=sum(s['requests'] for s in state['stages'] if type(s.get('requests')) is int),
             unknown_request_stages=[s['key'] for s in state['stages'] if s['kind'] in LIMITS and type(s.get('requests')) is not int],
             cumulative_action_request_cap=p['limits']['action']['requests']*p['max_attempts'],
             stages=state['stages'],delivery=read(self.root/'delivery.json') if (self.root/'delivery.json').exists() else None,
