@@ -1,4 +1,4 @@
-# V4 Docker training
+# V5 Docker training
 
 New live `tempoevo run --execute` runs require Docker. The host schedules bounded
 stages and preserves archives; AST extraction, every model role and both
@@ -18,13 +18,13 @@ image ID, not the tag. The provisioned base is
 `sha256:ed6905e35d7447258027d595beb5f04ec902fd4235ceeac9e5eb120d40124b16`.
 The derived image supplies `/runtime/node` and retains Node16/18/24, Python, Go,
 Ruby, PHP, Java and frontend dependencies. Model configuration always comes from
-V4 (`gpt-6.1-sol / medium`), never an image's historical name.
+V5 (`gpt-6.1-sol / medium`), never an image's historical name.
 
 Configuration examples are under `examples/tempoevo-v4/`. `backend` selects the
 solver/grader immutable IDs and `solver_node`. Each evaluator declares `image`,
 container `command`, and an `inputs` mapping from frozen host regular files to
 container destinations. The submission is appended as `/submission`. Evaluators
-must emit JSON with `passed`; visible checks also emit complete `observations`,
+may return an explicit original Gold `verdict`; visible checks require `passed` and also emit complete `observations`,
 `regressions`, and `unknowns`. Explicit `valid:false` aborts as execution invalid.
 Evaluator input files cannot replace submission or runtime mounts. Their hashes
 are frozen when preparing. Script dependencies must all be declared as inputs or
@@ -50,11 +50,11 @@ The first ten historical selections are registered through
 perform original/reference/negative control calibration first. Public examples in
 `tools/tempoevo-docker/public_checks.cjs` use task/README obligations. Trusted
 language RPC scaffolding stays in the grader, separate from hidden assertions,
-schedules and scoring. Gold uses the unchanged original probe independently.
+schedules and scoring. The unchanged original Gold probe serves per-round training acceptance in learning and final independent scoring in testing.
 Neither scaffold nor hidden gold is mounted into the model's solver workspace.
 
-Each trajectory retains the same maximum three Actions, fixed model, first-visible-pass
-stop, separate gold result, manual review and bounded request limits. There are no
+Each trajectory retains the same maximum three Actions, fixed model, training-Gold-plus-required-public acceptance in learning, public-only stop and
+final independent Gold in testing, manual review and bounded request limits. There are no
 automatic paid retries or extra attempts when infrastructure fails.
 
 Prepare and run a selected prefix (preparation is zero-model):
@@ -66,7 +66,11 @@ TCA_BENCH_ROOT=/absolute/benchmark python3 -B tools/tempoevo-docker/prepare_sele
 python3 -B tools/tempoevo-docker/run_selected.py --root /new/batch --execute
 ```
 
-The launcher invokes the public V4 CLI serially. Partial started stages are never
+The launcher invokes the public V5 CLI serially. Partial started stages are never
 replayed. Every case has a separate archive; the batch shares one approved frozen
 snapshot and never approves its newly extracted candidates. Calibration failures
 remain `not_started`; execution failures retain their actual requests and errors.
+
+Learning configurations require `training_evaluator`, not only `gold_evaluator`.
+See [V5 feedback, stop and split boundaries](TEMPOEVO_V5.md). Historical Docker
+batches and candidates are retained unchanged; no automatic replay or acceptance.

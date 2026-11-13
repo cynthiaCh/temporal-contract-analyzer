@@ -31,7 +31,7 @@ def run(args):
         protocol=loop.verify()
         if protocol.get('backend',{}).get('kind')!='docker':
             raise EvidenceError('New live training requires backend.kind=docker; prepare a new Docker trajectory')
-        if any(protocol.get(key) and not protocol[key].get('image') for key in ('visible_evaluator','gold_evaluator')):
+        if any(protocol.get(key) and not protocol[key].get('image') for key in ('visible_evaluator','training_evaluator','gold_evaluator')):
             raise EvidenceError('Docker training requires containerized visible and gold evaluators')
         result=loop.run(NativeV4Backend(protocol),execute=args.execute)
     print(json.dumps(result,ensure_ascii=False,indent=2))

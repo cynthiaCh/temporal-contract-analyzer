@@ -23,6 +23,6 @@ if __name__=='__main__':
     root=Path(sys.argv[1]).resolve();root.mkdir()
     source=root/'public';source.mkdir();(source/'main.py').write_text('value = 0\n')
     store=root/'memory';experience_memory.initialize(store)
-    loop=Trajectory(root/'trajectory');loop.prepare(dict(task='The public value must be 2.',candidate=str(source),store=str(store),mode='learning',condition='contract',visible_evaluator=dict(command=[sys.executable,str(Path(__file__).with_name('visible_checks.py'))])))
+    loop=Trajectory(root/'trajectory');loop.prepare(dict(task='The public value must be 2.',candidate=str(source),store=str(store),mode='learning',condition='contract',training_evaluator=dict(command=[sys.executable,str(Path(__file__).with_name('visible_checks.py'))]),visible_evaluator=dict(command=[sys.executable,str(Path(__file__).with_name('visible_checks.py'))])))
     state=loop.run(SyntheticBackend(),execute=True)
     print(json.dumps(dict(status=state['status'],valid_attempts=len(state['attempts']),root=str(root),model_calls=0,kind='synthetic_model_offline_evaluator_demo'),indent=2))

@@ -38,7 +38,7 @@ for row in rows:
     if result['passed']!=(name=='reference'):raise ValueError((name,kind,'Unexpected control result',result))
    controls.append(record)
   entry['controls']=controls
-  config=dict(task_id=cid,task=c['task'],candidate=str(r/'public'),store=str(repo/'experience-memory'),mode='learning',condition='structured',max_attempts=3,model=MODEL,binary=shutil.which('codex'),backend=dict(kind='docker',solver_image=solver,grader_image=grader,solver_node='/runtime/node16/bin/node'),memory_snapshot=bank,visible_evaluator=visible,gold_evaluator=gold,protected_paths=['README.md','VISIBLE_CHECKS.md'])
+  config=dict(task_id=cid,task=c['task'],candidate=str(r/'public'),store=str(repo/'experience-memory'),mode='learning',condition='structured',max_attempts=3,model=MODEL,binary=shutil.which('codex'),backend=dict(kind='docker',solver_image=solver,grader_image=grader,solver_node='/runtime/node16/bin/node'),memory_snapshot=bank,visible_evaluator=visible,training_evaluator=gold,required_visible_checks=True,training_feedback={},protected_paths=['README.md','VISIBLE_CHECKS.md'])
   (r/'config.json').write_text(json.dumps(config,indent=2)+'\n');Trajectory(r/'trajectory').prepare(config);entry['status']='prepared'
  except Exception as e:entry.update(status='preflight_failed',error=repr(e))
  (root/'progress.json').write_text(json.dumps(out,indent=2)+'\n');print(json.dumps(entry),flush=True)

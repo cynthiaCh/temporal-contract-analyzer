@@ -35,7 +35,7 @@ class Backend:
         return dict(valid=True,requests=1,tokens=dict(total_tokens=10),model=MODEL,output=out)
     def evaluate(self,stage,payload,directory):
         n=int((Path(payload['candidate'])/'main.py').read_text().split('=')[1])
-        if stage=='gold':return dict(valid=True,passed=False,hidden_failures=['SECRET_GOLD'])
+        if stage=='gold':return dict(valid=True,passed=False if payload.get('purpose')=='independent_testing' else n>=self.passes,hidden_failures=['SECRET_GOLD'])
         return dict(valid=True,passed=n>=self.passes,observations=[dict(actual=n,passed=n>=self.passes)],regressions=[],unknowns=[],hidden_failures=['SECRET_VISIBLE_EXTRA'])
 
 
@@ -45,8 +45,10 @@ class V4Tests(unittest.TestCase):
         self.source=self.root/'source';self.source.mkdir();(self.source/'main.py').write_text('value = 0\n')
         self.store=self.root/'memory';memory.initialize(self.store)
     def prepare(self, **changes):
-        cfg=dict(task='Preserve accepted work.',candidate=str(self.source),store=str(self.store),mode='learning',condition='contract',visible_evaluator=dict(command=['synthetic-visible']))
-        cfg.update(changes);loop=Trajectory(self.root/('run-'+str(len(list(self.root.glob('run-*'))))));loop.prepare(cfg);return loop
+        cfg=dict(task='Preserve accepted work.',candidate=str(self.source),store=str(self.store),mode='learning',condition='contract',visible_evaluator=dict(command=['synthetic-visible']),training_evaluator=dict(command=['synthetic-training']))
+        cfg.update(changes)
+        if cfg['mode']=='testing':cfg.pop('training_evaluator',None)
+        loop=Trajectory(self.root/('run-'+str(len(list(self.root.glob('run-*'))))));loop.prepare(cfg);return loop
     def test_first_pass_stops_and_is_staged_not_approved(self):
         loop=self.prepare();backend=Backend();state=loop.run(backend,execute=True)
         self.assertEqual(state['status'],'passed',state.get('error'));self.assertEqual(len(state['attempts']),1)
@@ -177,7 +179,7 @@ class V4Tests(unittest.TestCase):
         with patch('temporal_contract_analyzer.execution_backend.NativeBackend.execute',return_value=fake) as call:
             result=adapter.execute('diagnosis',payload,MODEL,dict(requests=12,seconds=600),directory)
         self.assertTrue(result['valid']);self.assertEqual(call.call_args[0][1],'analysis')
-        self.assertEqual(call.call_args[0][0]['execution_policy'],'tempoevo-trajectory-v4')
+        self.assertEqual(call.call_args[0][0]['execution_policy'],'tempoevo-trajectory-v5')
         self.assertEqual(result['requests'],1)
 
     def test_native_evaluator_writes_artifacts_outside_the_frozen_candidate(self):
@@ -223,7 +225,7 @@ class V4Tests(unittest.TestCase):
         from contextlib import redirect_stdout
         from io import StringIO
         from unittest.mock import patch
-        config=self.root/'config.json';config.write_text(json.dumps(dict(task='Preserve accepted work.',candidate=str(self.source),store=str(self.store),mode='learning',condition='contract',visible_evaluator=dict(command=['synthetic-visible']))))
+        config=self.root/'config.json';config.write_text(json.dumps(dict(task='Preserve accepted work.',candidate=str(self.source),store=str(self.store),mode='learning',condition='contract',visible_evaluator=dict(command=['synthetic-visible']),training_evaluator=dict(command=['synthetic-training']))))
         root=self.root/'cli'
         with patch('temporal_contract_analyzer.tempoevo_backend.NativeV4Backend.execute',side_effect=AssertionError('No models')),redirect_stdout(StringIO()):
             self.assertEqual(main(['tempoevo','prepare',str(config),'--root',str(root)]),0)

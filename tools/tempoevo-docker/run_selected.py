@@ -13,7 +13,7 @@ for item in items:
  if not state.get('finalized') and state['status'] not in ['execution_invalid','cancelled']:
   with (trajectory.parent/'training.log').open('w') as log:
    process=subprocess.run([sys.executable,'-B','-m','temporal_contract_analyzer','tempoevo','run','--root',str(trajectory),'--execute'],cwd=repo,stdout=log,stderr=subprocess.STDOUT)
- state=json.loads((trajectory/'state.json').read_text());row.update(status=state['status'],attempts=len(state['attempts']),visible_passed=any(x['visible_passed'] for x in state['attempts']),gold_verdict=state.get('gold_result',{}).get('verdict'),requests=sum(s.get('requests',0) for s in state['stages']),error=state.get('error'))
+ state=json.loads((trajectory/'state.json').read_text());row.update(status=state['status'],attempts=len(state['attempts']),visible_passed=any(x['visible_passed'] for x in state['attempts']),gold_verdict=(state.get('final_acceptance') or state.get('gold_result') or {}).get('verdict'),training_accepted=state.get('training_accepted'),stop_reason=state.get('stop_reason'),requests=sum(s.get('requests',0) for s in state['stages']),error=state.get('error'))
  if (trajectory/'candidate-pool/success.json').exists() and not json.loads((trajectory/'candidate-pool/success.json').read_text()).get('published_sha256'):
   with (trajectory.parent/'publication.log').open('w') as log:subprocess.run([sys.executable,'-B','-m','temporal_contract_analyzer','tempoevo','publish-candidate','success','--root',str(trajectory)],cwd=repo,stdout=log,stderr=subprocess.STDOUT,check=True)
  if (trajectory/'candidate-pool/success.json').exists():row['candidate_sha256']=json.loads((trajectory/'candidate-pool/success.json').read_text()).get('published_sha256')

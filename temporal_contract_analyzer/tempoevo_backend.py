@@ -6,7 +6,7 @@ import time
 from . import archive
 from .candidate_files import capture, inventory, write_files
 from .core import EvidenceError, canonical
-from .tempoevo_v4 import MODEL
+from .tempoevo_v4 import MODEL, VERSION
 
 
 class NativeV4Backend:
@@ -19,7 +19,7 @@ class NativeV4Backend:
         role='repair' if kind=='action' else 'analysis'
         source=directory/'public-input';write_files(source,{k:v.encode() for k,v in payload.get('candidate_sources',payload['sources']).items()})
         protocol=dict(binary=self.protocol['binary'],node=self.protocol.get('node','/usr/bin/node'),case=dict(id=self.protocol.get('task_id','v4-task')),
-            execution_policy='tempoevo-trajectory-v4',visible=dict(task=payload['task']),input_path=str(source),
+            execution_policy=VERSION,visible=dict(task=payload['task']),input_path=str(source),
             candidate_files=inventory(capture(source)[0]),session_limits=limits,boundary_preflight_complete=True)
         prompt=('Use only the original task and supplied public code/documents as normative evidence. '
             'Experience and automatic Contract are fallible guidance. Evaluation observations do not create business requirements. '
@@ -65,7 +65,9 @@ class NativeV4Backend:
                 timeout=payload['evaluator'].get('seconds',60),cwd=directory)
             (directory/'stdout.log').write_text(run.stdout);(directory/'stderr.log').write_text(run.stderr)
             result=json.loads(run.stdout)
-            if run.returncode or not isinstance(result,dict):raise ValueError('Invalid evaluator process output')
+            allowed=(0,1) if kind=='gold' else (0,)
+            if run.returncode not in allowed or not isinstance(result,dict) or (run.returncode==1 and (result.get('passed') is True or result.get('verdict')=='PASS' or (isinstance(result.get('full_score'),dict) and result['full_score'].get('verdict')=='PASS'))):raise ValueError('Invalid evaluator process output')
+            if result.get('valid') is False:return result
             return dict(result,valid=True)
         except (subprocess.TimeoutExpired,ValueError,OSError) as error:
             return dict(valid=False,error=repr(error),failure_type='timeout' if isinstance(error,subprocess.TimeoutExpired) else 'invalid_output' if isinstance(error,ValueError) else 'infrastructure_error')

@@ -1,3 +1,5 @@
+> Historical V4 protocol. New runs use [V5](TEMPOEVO_V5.md), where training Gold participates in each round. This document describes retained V4 behavior; old roots are read-only.
+
 # TempoEvo V4: A → B → C
 
 V4 is `tempoevo-trajectory-v4`, independent of historical V1–V3 budgets and files.

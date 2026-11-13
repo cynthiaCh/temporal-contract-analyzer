@@ -1,20 +1,20 @@
 # Architecture and source map
 
-The only model-execution protocol is `tempoevo-trajectory-v4`.
+The only model-execution protocol is `tempoevo-trajectory-v5`.
 
 ```text
 Public task/source → deterministic AST → frozen approved retrieval
-→ initial Auto-Contract → Action → visible assessment
+→ initial Auto-Contract → Action → visible + training Gold assessment
                   ↑ diagnosis/revision ← failure, at most three Actions total
-Success → unapproved candidate pool → named human content review → long-term bank
-Three failures → real expert summary task → candidate pool
+Gold PASS + required public PASS → unapproved candidate pool → named human content review → long-term bank
+Three effective training nonacceptances → real expert summary task → candidate pool
 Testing → same bounded repair, frozen memory, separate final gold, no learning
 ```
 
 | Responsibility | Modules / commands |
 |---|---|
-| V4 state machine | `tempoevo_v4.py`, `tempoevo_cli.py`, `tempoevo` |
-| V4 model/evaluator adapter | `tempoevo_backend.py` |
+| V5 state machine | `tempoevo_v4.py`, `tempoevo_cli.py`, `tempoevo` |
+| V5 model/evaluator adapter | `tempoevo_backend.py` |
 | Shared isolated sessions | `execution_backend.py`, `_session_runtime/` |
 | Shared Docker/calibration/scoring | `docker_backend.py`, `case_evaluation.py` |
 | AST and public source evidence | `core.py`, `preanalysis.py`, `javascript/` |
@@ -24,5 +24,10 @@ Testing → same bounded repair, frozen memory, separate final gold, no learning
 
 No shared backend imports an old execution engine. Old metadata and evidence
 remain data: inspecting them never schedules a model, recomputes a report, applies
-a patch or modifies an approval. See [V4](TEMPOEVO_V4.md) and
+a patch or modifies an approval. See [V5](TEMPOEVO_V5.md) and
 [legacy retirement](LEGACY_RETIREMENT.md).
+
+Training verdict normalization and controlled boolean behavior projection live in
+`training_acceptance.py`. Raw scorer results are separately archived. Testing has
+no training feedback, and scores its selected candidate once at the end. Existing
+exposed development records are not evidence of an independent test split.

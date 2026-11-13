@@ -1,6 +1,6 @@
 # Execution protocol
 
-All new learning and testing uses [TempoEvo V4](TEMPOEVO_V4.md).
+All new learning and testing uses [TempoEvo V5](TEMPOEVO_V5.md).
 The V1–V3 orchestration engines and `experience-evolution` command are removed.
 Historical batch JSON, reports, patches, scores and memory decisions are unchanged.
 Use `history status --root BATCH` or `history report --root BATCH` to inspect them
