@@ -58,7 +58,7 @@ async function main(){
  const form=all(roots.detail,tag('form'))[0];
  ruleInputs()[0].value='yes';
  const selects=all(form,tag('select'));selects.find(s=>s.children.some(o=>o.value==='accept')).value='accept';
- const inputs=all(form,tag('input'));inputs.find(i=>i.type!=='checkbox').value='SYNTHETIC_BROWSER_REVIEWER';inputs.find(i=>i.type==='checkbox').checked=true;
+ const inputs=all(form,tag('input'));inputs.find(i=>i.type!=='checkbox').value='SYNTHETIC_BROWSER_REVIEWER';inputs.find(i=>i.required&&i.type==='checkbox').checked=true;
  await form.listeners.submit({preventDefault(){}});
  assert.equal(posted.decision.rules.length,1);
  assert.equal(posted.decision.rules[0].rule_id,'R02');
@@ -124,8 +124,8 @@ async function main(){
  all(approvalForm,tag('input')).find(i=>i.type!=='checkbox').value='SYNTHETIC_BROWSER_REVIEWER';
  all(approvalForm,tag('input')).find(i=>i.required&&i.type==='checkbox').checked=true;
  await approvalForm.listeners.submit({preventDefault(){}});
- assert.equal(posted.decision.decision,'accept');assert.equal(posted.decision.auto_enable,true);
- assert.equal(posted.activate,false,'Authorization does not activate on submit');
+ assert.equal(posted.decision.decision,'accept');assert.equal(posted.decision.auto_enable,false);
+ assert.equal(posted.activate,true,'Explicit preferred selection is applied on human submit');
  context.DATA.workflow.ai_result={increment_review:{comparisons:[{rule_id:'R01',classification:'duplicate',matches:[{experience_sha256:'a'.repeat(64),rule_id:'R03',covered:'Synthetic existing admission duty.'}],uncovered_increment:'',reason:'Synthetic jointly covered rule.'}]}};
  vm.runInContext('render(DATA)',context);
  assert.ok(all(roots.detail,tag('h4')).some(p=>p.textContent==='R01 · duplicate'));

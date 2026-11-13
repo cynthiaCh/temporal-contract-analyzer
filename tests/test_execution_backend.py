@@ -13,7 +13,7 @@ from temporal_contract_analyzer import case_evaluation, taxonomy
 from temporal_contract_analyzer.case_catalog import case_input
 from temporal_contract_analyzer.core import canonical, sha, EvidenceError
 from temporal_contract_analyzer.case_evaluation import scoring_inputs
-from temporal_contract_analyzer.evolution_backend import NativeBackend
+from temporal_contract_analyzer.execution_backend import NativeBackend
 
 
 class BackendTests(unittest.TestCase):
@@ -25,7 +25,7 @@ class BackendTests(unittest.TestCase):
         # These tests exercise scoring and calibration on a synthetic candidate.
         # No native session is launched; test the isolation prerequisite separately.
         which = shutil.which
-        availability = patch('temporal_contract_analyzer.evolution_backend.shutil.which',
+        availability = patch('temporal_contract_analyzer.execution_backend.shutil.which',
             side_effect=lambda name: '/synthetic/bwrap' if name == 'bwrap' else which(name))
         availability.start();self.addCleanup(availability.stop)
         path=self.root/'bench/cases/development/case.json'
@@ -40,7 +40,7 @@ class BackendTests(unittest.TestCase):
                 verdict=verdict,origin='synthetic_fixture_not_real_calibration')))
             evidence[role]=dict(path=str(source),sha256=sha(source.read_bytes()))
         scoring=scoring_inputs(record)
-        self.protocol=dict(case=record,binary=sys.executable,
+        self.protocol=dict(execution_policy='tempoevo-trajectory-v4',case=record,binary=sys.executable,
             node=shutil.which('node') or sys.executable,scoring_inputs=scoring,candidate_sha256='a'*64,
             calibration=dict(case_id='development',candidate_sha256='a'*64,
                 scoring_inputs_sha256=sha(canonical(scoring).encode()),runtime=native_runtime,evidence=evidence),
@@ -65,31 +65,10 @@ class BackendTests(unittest.TestCase):
         NativeBackend().preflight(self.protocol)
 
     def test_missing_isolation_blocks_before_native_execution(self):
-        with patch('temporal_contract_analyzer.evolution_backend.shutil.which', return_value=None):
+        with patch('temporal_contract_analyzer.execution_backend.shutil.which', return_value=None):
             with self.assertRaisesRegex(EvidenceError, 'requires the explicit Codex binary, node and bwrap'):
                 NativeBackend().preflight(self.protocol)
 
-    def test_v3_check_roles_reuse_bounded_physical_runner_without_extra_permissions(self):
-        protocol=dict(self.protocol,execution_policy='experience-development-v3',boundary_preflight_complete=True,
-            session_limits=dict(requests=4,seconds=600))
-        for logical,physical in [('contract_check','analysis'),('candidate_check','reflect')]:
-            class FakeProcess:
-                returncode=0
-                def __init__(self,*args,**kwargs):pass
-                def communicate(self,payload,timeout):
-                    request=json.loads(payload)
-                    assert request['slot']['phase']==physical and request['slot']['logical_role']==logical
-                    assert request['config']['requests_per_session']==4
-                    assert request['config']['reflection_readonly'] is False
-                    archive=Path(request['run_dir'])/'archive';archive.mkdir(parents=True)
-                    (archive/'raw-answer.txt').write_text('{}')
-                    (archive/'usage.json').write_text(json.dumps(dict(requests_started=1,total_usage=None,usage_unknown_requests=1)))
-                    return json.dumps(dict(candidate_complete=True,infrastructure_valid=True)),''
-            directory=self.root/logical;directory.mkdir()
-            with patch('temporal_contract_analyzer.evolution_backend.subprocess.Popen',FakeProcess):
-                result=NativeBackend().execute(protocol,logical,'Synthetic check',dict(type='object'),directory)
-            self.assertTrue(result['completed'])
-            self.assertEqual(result['usage']['usage_unknown_requests'],1)
 
     def test_runtime_error_is_not_a_credible_degenerate_failure(self):
         source=self.protocol['calibration']['evidence']['degenerate']
@@ -118,7 +97,7 @@ class BackendTests(unittest.TestCase):
                 return json.dumps(dict(candidate_complete=False,infrastructure_valid=False,
                     scoring_admissible=False,archive_failure_requires_stop=False,
                     stop_reason='SYNTHETIC_STREAM_FAILURE')), 'synthetic stderr'
-        with patch('temporal_contract_analyzer.evolution_backend.subprocess.Popen',FakeProcess):
+        with patch('temporal_contract_analyzer.execution_backend.subprocess.Popen',FakeProcess):
             # Preflight's runtime subprocess is already checked above; keep this
             # patch restricted to the bridge rather than faking runtime discovery.
             with patch.object(NativeBackend,'preflight',return_value=None):
@@ -148,7 +127,7 @@ class BackendTests(unittest.TestCase):
                 archive=Path(data['run_dir'])/'archive';archive.mkdir(parents=True)
                 (archive/'raw-answer.txt').write_text(json.dumps(analysis))
                 return json.dumps(dict(candidate_complete=True,infrastructure_valid=True)),''
-        with patch('temporal_contract_analyzer.evolution_backend.subprocess.Popen',FakeProcess), \
+        with patch('temporal_contract_analyzer.execution_backend.subprocess.Popen',FakeProcess), \
              patch.object(NativeBackend,'preflight',return_value=None):
             result=NativeBackend().execute(self.protocol,'analysis','Synthetic analysis prompt',
                                            taxonomy.analysis_schema(),directory)

@@ -46,7 +46,7 @@ Total tracked content: 645.91 MiB across 33650 files.
 
 ## Actual dependencies that block blanket deletion
 
-1. `temporal_contract_analyzer/evolution_backend.py` currently loads named runtime dependencies from `research/review-confirmation-lowpass-train-test-20261109_225210/`. Promote the reusable runner, guard, archive and schema assets into a supported runtime package before excluding that history from a functional closed-loop release. Do not import its old scheduler.
+1. Shared runtime dependencies are now packaged under `_session_runtime/` and loaded by `execution_backend.py`. The V1–V3 schedulers are removed; historical outputs are inspected only through `history status/report`.
 
 2. Tests still read `case-clusters/` and `templates/case/prompts/temporal-audit.md`. These are small fixture dependencies, not merely old experiments. Preserve them or relocate them with the tests.
 

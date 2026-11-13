@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 from temporal_contract_analyzer import taxonomy
-from temporal_contract_analyzer.evolution_backend import DEPENDENCIES, SOURCE, ROLES
+from temporal_contract_analyzer.execution_backend import DEPENDENCIES, SOURCE, ROLES
 
 
 DRIVER = '''import json,sys,tempfile

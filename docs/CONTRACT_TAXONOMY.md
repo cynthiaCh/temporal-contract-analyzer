@@ -1,6 +1,6 @@
 # 七类时序义务与经验路由
 
-当前开发／冻结测试入口为 `experience-evolution` CLI，见 [进化流程](EXPERIENCE_EVOLUTION.md)。统一经验库通过 `experience-memory review` 打开审核页面；离线材料命令不调用模型。旧 Web v2、A/D 路由与单题失败学习入口已移除。
+当前开发／冻结测试入口为 `tempoevo` CLI，见 [进化流程](EXPERIENCE_EVOLUTION.md)。统一经验库通过 `experience-memory review` 打开审核页面；离线材料命令不调用模型。旧 Web v2、A/D 路由与单题失败学习入口已移除。
 
 自 2026-11-09 起，当前工具接口统一采用 `temporal-obligation-taxonomy-7-v1`。它沿用 bench 论文覆盖审计的七类义务，作为分类、经验检索和展示的共同词汇。这里选择的是有既有定义与覆盖记录的工程口径，尚未比较不同分类方案的准确率或修复收益。
 
@@ -49,7 +49,7 @@ T4 不能直接改名为 L，T3 也不能直接改名为 B。旧分组可能同�
 
 七类用于组织义务，不代表每类都有有效经验。机制前提词典并不覆盖七类的全部实现。实际经验与激活状态从指定统一库读取；未投放经验时 A/B 相同，差异不能归因于经验。
 
-实现位于 [taxonomy.py](../temporal_contract_analyzer/taxonomy.py) 与 [experience_routing.py](../temporal_contract_analyzer/experience_routing.py)。这些模块提供离线材料和路由校验；`experience_evolution.py` 调度开发与冻结测试。历史复现需要匹配的旧代码与环境。
+实现位于 [taxonomy.py](../temporal_contract_analyzer/taxonomy.py) 与 [experience_routing.py](../temporal_contract_analyzer/experience_routing.py)。这些模块提供离线材料和路由校验；`tempoevo_v4.py` 调度新的学习与冻结测试。历史 V1–V3 批次仅通过 `history status/report` 只读查看，不再提供旧引擎复现入口。
 
 ## 根据分类追加通用提醒
 
@@ -82,7 +82,7 @@ python3 -B -m temporal_contract_analyzer route-experience route-input.json --out
 
 `public-input.json` 仅含 `task`、`sources`（候选内相对路径到源码正文的对象）及可选 `AST`。`experience-prompt` 的输出须与 `taxonomy --format schema` 配套提供给既有结构化输出后端；本接口不替调用者发请求。
 
-The integrated alternative is `experience-evolution prepare` with `visible`
+The integrated alternative is `tempoevo prepare` with `visible`
 omitted: it builds AST evidence automatically, and the first `run --execute`
 performs the analysis model call and an automatic budgeted AI semantic evidence
 check before repairs. Supplied analyses receive the same check. No manual

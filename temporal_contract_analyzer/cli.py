@@ -17,8 +17,8 @@ def main(argv=None):
     taxonomy_cli.register(sub)
     from . import experience_memory_cli
     experience_memory_cli.register(sub)
-    from . import evolution_cli
-    evolution_cli.register(sub)
+    from . import history_cli
+    history_cli.register(sub)
     from . import tempoevo_cli
     tempoevo_cli.register(sub)
     s=sub.add_parser('scan',help='Analyze an explicit candidate root, e.g. case/base')
@@ -42,8 +42,8 @@ def main(argv=None):
     try:
         if args.command == 'tempoevo':
             return tempoevo_cli.run(args)
-        if args.command == 'experience-evolution':
-            return evolution_cli.run(args)
+        if args.command == 'history':
+            return history_cli.run(args)
         if args.command == 'experience-memory':
             return experience_memory_cli.run(args)
         if args.command in taxonomy_cli.COMMANDS:

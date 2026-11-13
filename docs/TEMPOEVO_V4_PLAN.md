@@ -31,3 +31,5 @@ Auto-Contract. Retrieve from the frozen bank, then generate the initial Contract
 All stages retain the same gpt-6.1-sol/medium identity. Supplied grounded metadata
 can still be frozen to avoid that extra analysis call. Budget upper bounds must
 include this conditional stage (132 learning / 120 testing).
+
+Post-implementation retirement: V1–V3 execution engines were subsequently removed. Shared NativeBackend moved to execution_backend.py; old roots are inspected through data-only history_cli.py. Earlier references above describe the implementation sequence, not remaining legacy execution support.

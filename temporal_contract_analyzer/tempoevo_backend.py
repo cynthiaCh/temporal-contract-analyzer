@@ -13,7 +13,7 @@ class NativeV4Backend:
     def __init__(self, protocol):self.protocol=protocol
 
     def execute(self, kind, payload, model, limits, directory):
-        from .evolution_backend import NativeBackend
+        from .execution_backend import NativeBackend
         from ._session_runtime.model_settings import MODEL as actual_model, EFFORT
         if model!=MODEL or (actual_model,EFFORT)!=('gpt-6.1-sol','medium'):raise EvidenceError('Native model drift')
         role='repair' if kind=='action' else 'analysis'

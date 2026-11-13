@@ -13,7 +13,7 @@ from .core import EvidenceError, canonical, sha
 from .candidate_files import capture, inventory, file_modes, write_files
 from .case_catalog import case_input, case_root, inside, read
 from .case_evaluation import scoring_inputs, invoke, terminate, relation_states
-from .evolution_backend import NativeBackend, validate_calibration
+from .execution_backend import NativeBackend, validate_calibration
 from ._session_runtime.docker_transport import stop
 
 

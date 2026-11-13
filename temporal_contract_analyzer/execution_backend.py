@@ -26,8 +26,6 @@ ROLES = {
     'analysis':dict(model=MODEL, effort=EFFORT, requests=12, seconds=600),
     'repair':dict(model=MODEL, effort=EFFORT, requests=24, seconds=600),
     'reflect':dict(model=MODEL, effort=EFFORT, requests=12, seconds=600)}
-ROLES.update(contract_check=dict(model=MODEL,effort=EFFORT,requests=4,seconds=600),
-             candidate_check=dict(model=MODEL,effort=EFFORT,requests=4,seconds=600))
 DRIVER = '''import json,sys
 from pathlib import Path
 import runner
@@ -112,8 +110,9 @@ class NativeBackend:
         pass
 
     def execute(self, protocol, role, prompt, schema, directory):
+        if protocol.get('execution_policy')!='tempoevo-trajectory-v4':raise EvidenceError('Legacy execution retired; only V4 sessions may execute')
+        if role not in ROLES:raise EvidenceError('Unsupported shared execution role')
         logical_role=role
-        role={'contract_check':'analysis','candidate_check':'reflect'}.get(role,role)
         if not protocol.get('boundary_preflight_complete'):self.preflight(protocol)
         directory = Path(directory)
         backend = directory/'backend'
@@ -123,13 +122,11 @@ class NativeBackend:
         schema_name='analysis.schema.json' if role=='analysis' else 'reflection.schema.json'
         archive.atomic_json(backend/schema_name, schema or dict(type='object'))
         (backend/'driver.py').write_text(DRIVER, encoding='utf-8')
-        lightweight=protocol.get('execution_policy') in ('experience-development-v2','experience-evaluation-v2',
-            'experience-development-v3','experience-validation-v3','experience-evaluation-v3')
-        frozen = {} if lightweight else {str(p.resolve()):sha(p.read_bytes()) for p in backend.iterdir() if p.is_file()}
+        frozen = {str(p.resolve()):sha(p.read_bytes()) for p in backend.iterdir() if p.is_file()}
         task_path=directory/'task.md'
         task_path.write_text(protocol['visible']['task'],encoding='utf-8')
         task_sha=sha(task_path.read_bytes())
-        if not lightweight:frozen[str(task_path.resolve())]=task_sha
+        frozen[str(task_path.resolve())]=task_sha
         limits=protocol.get('session_limits',ROLES[logical_role])
         if type(limits['requests']) is not int or not 0<limits['requests']<=ROLES[logical_role]['requests'] \
                 or not 0<limits['seconds']<=ROLES[role]['seconds']:

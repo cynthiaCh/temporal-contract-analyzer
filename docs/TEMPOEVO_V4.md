@@ -1,8 +1,8 @@
 # TempoEvo V4: A → B → C
 
 V4 is `tempoevo-trajectory-v4`, independent of historical V1–V3 budgets and files.
-Use `tempoevo prepare/run`; old `experience-evolution` continues dispatching old
-protocols. No old starting-repair/corrective slots are reused in V4.
+Use `tempoevo prepare/run`; historical batches are inspected with `history status/report`.
+Old execution engines and the `experience-evolution` command have been removed. No old starting-repair/corrective slots are reused in V4.
 
 A freezes original task/code/docs, deterministic AST evidence, approved memory,
 model settings, executable/evaluator hashes, feedback policy and budgets. Structured
@@ -52,7 +52,7 @@ python3 -m temporal_contract_analyzer experience-memory review --store /path/to/
 ```
 
 Preparation, status and publication never launch a model. `run --execute` uses the
-existing isolated native CLI runner. Every LLM stage uses gpt-6.1-sol/medium;
+shared isolated native CLI runner (`execution_backend.py`). Every LLM stage uses gpt-6.1-sol/medium;
 diagnosis and extraction use read-only analysis sessions with independent schemas,
 Action uses a writable isolated candidate workspace. No gold/referee directories
 are mounted into it. Requires Linux native isolation provisioning (`bwrap`, Codex,

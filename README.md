@@ -49,13 +49,11 @@ python3 -B -m temporal_contract_analyzer experience-memory review --store /path/
 
 ## Optional integrations
 
-For automatic AST-assisted Auto Contract extraction, omit `visible` from an
-`experience-evolution prepare` configuration. The first `run --execute` performs
-one analysis session, then starts repairs. Quote/line mismatches are nonblocking
-notes. Reflection candidates go directly to the single human content review.
-`experience-evolution work --root BATCH --execute --watch` continues an authorized
-batch after edits/decisions; it never invents human acceptance. See the
-[execution flow](docs/EXPERIENCE_EVOLUTION.md).
+The only training/testing execution entrypoint is `tempoevo run --execute`.
+Prepare new V4 trajectories with `tempoevo prepare`. Historical V1–V3 batches are
+read-only: `history status --root BATCH` or `history report --root BATCH`.
+The retired `experience-evolution` command and old orchestration modules are removed.
+Shared native/Docker/scoring infrastructure remains separate from trajectory policy.
 
 - The report UI can be opened with `python3 -B -m temporal_contract_analyzer reports open`.
 - On macOS, double-click `launch-ast-review.command` to open AST evidence review. It restarts the configured report service in the foreground; keep the terminal open and press Ctrl+C to stop it. Report annotations, analysis review and experience activation use separate records.
@@ -94,6 +92,5 @@ The new `tempoevo` CLI runs up to **three Actions per independent trajectory**,
 with visible deterministic feedback, optional Contract revision and first-pass
 stopping. Learning stages success candidates or waits for a real human failure
 summary; held-out testing reads frozen approved memory and cannot learn.
-All V4 LLM stages use `gpt-6.1-sol / medium`. Historical V1–V3 batches retain their
-existing protocol semantics. See [V4 protocol, budgets and limitations](docs/TEMPOEVO_V4.md)
+All V4 LLM stages use `gpt-6.1-sol / medium`. Historical V1–V3 data remain readable; their execution engines are removed. See [V4 protocol, budgets and limitations](docs/TEMPOEVO_V4.md)
 and [configuration examples](examples/tempoevo-v4/learning.json).

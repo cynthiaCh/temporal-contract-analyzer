@@ -6,10 +6,15 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import test_experience_evolution as fixtures
+import evolution_fixtures as fixtures
+import os
+from types import SimpleNamespace
 from temporal_contract_analyzer.docker_backend import (
     DockerBackend, validate_config, container_command, captured, project_score)
-from temporal_contract_analyzer.experience_evolution import Evolution, load
+from temporal_contract_analyzer.case_catalog import case_input
+from temporal_contract_analyzer.case_evaluation import scoring_inputs
+from temporal_contract_analyzer.candidate_files import capture,inventory
+load=lambda p:json.loads(Path(p).read_text())
 from temporal_contract_analyzer.core import EvidenceError
 
 
@@ -19,42 +24,23 @@ CONFIG=dict(kind='docker',solver_image='sha256:'+'a'*64,grader_image='sha256:'+'
 
 class DockerTests(unittest.TestCase):
     def setUp(self):
-        self.fixture=fixtures.EvolutionTests('test_complete_develop_review_activate_and_next_task_retrieval')
-        self.fixture.setUp();self.addCleanup(self.fixture.doCleanups)
-        self.root=self.fixture.root
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)
+        fixtures.synthetic_bench(self.root/'bench')
+        env=patch.dict(os.environ,{'TCA_BENCH_ROOT':str(self.root/'bench')});env.start();self.addCleanup(env.stop)
 
     def prepared(self):
-        loop=Evolution(self.root/'docker-loop')
-        loop.prepare('development',self.fixture.visible(),self.fixture.store,
-            '/synthetic/codex','/runtime/node16/bin/node',dict(synthetic=True),
-            source_relationship='Explicitly synthetic development fixture.',backend=CONFIG)
-        return loop
+        data=case_input('development');case=data['case_record'];files,_=capture(Path(data['candidate']))
+        protocol=dict(execution_policy='tempoevo-trajectory-v4',backend=CONFIG,case=case,binary='/synthetic/codex',
+            node='/runtime/node16/bin/node',scoring_inputs=scoring_inputs(case),input_path=data['candidate'],
+            candidate_files=inventory(files),visible=dict(task=data['task']),candidate_sha256='a'*64,
+            calibration=dict(synthetic=True))
+        root=self.root/'backend-input';root.mkdir(exist_ok=True);(root/'protocol.json').write_text(json.dumps(protocol))
+        return SimpleNamespace(root=root)
 
     def test_mutable_images_unknown_fields_and_nonpublic_runtime_are_rejected(self):
         for bad in (dict(CONFIG,solver_image='solver:latest'),dict(CONFIG,privileged=True),
                     dict(CONFIG,grader_node='/tmp/arbitrary')):
             with self.subTest(config=bad),self.assertRaises(EvidenceError):validate_config(bad)
-
-    def test_legacy_docker_metadata_is_readable_but_live_execution_is_retired(self):
-        loop=self.prepared();protocol=load(loop.root/'protocol.json')
-        self.assertEqual(protocol['total_request_cap'],108)
-        self.assertEqual(protocol['backend'],CONFIG)
-        self.assertEqual(len(protocol['slots']),5)
-        prompt=loop.common(protocol)
-        self.assertIn('/runtime/node16/bin/node',prompt)
-        self.assertNotIn('sha256:',prompt)
-        backend=fixtures.SyntheticBackend()
-        with patch('temporal_contract_analyzer.docker_backend.DockerBackend',return_value=backend) as selected:
-            with self.assertRaisesRegex(EvidenceError,'retired'):loop.run(execute=True)
-        self.assertEqual(selected.call_count,0)
-        self.assertEqual(len(backend.calls),0)
-
-    def test_backend_freeze_and_live_execution_gate(self):
-        loop=self.prepared()
-        with self.assertRaisesRegex(EvidenceError,'retired'):loop.run()
-        path=loop.root/'protocol.json';value=load(path);value['backend']['solver_image']='sha256:'+'c'*64
-        path.write_text(json.dumps(value))
-        with self.assertRaisesRegex(EvidenceError,'Frozen artifact'):loop.verify()
 
     def test_actor_metadata_excludes_case_identity_scores_and_calibration(self):
         protocol=load(self.prepared().root/'protocol.json')
@@ -179,8 +165,8 @@ class DockerTests(unittest.TestCase):
                 return 'SYNTHETIC_PARTIAL','SYNTHETIC_SERVICE_ERROR'
         instance=DockerBackend()
         with patch.object(instance,'preflight'),patch.object(instance,'stop_external') as stopped, \
-             patch('temporal_contract_analyzer.evolution_backend.subprocess.Popen',return_value=Process()), \
-             patch('temporal_contract_analyzer.evolution_backend.stop_tree'):
+             patch('temporal_contract_analyzer.execution_backend.subprocess.Popen',return_value=Process()), \
+             patch('temporal_contract_analyzer.execution_backend.stop_tree'):
             result=instance.execute(protocol,'repair','SYNTHETIC',None,directory)
         self.assertFalse(result['completed']);self.assertIsNone(result['usage'])
         stopped.assert_called_once()

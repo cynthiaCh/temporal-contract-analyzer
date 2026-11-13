@@ -1,4 +1,21 @@
-# V4 local verification
+# Current verification after V1–V3 retirement
+
+- Full remaining offline suite: **485 tests passed**, 89.075 seconds.
+  Log: `/tmp/v4-only-release-regressions.log`.
+- Shared/V4/history/review targeted suite: **82 tests passed**.
+- Browser incremental-review interaction suite: **11 tests passed**.
+- V4 offline demo: `/tmp/tempoevo-v4-only-demo-20261113`, visible PASS on
+  Action 2, zero real model calls.
+- Python AST import audit found no production imports of retired engines.
+- Real V3 batch read-only check preserved original bytes and mtimes.
+- JavaScript syntax and `git diff --check` passed.
+
+The lower suite count reflects removal of old-controller-specific tests; shared
+backend/scoring/isolation/review tests were migrated and retained. See
+[retirement boundaries](LEGACY_RETIREMENT.md).
+
+## Earlier pre-retirement verification (historical)
+
 
 - Full offline suite: **578 tests passed**, 112.251 seconds.
   Log: `/tmp/tempoevo-v4-release-regressions.log`.

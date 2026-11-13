@@ -38,7 +38,7 @@ def view(store,code):
     if value.get('origin_root'):
         root=Path(value['origin_root']);auth=load(root/'execution-authorization.json')
         state=load(root/'state.json',{})
-        value.update(execution_authorized=bool(auth and not auth.get('cancelled')),origin_status=state.get('status'),origin_error=state.get('error'))
+        value.update(execution_authorized=False,legacy_origin_read_only=True,origin_status=state.get('status'),origin_error=state.get('error'))
     else:value['execution_authorized']=False
     return value
 
@@ -126,27 +126,6 @@ def latest_acceptance(store,code):
     return rows[-1] if rows and rows[-1]['decision']=='accept' else None
 
 
-def validation_finished(store,code,status,**fields):
-    from . import experience_approval as approval
-    with locked(store):
-        rows=[r for r in approval.decisions(store) if r['candidate_sha256']==code]
-        last=rows[-1] if rows else None
-        state='awaiting_human_review' if last is None else {'reject':'rejected','revise':'revision_requested','accept':'content_accepted_validation_'+status}[last['decision']]
-        return _update(store,code,validation_status=status,status=state,**fields)
-
-
-def cancel(root):
-    """Serialize stopping future execution with the final enable decision."""
-    root=Path(root);protocol=load(root/'protocol.json')
-    with locked(protocol['store']):
-        file=root/'execution-authorization.json';auth=load(file)
-        if not auth:raise EvidenceError('No execution authorization to cancel')
-        auth['cancelled']=True;archive.atomic_json(file,auth)
-        state=load(root/'state.json');state['status']='cancelled'
-        archive.atomic_json(root/'state.json',state)
-        return state
-
-
 def _revoke_locked(store,grant,actor,reason):
     from . import experience_approval as approval
     file=Path(store)/'workflow/revocations'/(grant['sha256']+'.json')
@@ -166,34 +145,3 @@ def revoke(store,code,request):
         grant=latest_acceptance(store,code)
         if not grant or not grant.get('enable_authorization',{}).get('authorized'):raise EvidenceError('No current automatic enable authorization')
         return _revoke_locked(store,grant,request['actor'],request['reason'])
-
-
-def maybe_enable(store,code,technical_actor):
-    from . import experience_approval as approval
-    with locked(store):
-        value=metadata(store,code) or {}
-        rows=approval.decisions(store);selected=[r for r in rows if r['candidate_sha256']==code]
-        row=selected[-1] if selected else None
-        reason=None
-        auth=load(Path(value['origin_root'])/'execution-authorization.json') if value.get('origin_root') else None
-        if not auth or auth.get('cancelled'):reason='Workflow execution authorization missing or cancelled'
-        elif not row or row['decision']!='accept':reason='No latest exact-version human acceptance'
-        elif not row.get('enable_authorization',{}).get('authorized'):reason='Review-only or automatic enable authorization revoked'
-        elif (Path(store)/'workflow/revocations'/(row['sha256']+'.json')).exists():reason='Automatic enable authorization withdrawn'
-        if reason:
-            status='cancelled' if auth and auth.get('cancelled') else 'awaiting_human_review' if not row else 'rejected' if row['decision']=='reject' else 'revision_requested' if row['decision']=='revise' else 'authorization_revoked' if 'withdrawn' in reason else value.get('status','waiting_enable_conditions')
-            _update(store,code,enable_blocker=reason,status=status);return dict(enabled=False,reason=reason)
-        bundles={b['sha256']:b for b in memory.records(store)};bundle=bundles[code]
-        index=approval._index(store,bundles,rows);current=index['versions'].get(bundle['id'])
-        if current==code:
-            _update(store,code,status='enabled',enable_blocker=None);return dict(enabled=True,already_enabled=True)
-        if current!=row['enable_authorization']['expected_current']:
-            reason='Active version changed since human authorization'
-            _update(store,code,status='waiting_enable_conditions',enable_blocker=reason);return dict(enabled=False,reason=reason)
-        if current is not None and not approval._descendant(bundles,code,current):
-            reason='Automatic enable cannot select an incompatible branch'
-            _update(store,code,status='waiting_enable_conditions',enable_blocker=reason);return dict(enabled=False,reason=reason)
-        approval._change(store,index,bundle,row,'activate',technical_actor,
-            'Automatic execution of exact-version enable authorization by '+row['reviewer'])
-        _update(store,code,status='enabled',enable_blocker=None,enabled_by=technical_actor,authorized_by=row['reviewer'])
-        return dict(enabled=True,already_enabled=False)

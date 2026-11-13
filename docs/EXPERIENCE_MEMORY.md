@@ -122,62 +122,18 @@ history. New-version acceptance still needs the current operator's explicit
 decision, and neither inheritance nor content acceptance bypasses effect-based
 activation requirements.
 
-## Automated v3 handoff and human edits
+## V4 learning and historical origins
 
-New batches default to `human-content-only-v1`: no separate AI contract/candidate
-review calls and no blocking quote-format admission. AI checks show `not_run`,
-never passed. Candidates go directly to human content review. Raw analysis remains
-unreviewed, citation warnings are retained, and unreliable routing falls back AUTO
-without blocking repair. Existing frozen audit-policy batches retain their own
-pending/passed/failed states; they are not automatically upgraded.
+V4 is the only execution protocol. Success candidates and real-human failure
+summaries enter a temporary candidate pool. Materialize them with `tempoevo
+publish-candidate`, then use the existing named content review and immutable
+editing interface. Acceptance makes the exact record eligible for frozen retrieval;
+no old worker, AI audit or post-review repair stage runs from the review page.
 
-The existing editor supports Before/current text, rule bodies and categories,
-plus labels and mechanism predicates. Saving creates an immutable child with
-editor, reason, parent and original evidence. It neither accepts content nor
-inherits the parent's effect qualification. Repeated saves with the same request
-ID return the same version. Changes to rule evidence or shared applicability
-invalidate affected inherited content findings. The new policy allows direct content review of the edited version. A separate
-authorized worker performs fresh effects only after exact-version acceptance.
-Legacy audit-policy edits still need their original AI check.
-
-Acceptance can persist an optional enable authorization (candidate SHA, actual
-human authorizer, expected active version). Review-only stores no enable grant.
-The worker screens each accepted version in a new BATCH/validations/SHA task:
-two source repairs and old/new comparisons on two independent transfer sources.
-It reuses frozen public analyses, original inputs and old-bank starts, never the
-parent's new-condition results. Neither the original batch nor its frozen
-candidate/results is overwritten. Verification status and results appear on the
-same candidate page.
-
-Enable requires the latest exact-version acceptance, unwithdrawn explicit grant,
-qualifying actual effect screen and compatible expected active pointer. Legacy
-audit-policy versions also require their original AI check.
-The same decision lock serializes acceptance/rejection/withdrawal and enable.
-Rejecting or withdrawing even just after automatic enable removes that automatic
-selection; an active-pointer race waits without replacing another version.
-Technical worker identity and human authorizer remain separate. A canceled batch
-cannot subsequently enable. Legacy activate/rollback remain maintenance actions.
-
-Page reads, saves, decisions and refreshes never start a paid task. Run a worker
-only with explicit execution permission and the declared protocol budget:
-
-```sh
-python3 -B -m temporal_contract_analyzer experience-memory review --store /path/to/SHARED_MEMORY
-python3 -B -m temporal_contract_analyzer experience-evolution work --root /path/to/V3_BATCH --execute --watch
-```
-
-Without a running worker the page records pending work honestly. Restart reuses
-completed slots, with no paid replay. Unknown/incomplete or infrastructure-failed
-slots stop without hidden retry. See [execution and budgets](EXPERIENCE_EVOLUTION.md).
-
-An original reflection left outside the store by a legacy numbering interruption
-can be materialized using experience-evolution recover-candidate (see that
-protocol). It becomes a visible AI-pending candidate, not an accepted or enabled
-experience. Its original model text and the explicit numbering derivation are
-retained. Acceptance controls remain unavailable until an authorized worker
-actually completes its AI check. Refresh queue reloads the list while retaining
-the current form. Restart a long-running review service after Python upgrades;
-the page detects older APIs instead of silently omitting workflow gates.
+Historical origin metadata, grants and evidence remain readable, but origin batches
+are read-only and cannot be canceled, resumed, recovered or executed by this package.
+Use `history status/report --root BATCH` to inspect their retained outputs.
+Editing an experience creates a new version and requires its own acceptance.
 
 ## Submit a candidate from an isolated development store
 

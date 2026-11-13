@@ -1,3 +1,9 @@
+> Shared offline Docker/calibration infrastructure is retained. The old
+> `experience-evolution` CLI below has been retired. For deterministic checks use
+> `docker_backend.offline(config, new_root, calibrate=False|True)` from Python;
+> V4 model execution remains `tempoevo run --execute`. This document retains
+> image/isolation details, not an executable legacy workflow.
+
 # SWE-TempoC Docker backend
 
 The evolution controller reuses existing public solver and trusted grading
@@ -37,7 +43,7 @@ Create `check.json` with these fields (the image values below are placeholders):
 For the separate corpus, set `TCA_BENCH_ROOT` for the process; no global change:
 
 ```sh
-TCA_BENCH_ROOT=/path/to/swe-tempoc python3 -B -m temporal_contract_analyzer experience-evolution docker-check check.json --root /path/to/new-check
+# Python API: docker_backend.offline(config, Path('/new/check'), calibrate=False)
 ```
 
 This checks actual runtime versions, solver isolation, the supplied public CLI,
@@ -61,7 +67,7 @@ For three-control calibration, add `degenerate_candidate` to the same JSON objec
 with an explicit negative-control directory, then run:
 
 ```sh
-python3 -B -m temporal_contract_analyzer experience-evolution docker-calibrate calibration-input.json --root /path/to/new-calibration
+# Python API: docker_backend.offline(config, Path('/new/calibration'), calibrate=True)
 ```
 
 It scores the original, the original plus its registered bounded reference, and

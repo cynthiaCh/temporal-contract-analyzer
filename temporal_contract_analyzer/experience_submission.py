@@ -32,7 +32,7 @@ def submit(source_store, target_store, code):
     from .experience_lifecycle import metadata
     workflow=metadata(source,code)
     if workflow and workflow.get('origin_root'):
-        raise EvidenceError('V3 review and execution use one store. Review this bound version there, or prepare a new v3 batch against the target store with candidate_sha256; do not orphan its worker authorization')
+        raise EvidenceError('Review this historically bound version in its source store. Old execution is retired; new work must use a separately prepared V4 trajectory.')
     bundles = {b['sha256']: b for b in memory.records(source)}
     candidate = bundles.get(code)
     if candidate is None or candidate['review']['status'] != 'candidate':

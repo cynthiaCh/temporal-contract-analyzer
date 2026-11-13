@@ -62,18 +62,18 @@ class ApprovalTests(unittest.TestCase):
         approval.decide(self.f.store, self.bundle['sha256'], self.request('reject'))
         self.assertEqual([e['bundle']['sha256'] for e in approval.freeze(self.f.store)['entries']], [second['sha256']])
 
-    def test_authorized_preferred_selection_does_not_wait_for_effect_validation(self):
+    def test_human_preferred_selection_does_not_need_worker_or_effect_validation(self):
         from temporal_contract_analyzer import experience_lifecycle as lifecycle
         root = self.f.root/'workflow'
         root.mkdir()
         (root/'execution-authorization.json').write_text(json.dumps({'cancelled': False}))
         request = self.request()
-        request.update(auto_enable=True, request_id='synthetic-approval')
-        approval.decide(self.f.store, self.bundle['sha256'], request)
+        request.update(auto_enable=False, request_id='synthetic-approval')
+        approval.decide(self.f.store, self.bundle['sha256'], request,activate_version=True)
         lifecycle.update(self.f.store, self.bundle['sha256'], origin_root=str(root),
                          ai_status='passed', validation_status='not_started')
-        result = lifecycle.maybe_enable(self.f.store, self.bundle['sha256'], 'SYNTHETIC_WORKER')
-        self.assertTrue(result['enabled'])
+        self.assertEqual(approval.active(self.f.store)[0]['bundle']['sha256'],self.bundle['sha256'])
+        self.assertFalse(lifecycle.view(self.f.store,self.bundle['sha256'])['execution_authorized'])
         self.assertFalse((self.f.store/'screening').exists())
 
     def test_incomplete_or_unsupported_expert_findings_cannot_activate(self):

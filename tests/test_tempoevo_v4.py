@@ -143,7 +143,7 @@ class V4Tests(unittest.TestCase):
         payload=dict(task='Public task',sources={'main.py':'value = 0\n'},schema={})
         directory=self.root/'adapter';directory.mkdir()
         fake=dict(completed=True,infrastructure_valid=True,output=contract(),usage=dict(requests_started=1,total_usage=dict(total_tokens=7)))
-        with patch('temporal_contract_analyzer.evolution_backend.NativeBackend.execute',return_value=fake) as call:
+        with patch('temporal_contract_analyzer.execution_backend.NativeBackend.execute',return_value=fake) as call:
             result=adapter.execute('diagnosis',payload,MODEL,dict(requests=12,seconds=600),directory)
         self.assertTrue(result['valid']);self.assertEqual(call.call_args[0][1],'analysis')
         self.assertEqual(call.call_args[0][0]['execution_policy'],'tempoevo-trajectory-v4')
