@@ -87,3 +87,13 @@ active records are retained without automatic new-protocol
 qualification. Frozen milestone evaluation shares public analyses and never learns.
 Real training/evaluation must be explicitly launched; offline fixtures are not
 repair-benefit evidence.
+
+## TempoEvo V4
+
+The new `tempoevo` CLI runs up to **three Actions per independent trajectory**,
+with visible deterministic feedback, optional Contract revision and first-pass
+stopping. Learning stages success candidates or waits for a real human failure
+summary; held-out testing reads frozen approved memory and cannot learn.
+All V4 LLM stages use `gpt-6.1-sol / medium`. Historical V1–V3 batches retain their
+existing protocol semantics. See [V4 protocol, budgets and limitations](docs/TEMPOEVO_V4.md)
+and [configuration examples](examples/tempoevo-v4/learning.json).

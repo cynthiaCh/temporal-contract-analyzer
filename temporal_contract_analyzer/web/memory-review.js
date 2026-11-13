@@ -109,6 +109,7 @@ function renderManualEditor(target,data,draft={}){
  panel.append(save);target.append(panel);return capture;
 }
 function renderWorkflow(target,data){
+ if(data.display?.learning_origin){const note=el('p','V4 '+data.display.learning_origin+' candidate · content review required · effectiveness unverified');target.append(note);}
  const w=data.workflow;if(!w)return;
  const last=data.decisions[data.decisions.length-1];const panel=el('div',undefined,'panel workflow-status');
  panel.append(el('p','Human content review makes approved guidance available. Effect measurement records actual results.','notice'));

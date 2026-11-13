@@ -91,7 +91,7 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
     if not fixture and not allow_model_execution:raise RuntimeError('model execution disabled; this change is offline-only')
     if not fixture:
         if config.get('protocol_schema') not in ('experience-development-v2','experience-evaluation-v2',
-                'experience-development-v3','experience-validation-v3','experience-evaluation-v3'):
+                'experience-development-v3','experience-validation-v3','experience-evaluation-v3','tempoevo-trajectory-v4'):
             if not config.get('frozen_files'):raise ValueError('a separate frozen protocol is required for native execution')
             verify(config['frozen_files'])
     seconds=config.get('seconds_per_session',600);stdout_limit=config.get('stdout_bytes',16777216)

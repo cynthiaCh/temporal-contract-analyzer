@@ -30,7 +30,8 @@ def presentation(store, bundle, workflow, decision):
     if (workflow or {}).get('status')=='enabled':state='Enabled'
     origin=(workflow or {}).get('origin_root')
     source_batch=load(Path(origin)/'protocol.json',{}).get('batch_id') if origin else None
-    return dict(title=title,title_source='display.json' if bundle['id'] in catalog.get('titles',{}) else 'derived_rule_excerpt',
+    origin_note=next((n for n in bundle['audit']['notes'] if n.startswith('V4 origin: ')),None)
+    return dict(learning_origin=None if origin_note is None else origin_note.split(': ',1)[1],title=title,title_source='display.json' if bundle['id'] in catalog.get('titles',{}) else 'derived_rule_excerpt',
         state=state,ai_status=ai,source_batch=source_batch,
         parent_sha256=bundle['parent_sha256'],
         parent_description=bundle['parent_sha256'] or 'None (parentless proposal; novelty not implied)')

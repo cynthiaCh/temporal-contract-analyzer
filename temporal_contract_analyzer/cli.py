@@ -19,6 +19,8 @@ def main(argv=None):
     experience_memory_cli.register(sub)
     from . import evolution_cli
     evolution_cli.register(sub)
+    from . import tempoevo_cli
+    tempoevo_cli.register(sub)
     s=sub.add_parser('scan',help='Analyze an explicit candidate root, e.g. case/base')
     s.add_argument('candidate',type=Path)
     c=sub.add_parser('compare',help='Compare two candidate roots; never apply or execute patches')
@@ -38,6 +40,8 @@ def main(argv=None):
         cmd.add_argument('--output',type=Path,help='New file only; refuses overwrites')
     args=p.parse_args(argv)
     try:
+        if args.command == 'tempoevo':
+            return tempoevo_cli.run(args)
         if args.command == 'experience-evolution':
             return evolution_cli.run(args)
         if args.command == 'experience-memory':
