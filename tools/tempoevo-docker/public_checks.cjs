@@ -19,6 +19,11 @@ function nativeCommand(){
  return{command:java?['java','-cp',build,'Driver']:[build+'/public-check'],env};
 }
 async function api(){
+ if(['react18','vue2','vue3'].includes(cfg.runtime)){
+  // Public API mounting only; no hidden schedules or assertions are loaded.
+  const mounted=await require(oracle+'/framework-loader.cjs').load(candidate);
+  return {...mounted,createWorkspace(env){document.body.innerHTML='<div id="app"></div>';return mounted.createWorkspace(env);}};
+ }
  if(cfg.runtime==='jquery'){
   const {JSDOM}=require('/opt/swe-tempoc/.swe-tempoc/js/node_modules/jsdom');const dom=new JSDOM('<div id="view"></div>');global.window=dom.window;global.document=dom.window.document;
   const work=fs.mkdtempSync('/tmp/public-js-');fs.cpSync(candidate,work,{recursive:true});fs.symlinkSync('/opt/swe-tempoc/.swe-tempoc/js/node_modules',work+'/node_modules');

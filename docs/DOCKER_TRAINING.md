@@ -45,7 +45,7 @@ JS/TS/Vue retain deterministic parsers. Missing AST coverage does not silently
 invent contract premises. Public-source textual routing must still establish
 applicability before any approved experience is delivered.
 
-The first ten historical selections are registered through
+The first twenty historical selections are registered through
 `experiments/training-cases.json`. Registration does not certify runtime readiness:
 perform original/reference/negative control calibration first. Public examples in
 `tools/tempoevo-docker/public_checks.cjs` use task/README obligations. Trusted
@@ -57,7 +57,7 @@ Each trajectory retains the same maximum three Actions, fixed model, training-Go
 final independent Gold in testing, manual review and bounded request limits. There are no
 automatic paid retries or extra attempts when infrastructure fails.
 
-Prepare and run a selected prefix (preparation is zero-model):
+Prepare and run a selected rank range (preparation is zero-model):
 
 ```sh
 TCA_BENCH_ROOT=/absolute/benchmark python3 -B tools/tempoevo-docker/prepare_selected.py \
@@ -65,6 +65,15 @@ TCA_BENCH_ROOT=/absolute/benchmark python3 -B tools/tempoevo-docker/prepare_sele
   --grader-image sha256:ACTUAL_GRADER_ID
 python3 -B tools/tempoevo-docker/run_selected.py --root /new/batch --execute
 ```
+
+For CSV ranks 11–20, add `--start-rank 11 --limit 10` to preparation and use
+a new batch root. An optional `--training-feedback /path/public-feedback.json`
+supplies an explicitly reviewed public checkpoint mapping, which is validated
+and frozen in each protocol before execution. Without a mapping, training
+acceptance still supplies PASS/FAIL only. React and Vue public checks use the
+trusted framework loader solely to mount candidate public APIs; hidden schedules
+and assertions remain separate in the unchanged Gold probe. All three calibration
+controls must complete before a case is prepared for paid execution.
 
 The launcher invokes the public V5 CLI serially. Partial started stages are never
 replayed. Every case has a separate archive; the batch shares one approved frozen
