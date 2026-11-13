@@ -42,7 +42,7 @@ class NativeV4Backend:
         archive.atomic_json(directory/'command.json',command)
         try:
             run=subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,
-                timeout=payload['evaluator'].get('seconds',60),cwd=payload['candidate'])
+                timeout=payload['evaluator'].get('seconds',60),cwd=directory)
             (directory/'stdout.log').write_text(run.stdout);(directory/'stderr.log').write_text(run.stderr)
             result=json.loads(run.stdout)
             if run.returncode or not isinstance(result,dict):raise ValueError('Invalid evaluator process output')

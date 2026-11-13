@@ -45,7 +45,7 @@ python3 -B -m temporal_contract_analyzer experience-memory verify --store /path/
 python3 -B -m temporal_contract_analyzer experience-memory review --store /path/to/memory
 ```
 
-[Architecture and source map](docs/ARCHITECTURE.md), [memory format and retrieval](docs/EXPERIENCE_MEMORY.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [bounded evolution](docs/EXPERIENCE_EVOLUTION.md) document the interfaces. Experience Review is the sole human business checkpoint: edit or accept exact candidate content, Approved records enter default retrieval immediately, including historical records and approved revisions; taxonomy/protocol versions and cross-case effect validation do not gate eligibility. Task evidence must still satisfy their applicability and exclusion predicates. New batches omit extra AI audit calls and blocking citation-format checks; the separately authorized worker can collect optional effect validation and update the preferred selection; opening or submitting the page cannot start models. Evaluation uses a frozen snapshot and cannot learn. No paid calls are authorized by reading this README.
+[Architecture and source map](docs/ARCHITECTURE.md), [memory format and retrieval](docs/EXPERIENCE_MEMORY.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [TempoEvo V4](docs/TEMPOEVO_V4.md) document the interfaces. Experience Review accepts exact immutable candidate versions; edits require their own acceptance. Approved records, including historical records, are eligible for future frozen retrieval snapshots when public task/source evidence satisfies their applicability and exclusion predicates. Cross-case effect validation is not an eligibility gate. Success candidates and human failure summaries remain unapproved until reviewed. Opening or submitting the review page cannot start model execution. Held-out testing reads a frozen approved snapshot and cannot learn. No paid calls are authorized by reading this README.
 
 ## Optional integrations
 
@@ -58,14 +58,14 @@ Shared native/Docker/scoring infrastructure remains separate from trajectory pol
 - The report UI can be opened with `python3 -B -m temporal_contract_analyzer reports open`.
 - On macOS, double-click `launch-ast-review.command` to open AST evidence review. It restarts the configured report service in the foreground; keep the terminal open and press Ctrl+C to stop it. Report annotations, analysis review and experience activation use separate records.
 - Benchmark execution requires the separately provisioned benchmark, matching scoring runtime and calibration. Set `TCA_BENCH_ROOT` explicitly for reproducible use; checkout-based sibling discovery remains a compatibility convenience.
-- The native evolution runner requires explicit executables, isolation tools and version-bound evidence; importing it cannot start a historical scheduler.
-- The [Docker backend](docs/DOCKER_BACKEND.md) reuses pinned SWE-TempoC public solver and trusted grading images, with zero-model checks and calibration and the same bounded evolution and expert activation rules.
+- The shared native runner requires explicit executables, isolation tools and frozen runtime/evaluator bindings; importing it cannot start a historical scheduler.
+- The [Docker backend](docs/DOCKER_BACKEND.md) provides shared isolation, zero-model calibration and trusted scoring infrastructure using pinned SWE-TempoC images. V4 model stages use the native adapter; the Docker infrastructure does not supply a separate training entrypoint.
 
 ## Offline verification
 
 ```sh
 python3 -B -m unittest discover -s tests
-python3 -B examples/workflow_v3_demo.py --root /tmp/tca-v3-demo-new
+python3 -B examples/tempoevo-v4/offline_demo.py /tmp/tca-v4-demo-new
 python3 -B tools/export-release.py /path/to/new-clean-export
 ```
 
@@ -75,22 +75,12 @@ Tests use synthetic runners and fixtures. They do not establish repair benefit o
 
 This is a prepared source tree, not a published release. The owner has not selected a project license. Preserve upstream notices for any separately redistributed third-party code. No license grant or venue acceptance is implied. The exported source excludes exposed research memory, original experiment data, installed dependencies and Git history.
 
-The current [v3 development protocol](docs/EXPERIENCE_EVOLUTION.md) preregisters
-one source task, two other independent transfer sources and a boundary
-input. Both successful and failed starts may yield one increment or no_update.
-Default activation requires cross-source whole-task improvement and exact content
-acceptance with persisted authorization. Review-only never enables automatically.
-Edits receive their own exact-version human content decision and fresh effect task. AI audit steps are not part of the new default policy. Historical
-active records are retained without automatic new-protocol
-qualification. Frozen milestone evaluation shares public analyses and never learns.
-Real training/evaluation must be explicitly launched; offline fixtures are not
-repair-benefit evidence.
-
 ## TempoEvo V4
 
 The new `tempoevo` CLI runs up to **three Actions per independent trajectory**,
 with visible deterministic feedback, optional Contract revision and first-pass
 stopping. Learning stages success candidates or waits for a real human failure
 summary; held-out testing reads frozen approved memory and cannot learn.
-All V4 LLM stages use `gpt-6.1-sol / medium`. Historical V1–V3 data remain readable; their execution engines are removed. See [V4 protocol, budgets and limitations](docs/TEMPOEVO_V4.md)
-and [configuration examples](examples/tempoevo-v4/learning.json).
+All V4 LLM stages use `gpt-6.1-sol / medium`. Historical V1–V3 data remain readable; their execution engines are removed. See [V4 protocol, budgets and limitations](docs/TEMPOEVO_V4.md),
+[learning configuration](examples/tempoevo-v4/learning.json), and
+[testing configuration](examples/tempoevo-v4/testing.json).

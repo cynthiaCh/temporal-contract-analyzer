@@ -105,6 +105,26 @@ class AnalysisRunnerTests(unittest.TestCase):
         self.assertFalse(receipt['infrastructure_valid'])
         self.assertIn('changed candidate',receipt['preanalysis_error'])
 
+    def test_v4_stage_schemas_archive_without_a_markdown_contract_field(self):
+        from temporal_contract_analyzer.tempoevo_v4 import CONTRACT_SCHEMA, DIAGNOSIS_SCHEMA, EXPERIENCE_SCHEMA, CONTRACT_FIELDS
+        contract=dict({key:[] for key in CONTRACT_FIELDS},
+            obligations=[dict(id='preserve',text='Preserve accepted work.')],
+            supporting_evidence=[dict(file='TASK',quote='Preserve accepted work.')])
+        diagnosis=dict(diagnosis='implementation_gap',contract_after=contract,
+            structured_delta=[],supporting_evidence=contract['supporting_evidence'],
+            remaining_unknowns=[],explanation='Retain the Contract.',routing_analysis=None)
+        experience=dict(labels=['I'],requires=['entry_snapshot'],excludes=[],
+            rules=[dict(category='verification',body='Verify accepted identity.')],limitations=[])
+        for output,schema in ((contract,CONTRACT_SCHEMA),(diagnosis,DIAGNOSIS_SCHEMA),(experience,EXPERIENCE_SCHEMA)):
+            with self.subTest(schema=list(output)):
+                root,_,receipt=self.run_fixture(output=output,schema=schema)
+                self.assertTrue(receipt['candidate_complete'],receipt)
+                self.assertTrue(receipt['infrastructure_valid'],receipt)
+                self.assertEqual(receipt['native']['started'],1)
+                self.assertEqual(json.loads((root/'run/archive/analysis.json').read_text()),output)
+                self.assertTrue((root/'run/archive/receipt.json').is_file())
+                self.assertFalse((root/'run/archive/contract.md').exists())
+
     def test_contract_check_uses_real_runner_without_assuming_an_extracted_contract(self):
         from temporal_contract_analyzer import experience_checks as checks
         analysis=dict(obligation_labels=[],facts=[])

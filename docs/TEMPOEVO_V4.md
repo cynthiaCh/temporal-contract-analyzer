@@ -54,7 +54,11 @@ python3 -m temporal_contract_analyzer experience-memory review --store /path/to/
 Preparation, status and publication never launch a model. `run --execute` uses the
 shared isolated native CLI runner (`execution_backend.py`). Every LLM stage uses gpt-6.1-sol/medium;
 diagnosis and extraction use read-only analysis sessions with independent schemas,
-Action uses a writable isolated candidate workspace. No gold/referee directories
+and their JSON results are archived without requiring routing's Markdown `contract`
+field. Task evidence accepts `TASK` and `original task` with the same exact-content
+matching. Experience extraction uses the review library's R/O/B/L/I/F/A labels,
+registered mechanism predicates and rule categories; prose applicability and
+exclusions belong in rule bodies. Action uses a writable isolated candidate workspace. No gold/referee directories
 are mounted into it. Requires Linux native isolation provisioning (`bwrap`, Codex,
 authentication and Node); this change does not provide a macOS native sandbox or a
 new Docker deployment adapter. No real model runs were performed for this change.
@@ -63,7 +67,8 @@ new Docker deployment adapter. No real model runs were performed for this change
 
 Visible and gold evaluators are separate deterministic host argv commands, outside
 the candidate. Each receives the candidate directory as its final argument and
-returns JSON. Visible output requires `passed` (boolean), `observations`,
+returns JSON. Its working directory is its stage archive, so relative evaluator
+artifacts do not modify the frozen candidate. Visible output requires `passed` (boolean), `observations`,
 `regressions`, `unknowns`. Only those three feedback fields reach diagnosis/Action;
 other output remains archived, never fed back. Gold executes only after repair,
 with its independent result stored separately. Visible PASS is never gold PASS.

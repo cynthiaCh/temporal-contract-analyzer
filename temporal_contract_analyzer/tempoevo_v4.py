@@ -7,7 +7,7 @@ import json
 import shutil
 import time
 
-from . import archive, experience_approval as approval, experience_memory as memory
+from . import archive, experience_approval as approval, experience_memory as memory, taxonomy
 from .candidate_files import capture, inventory, write_files
 from .core import EvidenceError, canonical, sha
 
@@ -38,17 +38,21 @@ CONTRACT_SCHEMA = obj_schema(dict({k: STRINGS for k in CONTRACT_FIELDS},
 DIAGNOSIS_SCHEMA = obj_schema(dict(diagnosis=dict(type='string', enum=['implementation_gap','contract_gap','both','unknown']),
     contract_after=CONTRACT_SCHEMA, structured_delta=STRINGS, supporting_evidence=EVIDENCE,
     remaining_unknowns=STRINGS, explanation=STR))
-from . import taxonomy
 DIAGNOSIS_SCHEMA['properties']['routing_analysis']=dict(anyOf=[dict(type='null'),taxonomy.analysis_schema()])
 DIAGNOSIS_SCHEMA['required'].append('routing_analysis')
 
-EXPERIENCE_SCHEMA = obj_schema(dict(labels=STRINGS, requires=STRINGS, excludes=STRINGS,
-    rules=dict(type='array',minItems=1,items=obj_schema(dict(category=STR,body=STR))),limitations=STRINGS))
+PREDICATES = list(taxonomy.definition()['mechanism_predicates'])
+EXPERIENCE_SCHEMA = obj_schema(dict(
+    labels=dict(type='array',minItems=1,items=dict(type='string',enum=list(taxonomy.CODES))),
+    requires=dict(type='array',minItems=1,items=dict(type='string',enum=PREDICATES)),
+    excludes=dict(type='array',items=dict(type='string',enum=PREDICATES)),
+    rules=dict(type='array',minItems=1,items=obj_schema(dict(
+        category=dict(type='string',enum=list(memory.CATEGORIES)),body=STR))),limitations=STRINGS))
 
 
 def evidence_valid(rows, task, sources):
     for row in rows:
-        body=task if row['file']=='TASK' else sources.get(row['file'],'')
+        body=task if row['file'] in ('TASK','original task') else sources.get(row['file'],'')
         quote=' '.join(row['quote'].split())
         if not quote or quote not in ' '.join(body.split()):raise EvidenceError('Unsupported public-source citation')
 
@@ -279,7 +283,7 @@ class Trajectory:
                 if passed:
                     learned=self._step(p,backend,'extract','extract',dict(public,initial_contract=read(self.root/'initial-contract.json') if p['condition']!='baseline' else None,
                         final_contract=self.state()['contract'],trajectory=self.state()['attempts'],delivery=delivery,
-                        schema=EXPERIENCE_SCHEMA,instruction='Extract reusable source-supported rules/checks with limitations. Passing once does not prove causality or cross-task benefit.'))['output']
+                        schema=EXPERIENCE_SCHEMA,instruction='Extract reusable source-supported rules/checks with limitations. Use the schema enums for labels, mechanism requires/excludes and rule categories. Put prose applicability/exclusions in rules, not mechanism identifiers. Passing once does not prove causality or cross-task benefit.'))['output']
                     from ._session_runtime.schema_validator import validate
                     validate(learned,EXPERIENCE_SCHEMA)
                     self.save('candidate-pool/success.json',dict(status='awaiting_content_review',origin='success',

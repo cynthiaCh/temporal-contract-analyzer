@@ -208,7 +208,10 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
         save(a.root/'contract-check.json',ans)
     elif phase=='analysis':
         save(a.root/'analysis.json',ans)
-        if format_ok:(a.root/'contract.md').write_text(ans['contract'])
+        # V4 Contract, diagnosis and experience stages use this read-only
+        # transport with independent schemas; only routing has Markdown here.
+        if format_ok and isinstance(ans.get('contract'),str):
+            (a.root/'contract.md').write_text(ans['contract'])
         if not a.final.is_dir() or inventory(a.final)!=inventory(a.original):
             rec.update(candidate_complete=False,infrastructure_valid=False,
                        preanalysis_error='Read-only analysis changed candidate files')

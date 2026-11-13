@@ -1,5 +1,4 @@
-> Shared offline Docker/calibration infrastructure is retained. The old
-> `experience-evolution` CLI below has been retired. For deterministic checks use
+> Shared offline Docker/calibration infrastructure is retained. For deterministic checks use
 > `docker_backend.offline(config, new_root, calibrate=False|True)` from Python;
 > V4 model execution remains `tempoevo run --execute`. This document retains
 > image/isolation details, not an executable legacy workflow.
@@ -78,29 +77,27 @@ separate records. `calibration.json` binds source/scorer hashes, both image IDs,
 runtime paths/versions and evidence digests. Runtime errors are infrastructure
 errors. No model is called and no reference patch is sent to a solver.
 
-## Evolution integration
+## V4 integration
 
-Use the existing [evolution configuration](EXPERIENCE_EVOLUTION.md), adding
-`backend` above, selecting the container `node` path, supplying the host public
-`binary`, and assigning the parsed calibration object to `calibration`. One reviewed public task/source/Contract/labels/facts analysis is shared per
-case. Omitted analysis uses AST-assisted extraction; new default v3 preparations omit separate AI evidence-check sessions for supplied
-or generated analyses. The controller's declared deployment requirement remains Python
->=3.9; case code and grading use the checked container runtimes.
+Use the [V4 configuration and CLI](TEMPOEVO_V4.md) for new learning and testing.
+`tempoevo run --execute` is the only model-execution entrypoint. Its current
+`NativeV4Backend` uses isolated native model sessions; adding the Docker `backend`
+object above to a V4 configuration does not select containerized model execution.
+The shared Docker adapter remains available for deterministic preparation and
+trusted scoring. Historical V1–V3 batches are read-only through `history status/report`.
 
-Normal `prepare`, `run --execute`, `work --execute --watch`, `status` and `report` commands then
-apply. Omitting `backend` retains native execution. Backend/image/runtime choices
-are frozen before any session; do not change old prepared protocols or switch
-backends after a failure. Code and transport changes invalidate old preparations.
+V4 accepts separate visible and gold evaluator commands, each receiving the
+candidate path as its final argument. A trusted evaluator wrapper can invoke
+`DockerBackend.raw_score(protocol, candidate, output_directory)` with frozen case,
+image and scoring-input identities for independent gold scoring. Keep its output
+directory outside the candidate. Gold scores and hidden behavior details cannot
+be used as visible feedback; public checks must be supplied separately.
 
-Maintenance stays gpt-5.6-terra/low, 24 requests/600 seconds; reflection stays
-gpt-5.6-terra/medium, 12 requests/600 seconds, no tools. One development round
-uses the current v3 source/two-transfer schedule without extra AI audit sessions,
-not the historical five-session protocol. See the evolution protocol for caps
-and per-edited-version reservations. Independent original starts, serial execution,
-exact-version human acceptance and no-learning evaluation remain unchanged.
-The worker can enable after actual qualification only under a persisted human
-authorization; page actions alone cannot start model execution. A/B share the
-actual container runtime instruction; only selected experience text differs.
+All V4 model stages use `gpt-6.1-sol / medium`. Each independent trajectory has at
+most three Actions and stops at the first visible pass. Success experience remains
+a candidate until human acceptance; three valid failures request a real human
+expert summary. Testing reads frozen approved memory and cannot write experience.
+See the V4 protocol for stage budgets, feedback boundaries and recovery semantics.
 
 ## Isolation and retained results
 
@@ -130,20 +127,16 @@ Partial responses and null usage remain unknown. There are no hidden retries,
 replacement slots or implicit expert approvals. Offline/synthetic validation
 does not establish live provider availability, repair benefit or generalization.
 
-## Development limits and evidence reads
+## Limits and evidence reads
 
-The maintained CLI prepares the [v3 protocol](EXPERIENCE_EVOLUTION.md); historical
-v2 batches retain their own limits and results.
-Maintenance remains unchanged (gpt-5.6-terra/low, 24 requests, 600 seconds).
-Extraction uses gpt-5.6-terra/medium, capped at 2 requests after two PASS starts
-or 12 after valid non-PASS starts. Its evidence workspace is read-only. The
-existing hook transport admits only closed-grammar workspace reader commands;
-execution, writes, external reads and newline command injection are blocked.
-The exact lower cap is passed to the runner/guard. No tools are expanded for
-maintenance or analysis and no extra execution framework is introduced.
+V4 freezes the original source, approved experience snapshot, evaluator inputs,
+model configuration and stage limits when preparing each trajectory. Actions have
+at most 24 requests each; routing, Contract, diagnosis and success extraction have
+at most 12 requests each. Every model stage has a 600-second upper bound.
+The [V4 budget calculation](TEMPOEVO_V4.md#budgets-recovery-and-outputs) includes
+all applicable stages; historical starting-repair and correction budgets do not apply.
 
-Input/calibration correspondence and the original candidate score are checked
-once at batch startup, before model calls. Captured runtime/scorer files are
-reused; per-call whole-batch/approval-history hash walks are not added. Raw and
-partial responses, usage, original errors and cleanup errors remain archived by
-Python. Historical Docker runs and their freezes are unchanged.
+Contract analysis, diagnosis and extraction use independent read-only sessions;
+only Action edits a candidate workspace. Raw and partial responses, actual usage,
+original errors and cleanup evidence remain archived. Historical Docker runs,
+budgets, scores and frozen inputs are unchanged.

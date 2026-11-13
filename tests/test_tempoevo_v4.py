@@ -103,6 +103,28 @@ class V4Tests(unittest.TestCase):
         b=Backend(3);loop.run(b,execute=True);self.assertTrue(all(m==MODEL for _,_,m,_ in b.calls))
         self.assertEqual((loop.root/'original/main.py').read_text(),'value = 0\n')
         with self.assertRaises(EvidenceError):self.prepare(max_attempts=4)
+
+    def test_task_citation_alias_still_requires_matching_public_content(self):
+        from temporal_contract_analyzer.tempoevo_v4 import evidence_valid
+        for name in ('TASK','original task'):
+            evidence_valid([dict(file=name,quote='Preserve accepted work.')],'Preserve accepted work.',{})
+            with self.assertRaises(EvidenceError):
+                evidence_valid([dict(file=name,quote='Delete accepted work.')],'Preserve accepted work.',{})
+        with self.assertRaises(EvidenceError):
+            evidence_valid([dict(file='unknown source',quote='Preserve accepted work.')],'Preserve accepted work.',{})
+
+    def test_extraction_schema_uses_the_review_library_vocabulary(self):
+        from temporal_contract_analyzer.tempoevo_v4 import EXPERIENCE_SCHEMA
+        from temporal_contract_analyzer._session_runtime.schema_validator import validate
+        valid=dict(labels=['I'],requires=['entry_snapshot'],excludes=[],
+            rules=[dict(category='verification',body='Verify accepted identity.')],limitations=[])
+        validate(valid,EXPERIENCE_SCHEMA)
+        for field,value in [('labels',['visit-lifetime']),('requires',['Confirm ownership']),
+                            ('excludes',['Do not change another consumer']),
+                            ('rules',[dict(category='startup-ordering',body='Verify startup.')])]:
+            with self.subTest(field=field):
+                invalid=deepcopy(valid);invalid[field]=value
+                with self.assertRaises(ValueError):validate(invalid,EXPERIENCE_SCHEMA)
     def test_independent_repeats_start_from_identical_original(self):
         a=self.prepare();b=self.prepare();self.assertEqual(a.verify()['original_inventory'],b.verify()['original_inventory'])
         for loop in (a,b):self.assertEqual(loop.run(Backend(),execute=True)['attempts'][0]['candidate_sources']['main.py'],'value = 1\n')
@@ -148,6 +170,22 @@ class V4Tests(unittest.TestCase):
         self.assertTrue(result['valid']);self.assertEqual(call.call_args[0][1],'analysis')
         self.assertEqual(call.call_args[0][0]['execution_policy'],'tempoevo-trajectory-v4')
         self.assertEqual(result['requests'],1)
+
+    def test_native_evaluator_writes_artifacts_outside_the_frozen_candidate(self):
+        import sys
+        from temporal_contract_analyzer.tempoevo_backend import NativeV4Backend
+        directory=self.root/'evaluation';directory.mkdir()
+        script=self.root/'evaluate.py'
+        script.write_text('import json,sys\nfrom pathlib import Path\n'
+            'assert (Path(sys.argv[-1])/"main.py").read_text()=="value = 0\\n"\n'
+            'Path("score-artifact.json").write_text("{}")\n'
+            'print(json.dumps(dict(passed=True)))\n')
+        result=NativeV4Backend({}).evaluate('gold',dict(candidate=str(self.source),
+            evaluator=dict(command=[sys.executable,str(script)])),directory)
+        self.assertTrue(result['valid'],result)
+        self.assertTrue(result['passed'])
+        self.assertTrue((directory/'score-artifact.json').is_file())
+        self.assertEqual(sorted(p.name for p in self.source.iterdir()),['main.py'])
 
     def test_cancellation_during_stage_keeps_accounting_and_stops(self):
         loop=self.prepare()
