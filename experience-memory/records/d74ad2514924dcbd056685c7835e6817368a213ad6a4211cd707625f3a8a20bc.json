@@ -1,0 +1,132 @@
+{
+  "schema_version": "experience-bundle-v2",
+  "id": "v5-b106ef2a2204c0d6-success",
+  "version": "v1",
+  "parent_sha256": null,
+  "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+  "labels": [
+    "O",
+    "L",
+    "I"
+  ],
+  "requires": [
+    "deferred_batch",
+    "boundary_persistence",
+    "inline_reentry"
+  ],
+  "excludes": [
+    "different_ownership_policy",
+    "discard_boundary_policy"
+  ],
+  "rules": [
+    {
+      "id": "R01",
+      "body": "Apply this pattern when immediate persistence is changed to reusable trailing persistence and callbacks may synchronously navigate. TASK: \"Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\\ninterval, write only the latest text in that editing burst. Subsequent bursts\\nmust continue to save.\" docs/host-api.md: \"A store listener may call navigation synchronously.\"",
+      "category": "applicability"
+    },
+    {
+      "id": "R02",
+      "body": "Each edit must replace the pending text and restart the 120 ms quiet interval; expiration saves the latest text once. Keep the task usable for later bursts. TASK: \"Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\\ninterval, write only the latest text in that editing burst. Subsequent bursts\\nmust continue to save.\"",
+      "category": "event_relation"
+    },
+    {
+      "id": "R03",
+      "body": "Clear pending state before invoking work so synchronous callbacks can establish new pending work without the outer flush erasing it. Preserve the existing ordering in src/workflow.py: \"        value = self.pending\\n        self.handle = self.pending = None\\n        if value is not None:\\n            self.work(value)\". Preserve valid empty text through the existing None check.",
+      "category": "preservation"
+    },
+    {
+      "id": "R04",
+      "body": "Keep persistent document tasks owned by the coordinator dictionary independently of subscription attachment. Detaching a Badge must not discard its document's pending text. docs/host-api.md: \"Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription.\" README.md: \"A workspace document buffer persists independently of the current view badge.\"",
+      "category": "preservation"
+    },
+    {
+      "id": "R05",
+      "body": "Preserve persistence by departure when introducing delayed writes: complete pending document persistence during switching, closing, and disposal. This follows from TASK: \"Preserve the editor's other behavior and public interfaces.\" and the original src/workflow.py behavior: \"    def edit(self,text):\\n        view=self.current\\n        if view:self.env.write(view.id,text)\". The existing departure paths include \"    def close(self):self.generation+=1;self.retire()\\n    def dispose(self):self.close()\".",
+      "category": "preservation"
+    },
+    {
+      "id": "R06",
+      "body": "Treat flushing as a synchronous reentry boundary. After retirement can invoke save listeners, verify that the opening request remains current before installing its requested Badge. docs/host-api.md: \"A store listener may call navigation synchronously.\" src/workflow.py already records this ordering: \"        self.generation+=1;request=self.generation\\n        self.retire()\\n        if True and request!=self.generation:return\".",
+      "category": "event_relation"
+    },
+    {
+      "id": "R07",
+      "body": "Do not transfer the persistent-document departure policy to the search preview. TASK: \"The adjacent search preview is outside this maintenance change.\" Preserve src/workflow.py: \"    def __init__(self,env):self.task=Trailing(env,40,lambda query:env.output('preview',dict(query=query)))\\n    def query(self,text):self.task.push(text)\\n    def hide(self):self.task.cancel()\". Preserve interfaces and output semantics; docs/host-api.md: \"All source identities/text and status payloads retain original semantics.\"",
+      "category": "exclusion"
+    },
+    {
+      "id": "R08",
+      "body": "Check timing before and after 120 ms, latest-value selection, later bursts, empty text, departure with pending text, same-document reopening, and synchronous save callbacks that open or close the workspace. Verify the callback's navigation remains authoritative and later edits still save. These checks exercise the rules supported by TASK: \"Subsequent bursts\\nmust continue to save.\" and docs/host-api.md: \"A store listener may call navigation synchronously.\" Preserve the preview's separate 40 ms interval and cancellation behavior shown in src/workflow.py.",
+      "category": "verification"
+    }
+  ],
+  "review": {
+    "status": "candidate",
+    "kind": "ai_assisted",
+    "source_sha256": "949814fb45c235687c69069bfc28b398111dabbea7a72a264f7aa805c004d876",
+    "limitations": [
+      "Departure persistence is a preservation inference from the original immediate-write behavior and documented buffer ownership; TASK does not explicitly prescribe a flush implementation.",
+      "These rules apply to persistent document edits. They do not establish a general policy for transient work or independently owned resources.",
+      "The supplied sources do not specify recovery from exceptions in writes or listeners, or ordering among timers due at the same instant.",
+      "Static syntax and passing examples do not prove complete temporal correctness, causality, or cross-task benefit. Evaluation observations and automatic contracts are not normative evidence.",
+      "The supplied subscription/decode experience does not establish asynchronous decoding, bootstrap delivery, or retired-visit publication requirements for this code."
+    ]
+  },
+  "audit": {
+    "sources": [
+      {
+        "path": "/home/sribd/Downloads/wangshu/tempoevo-v5-failed-three-training-20261113_143355/draft-autosave-handoff-precise-rule-vanilla-port-python3/trajectory/candidate-pool/success-evidence.json",
+        "sha256": "949814fb45c235687c69069bfc28b398111dabbea7a72a264f7aa805c004d876"
+      }
+    ],
+    "rule_links": [
+      {
+        "rule_id": "R01",
+        "source_sha256": "949814fb45c235687c69069bfc28b398111dabbea7a72a264f7aa805c004d876",
+        "pointer": "/experience/rules/0"
+      },
+      {
+        "rule_id": "R02",
+        "source_sha256": "949814fb45c235687c69069bfc28b398111dabbea7a72a264f7aa805c004d876",
+        "pointer": "/experience/rules/1"
+      },
+      {
+        "rule_id": "R03",
+        "source_sha256": "949814fb45c235687c69069bfc28b398111dabbea7a72a264f7aa805c004d876",
+        "pointer": "/experience/rules/2"
+      },
+      {
+        "rule_id": "R04",
+        "source_sha256": "949814fb45c235687c69069bfc28b398111dabbea7a72a264f7aa805c004d876",
+        "pointer": "/experience/rules/3"
+      },
+      {
+        "rule_id": "R05",
+        "source_sha256": "949814fb45c235687c69069bfc28b398111dabbea7a72a264f7aa805c004d876",
+        "pointer": "/experience/rules/4"
+      },
+      {
+        "rule_id": "R06",
+        "source_sha256": "949814fb45c235687c69069bfc28b398111dabbea7a72a264f7aa805c004d876",
+        "pointer": "/experience/rules/5"
+      },
+      {
+        "rule_id": "R07",
+        "source_sha256": "949814fb45c235687c69069bfc28b398111dabbea7a72a264f7aa805c004d876",
+        "pointer": "/experience/rules/6"
+      },
+      {
+        "rule_id": "R08",
+        "source_sha256": "949814fb45c235687c69069bfc28b398111dabbea7a72a264f7aa805c004d876",
+        "pointer": "/experience/rules/7"
+      }
+    ],
+    "notes": [
+      "V5 origin: success",
+      "Not approved; training acceptance or expert summary does not verify cross-task effectiveness"
+    ],
+    "outcome_refs": []
+  },
+  "body_sha256": "94a4170e828fc9f6303a23402d4ba138a061c6b05e9961efb58567f749cc08ff",
+  "sha256": "d74ad2514924dcbd056685c7835e6817368a213ad6a4211cd707625f3a8a20bc"
+}
