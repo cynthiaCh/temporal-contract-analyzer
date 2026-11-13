@@ -5,7 +5,7 @@ from .tempoevo_v4 import Trajectory
 
 
 def register(sub):
-    parser=sub.add_parser('tempoevo',help='V6 three-Action learning/testing trajectories')
+    parser=sub.add_parser('tempoevo',help='V7 three-Action learning/testing trajectories')
     actions=parser.add_subparsers(dest='tempo_action',required=True)
     for name in ('prepare','run','status','cancel','expert-summary','publish-candidate'):
         p=actions.add_parser(name);p.add_argument('--root',type=Path,required=True)
@@ -32,7 +32,10 @@ def run(args):
         state=loop.state();result.update(status=state['status'],stages=state['stages'],error=state.get('error'))
     elif args.tempo_action=='cancel':result=loop.cancel()
     elif args.tempo_action=='expert-summary':result=loop.submit_expert(json.loads(args.input.read_text()))
-    elif args.tempo_action=='publish-candidate':result=dict(sha256=loop.publish_candidate(args.name),approved=False)
+    elif args.tempo_action=='publish-candidate':
+        code=loop.publish_candidate(args.name)
+        candidate=json.loads((loop.root/'candidate-pool'/(args.name+'.json')).read_text())
+        result=dict(sha256=code,kind=candidate['publication_kind'],reflection_update=candidate['reflection_update'],approved=False)
     else:
         from .core import EvidenceError
         from .tempoevo_backend import NativeV4Backend

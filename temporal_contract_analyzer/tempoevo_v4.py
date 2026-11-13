@@ -14,7 +14,7 @@ from .candidate_files import capture, inventory, write_files
 from .core import EvidenceError, canonical, sha
 from ._session_runtime.model_settings import resolve_profile, identity
 
-VERSION = 'tempoevo-trajectory-v6'
+VERSION = 'tempoevo-trajectory-v7'
 MODEL = identity(resolve_profile())
 CONDITIONS = ('baseline', 'contract', 'bm25', 'structured', 'fixed_contract')
 LIMITS = dict(routing=dict(requests=12, seconds=600), contract=dict(requests=12, seconds=600), action=dict(requests=24, seconds=600),
@@ -51,6 +51,11 @@ EXPERIENCE_SCHEMA = obj_schema(dict(
     excludes=dict(type='array',items=dict(type='string',enum=PREDICATES)),
     rules=dict(type='array',minItems=1,items=obj_schema(dict(
         category=dict(type='string',enum=list(memory.CATEGORIES)),body=STR))),limitations=STRINGS))
+REFLECTION_UPDATE_SCHEMA=obj_schema(dict(operation=dict(type='string',enum=['new','evidence','revise','merge']),
+    target_sha256s=STRINGS,reason=STR,change_summary=STRINGS,
+    failure_attribution=dict(type='string',enum=['experience_gap','implementation_gap','unknown','not_applicable']),
+    supporting_attempts=dict(type='array',items=dict(type='integer',minimum=1,maximum=3))))
+REFLECTION_SCHEMA=obj_schema(dict(experience=EXPERIENCE_SCHEMA,update=REFLECTION_UPDATE_SCHEMA))
 
 
 def evidence_valid(rows, task, sources):
@@ -160,7 +165,7 @@ class Trajectory:
         uses_contract=cfg['condition']!='baseline'
         total=attempts*limits['action']['requests']+((attempts-1)*limits['diagnosis']['requests']+limits['contract']['requests'] if uses_contract else 0)+(limits['extract']['requests'] if cfg['mode']=='learning' else 0)
         if cfg['condition'] in ('structured','fixed_contract') and not cfg.get('routing_analysis'):total+=limits['routing']['requests']
-        cfg.update(schema_version=VERSION,model=identity(settings),max_attempts=attempts,limits=limits,total_request_cap=total,
+        cfg.update(schema_version=VERSION,model=identity(settings),memory_snapshot=bank,max_attempts=attempts,limits=limits,total_request_cap=total,
             store=str(store),original_inventory=inventory(files),feedback_fields=['observations','regressions','unknowns'],
             required_visible_checks=cfg.get('required_visible_checks',True),
             acceptance_policy='training_gold_and_required_visible' if cfg['mode']=='learning' else 'visible_stop_then_independent_gold',
@@ -172,12 +177,12 @@ class Trajectory:
         self.save('binding.json',dict(protocol=sha((self.root/'protocol.json').read_bytes()),
             bank=sha((self.root/'memory-snapshot.json').read_bytes()),ast=sha((self.root/'ast-evidence.json').read_bytes()),
             implementation=sha(Path(__file__).read_bytes()),evaluators=evaluator_hashes,
-            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
+            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name('experience_reflection.py'),Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
         self.report();return self.state()
 
     def verify(self):
         p=read(self.root/'protocol.json')
-        if p.get('schema_version')!=VERSION:raise EvidenceError('Historical protocol is read-only; prepare a new V6 root')
+        if p.get('schema_version')!=VERSION:raise EvidenceError('Historical protocol is read-only; prepare a new V7 root')
         binding=read(self.root/'binding.json')
         for name,key in [('protocol.json','protocol'),('memory-snapshot.json','bank'),('ast-evidence.json','ast')]:
             if sha((self.root/name).read_bytes())!=binding[key]:raise EvidenceError('Frozen V4 input drift')
@@ -367,6 +372,7 @@ class Trajectory:
                     feedback['training_acceptance']=acceptance['feedback']
                     self.save('training-exposure.json',dict(task_id=p.get('task_id'),source_sha256=p['source_sha256'],training_feedback_used=True,eligible_for_independent_testing=False))
                 state=self.state();state['attempts'].append(dict(number=number,visible_passed=evaluation['passed'],
+                    delivered_sha256s=delivery.get('selected_sha256s',[]),
                     acceptance_passed=accepted if p['mode']=='learning' else None,training_result=acceptance,
                     feedback=feedback,candidate_sources=candidate,candidate_inventory=inventory(capture(directory)[0])))
                 self.save('state.json',state)
@@ -382,22 +388,26 @@ class Trajectory:
                 gold=self._step(p,backend,'gold','gold',dict(candidate=str(directory),evaluator=p['gold_evaluator'],purpose='independent_testing'))
                 self.status('passed' if passed else 'repair_exhausted',gold_result=gold)
             if p['mode']=='learning':
+                from . import experience_reflection as reflection
+                used=list(dict.fromkeys(delivery.get('selected_sha256s',[])+[code for a in self.state()['attempts'] for code in a.get('delivered_sha256s',[])]))
+                related=reflection.related(p,dict(delivery,selected_sha256s=used))
                 evidence=dict(public_inputs=public,task_id=p.get('task_id'),source_sha256=p['source_sha256'],
                     diffs=[read(self.root/'attempts'/str(i) /'diff.json') for i in range(1,len(self.state()['attempts'])+1)])
                 if passed:
-                    learned=self._step(p,backend,'extract','extract',dict(public,initial_contract=read(self.root/'initial-contract.json') if p['condition']!='baseline' else None,
-                        final_contract=self.state()['contract'],trajectory=[{k:a[k] for k in ('number','visible_passed','acceptance_passed','feedback','candidate_sources')} for a in self.state()['attempts']],delivery=delivery,
-                        schema=EXPERIENCE_SCHEMA,instruction='Extract reusable source-supported rules/checks with limitations. Use the schema enums for labels, mechanism requires/excludes and rule categories. Put prose applicability/exclusions in rules, not mechanism identifiers. Passing once does not prove causality or cross-task benefit.'))['output']
+                    learned=self._step(p,backend,'extract','extract',dict(public,related_experiences=related,initial_contract=read(self.root/'initial-contract.json') if p['condition']!='baseline' else None,
+                        final_contract=self.state()['contract'],trajectory=[{k:a[k] for k in ('number','visible_passed','acceptance_passed','feedback','candidate_sources','delivered_sha256s')} for a in self.state()['attempts']],delivery=delivery,
+                        schema=REFLECTION_SCHEMA,instruction='Reflect against the supplied frozen related experiences before creating guidance. Choose evidence if guidance is unchanged (copy its exact rules and applicability); revise for a source-supported correction or boundary/checkpoint improvement; merge for overlapping complementary guidance (first target is the primary lineage); new only for distinct reusable guidance. Name exact target hashes and actual supporting attempt numbers, explain the delta and distinguish experience_gap from implementation_gap/unknown. Failed implementation alone does not disprove guidance. Extract complete reusable source-supported rules/checks with limitations using schema enums. Passing once does not prove causality or cross-task benefit.'))['output']
                     from ._session_runtime.schema_validator import validate
-                    validate(learned,EXPERIENCE_SCHEMA)
+                    validate(learned,REFLECTION_SCHEMA)
+                    update=reflection.plan(learned['experience'],learned['update'],related,len(self.state()['attempts']))
                     self.save('candidate-pool/success.json',dict(status='awaiting_content_review',origin='success',
                         task=p['task'],evidence=evidence,training_accepted=True,final_training_acceptance=self.state()['final_acceptance'],source_sha256=p['source_sha256'],initial_contract=read(self.root/'initial-contract.json') if p['condition']!='baseline' else None,
-                        final_contract=self.state()['contract'],trajectory=self.state()['attempts'],experience=learned,effectiveness_verified=False))
+                        final_contract=self.state()['contract'],trajectory=self.state()['attempts'],experience=learned['experience'],reflection_update=update,related_experiences=related,effectiveness_verified=False))
                 elif len(state['attempts'])==3 and all(a['acceptance_passed'] is False for a in state['attempts']):
                     self.save('expert-summary-task.json',dict(status='awaiting_expert_summary',task=p['task'],evidence=evidence,
                         initial_contract=read(self.root/'initial-contract.json') if p['condition']!='baseline' else None,final_contract=self.state()['contract'],
                         attempts=self.state()['attempts'],contract_changes=self.state()['diagnoses'],
-                        summary=None,expert=None,effectiveness_verified=False))
+                        summary=None,expert=None,related_experiences=related,reflection_update_schema=REFLECTION_UPDATE_SCHEMA,effectiveness_verified=False))
                     self.status('awaiting_expert_summary')
         except (Exception,KeyboardInterrupt) as error:
             if self.state()['status']!='cancelled':self.status('execution_invalid',error=repr(error),stop_reason='execution_invalid',training_accepted=self.state().get('training_accepted'))
@@ -413,11 +423,16 @@ class Trajectory:
         for key in ('confirmed_conclusions','unverified_hypotheses','unresolved_behaviors','boundaries_counterexamples','suggested_checks'):
             if not isinstance(summary[key],list):raise EvidenceError('Expert findings must be lists; unknown findings may be empty')
         if (self.root/'candidate-pool/expert.json').exists():raise EvidenceError('Summary already submitted; edit through immutable memory versions')
-        task=read(self.root/'expert-summary-task.json');task.update(status='submitted_by_human',summary=summary,expert=summary['expert'])
+        task=read(self.root/'expert-summary-task.json')
+        from . import experience_reflection as reflection
+        from ._session_runtime.schema_validator import validate
+        validate(summary['experience'],EXPERIENCE_SCHEMA)
+        update=reflection.plan(summary['experience'],summary.get('reflection_update'),task.get('related_experiences',[]),len(task['attempts']))
+        task.update(status='submitted_by_human',summary=summary,expert=summary['expert'])
         self.save('expert-summary-task.json',task)
         self.status('awaiting_content_review')
         self.save('candidate-pool/expert.json',dict(status='awaiting_content_review',origin='expert_failure',summary=task,
-            experience=summary['experience'],effectiveness_verified=False))
+            experience=summary['experience'],reflection_update=update,related_experiences=task.get('related_experiences',[]),effectiveness_verified=False))
         return task
 
     def publish_candidate(self, name):
@@ -426,23 +441,31 @@ class Trajectory:
         if p['mode']!='learning':raise EvidenceError('Testing cannot write experience')
         if name not in ('success','expert'):raise EvidenceError('Unknown candidate kind')
         path=self.root/'candidate-pool'/(name+'.json');record=read(path)
-        if record.get('published_sha256'):return record['published_sha256']
+        if record.get('published_sha256') or record.get('published_proposal_sha256'):return record.get('published_sha256') or record['published_proposal_sha256']
         if name=='success' and (self.state().get('training_accepted') is not True or record.get('training_accepted') is not True):raise EvidenceError('Success experience requires training acceptance')
-        experience=record['experience'];source=self.root/'candidate-pool'/(name+'-evidence.json')
-        self.save(source.relative_to(self.root),record);code=sha(source.read_bytes())
+        from . import experience_reflection as reflection
+        update=record['reflection_update'];experience=record['experience']
+        if update['operation']=='evidence':
+            code=reflection.publish_evidence(p['store'],record)
+            record.update(published_proposal_sha256=code,publication_kind='evidence_proposal');self.save(path.relative_to(self.root),record)
+            return code
+        source=self.root/'candidate-pool'/(name+'-evidence.json')
+        stable_record={k:v for k,v in record.items() if k not in ('published_sha256','published_proposal_sha256','publication_kind')}
+        self.save(source.relative_to(self.root),stable_record);code=sha(source.read_bytes())
         rules=[dict(id='R%02d'%i,**rule) for i,rule in enumerate(experience['rules'],1)]
-        payload=dict(schema_version=memory.BUNDLE_VERSION_V2,id='v6-'+sha(str(self.root).encode())[:16]+'-'+name,version='v1',parent_sha256=None,
+        parent=next((b for b in record['related_experiences'] if b['sha256']==next(iter(update['target_sha256s']),None)),None)
+        payload=dict(schema_version=memory.BUNDLE_VERSION_V2,id=parent['id'] if parent else 'v7-'+sha(str(self.root).encode())[:16]+'-'+name,version='reflection-'+code[:16],parent_sha256=parent['sha256'] if parent else None,
             taxonomy_version=__import__('temporal_contract_analyzer.taxonomy',fromlist=['VERSION']).VERSION,
             labels=experience['labels'],requires=experience['requires'],excludes=experience['excludes'],rules=rules,
             review=dict(status='candidate',kind='human' if name=='expert' else 'ai_assisted',source_sha256=code,limitations=experience.get('limitations',[])),
-            audit=dict(sources=[dict(path=str(source),sha256=code)],rule_links=[dict(rule_id=r['id'],source_sha256=code,pointer='/experience/rules/'+str(i)) for i,r in enumerate(rules)],notes=['V6 origin: '+record['origin'],'Not approved; training acceptance or expert summary does not verify cross-task effectiveness'],outcome_refs=[]))
+            audit=dict(sources=[dict(path=str(source),sha256=code)],rule_links=[dict(rule_id=r['id'],source_sha256=code,pointer='/experience/rules/'+str(i)) for i,r in enumerate(rules)],notes=['V7 origin: '+record['origin'],'Reflection operation: '+update['operation'],'Reflection targets: '+','.join(update['target_sha256s']),'Not approved; training acceptance or expert summary does not verify cross-task effectiveness'],outcome_refs=[]))
         with (Path(p['store'])/'decision.lock').open('a') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX)
             expected=memory.seal(payload)
-            existing=next((b for b in memory.records(p['store']) if b['id']==payload['id'] and b['version']=='v1'),None)
+            existing=next((b for b in memory.records(p['store']) if b['id']==payload['id'] and b['version']==payload['version']),None)
             if existing is not None and existing!=expected:raise EvidenceError('Existing staged version differs; use immutable editing')
             bundle=existing or memory.add(p['store'],payload,[source])
-        record['published_sha256']=bundle['sha256'];self.save(path.relative_to(self.root),record)
+        record.update(published_sha256=bundle['sha256'],publication_kind='experience_version');self.save(path.relative_to(self.root),record)
         return bundle['sha256']
 
     def report(self):
@@ -453,6 +476,8 @@ class Trajectory:
             if path.exists() and 'requests' not in row:
                 result=read(path);row['measured_requests']=result.get('requests');row['measured_tokens']=result.get('tokens')
         result=dict(protocol=p['schema_version'],model=p['model'],model_profile=p['model_profile'],mode=p['mode'],condition=p['condition'],status=state['status'],
+            reflection_updates=[dict(name=name,update=read(self.root/'candidate-pool'/(name+'.json')).get('reflection_update'),
+                publication_kind=read(self.root/'candidate-pool'/(name+'.json')).get('publication_kind')) for name in ('success','expert') if (self.root/'candidate-pool'/(name+'.json')).exists()],
             transport_executions=sum(len(s.get('executions',[])) for s in state['stages']),
             transport_retries=sum(max(len(s.get('executions',[]))-1,0) for s in state['stages']),
             known_tokens=sum((s.get('observed_tokens') or s.get('tokens') or {}).get('total_tokens') or 0 for s in state['stages']),

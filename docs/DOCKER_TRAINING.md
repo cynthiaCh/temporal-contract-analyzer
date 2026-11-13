@@ -1,4 +1,4 @@
-# V6 Docker training
+# V7 Docker training
 
 New live `tempoevo run --execute` runs require Docker. The host schedules bounded
 stages and preserves archives; AST extraction, every model role and both
@@ -18,7 +18,7 @@ image ID, not the tag. The provisioned base is
 `sha256:ed6905e35d7447258027d595beb5f04ec902fd4235ceeac9e5eb120d40124b16`.
 The derived image supplies `/runtime/node` and retains Node16/18/24, Python, Go,
 Ruby, PHP, Java and frontend dependencies. Model configuration always comes from
-the frozen V6 model profile (default `gpt-6.1-sol / medium`), never an image's historical name.
+the frozen V7 model profile (default `gpt-6.1-sol / medium`), never an image's historical name.
 
 Configuration examples are under `examples/tempoevo-v4/`. `backend` selects the
 solver/grader immutable IDs and `solver_node`. Each evaluator declares `image`,
@@ -74,11 +74,11 @@ trusted framework loader solely to mount candidate public APIs; hidden schedules
 and assertions remain separate in the unchanged Gold probe. All three calibration
 controls must complete before a case is prepared for paid execution.
 
-The launcher invokes the public V6 CLI serially. Partial started stages are never
+The launcher invokes the public V7 CLI serially. Partial started stages are never
 replayed. Every case has a separate archive; the batch shares one approved frozen
 snapshot and never approves its newly extracted candidates. Calibration failures
 remain `not_started`; execution failures retain their actual requests and errors.
 
 Learning configurations require `training_evaluator`, not only `gold_evaluator`.
-See [V6 feedback, stop and split boundaries](TEMPOEVO_V6.md). Historical Docker
+See [V7 feedback, stop and split boundaries](TEMPOEVO_V7.md). Historical Docker
 batches and candidates are retained unchanged; no automatic replay or acceptance.

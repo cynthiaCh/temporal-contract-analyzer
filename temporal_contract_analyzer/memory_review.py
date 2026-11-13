@@ -30,7 +30,7 @@ def presentation(store, bundle, workflow, decision):
     if (workflow or {}).get('status')=='enabled':state='Enabled'
     origin=(workflow or {}).get('origin_root')
     source_batch=load(Path(origin)/'protocol.json',{}).get('batch_id') if origin else None
-    origin_note=next((n for n in bundle['audit']['notes'] if n.startswith('V4 origin: ')),None)
+    origin_note=next((n for n in bundle['audit']['notes'] if re.match(r'V\d+ origin: ',n)),None)
     return dict(learning_origin=None if origin_note is None else origin_note.split(': ',1)[1],title=title,title_source='display.json' if bundle['id'] in catalog.get('titles',{}) else 'derived_rule_excerpt',
         state=state,ai_status=ai,source_batch=source_batch,
         parent_sha256=bundle['parent_sha256'],
@@ -81,6 +81,9 @@ class ReviewHandler(LocalHandler):
             name = assets[url.path]
             kind = 'text/html' if name.endswith('.html') else ('text/javascript' if name.endswith('.js') else 'text/css')
             self.send((WEB/name).read_bytes(), content_type=kind+'; charset=utf-8')
+        elif parts == ['api','reflection-proposals']:
+            from .experience_reflection import proposals
+            self.send(dict(proposals=proposals(self.server.store)))
         elif parts == ['api', 'library']:
             bundles = memory.records(self.server.store)
             decisions = {d['candidate_sha256']: d for d in approval.decisions(self.server.store)}
@@ -140,6 +143,9 @@ class ReviewHandler(LocalHandler):
 
     def post(self, data):
         parts = urlsplit(self.path).path.strip('/').split('/')
+        if len(parts)==4 and parts[:2]==['api','reflection-proposals'] and parts[3]=='decision':
+            from .experience_reflection import review_evidence
+            self.send(review_evidence(self.server.store,parts[2],data),201);return
         if len(parts) != 4 or parts[:2] != ['api', 'records'] or parts[3] not in ('decision', 'activate', 'rollback', 'revise','revoke-enable'):
             self.send({'error': 'Not found'}, 404)
             return

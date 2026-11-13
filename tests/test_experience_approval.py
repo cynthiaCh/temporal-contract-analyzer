@@ -248,3 +248,19 @@ class ApprovalTests(unittest.TestCase):
         path.write_text(json.dumps(value))
         with self.assertRaises(EvidenceError):approval.active(self.f.store)
         self.assertEqual(json.loads(path.read_text())['versions'], {})
+
+    def test_approved_merge_consolidates_sources_without_changing_history(self):
+        store=self.f.store;first=self.bundle
+        payload=deepcopy(self.f.payload);payload['id']='second-entry'
+        second=memory.add(store,payload,[self.f.source])
+        for b in [first,second]:approval.decide(store,b['sha256'],self.request())
+        frozen=approval.freeze(store)
+        payload=deepcopy(self.f.payload);payload.update(version='merged-v1',parent_sha256=first['sha256'])
+        payload['audit']['notes']+=['Reflection operation: merge','Reflection targets: '+first['sha256']+','+second['sha256']]
+        merged=memory.add(store,payload,[self.f.source])
+        self.assertEqual(len(approval.approved(store)),2)
+        approval.decide(store,merged['sha256'],self.request())
+        self.assertEqual([e['bundle']['sha256'] for e in approval.approved(store)],[merged['sha256']])
+        self.assertEqual(approval.validate_snapshot(store,frozen),frozen)
+        approval.decide(store,merged['sha256'],self.request('reject'))
+        self.assertEqual(len(approval.approved(store)),2)

@@ -1,0 +1,132 @@
+{
+  "schema_version": "experience-bundle-v2",
+  "id": "v5-6978591725dcdded-success",
+  "version": "v1",
+  "parent_sha256": null,
+  "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+  "labels": [
+    "O",
+    "L",
+    "I",
+    "F",
+    "A"
+  ],
+  "requires": [
+    "deferred_batch",
+    "boundary_persistence",
+    "entry_snapshot",
+    "inline_reentry",
+    "effect_lifetimes"
+  ],
+  "excludes": [],
+  "rules": [
+    {
+      "id": "R01",
+      "body": "Apply to maintenance changes that defer previously immediate document writes while preserving existing editor behavior. TASK: \"Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\\ninterval, write only the latest text in that editing burst. Subsequent bursts\\nmust continue to save. Preserve the editor's other behavior and public interfaces.\"",
+      "category": "applicability"
+    },
+    {
+      "id": "R02",
+      "body": "Route edits through the document's existing trailing task. Each additional edit restarts the quiet interval and replaces the pending value; verify no ordinary write before 120 ms of quiet and one write containing the latest text afterward. src/workflow.php: \"$this->pending=$value;\" and \"$this->handle=$this->env->schedule(function() { $this->flush(); }, $this->delay);\" BufferBank supplies \"new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);})\".",
+      "category": "event_relation"
+    },
+    {
+      "id": "R03",
+      "body": "Clear consumed pending state before invoking work so subsequent bursts and synchronous callback activity can use the task again. src/workflow.php: \"$value=$this->pending; $this->pending=null; $this->handle=null;\\n        if ($value !== null) ($this->work)($value);\" Verify a later burst saves again and empty text remains valid.",
+      "category": "verification"
+    },
+    {
+      "id": "R04",
+      "body": "Keep document persistence separate from view subscription cleanup. README.md: \"A workspace document buffer persists independently of the current view badge.\" docs/host-api.md: \"Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription.\" Check that open, close, and dispose preserve outgoing pending text before returning, consistent with preserving the original immediate-write behavior. Detaching the badge must not discard the persistent buffer.",
+      "category": "preservation"
+    },
+    {
+      "id": "R05",
+      "body": "Bind deferred work to the originating document identity rather than whichever view is current when work executes. src/workflow.php: \"function($text)use($env,$id){$env->write($id,$text);}\" Verify switching documents cannot redirect the outgoing text to the incoming document.",
+      "category": "event_relation"
+    },
+    {
+      "id": "R06",
+      "body": "Treat synchronous saves as reentry boundaries. docs/host-api.md: \"A store listener may call navigation synchronously.\" After persistence invokes listeners, a superseded outer navigation must not install its requested view. Preserve the existing request check in src/workflow.php: \"if(true&&$request!==$this->generation)return;\" Verify listener-triggered open or close remains authoritative.",
+      "category": "event_relation"
+    },
+    {
+      "id": "R07",
+      "body": "Preserve public interfaces and event semantics. docs/host-api.md: \"createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide().\" Also: \"All source identities/text and status payloads retain original semantics.\" Check deferred writes retain the original document ID, exact text, and store-generated event payload.",
+      "category": "preservation"
+    },
+    {
+      "id": "R08",
+      "body": "Do not generalize persistent-document departure behavior to transient preview work or unrelated ownership policies. TASK: \"The adjacent search preview is outside this maintenance change.\" Preserve src/workflow.php: \"new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});\" and \"function hide(){$this->task->cancel();}\" Preview retains its own delay, cancellation, and reuse behavior.",
+      "category": "exclusion"
+    }
+  ],
+  "review": {
+    "status": "candidate",
+    "kind": "ai_assisted",
+    "source_sha256": "70f94c406496fabb1a1f921c6fab28009ded11e3970dfaf8e1a0a5a3e4ba4bf4",
+    "limitations": [
+      "The automatic contracts, AST hints, candidate patch, and evaluation observations are not normative evidence.",
+      "Persistence before departure returns is derived from preserving the original synchronous edit behavior; the task does not explicitly prescribe a flush implementation.",
+      "Exception handling, throwing listeners, and callbacks executing after timer cancellation are unspecified.",
+      "Passing examples do not establish causality, exhaustive correctness, or benefit on other tasks. Apply these checks only where public sources establish comparable mechanisms and ownership."
+    ]
+  },
+  "audit": {
+    "sources": [
+      {
+        "path": "/home/sribd/Downloads/wangshu/tempoevo-v5-failed-three-training-20261113_143355/draft-autosave-handoff-vanilla-port-php/trajectory/candidate-pool/success-evidence.json",
+        "sha256": "70f94c406496fabb1a1f921c6fab28009ded11e3970dfaf8e1a0a5a3e4ba4bf4"
+      }
+    ],
+    "rule_links": [
+      {
+        "rule_id": "R01",
+        "source_sha256": "70f94c406496fabb1a1f921c6fab28009ded11e3970dfaf8e1a0a5a3e4ba4bf4",
+        "pointer": "/experience/rules/0"
+      },
+      {
+        "rule_id": "R02",
+        "source_sha256": "70f94c406496fabb1a1f921c6fab28009ded11e3970dfaf8e1a0a5a3e4ba4bf4",
+        "pointer": "/experience/rules/1"
+      },
+      {
+        "rule_id": "R03",
+        "source_sha256": "70f94c406496fabb1a1f921c6fab28009ded11e3970dfaf8e1a0a5a3e4ba4bf4",
+        "pointer": "/experience/rules/2"
+      },
+      {
+        "rule_id": "R04",
+        "source_sha256": "70f94c406496fabb1a1f921c6fab28009ded11e3970dfaf8e1a0a5a3e4ba4bf4",
+        "pointer": "/experience/rules/3"
+      },
+      {
+        "rule_id": "R05",
+        "source_sha256": "70f94c406496fabb1a1f921c6fab28009ded11e3970dfaf8e1a0a5a3e4ba4bf4",
+        "pointer": "/experience/rules/4"
+      },
+      {
+        "rule_id": "R06",
+        "source_sha256": "70f94c406496fabb1a1f921c6fab28009ded11e3970dfaf8e1a0a5a3e4ba4bf4",
+        "pointer": "/experience/rules/5"
+      },
+      {
+        "rule_id": "R07",
+        "source_sha256": "70f94c406496fabb1a1f921c6fab28009ded11e3970dfaf8e1a0a5a3e4ba4bf4",
+        "pointer": "/experience/rules/6"
+      },
+      {
+        "rule_id": "R08",
+        "source_sha256": "70f94c406496fabb1a1f921c6fab28009ded11e3970dfaf8e1a0a5a3e4ba4bf4",
+        "pointer": "/experience/rules/7"
+      }
+    ],
+    "notes": [
+      "V5 origin: success",
+      "Not approved; training acceptance or expert summary does not verify cross-task effectiveness"
+    ],
+    "outcome_refs": []
+  },
+  "body_sha256": "14b5b7f19eaeda5f33eda484e3b9fa0b3e6b28730dd050fcb43f02eb2780ac79",
+  "sha256": "fc98bf657144aca6eaee37799d0980808221d3935b238b8c2f2b9aff9df102f6"
+}

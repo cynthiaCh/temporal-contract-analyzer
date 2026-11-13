@@ -1,20 +1,20 @@
 # Architecture and source map
 
-The only model-execution protocol is `tempoevo-trajectory-v6`. Model/provider settings come from a frozen profile; transient stage restarts share the original request/time cap. See [V6](TEMPOEVO_V6.md).
+The only model-execution protocol is `tempoevo-trajectory-v7`. Model/provider settings come from a frozen profile; transient stage restarts share the original request/time cap. See [V7 reflection](TEMPOEVO_V7.md) and [V6 profiles](TEMPOEVO_V6.md).
 
 ```text
 Public task/source → deterministic AST → frozen approved retrieval
 → initial Auto-Contract → Action → visible + training Gold assessment
                   ↑ diagnosis/revision ← failure, at most three Actions total
-Gold PASS + required public PASS → unapproved candidate pool → named human content review → long-term bank
+Gold PASS + required public PASS → compare frozen related guidance → evidence/revise/merge/new proposal → unapproved candidate pool → named human content review → long-term bank
 Three effective training nonacceptances → real expert summary task → candidate pool
 Testing → same bounded repair, frozen memory, separate final gold, no learning
 ```
 
 | Responsibility | Modules / commands |
 |---|---|
-| V6 state machine | `tempoevo_v4.py`, `tempoevo_cli.py`, `tempoevo` |
-| V6 model/evaluator adapter | `tempoevo_backend.py` |
+| V7 state machine | `tempoevo_v4.py`, `tempoevo_cli.py`, `tempoevo` |
+| V7 model/evaluator adapter | `tempoevo_backend.py` |
 | Shared isolated sessions | `execution_backend.py`, `_session_runtime/` |
 | Shared Docker/calibration/scoring | `docker_backend.py`, `case_evaluation.py` |
 | AST and public source evidence | `core.py`, `preanalysis.py`, `javascript/` |

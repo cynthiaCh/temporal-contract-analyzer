@@ -1,6 +1,6 @@
 # TempoEvo V6: frozen model profiles and bounded connection recovery
 
-New roots use `tempoevo-trajectory-v6`. Historical V1–V5 trajectories remain readable;
+This document preserves the V6 model/recovery design, retained by [V7](TEMPOEVO_V7.md). New execution uses V7; V6 roots are read-only. V6 roots used `tempoevo-trajectory-v6`. Historical V1–V5 trajectories remain readable;
 execution and publication through the current runtime cannot silently resume them.
 Module names retain `tempoevo_v4.py` for import compatibility. The V5 learning and
 independent-testing acceptance boundaries remain unchanged.

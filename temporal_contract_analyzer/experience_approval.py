@@ -307,15 +307,25 @@ def active(store):
 
 
 def approved(store):
-    """Every currently accepted record, ordered by its latest review."""
+    """Accepted guidance, excluding exact source versions covered by accepted merges."""
     bundles = {b['sha256']: b for b in memory.records(store)}
     latest = {}
     for row in decisions(store):
         latest[row['candidate_sha256']] = row
-    return [dict(bundle=bundles[row['candidate_sha256']], expert_decision=row)
+    accepted = [dict(bundle=bundles[row['candidate_sha256']], expert_decision=row)
             for row in sorted(latest.values(), key=lambda r: r['sequence'])
             if row['decision'] == 'accept' and not
             (Path(store)/'workflow/revocations'/(row['sha256']+'.json')).exists()]
+    # Explicitly reviewed merges consolidate exact source versions. The original
+    # acceptance and frozen historical snapshots remain valid and readable.
+    superseded=set()
+    for entry in accepted:
+        bundle=entry['bundle'];notes=bundle['audit']['notes']
+        operation=next((n for n in reversed(notes) if n.startswith('Reflection operation: ')),None)
+        targets=next((n.partition(': ')[2].split(',') for n in reversed(notes) if n.startswith('Reflection targets: ')),[])
+        if operation=='Reflection operation: merge' and len(set(targets))>=2 and bundle['parent_sha256'] in targets and all(code in bundles for code in targets):
+            superseded.update(targets)
+    return [entry for entry in accepted if entry['bundle']['sha256'] not in superseded]
 
 
 def review_plan(store, code):

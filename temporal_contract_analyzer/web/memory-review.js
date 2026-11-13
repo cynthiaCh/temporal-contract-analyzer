@@ -44,7 +44,24 @@ async function showEvidence(code,pointer='',line=null,recordCode=current.sha256)
  if(!$('#evidence').open)$('#evidence').showModal();
 }
 async function library(){
+ await renderReflectionProposals();
  const data=await api('/api/library');if(data.review_api_version!=='experience-review-v3')throw Error('This review server is running older Python code. Restart the review service before reviewing new workflow candidates.');$('#store').textContent=data.store;records=data.records.sort((a,b)=>Number(b.latest)-Number(a.latest)||a.id.localeCompare(b.id));renderLibrary();
+}
+async function renderReflectionProposals(){
+ const target=$('#reflection-proposals');target.replaceChildren();
+ const data=await api('/api/reflection-proposals');if(!data.proposals.length)return;
+ target.append(el('h2','Evidence supplements · human review'));
+ for(const item of data.proposals){
+  const panel=el('details',undefined,'panel'),record=item.proposal.record;
+  panel.append(el('summary',item.review_status+' · '+record.reflection_update.reason),el('p','Evidence only: accepting this supplement does not change guidance, approve a new version, or verify cross-task effectiveness.','muted'));
+  for(const code of record.reflection_update.target_sha256s)panel.append(button('Open target '+code.slice(0,12),()=>openRecord(code)));
+  panel.append(el('pre',JSON.stringify({reflection:record.reflection_update,origin:record.origin,task:record.task||record.summary?.task,trajectory:record.trajectory||record.summary?.attempts,evidence:record.evidence||record.summary?.evidence,decisions:item.decisions},null,2)));
+  const reviewer=field(panel,'Reviewer name',el('input')),reason=field(panel,'Review reason',el('textarea'));
+  for(const decision of ['accept','reject'])panel.append(button(decision==='accept'?'Accept evidence supplement':'Reject evidence supplement',async()=>{
+   await api('/api/reflection-proposals/'+item.sha256+'/decision',{reviewer:reviewer.value,reason:reason.value,decision});await library();
+  }));
+  target.append(panel);
+ }
 }
 function renderLibrary(){
  const list=$('#library');list.replaceChildren();const pending=records.filter(r=>!r.reviewed).length;$('#counts').textContent='Unreviewed '+pending+' · Reviewed '+(records.length-pending)+' · Total '+records.length;
@@ -130,6 +147,8 @@ function render(data,rereview=false,fullReview=false,manualRules=new Set(),draft
  const b=data.bundle;const target=$('#detail');target.replaceChildren();const intro=el('div',undefined,'panel');intro.append(el('h2',data.display?.title||'Experience record'),el('p','Experience identity: '+b.id,'meta'),el('p','Version: '+b.version,'meta'),el('p','Version digest: '+b.sha256.slice(0,8)+'…','meta'),el('p','Source batch: '+(data.display?.source_batch||'Not recorded'),'meta'),el('p','Parent: '+(data.display?.parent_description||b.parent_sha256||'None'),'meta'),el('code',b.sha256),el('p',b.labels.join(' / '),'meta'),el('p','Review the rules, labels, applicability and evidence for this exact version. Acceptance permits research use; repair benefit requires evaluation.','notice'));target.append(intro);
  renderActivation(target,data);
  renderWorkflow(target,data);
+ const reflectionNotes=b.audit.notes.filter(n=>n.startsWith('Reflection '));
+ if(reflectionNotes.length){const panel=el('div',undefined,'panel');panel.append(el('h3','Reflection change proposal'));for(const note of reflectionNotes)panel.append(el('p',note));panel.append(el('p','Only an accepted merge consolidates its exact sources in future default retrieval. Historical records and frozen snapshots remain unchanged. Review every applicability boundary.','muted'));target.append(panel);}
  const captureManual=renderManualEditor(target,data,draft.manual);
  const last=data.decisions[data.decisions.length-1];const readonly=Boolean(last)&&!rereview;
  intro.append(el('p',last?'✓ Reviewed · '+decisionText(last.decision)+' · '+last.reviewer+' · '+reviewedAt(last.at):(data.display?.state||'Awaiting human content review'),'review-state '+(last?'reviewed':'pending')));

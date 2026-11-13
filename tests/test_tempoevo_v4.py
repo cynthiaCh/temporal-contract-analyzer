@@ -32,6 +32,7 @@ class Backend:
         else:
             sources=deepcopy(payload['candidate_sources']);n=int(sources['main.py'].split('=')[1])+1;sources['main.py']='value = '+str(n)+'\n'
             return dict(valid=True,requests=1,tokens=dict(total_tokens=10),model=MODEL,candidate_sources=sources)
+        if stage=='extract':out=dict(experience=out,update=dict(operation='new',target_sha256s=[],reason='Synthetic new rule.',change_summary=[],failure_attribution='not_applicable',supporting_attempts=[1]))
         return dict(valid=True,requests=1,tokens=dict(total_tokens=10),model=MODEL,output=out)
     def evaluate(self,stage,payload,directory):
         n=int((Path(payload['candidate'])/'main.py').read_text().split('=')[1])
@@ -179,7 +180,7 @@ class V4Tests(unittest.TestCase):
         with patch('temporal_contract_analyzer.execution_backend.NativeBackend.execute',return_value=fake) as call:
             result=adapter.execute('diagnosis',payload,MODEL,dict(requests=12,seconds=600),directory)
         self.assertTrue(result['valid']);self.assertEqual(call.call_args[0][1],'analysis')
-        self.assertEqual(call.call_args[0][0]['execution_policy'],'tempoevo-trajectory-v6')
+        self.assertEqual(call.call_args[0][0]['execution_policy'],'tempoevo-trajectory-v7')
         self.assertEqual(result['requests'],1)
 
     def test_native_evaluator_writes_artifacts_outside_the_frozen_candidate(self):

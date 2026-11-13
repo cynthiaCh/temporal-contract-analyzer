@@ -14,6 +14,16 @@ from temporal_contract_analyzer.memory_review import ReviewServer
 
 
 class MemoryReviewTests(unittest.TestCase):
+    def test_evidence_supplement_review_does_not_accept_or_activate_guidance(self):
+        from temporal_contract_analyzer.experience_reflection import publish_evidence
+        code=publish_evidence(self.store,dict(origin='success',reflection_update=dict(operation='evidence',target_sha256s=[self.bundle['sha256']],reason='Synthetic additional evidence')))
+        with self.call('/api/reflection-proposals') as response:
+            self.assertEqual(json.load(response)['proposals'][0]['sha256'],code)
+        with self.call('/api/reflection-proposals/'+code+'/decision',dict(reviewer='Synthetic human',decision='accept',reason='Checked synthetic evidence')) as response:
+            self.assertEqual(response.status,201)
+        self.assertEqual(approval.freeze(self.store)['entries'],[])
+        self.assertEqual(memory.records(self.store),[self.bundle])
+
     def setUp(self):
         self.fixture = fixtures.MemoryTests('test_storage_preserves_single_source_body_and_evidence')
         self.fixture.setUp()
