@@ -35,9 +35,11 @@ def registered_cases():
     entries = []
     for source, root, index in (
             ('bench', bench, bench/'experiments/temporal-diagnostics-v1/corpus.json'),
+            ('bench', bench, ROOT/'experiments/training-cases.json'),
             ('local', ROOT, ROOT/'experiments/local-cases.json')):
         if index.is_file():
-            entries.extend((source, root, row) for row in read(index)['cases'])
+            entries.extend((source, root, row) for row in read(index)['cases']
+                if index!=ROOT/'experiments/training-cases.json' or (root/row['manifest']).is_file())
     if not entries:
         raise EvidenceError('未找到可运行的案例列表')
     return entries

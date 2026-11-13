@@ -25,20 +25,39 @@ class NativeV4Backend:
             'Experience and automatic Contract are fallible guidance. Evaluation observations do not create business requirements. '
             'Never access a scorer, reference implementation or hidden tests. '
             'For evidence cite the original task as file TASK; use exact public source paths and copy the quoted wording. '
-            'For Action edit only business code in /workspace; preserve tests/configuration. Other stages return structured output without modifying files.\n'+canonical(payload))
+            'For Action edit only business code in /workspace; preserve tests/configuration. '
+            'Put compiled binaries/classes and caches in /tmp, not the submitted workspace. '
+            'Other stages return structured output without modifying files.\n'+canonical(payload))
         (directory/'native-stage').mkdir()
-        result=NativeBackend().execute(protocol,role,prompt,payload.get('schema'),directory/'native-stage')
-        usage=result.get('usage') or {};tokens=usage.get('total_usage') or usage.get('observed_usage_subtotal')
+        backend=NativeBackend()
+        if self.protocol.get('backend',{}).get('kind')=='docker':
+            from .docker_backend import DockerBackend
+            protocol['backend']=self.protocol['backend']
+            protocol['node']=self.protocol['backend'].get('solver_node','/runtime/node16/bin/node')
+            backend=DockerBackend()
+        result=backend.execute(protocol,role,prompt,payload.get('schema'),directory/'native-stage')
+        usage=result.get('usage') or {};tokens=usage.get('total_usage')
         valid=result.get('completed') is True and result.get('infrastructure_valid') is True
         out=dict(valid=valid,model=MODEL,requests=usage.get('requests_started'),tokens=tokens,output=result.get('output'),
+            observed_tokens=usage.get('observed_usage_subtotal'),usage_incomplete=usage.get('usage_incomplete',False),
+            unknown_usage_requests=usage.get('usage_unknown_requests',0),
             failure_type=('timeout' if result.get('receipt',{}).get('stop_reason')=='timeout' else result.get('receipt',{}).get('failure_class') or 'invalid_output'),
             error=result.get('bridge_error') or result.get('output_parse_error'),native_receipt=result.get('receipt'))
+        if not valid:
+            errors=directory/'native-stage/native/archive/service-errors.json'
+            if errors.exists():
+                events=json.loads(errors.read_text()).get('raw_cli_errors',[])
+                if events:
+                    event=events[-1]['event'];out['error']=event.get('message') or (event.get('error') or {}).get('message') or out['error']
         if kind=='action' and valid:
             if result.get('scoring_admissible') is not True:out.update(valid=False,error='No admissible source-reading/candidate proof')
             out['candidate_sources']={k:v.decode() for k,v in capture(Path(result['final_candidate']))[0].items()}
         return out
 
     def evaluate(self, kind, payload, directory):
+        if payload['evaluator'].get('image'):
+            from .tempoevo_docker import evaluate
+            return evaluate(payload,directory)
         command=payload['evaluator']['command']+[payload['candidate']]
         archive.atomic_json(directory/'command.json',command)
         try:

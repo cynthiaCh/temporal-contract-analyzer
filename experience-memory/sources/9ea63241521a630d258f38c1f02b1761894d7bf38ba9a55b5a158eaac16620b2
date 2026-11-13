@@ -1,0 +1,420 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/workflow.php\n+++ candidate/src/workflow.php\n@@ -1,6 +1,6 @@\n <?php\n class FetchAttempt {\n- public $number,$previous,$options,$settled=false,$consumed=false,$retryCancelled=false,$failures=0,$queued=false;\n+ public $number,$previous,$options,$settled=false,$consumed=false,$retryCancelled=false,$failures=0,$queued=false,$started=false;\n  function __construct($number,$state,$options){$this->number=$number;$this->previous=$state;$this->options=$options;}\n }\n class CachedQuery {\n@@ -13,7 +13,7 @@\n  function eligible($a){return $this->focused&&(($a->options['networkMode']??'online')==='always'||$this->online);}\n  function active($q,$a){return $q->attempt===$a&&!$a->settled;}\n  function cancel($q,$a){if($a->settled)return;$a->settled=true;$q->state=$a->previous;$q->state['fetchStatus']='idle';$this->env->call('abort',$q->key,$a->number);}\n- function invoke($q,$a){$a->queued=false;if(!$this->active($q,$a))return;$q->state['fetchStatus']='fetching';$q->consumed=false;\n+ function invoke($q,$a){$a->queued=false;if(!$this->active($q,$a))return;$a->started=true;$q->state['fetchStatus']='fetching';$q->consumed=false;\n   $getter=$this->env->bind(function($_)use($q){$q->consumed=true;return null;});\n   $done=$this->env->bind(function($value)use($q,$a){if(!$this->active($q,$a))return;if($value['ok']){$a->settled=true;$q->state=array_merge($q->state,['data'=>$value['value'],'status'=>'success','fetchStatus'=>'idle']);}\n    elseif(!$a->retryCancelled&&$a->failures<($a->options['retry']??0)){$a->failures++;$retry=$this->env->bind(function($_)use($q,$a){if(!$this->active($q,$a))return;if($a->retryCancelled){$a->settled=true;$q->state['status']='error';$q->state['fetchStatus']='idle';return;}if($this->eligible($a))$this->invoke($q,$a);else $q->state['fetchStatus']='paused';});$this->env->call('schedule',$retry,$a->options['retryDelay']??10);}\n@@ -21,6 +21,6 @@\n  }\n  function resume($q){$a=$q->attempt;if($a&&$this->active($q,$a)&&$q->state['fetchStatus']==='paused'&&$this->eligible($a)&&!$a->queued){$a->queued=true;$token=$this->env->bind(function($_)use($q,$a){$a->queued=false;if(!$this->active($q,$a))return;if($a->failures&&$a->retryCancelled){$a->settled=true;$q->state['status']='error';$q->state['fetchStatus']='idle';return;}$this->invoke($q,$a);});$this->env->call('defer',$token);}}\n  function subscribe($key,$options){if(!isset($this->cache[$key]))$this->cache[$key]=new CachedQuery($key,$options['initialData']??null);$q=$this->cache[$key];$handle=++$this->serial;$this->handles[$handle]=$q;$q->observers[$handle]=true;if($q->attempt&&!$q->attempt->settled){$q->attempt->retryCancelled=false;$this->resume($q);}else{$a=new FetchAttempt(++$this->fetchSerial,$q->state,$options);$q->attempt=$a;$this->env->call('newAttempt',$key,$a->number);if(($options['networkMode']??'online')!=='online'||$this->online)$this->invoke($q,$a);else $q->state['fetchStatus']='paused';}return $handle;}\n- function unsubscribe($handle){$q=$this->handles[$handle]??null;if(!$q)return;unset($this->handles[$handle],$q->observers[$handle]);if(count($q->observers)===0){$a=$q->attempt;if($a&&!$a->settled){if($q->consumed)$this->cancel($q,$a);else $a->retryCancelled=true;}}}\n+ function unsubscribe($handle){$q=$this->handles[$handle]??null;if(!$q)return;unset($this->handles[$handle],$q->observers[$handle]);if(count($q->observers)===0){$a=$q->attempt;if($a&&!$a->settled){if($q->consumed||(!$a->started&&$a->previous['status']==='pending'&&($a->options['networkMode']??'online')==='online'))$this->cancel($q,$a);else $a->retryCancelled=true;}}}\n  function handle($name,$args){switch($name){case 'subscribe':return $this->subscribe(...$args);case 'unsubscribe':$this->unsubscribe($args[0]);return null;case 'snapshot':return $this->cache[$args[0]]->state;case 'dispose':foreach(array_keys($this->handles)as $h)$this->unsubscribe($h);return null;case 'online':$this->online=$args[0];break;case 'focus':$this->focused=$args[0];break;default:throw new Exception($name);}foreach($this->cache as $q)$this->resume($q);return null;}\n }\n",
+        "from_previous": "--- previous/src/workflow.php\n+++ candidate/src/workflow.php\n@@ -1,6 +1,6 @@\n <?php\n class FetchAttempt {\n- public $number,$previous,$options,$settled=false,$consumed=false,$retryCancelled=false,$failures=0,$queued=false;\n+ public $number,$previous,$options,$settled=false,$consumed=false,$retryCancelled=false,$failures=0,$queued=false,$started=false;\n  function __construct($number,$state,$options){$this->number=$number;$this->previous=$state;$this->options=$options;}\n }\n class CachedQuery {\n@@ -13,7 +13,7 @@\n  function eligible($a){return $this->focused&&(($a->options['networkMode']??'online')==='always'||$this->online);}\n  function active($q,$a){return $q->attempt===$a&&!$a->settled;}\n  function cancel($q,$a){if($a->settled)return;$a->settled=true;$q->state=$a->previous;$q->state['fetchStatus']='idle';$this->env->call('abort',$q->key,$a->number);}\n- function invoke($q,$a){$a->queued=false;if(!$this->active($q,$a))return;$q->state['fetchStatus']='fetching';$q->consumed=false;\n+ function invoke($q,$a){$a->queued=false;if(!$this->active($q,$a))return;$a->started=true;$q->state['fetchStatus']='fetching';$q->consumed=false;\n   $getter=$this->env->bind(function($_)use($q){$q->consumed=true;return null;});\n   $done=$this->env->bind(function($value)use($q,$a){if(!$this->active($q,$a))return;if($value['ok']){$a->settled=true;$q->state=array_merge($q->state,['data'=>$value['value'],'status'=>'success','fetchStatus'=>'idle']);}\n    elseif(!$a->retryCancelled&&$a->failures<($a->options['retry']??0)){$a->failures++;$retry=$this->env->bind(function($_)use($q,$a){if(!$this->active($q,$a))return;if($a->retryCancelled){$a->settled=true;$q->state['status']='error';$q->state['fetchStatus']='idle';return;}if($this->eligible($a))$this->invoke($q,$a);else $q->state['fetchStatus']='paused';});$this->env->call('schedule',$retry,$a->options['retryDelay']??10);}\n@@ -21,6 +21,6 @@\n  }\n  function resume($q){$a=$q->attempt;if($a&&$this->active($q,$a)&&$q->state['fetchStatus']==='paused'&&$this->eligible($a)&&!$a->queued){$a->queued=true;$token=$this->env->bind(function($_)use($q,$a){$a->queued=false;if(!$this->active($q,$a))return;if($a->failures&&$a->retryCancelled){$a->settled=true;$q->state['status']='error';$q->state['fetchStatus']='idle';return;}$this->invoke($q,$a);});$this->env->call('defer',$token);}}\n  function subscribe($key,$options){if(!isset($this->cache[$key]))$this->cache[$key]=new CachedQuery($key,$options['initialData']??null);$q=$this->cache[$key];$handle=++$this->serial;$this->handles[$handle]=$q;$q->observers[$handle]=true;if($q->attempt&&!$q->attempt->settled){$q->attempt->retryCancelled=false;$this->resume($q);}else{$a=new FetchAttempt(++$this->fetchSerial,$q->state,$options);$q->attempt=$a;$this->env->call('newAttempt',$key,$a->number);if(($options['networkMode']??'online')!=='online'||$this->online)$this->invoke($q,$a);else $q->state['fetchStatus']='paused';}return $handle;}\n- function unsubscribe($handle){$q=$this->handles[$handle]??null;if(!$q)return;unset($this->handles[$handle],$q->observers[$handle]);if(count($q->observers)===0){$a=$q->attempt;if($a&&!$a->settled){if($q->consumed)$this->cancel($q,$a);else $a->retryCancelled=true;}}}\n+ function unsubscribe($handle){$q=$this->handles[$handle]??null;if(!$q)return;unset($this->handles[$handle],$q->observers[$handle]);if(count($q->observers)===0){$a=$q->attempt;if($a&&!$a->settled){if($q->consumed||(!$a->started&&$a->previous['status']==='pending'&&($a->options['networkMode']??'online')==='online'))$this->cancel($q,$a);else $a->retryCancelled=true;}}}\n  function handle($name,$args){switch($name){case 'subscribe':return $this->subscribe(...$args);case 'unsubscribe':$this->unsubscribe($args[0]);return null;case 'snapshot':return $this->cache[$args[0]]->state;case 'dispose':foreach(array_keys($this->handles)as $h)$this->unsubscribe($h);return null;case 'online':$this->online=$args[0];break;case 'focus':$this->focused=$args[0];break;default:throw new Exception($name);}foreach($this->cache as $q)$this->resume($q);return null;}\n }\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [],
+        "coverage": [
+          {
+            "path": "src/workflow.php",
+            "status": "unsupported_language"
+          }
+        ],
+        "events": [],
+        "findings": [],
+        "limitations": [
+          "结果是语法事实、静态候选调用关系与待核查模式，不是已证明的时序契约、缺陷、严重度或难度分。",
+          "同名 API 只作为线索；不做全程序类型/别名/控制流证明。动态派发、对象工厂、函数参数传递的完整目标保持未知。",
+          "局部先后表示同一语法块中位置先后；条件、异常、循环、短路及调用是否实际执行仍需核查。",
+          "await 是潜在暂停点，并非必然切换；取消请求不等于工作与清理完成；移除监听不保证既有异步工作取消。",
+          "语法中的 if/try/finally 不等于已证明保护充分；无模式命中不等于程序安全。",
+          "未读取隐藏评分器、参考补丁、模型结果或人工 profile；分析根由操作者提供，文件内容的来源仍需核实。"
+        ],
+        "relations": [],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "partial",
+        "target_definitions": []
+      },
+      "sources": {
+        "README.md": "# Insurance tariff lookup\n\nA shared per-key query cache provides subscribe(key,options) -> unique observer\nhandle, unsubscribe(handle), online(boolean), focus(boolean), snapshot(key),\nand dispose() of observer scopes. Queries retain status (pending/success/error),\nfetchStatus (idle/fetching/paused), and data. queryFn receives a lazy signal\naccessor. Each actual access records consumption; each fetch owns its controller\nand completion. Completion is asynchronous; initial online entry is synchronous,\npaused continuation resumes on a Promise turn. First start uses network mode;\ncontinuation also needs focus. 'always' can run offline; 'offlineFirst' allows\nfirst offline entry but retry can pause. Retries use explicit scheduler handles.\nMultiple observers share one fetch. Unconsumed active work can finish into cache\nafter its view departs; consumed work is physically abortable. Cancellation\nreverts previous query data/status and settles the originating attempt. Late\nfulfillment cannot become a new attempt's data. Unknown unsubscribe is inert.\nThe component owns observer scope; the cache remains outside individual views.\nDependency versions and build/test configuration are outside the repair scope.\n\nEmbedding API: bind registers a native callable; Environment.call\nprovides newAttempt(key,number), abort(key,number), request(key,number, lazy-read\ntoken, completion token), defer(callback token), schedule(callback token,delay).\nThe request host calls queryFn with an actual AbortSignal property. Reading it\ninvokes the native consumption closure synchronously; Promise settlement later\ninvokes the native completion with {ok,value}. All observer, retry, cancellation,\nstate and cache logic executes in the target language. No native JS Promise or\nDOM claim is made. Native object identity binds query and attempt generations;\nwire handles only identify injected callbacks. \nPHP cache and observer objects; lazy context getter and Closure waiter\n",
+        "VISIBLE_CHECKS.md": "Public checks are deterministic external examples, not hidden gold. They are executed after each submitted Action. Keep original task/source obligations. Checks: initial paused fetch with no remaining observer never invokes queryFn on reconnect; a remaining observer keeps the shared fetch; unconsumed active work can retain its completed cache value.\nUse the declared runtime: php PHP 7.4.3. The external adapter is not mounted in the model workspace; do not access scorer/reference files. Build temporary artifacts in /tmp.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"PHP 7.4.3\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true,\n  \"extensions\": {\n    \"json\": \"PHP 7.4.3-4ubuntu2.29, ABI 20190902\"\n  }\n}\n",
+        "src/workflow.php": "<?php\nclass FetchAttempt {\n public $number,$previous,$options,$settled=false,$consumed=false,$retryCancelled=false,$failures=0,$queued=false;\n function __construct($number,$state,$options){$this->number=$number;$this->previous=$state;$this->options=$options;}\n}\nclass CachedQuery {\n public $key,$state,$observers=[],$attempt=null,$consumed=false;\n function __construct($key,$data){$this->key=$key;$this->state=['status'=>$data!==null?'success':'pending','fetchStatus'=>'idle','data'=>$data];}\n}\nclass Session {\n private $env,$cache=[],$handles=[],$online,$focused,$serial=0,$fetchSerial=0;\n function __construct($env,$initial){$this->env=$env;$this->online=$initial['online']??true;$this->focused=$initial['focused']??true;}\n function eligible($a){return $this->focused&&(($a->options['networkMode']??'online')==='always'||$this->online);}\n function active($q,$a){return $q->attempt===$a&&!$a->settled;}\n function cancel($q,$a){if($a->settled)return;$a->settled=true;$q->state=$a->previous;$q->state['fetchStatus']='idle';$this->env->call('abort',$q->key,$a->number);}\n function invoke($q,$a){$a->queued=false;if(!$this->active($q,$a))return;$q->state['fetchStatus']='fetching';$q->consumed=false;\n  $getter=$this->env->bind(function($_)use($q){$q->consumed=true;return null;});\n  $done=$this->env->bind(function($value)use($q,$a){if(!$this->active($q,$a))return;if($value['ok']){$a->settled=true;$q->state=array_merge($q->state,['data'=>$value['value'],'status'=>'success','fetchStatus'=>'idle']);}\n   elseif(!$a->retryCancelled&&$a->failures<($a->options['retry']??0)){$a->failures++;$retry=$this->env->bind(function($_)use($q,$a){if(!$this->active($q,$a))return;if($a->retryCancelled){$a->settled=true;$q->state['status']='error';$q->state['fetchStatus']='idle';return;}if($this->eligible($a))$this->invoke($q,$a);else $q->state['fetchStatus']='paused';});$this->env->call('schedule',$retry,$a->options['retryDelay']??10);}\n   else{$a->settled=true;$q->state['status']='error';$q->state['fetchStatus']='idle';}return null;});$this->env->call('request',$q->key,$a->number,$getter,$done);\n }\n function resume($q){$a=$q->attempt;if($a&&$this->active($q,$a)&&$q->state['fetchStatus']==='paused'&&$this->eligible($a)&&!$a->queued){$a->queued=true;$token=$this->env->bind(function($_)use($q,$a){$a->queued=false;if(!$this->active($q,$a))return;if($a->failures&&$a->retryCancelled){$a->settled=true;$q->state['status']='error';$q->state['fetchStatus']='idle';return;}$this->invoke($q,$a);});$this->env->call('defer',$token);}}\n function subscribe($key,$options){if(!isset($this->cache[$key]))$this->cache[$key]=new CachedQuery($key,$options['initialData']??null);$q=$this->cache[$key];$handle=++$this->serial;$this->handles[$handle]=$q;$q->observers[$handle]=true;if($q->attempt&&!$q->attempt->settled){$q->attempt->retryCancelled=false;$this->resume($q);}else{$a=new FetchAttempt(++$this->fetchSerial,$q->state,$options);$q->attempt=$a;$this->env->call('newAttempt',$key,$a->number);if(($options['networkMode']??'online')!=='online'||$this->online)$this->invoke($q,$a);else $q->state['fetchStatus']='paused';}return $handle;}\n function unsubscribe($handle){$q=$this->handles[$handle]??null;if(!$q)return;unset($this->handles[$handle],$q->observers[$handle]);if(count($q->observers)===0){$a=$q->attempt;if($a&&!$a->settled){if($q->consumed)$this->cancel($q,$a);else $a->retryCancelled=true;}}}\n function handle($name,$args){switch($name){case 'subscribe':return $this->subscribe(...$args);case 'unsubscribe':$this->unsubscribe($args[0]);return null;case 'snapshot':return $this->cache[$args[0]]->state;case 'dispose':foreach(array_keys($this->handles)as $h)$this->unsubscribe($h);return null;case 'online':$this->online=$args[0];break;case 'focus':$this->focused=$args[0];break;default:throw new Exception($name);}foreach($this->cache as $q)$this->resume($q);return null;}\n}\n"
+      },
+      "task": "Repair the insurance tariff lookup cache: a fresh online-mode query mounted and unmounted entirely offline later calls its signal-consuming query function with a live signal after reconnect. This occurs independently of refetchOnReconnect. Preserve supported query behavior, interfaces, dependencies and build/test configuration. Change product source only.\n"
+    },
+    "source_sha256": "429e8d8d45eca4ee36b28211074503f519bfa4ed45fce570f9b17555872b8fe4",
+    "task_id": "query-paused-initial-fetch-10266-php"
+  },
+  "experience": {
+    "excludes": [
+      "different_ownership_policy",
+      "no_lazy_shared_mechanism"
+    ],
+    "labels": [
+      "R",
+      "L",
+      "I",
+      "A"
+    ],
+    "limitations": [
+      "These rules apply to the documented shared-cache and lazy-consumption mechanism; they do not establish requirements for different ownership policies.",
+      "The supplied static analysis marks src/workflow.php as unsupported_language and proves no execution ordering.",
+      "The embedding host is not supplied, so its signal and Promise behavior is supported by documentation rather than inspected implementation.",
+      "TASK does not mandate a started field, a particular cancellation predicate, or exhaustive treatment of observerless paused background work.",
+      "The reported public examples passing once does not prove causality, exhaustive correctness, or benefit on other tasks. Evaluation observations add no business requirements."
+    ],
+    "requires": [
+      "shared_lifetime",
+      "observer_lifetime",
+      "attempt_resource",
+      "lazy_consumption",
+      "async_resume"
+    ],
+    "rules": [
+      {
+        "body": "Apply where cache lifetime exceeds observer lifetime, cancellation resources belong to attempts, and consumption is lazy. README.md: \"The component owns observer scope; the cache remains outside individual views.\" README.md: \"Each actual access records consumption; each fetch owns its controller\\nand completion.\"",
+        "category": "applicability"
+      },
+      {
+        "body": "Establish protection at the final observer's departure so a fresh online-mode attempt that has not entered while offline cannot later enter with a live signal. Cover departure before reconnect and departure after continuation is queued. TASK: \"Repair the insurance tariff lookup cache: a fresh online-mode query mounted and unmounted entirely offline later calls its signal-consuming query function with a live signal after reconnect. This occurs independently of refetchOnReconnect.\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "Keep shared consumption tracking distinct from attempt resource ownership; an attempt-local controller does not justify moving consumption tracking into the attempt. src/workflow.php: \"public $key,$state,$observers=[],$attempt=null,$consumed=false;\" src/workflow.php: \"$getter=$this->env->bind(function($_)use($q){$q->consumed=true;return null;});\" README.md: \"Reading it\\ninvokes the native consumption closure synchronously; Promise settlement later\\ninvokes the native completion with {ok,value}.\"",
+        "category": "preservation"
+      },
+      {
+        "body": "Do not infer cancellation solely from being paused, observerless, or not yet entered. Preserve supported background completion and shared observers. README.md: \"Multiple observers share one fetch. Unconsumed active work can finish into cache\\nafter its view departs; consumed work is physically abortable.\" A blanket paused-work cancellation rule is unsupported.",
+        "category": "exclusion"
+      },
+      {
+        "body": "Preserve cancellation restoration, originating-attempt settlement, and generation isolation when guarding deferred execution and completion. README.md: \"Cancellation\\nreverts previous query data/status and settles the originating attempt. Late\\nfulfillment cannot become a new attempt's data. Unknown unsubscribe is inert.\" src/workflow.php: \"function active($q,$a){return $q->attempt===$a&&!$a->settled;}\"",
+        "category": "preservation"
+      },
+      {
+        "body": "Verify eligible initial entry separately from deferred continuation, including network mode, focus, and retries. README.md: \"Completion is asynchronous; initial online entry is synchronous,\\npaused continuation resumes on a Promise turn. First start uses network mode;\\ncontinuation also needs focus.\" README.md: \"'always' can run offline; 'offlineFirst' allows\\nfirst offline entry but retry can pause. Retries use explicit scheduler handles.\"",
+        "category": "verification"
+      },
+      {
+        "body": "Check the target departure/reconnect lifecycle with refetchOnReconnect varied, then separately check remaining observers, unknown departures, consumed cancellation, unconsumed background completion, cached background continuation, observer reuse, and stale completion. Derive expected outcomes from TASK and README.md rather than observed passes. TASK: \"Preserve supported query behavior, interfaces, dependencies and build/test configuration. Change product source only.\"",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "Mount a fresh online-mode query while offline, remove its last observer, reconnect, and drain deferred callbacks; verify it cannot enter queryFn with a live signal.",
+      "Repeat with refetchOnReconnect options varied; the repair must not depend on that option.",
+      "Verify a remaining observer preserves the shared attempt and unknown unsubscribe handles are inert.",
+      "Verify consumed work aborts and restores previous data/status, while active unconsumed work can complete into cache.",
+      "Verify cached background work, retries, observer reuse, network modes, focus gating, asynchronous continuation, and late-completion isolation remain supported."
+    ],
+    "forbidden_effects": [
+      "Allowing the departed fresh offline online-mode attempt to invoke its signal-consuming query function with a live signal after reconnect.",
+      "Cancelling all paused or observerless work indiscriminately, thereby breaking supported background completion.",
+      "Allowing a settled or superseded attempt's completion to overwrite current data.",
+      "Changing public interfaces, dependencies, tests, or build/test configuration."
+    ],
+    "lifecycle_identity": [
+      "CachedQuery owns shared cache state, observer membership, and the shared consumption record.",
+      "FetchAttempt identifies an individual fetch generation and owns its previous state, options, settlement, retry state, and completion lifecycle.",
+      "Native object identity distinguishes query and attempt generations; callback wire handles do not replace that identity.",
+      "Cancellation and deferred completion must remain associated with the originating attempt."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Repair the fresh online-mode offline mount/unmount lifecycle so reconnect cannot invoke the departed attempt's signal-consuming query function with a live signal, independently of refetchOnReconnect."
+      },
+      {
+        "id": "O2",
+        "text": "Preserve one shared fetch across observers; removal of fewer than all observers must not retire their shared work, and unknown departures must remain inert."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve physical abort, previous data/status restoration, and originating-attempt settlement for cancellation, while allowing supported unconsumed active work to finish into cache."
+      },
+      {
+        "id": "O4",
+        "text": "Preserve lazy synchronous consumption recording, query-owned shared consumption state, and per-fetch controller and completion ownership."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve synchronous eligible initial entry, Promise-turn paused continuation, network-mode rules, focus requirements for continuation, and scheduled retries."
+      },
+      {
+        "id": "O6",
+        "text": "Keep late fulfillment isolated from newer attempts and preserve cache lifetime outside individual observer scopes."
+      },
+      {
+        "id": "O7",
+        "text": "Any implementation change must affect product source only and preserve supported interfaces, dependencies, and build/test configuration."
+      }
+    ],
+    "ordering_barriers": [
+      "The last-observer departure must establish protection before a later reconnect continuation can enter queryFn with a live signal.",
+      "Deferred callbacks must respect originating-attempt settlement and generation identity before invoking work or committing completion.",
+      "Actual signal access records consumption synchronously; Promise completion occurs later.",
+      "Initial entry follows network-mode eligibility; paused continuation occurs on a Promise turn and also requires focus."
+    ],
+    "preservation": [
+      "Shared fetches and unique observer handles.",
+      "Unknown-unsubscribe inertness and observer-scope disposal.",
+      "Successful cached data and legitimate unconsumed background completion.",
+      "Consumed-work abort and cancellation restoration.",
+      "Online, always, and offlineFirst network-mode behavior.",
+      "Retry scheduling, continuation eligibility, and asynchronous completion.",
+      "Observer reuse and protection against stale completion."
+    ],
+    "scope": [
+      "The insurance tariff lookup cache implemented in src/workflow.php.",
+      "Derive obligations from TASK and supplied public source/documentation; experience and evaluation observations do not establish requirements.",
+      "This response specifies the repair contract without modifying files."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Repair the insurance tariff lookup cache: a fresh online-mode query mounted and unmounted entirely offline later calls its signal-consuming query function with a live signal after reconnect. This occurs independently of refetchOnReconnect."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve supported query behavior, interfaces, dependencies and build/test configuration. Change product source only."
+      },
+      {
+        "file": "README.md",
+        "quote": "Each actual access records consumption; each fetch owns its controller\nand completion."
+      },
+      {
+        "file": "README.md",
+        "quote": "Completion is asynchronous; initial online entry is synchronous,\npaused continuation resumes on a Promise turn. First start uses network mode;\ncontinuation also needs focus."
+      },
+      {
+        "file": "README.md",
+        "quote": "'always' can run offline; 'offlineFirst' allows\nfirst offline entry but retry can pause. Retries use explicit scheduler handles."
+      },
+      {
+        "file": "README.md",
+        "quote": "Multiple observers share one fetch. Unconsumed active work can finish into cache\nafter its view departs; consumed work is physically abortable. Cancellation\nreverts previous query data/status and settles the originating attempt. Late\nfulfillment cannot become a new attempt's data. Unknown unsubscribe is inert."
+      },
+      {
+        "file": "README.md",
+        "quote": "The component owns observer scope; the cache remains outside individual views."
+      },
+      {
+        "file": "README.md",
+        "quote": "Reading it\ninvokes the native consumption closure synchronously; Promise settlement later\ninvokes the native completion with {ok,value}."
+      },
+      {
+        "file": "README.md",
+        "quote": "Native object identity binds query and attempt generations;\nwire handles only identify injected callbacks."
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "public $key,$state,$observers=[],$attempt=null,$consumed=false;"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function active($q,$a){return $q->attempt===$a&&!$a->settled;}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "if($q->consumed)$this->cancel($q,$a);else $a->retryCancelled=true;"
+      }
+    ],
+    "triggers": [
+      "A fresh query starts in online network mode while connectivity is offline.",
+      "Its final observer departs before initial execution.",
+      "Connectivity returns and paused continuation becomes eligible or has already been queued.",
+      "Related preservation cases involve remaining observers, cached data, prior execution, lazy signal consumption, retry, and replacement attempts."
+    ],
+    "unknowns": [
+      "The sources do not mandate a specific repair mechanism or new lifecycle field.",
+      "The embedding host implementation is not supplied; controller termination and Promise delivery are documented interfaces rather than inspected implementations.",
+      "The exact intended handling of every observerless paused background scenario is not exhaustively specified; a blanket cancellation rule is not justified.",
+      "The public code has no explicit refetchOnReconnect branch; independence from that option is nevertheless required by TASK."
+    ]
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "Mount a fresh online-mode query while offline, remove its last observer, reconnect, and drain deferred callbacks; verify it cannot enter queryFn with a live signal.",
+      "Repeat with refetchOnReconnect options varied; the repair must not depend on that option.",
+      "Verify a remaining observer preserves the shared attempt and unknown unsubscribe handles are inert.",
+      "Verify consumed work aborts and restores previous data/status, while active unconsumed work can complete into cache.",
+      "Verify cached background work, retries, observer reuse, network modes, focus gating, asynchronous continuation, and late-completion isolation remain supported."
+    ],
+    "forbidden_effects": [
+      "Allowing the departed fresh offline online-mode attempt to invoke its signal-consuming query function with a live signal after reconnect.",
+      "Cancelling all paused or observerless work indiscriminately, thereby breaking supported background completion.",
+      "Allowing a settled or superseded attempt's completion to overwrite current data.",
+      "Changing public interfaces, dependencies, tests, or build/test configuration."
+    ],
+    "lifecycle_identity": [
+      "CachedQuery owns shared cache state, observer membership, and the shared consumption record.",
+      "FetchAttempt identifies an individual fetch generation and owns its previous state, options, settlement, retry state, and completion lifecycle.",
+      "Native object identity distinguishes query and attempt generations; callback wire handles do not replace that identity.",
+      "Cancellation and deferred completion must remain associated with the originating attempt."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Repair the fresh online-mode offline mount/unmount lifecycle so reconnect cannot invoke the departed attempt's signal-consuming query function with a live signal, independently of refetchOnReconnect."
+      },
+      {
+        "id": "O2",
+        "text": "Preserve one shared fetch across observers; removal of fewer than all observers must not retire their shared work, and unknown departures must remain inert."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve physical abort, previous data/status restoration, and originating-attempt settlement for cancellation, while allowing supported unconsumed active work to finish into cache."
+      },
+      {
+        "id": "O4",
+        "text": "Preserve lazy synchronous consumption recording, query-owned shared consumption state, and per-fetch controller and completion ownership."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve synchronous eligible initial entry, Promise-turn paused continuation, network-mode rules, focus requirements for continuation, and scheduled retries."
+      },
+      {
+        "id": "O6",
+        "text": "Keep late fulfillment isolated from newer attempts and preserve cache lifetime outside individual observer scopes."
+      },
+      {
+        "id": "O7",
+        "text": "Any implementation change must affect product source only and preserve supported interfaces, dependencies, and build/test configuration."
+      }
+    ],
+    "ordering_barriers": [
+      "The last-observer departure must establish protection before a later reconnect continuation can enter queryFn with a live signal.",
+      "Deferred callbacks must respect originating-attempt settlement and generation identity before invoking work or committing completion.",
+      "Actual signal access records consumption synchronously; Promise completion occurs later.",
+      "Initial entry follows network-mode eligibility; paused continuation occurs on a Promise turn and also requires focus."
+    ],
+    "preservation": [
+      "Shared fetches and unique observer handles.",
+      "Unknown-unsubscribe inertness and observer-scope disposal.",
+      "Successful cached data and legitimate unconsumed background completion.",
+      "Consumed-work abort and cancellation restoration.",
+      "Online, always, and offlineFirst network-mode behavior.",
+      "Retry scheduling, continuation eligibility, and asynchronous completion.",
+      "Observer reuse and protection against stale completion."
+    ],
+    "scope": [
+      "The insurance tariff lookup cache implemented in src/workflow.php.",
+      "Derive obligations from TASK and supplied public source/documentation; experience and evaluation observations do not establish requirements.",
+      "This response specifies the repair contract without modifying files."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Repair the insurance tariff lookup cache: a fresh online-mode query mounted and unmounted entirely offline later calls its signal-consuming query function with a live signal after reconnect. This occurs independently of refetchOnReconnect."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve supported query behavior, interfaces, dependencies and build/test configuration. Change product source only."
+      },
+      {
+        "file": "README.md",
+        "quote": "Each actual access records consumption; each fetch owns its controller\nand completion."
+      },
+      {
+        "file": "README.md",
+        "quote": "Completion is asynchronous; initial online entry is synchronous,\npaused continuation resumes on a Promise turn. First start uses network mode;\ncontinuation also needs focus."
+      },
+      {
+        "file": "README.md",
+        "quote": "'always' can run offline; 'offlineFirst' allows\nfirst offline entry but retry can pause. Retries use explicit scheduler handles."
+      },
+      {
+        "file": "README.md",
+        "quote": "Multiple observers share one fetch. Unconsumed active work can finish into cache\nafter its view departs; consumed work is physically abortable. Cancellation\nreverts previous query data/status and settles the originating attempt. Late\nfulfillment cannot become a new attempt's data. Unknown unsubscribe is inert."
+      },
+      {
+        "file": "README.md",
+        "quote": "The component owns observer scope; the cache remains outside individual views."
+      },
+      {
+        "file": "README.md",
+        "quote": "Reading it\ninvokes the native consumption closure synchronously; Promise settlement later\ninvokes the native completion with {ok,value}."
+      },
+      {
+        "file": "README.md",
+        "quote": "Native object identity binds query and attempt generations;\nwire handles only identify injected callbacks."
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "public $key,$state,$observers=[],$attempt=null,$consumed=false;"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function active($q,$a){return $q->attempt===$a&&!$a->settled;}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "if($q->consumed)$this->cancel($q,$a);else $a->retryCancelled=true;"
+      }
+    ],
+    "triggers": [
+      "A fresh query starts in online network mode while connectivity is offline.",
+      "Its final observer departs before initial execution.",
+      "Connectivity returns and paused continuation becomes eligible or has already been queued.",
+      "Related preservation cases involve remaining observers, cached data, prior execution, lazy signal consumption, retry, and replacement attempts."
+    ],
+    "unknowns": [
+      "The sources do not mandate a specific repair mechanism or new lifecycle field.",
+      "The embedding host implementation is not supplied; controller termination and Promise delivery are documented interfaces rather than inspected implementations.",
+      "The exact intended handling of every observerless paused background scenario is not exhaustively specified; a blanket cancellation rule is not justified.",
+      "The public code has no explicit refetchOnReconnect branch; independence from that option is nevertheless required by TASK."
+    ]
+  },
+  "origin": "success",
+  "source_sha256": "429e8d8d45eca4ee36b28211074503f519bfa4ed45fce570f9b17555872b8fe4",
+  "status": "awaiting_content_review",
+  "task": "Repair the insurance tariff lookup cache: a fresh online-mode query mounted and unmounted entirely offline later calls its signal-consuming query function with a live signal after reconnect. This occurs independently of refetchOnReconnect. Preserve supported query behavior, interfaces, dependencies and build/test configuration. Change product source only.\n",
+  "trajectory": [
+    {
+      "candidate_inventory": {
+        "README.md": "77566d2d622fc2ff94c5d509c1d7b7035e80967dc431c4254624e2d31da5085f",
+        "VISIBLE_CHECKS.md": "7718098ad61047aeff96365878bda29d1af22f98ae29a8a95697f9233dae22d1",
+        "dependencies.lock.json": "db0b0c1c4562580274190d5d5937c4290aefa3c3408d4b29b02d696972b3d410",
+        "src/workflow.php": "c17ecf3e3a5062069d3fa4dae3145cf989fa4e4a13de9fb825a48c693cf63212"
+      },
+      "candidate_sources": {
+        "README.md": "# Insurance tariff lookup\n\nA shared per-key query cache provides subscribe(key,options) -> unique observer\nhandle, unsubscribe(handle), online(boolean), focus(boolean), snapshot(key),\nand dispose() of observer scopes. Queries retain status (pending/success/error),\nfetchStatus (idle/fetching/paused), and data. queryFn receives a lazy signal\naccessor. Each actual access records consumption; each fetch owns its controller\nand completion. Completion is asynchronous; initial online entry is synchronous,\npaused continuation resumes on a Promise turn. First start uses network mode;\ncontinuation also needs focus. 'always' can run offline; 'offlineFirst' allows\nfirst offline entry but retry can pause. Retries use explicit scheduler handles.\nMultiple observers share one fetch. Unconsumed active work can finish into cache\nafter its view departs; consumed work is physically abortable. Cancellation\nreverts previous query data/status and settles the originating attempt. Late\nfulfillment cannot become a new attempt's data. Unknown unsubscribe is inert.\nThe component owns observer scope; the cache remains outside individual views.\nDependency versions and build/test configuration are outside the repair scope.\n\nEmbedding API: bind registers a native callable; Environment.call\nprovides newAttempt(key,number), abort(key,number), request(key,number, lazy-read\ntoken, completion token), defer(callback token), schedule(callback token,delay).\nThe request host calls queryFn with an actual AbortSignal property. Reading it\ninvokes the native consumption closure synchronously; Promise settlement later\ninvokes the native completion with {ok,value}. All observer, retry, cancellation,\nstate and cache logic executes in the target language. No native JS Promise or\nDOM claim is made. Native object identity binds query and attempt generations;\nwire handles only identify injected callbacks. \nPHP cache and observer objects; lazy context getter and Closure waiter\n",
+        "VISIBLE_CHECKS.md": "Public checks are deterministic external examples, not hidden gold. They are executed after each submitted Action. Keep original task/source obligations. Checks: initial paused fetch with no remaining observer never invokes queryFn on reconnect; a remaining observer keeps the shared fetch; unconsumed active work can retain its completed cache value.\nUse the declared runtime: php PHP 7.4.3. The external adapter is not mounted in the model workspace; do not access scorer/reference files. Build temporary artifacts in /tmp.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"PHP 7.4.3\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true,\n  \"extensions\": {\n    \"json\": \"PHP 7.4.3-4ubuntu2.29, ABI 20190902\"\n  }\n}\n",
+        "src/workflow.php": "<?php\nclass FetchAttempt {\n public $number,$previous,$options,$settled=false,$consumed=false,$retryCancelled=false,$failures=0,$queued=false,$started=false;\n function __construct($number,$state,$options){$this->number=$number;$this->previous=$state;$this->options=$options;}\n}\nclass CachedQuery {\n public $key,$state,$observers=[],$attempt=null,$consumed=false;\n function __construct($key,$data){$this->key=$key;$this->state=['status'=>$data!==null?'success':'pending','fetchStatus'=>'idle','data'=>$data];}\n}\nclass Session {\n private $env,$cache=[],$handles=[],$online,$focused,$serial=0,$fetchSerial=0;\n function __construct($env,$initial){$this->env=$env;$this->online=$initial['online']??true;$this->focused=$initial['focused']??true;}\n function eligible($a){return $this->focused&&(($a->options['networkMode']??'online')==='always'||$this->online);}\n function active($q,$a){return $q->attempt===$a&&!$a->settled;}\n function cancel($q,$a){if($a->settled)return;$a->settled=true;$q->state=$a->previous;$q->state['fetchStatus']='idle';$this->env->call('abort',$q->key,$a->number);}\n function invoke($q,$a){$a->queued=false;if(!$this->active($q,$a))return;$a->started=true;$q->state['fetchStatus']='fetching';$q->consumed=false;\n  $getter=$this->env->bind(function($_)use($q){$q->consumed=true;return null;});\n  $done=$this->env->bind(function($value)use($q,$a){if(!$this->active($q,$a))return;if($value['ok']){$a->settled=true;$q->state=array_merge($q->state,['data'=>$value['value'],'status'=>'success','fetchStatus'=>'idle']);}\n   elseif(!$a->retryCancelled&&$a->failures<($a->options['retry']??0)){$a->failures++;$retry=$this->env->bind(function($_)use($q,$a){if(!$this->active($q,$a))return;if($a->retryCancelled){$a->settled=true;$q->state['status']='error';$q->state['fetchStatus']='idle';return;}if($this->eligible($a))$this->invoke($q,$a);else $q->state['fetchStatus']='paused';});$this->env->call('schedule',$retry,$a->options['retryDelay']??10);}\n   else{$a->settled=true;$q->state['status']='error';$q->state['fetchStatus']='idle';}return null;});$this->env->call('request',$q->key,$a->number,$getter,$done);\n }\n function resume($q){$a=$q->attempt;if($a&&$this->active($q,$a)&&$q->state['fetchStatus']==='paused'&&$this->eligible($a)&&!$a->queued){$a->queued=true;$token=$this->env->bind(function($_)use($q,$a){$a->queued=false;if(!$this->active($q,$a))return;if($a->failures&&$a->retryCancelled){$a->settled=true;$q->state['status']='error';$q->state['fetchStatus']='idle';return;}$this->invoke($q,$a);});$this->env->call('defer',$token);}}\n function subscribe($key,$options){if(!isset($this->cache[$key]))$this->cache[$key]=new CachedQuery($key,$options['initialData']??null);$q=$this->cache[$key];$handle=++$this->serial;$this->handles[$handle]=$q;$q->observers[$handle]=true;if($q->attempt&&!$q->attempt->settled){$q->attempt->retryCancelled=false;$this->resume($q);}else{$a=new FetchAttempt(++$this->fetchSerial,$q->state,$options);$q->attempt=$a;$this->env->call('newAttempt',$key,$a->number);if(($options['networkMode']??'online')!=='online'||$this->online)$this->invoke($q,$a);else $q->state['fetchStatus']='paused';}return $handle;}\n function unsubscribe($handle){$q=$this->handles[$handle]??null;if(!$q)return;unset($this->handles[$handle],$q->observers[$handle]);if(count($q->observers)===0){$a=$q->attempt;if($a&&!$a->settled){if($q->consumed||(!$a->started&&$a->previous['status']==='pending'&&($a->options['networkMode']??'online')==='online'))$this->cancel($q,$a);else $a->retryCancelled=true;}}}\n function handle($name,$args){switch($name){case 'subscribe':return $this->subscribe(...$args);case 'unsubscribe':$this->unsubscribe($args[0]);return null;case 'snapshot':return $this->cache[$args[0]]->state;case 'dispose':foreach(array_keys($this->handles)as $h)$this->unsubscribe($h);return null;case 'online':$this->online=$args[0];break;case 'focus':$this->focused=$args[0];break;default:throw new Exception($name);}foreach($this->cache as $q)$this->resume($q);return null;}\n}\n"
+      },
+      "feedback": {
+        "observations": [
+          {
+            "actual": {
+              "requests": 0
+            },
+            "check": "public_initial_paused_departure",
+            "passed": true
+          },
+          {
+            "actual": {
+              "data": "value",
+              "requests": 1
+            },
+            "check": "public_shared_observer_keeps_work",
+            "passed": true
+          },
+          {
+            "actual": {
+              "data": "retained"
+            },
+            "check": "public_unconsumed_active_result_retained",
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "unknowns": [
+          "Public examples are not exhaustive; gold is independent."
+        ]
+      },
+      "number": 1,
+      "visible_passed": true
+    }
+  ]
+}

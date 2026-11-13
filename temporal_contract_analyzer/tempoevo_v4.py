@@ -101,10 +101,23 @@ class Trajectory:
         store=Path(cfg['store']).resolve()
         bank=approval.validate_snapshot(store,cfg['memory_snapshot']) if cfg.get('memory_snapshot') else approval.freeze(store)
         from .preanalysis import analyze_candidate
-        full, ast=analyze_candidate(sources,node=cfg.get('node'))
+        if cfg.get('backend',{}).get('kind')=='docker':
+            from .tempoevo_docker import analyze,image_identity
+            image_identity(cfg['backend']['grader_image'])
+            full,ast=analyze(sources,cfg['backend'])
+        else:full, ast=analyze_candidate(sources,node=cfg.get('node'))
         evaluator_hashes={}
         for name in ('visible_evaluator','gold_evaluator'):
             if not cfg.get(name):continue
+            if cfg[name].get('image'):
+                from .tempoevo_docker import image_identity,evaluator_inputs
+                image_identity(cfg[name]['image'])
+                mounts=evaluator_inputs(cfg[name])
+                cfg[name]['inputs']={str(path):target for path,target in mounts}
+                for path,_ in mounts:
+                    if source in path.parents:raise EvidenceError('Trusted evaluators must be outside candidate')
+                    evaluator_hashes[str(path)]=sha(path.read_bytes())
+                continue
             command=cfg[name].get('command')
             if not isinstance(command,list) or not command or any(not isinstance(x,str) for x in command):raise EvidenceError('Evaluator command must be argv')
             normalized=[]
@@ -135,7 +148,7 @@ class Trajectory:
         self.save('binding.json',dict(protocol=sha((self.root/'protocol.json').read_bytes()),
             bank=sha((self.root/'memory-snapshot.json').read_bytes()),ast=sha((self.root/'ast-evidence.json').read_bytes()),
             implementation=sha(Path(__file__).read_bytes()),evaluators=evaluator_hashes,
-            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('execution_backend.py')]+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
+            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py')]+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
         self.report();return self.state()
 
     def verify(self):
@@ -189,6 +202,7 @@ class Trajectory:
         row=next(s for s in state['stages'] if s['key']==key)
         requests=result.get('requests',0) if kind not in ('visible','gold') else 0
         row.update(tokens=result.get('tokens'),seconds=time.monotonic()-started,result_sha256=sha((directory/'result.json').read_bytes()))
+        row.update(observed_tokens=result.get('observed_tokens'),usage_incomplete=result.get('usage_incomplete',False),unknown_usage_requests=result.get('unknown_usage_requests',0))
         if type(requests) is int and requests>=0:row['requests']=requests
         self.save('state.json',state)
         if self.state()['cancelled']:raise EvidenceError('Cancelled during stage')

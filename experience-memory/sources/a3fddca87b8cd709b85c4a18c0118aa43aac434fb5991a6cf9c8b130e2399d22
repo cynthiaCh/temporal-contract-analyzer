@@ -1,0 +1,380 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/workflow.php\n+++ candidate/src/workflow.php\n@@ -33,9 +33,37 @@\n \n class Badge {public $id,$buffer;private $env,$token;function __construct($env,$id,$buffer){$this->env=$env;$this->id=$id;$this->buffer=$buffer;$this->token=$env->store->subscribe(function($e)use($env,$id){if($e['id']===$id)$env->output('status',$e);});}function detach(){$this->env->store->stop($this->token);}}\n class BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}\n-class Workspace {private $env,$current=null,$generation=0;private $bank;function __construct($env){$this->env=$env;$this->bank=new BufferBank();}\n- private function retire(){$old=$this->current;$this->current=null;if($old&&!false)$old->detach();$this->env->output('document',null);if($old){}if($old&&false)$old->detach();}\n- function open($id){$request=++$this->generation;$this->retire();if(true&&$request!==$this->generation)return;$buffer=$this->bank->get($this->env,$id);$this->current=new Badge($this->env,$id,$buffer);$this->env->output('document',['id'=>$id,'text'=>$this->env->store->read($id)]);}\n- function edit($text){$view=$this->current;if($view){$this->env->write($view->id,$text);}}function close(){++$this->generation;$this->retire();}function dispose(){$this->close();}\n+class Workspace {\n+    private $env, $current = null, $generation = 0;\n+    private $bank;\n+    function __construct($env) { $this->env=$env; $this->bank=new BufferBank(); }\n+    private function retire() {\n+        $request=$this->generation;\n+        $old=$this->current;\n+        $this->current=null;\n+        if ($old) {\n+            try {\n+                $old->buffer->flush();\n+            } finally {\n+                $old->detach();\n+            }\n+        }\n+        // Saving may have synchronously navigated to a newer document.\n+        if ($request === $this->generation) $this->env->output('document',null);\n+    }\n+    function open($id) {\n+        $request=++$this->generation;\n+        $this->retire();\n+        if ($request !== $this->generation) return;\n+        $buffer=$this->bank->get($this->env,$id);\n+        $this->current=new Badge($this->env,$id,$buffer);\n+        $this->env->output('document',['id'=>$id,'text'=>$this->env->store->read($id)]);\n+    }\n+    function edit($text) {\n+        $view=$this->current;\n+        if ($view) $view->buffer->push($text);\n+    }\n+    function close() { ++$this->generation; $this->retire(); }\n+    function dispose() { $this->close(); }\n }\n class Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}\n",
+        "from_previous": "--- previous/src/workflow.php\n+++ candidate/src/workflow.php\n@@ -33,9 +33,37 @@\n \n class Badge {public $id,$buffer;private $env,$token;function __construct($env,$id,$buffer){$this->env=$env;$this->id=$id;$this->buffer=$buffer;$this->token=$env->store->subscribe(function($e)use($env,$id){if($e['id']===$id)$env->output('status',$e);});}function detach(){$this->env->store->stop($this->token);}}\n class BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}\n-class Workspace {private $env,$current=null,$generation=0;private $bank;function __construct($env){$this->env=$env;$this->bank=new BufferBank();}\n- private function retire(){$old=$this->current;$this->current=null;if($old&&!false)$old->detach();$this->env->output('document',null);if($old){}if($old&&false)$old->detach();}\n- function open($id){$request=++$this->generation;$this->retire();if(true&&$request!==$this->generation)return;$buffer=$this->bank->get($this->env,$id);$this->current=new Badge($this->env,$id,$buffer);$this->env->output('document',['id'=>$id,'text'=>$this->env->store->read($id)]);}\n- function edit($text){$view=$this->current;if($view){$this->env->write($view->id,$text);}}function close(){++$this->generation;$this->retire();}function dispose(){$this->close();}\n+class Workspace {\n+    private $env, $current = null, $generation = 0;\n+    private $bank;\n+    function __construct($env) { $this->env=$env; $this->bank=new BufferBank(); }\n+    private function retire() {\n+        $request=$this->generation;\n+        $old=$this->current;\n+        $this->current=null;\n+        if ($old) {\n+            try {\n+                $old->buffer->flush();\n+            } finally {\n+                $old->detach();\n+            }\n+        }\n+        // Saving may have synchronously navigated to a newer document.\n+        if ($request === $this->generation) $this->env->output('document',null);\n+    }\n+    function open($id) {\n+        $request=++$this->generation;\n+        $this->retire();\n+        if ($request !== $this->generation) return;\n+        $buffer=$this->bank->get($this->env,$id);\n+        $this->current=new Badge($this->env,$id,$buffer);\n+        $this->env->output('document',['id'=>$id,'text'=>$this->env->store->read($id)]);\n+    }\n+    function edit($text) {\n+        $view=$this->current;\n+        if ($view) $view->buffer->push($text);\n+    }\n+    function close() { ++$this->generation; $this->retire(); }\n+    function dispose() { $this->close(); }\n }\n class Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [],
+        "coverage": [
+          {
+            "path": "src/workflow.php",
+            "status": "unsupported_language"
+          }
+        ],
+        "events": [],
+        "findings": [],
+        "limitations": [
+          "结果是语法事实、静态候选调用关系与待核查模式，不是已证明的时序契约、缺陷、严重度或难度分。",
+          "同名 API 只作为线索；不做全程序类型/别名/控制流证明。动态派发、对象工厂、函数参数传递的完整目标保持未知。",
+          "局部先后表示同一语法块中位置先后；条件、异常、循环、短路及调用是否实际执行仍需核查。",
+          "await 是潜在暂停点，并非必然切换；取消请求不等于工作与清理完成；移除监听不保证既有异步工作取消。",
+          "语法中的 if/try/finally 不等于已证明保护充分；无模式命中不等于程序安全。",
+          "未读取隐藏评分器、参考补丁、模型结果或人工 profile；分析根由操作者提供，文件内容的来源仍需核实。"
+        ],
+        "relations": [],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "partial",
+        "target_definitions": []
+      },
+      "sources": {
+        "README.md": "Hotel coordination — A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: separate BufferBank service\n",
+        "VISIBLE_CHECKS.md": "Public checks are deterministic external examples, not hidden gold. They are executed after each submitted Action. Keep original task/source obligations. Checks: latest quiet burst (120ms), persistence before departure returns, synchronous save callback navigation stays authoritative, preview hide discards pending work and allows reuse.\nUse the declared runtime: php PHP 7.4.3. The external adapter is not mounted in the model workspace; do not access scorer/reference files. Build temporary artifacts in /tmp.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"PHP 7.4.3\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide(). Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled. Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription. A store listener may call navigation synchronously. All source identities/text and status payloads retain original semantics.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.php": "<?php\nclass Store {\n    private $records, $listeners = [], $serial = 0, $revision = 0;\n    function __construct($records) { $this->records = $records; }\n    function read($id) { return $this->records[$id] ?? ''; }\n    function subscribe($fn) { $token = ++$this->serial; $this->listeners[$token] = $fn; return $token; }\n    function stop($token) { unset($this->listeners[$token]); }\n    function write($id, $text) {\n        $this->records[$id] = $text;\n        $event = ['id'=>$id, 'text'=>$text, 'revision'=>++$this->revision];\n        foreach ($this->listeners as $token=>$fn) if (isset($this->listeners[$token])) $fn($event);\n        return $event;\n    }\n}\nclass Trailing {\n    private $env, $delay, $work, $handle = null, $pending = null;\n    function __construct($env, $delay, $work) { $this->env=$env; $this->delay=$delay; $this->work=$work; }\n    function push($value) {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=$value;\n        $this->handle=$this->env->schedule(function() { $this->flush(); }, $this->delay);\n    }\n    function flush() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $value=$this->pending; $this->pending=null; $this->handle=null;\n        if ($value !== null) ($this->work)($value);\n    }\n    function cancel() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=null; $this->handle=null;\n    }\n}\n\nclass Badge {public $id,$buffer;private $env,$token;function __construct($env,$id,$buffer){$this->env=$env;$this->id=$id;$this->buffer=$buffer;$this->token=$env->store->subscribe(function($e)use($env,$id){if($e['id']===$id)$env->output('status',$e);});}function detach(){$this->env->store->stop($this->token);}}\nclass BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}\nclass Workspace {private $env,$current=null,$generation=0;private $bank;function __construct($env){$this->env=$env;$this->bank=new BufferBank();}\n private function retire(){$old=$this->current;$this->current=null;if($old&&!false)$old->detach();$this->env->output('document',null);if($old){}if($old&&false)$old->detach();}\n function open($id){$request=++$this->generation;$this->retire();if(true&&$request!==$this->generation)return;$buffer=$this->bank->get($this->env,$id);$this->current=new Badge($this->env,$id,$buffer);$this->env->output('document',['id'=>$id,'text'=>$this->env->store->read($id)]);}\n function edit($text){$view=$this->current;if($view){$this->env->write($view->id,$text);}}function close(){++$this->generation;$this->retire();}function dispose(){$this->close();}\n}\nclass Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}\n"
+      },
+      "task": "The workspace draft editor currently writes to the store on every keystroke.\nCoalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces.\nThe adjacent search preview is outside this maintenance change.\n"
+    },
+    "source_sha256": "6f9ffede7ae09cf3ebf613f96bc73c8ae928cb11330aa65fb76ce6859928e6b2",
+    "task_id": "draft-autosave-handoff-vanilla-port-php"
+  },
+  "experience": {
+    "excludes": [
+      "discard_boundary_policy"
+    ],
+    "labels": [
+      "O",
+      "B",
+      "I"
+    ],
+    "limitations": [
+      "Departure flushing is inferred from preserving existing persistence behavior when writes become deferred; TASK does not expressly name flushing.",
+      "The supplied sources do not specify recovery from exceptions in saves or environment callbacks.",
+      "The sources establish synchronous listener reentry, not asynchronous decoding, subscription bootstrap, or startup cleanup races.",
+      "The reported passing examples do not prove exhaustive correctness, causality, or benefit on other tasks."
+    ],
+    "requires": [
+      "deferred_batch",
+      "boundary_persistence",
+      "inline_reentry"
+    ],
+    "rules": [
+      {
+        "body": "Apply when immediate persistence becomes trailing persistence while document buffers outlive their views and saves can synchronously navigate. TASK: \"Preserve the editor's other behavior and public interfaces.\" README.md: \"A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate.\"",
+        "category": "applicability"
+      },
+      {
+        "body": "Restart the quiet interval on each edit and persist only the latest pending text when it expires. Keep the task reusable for later bursts. TASK: \"Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\\ninterval, write only the latest text in that editing burst. Subsequent bursts\\nmust continue to save.\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "Consume pending state before invoking save work, so synchronous callbacks can enqueue fresh work without the completed flush clearing it afterward. Preserve the ordering in src/workflow.php: \"$value=$this->pending; $this->pending=null; $this->handle=null;\\n        if ($value !== null) ($this->work)($value);\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "Preserve pending drafts on switch, close, and disposal by completing departure persistence before the operation returns. Keep persistence owned by the document buffer and subscription cleanup owned by the badge; detaching the badge must not discard the draft. docs/host-api.md: \"Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription.\" Original src/workflow.php: \"function edit($text){$view=$this->current;if($view){$this->env->write($view->id,$text);}}\" establishes persistence before an edit returns.",
+        "category": "preservation"
+      },
+      {
+        "body": "Treat saves and publication as possible synchronous navigation boundaries. After either can invoke navigation, verify that the outer request still has authority before clearing or installing document state. A superseded operation may finish cleanup of its captured departing badge but must preserve the newer navigation. docs/host-api.md: \"A store listener may call navigation synchronously.\" Original src/workflow.php: \"if(true&&$request!==$this->generation)return;\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "Preserve document identity, text, status event semantics, and public interfaces. docs/host-api.md: \"All source identities/text and status payloads retain original semantics.\" Preserve the departing badge's opportunity to receive its save status before removing its subscription.",
+        "category": "preservation"
+      },
+      {
+        "body": "Do not transfer the document's persistence policy to transient preview work. TASK: \"The adjacent search preview is outside this maintenance change.\" src/workflow.php: \"function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}\" Preserve preview's separate 40 ms interval, cancellation on hide, and subsequent reuse.",
+        "category": "exclusion"
+      },
+      {
+        "body": "Verify latest-only persistence after 120 ms, interval restart on another edit, subsequent bursts, and pending drafts across switch, close, and disposal. Exercise synchronous navigation during departure saves and document publication, checking that nested navigation remains authoritative and status payloads retain their semantics. Check preview cancellation and reuse as preservation checks. These checks derive from the cited task and source behavior; evaluation observations add no requirements.",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "After multiple edits within 120 ms, the store receives only the latest text when the quiet interval expires.",
+      "A later editing burst saves normally after an earlier burst has completed.",
+      "Switching, closing, or disposing preserves the departing document's latest draft.",
+      "Navigation performed synchronously by a save callback remains authoritative after the outer operation resumes.",
+      "Preview query timing, hide cancellation, and reuse remain unchanged."
+    ],
+    "forbidden_effects": [
+      "Writing to the store on every keystroke.",
+      "Saving superseded text from the same editing burst.",
+      "Losing a pending draft because its badge is detached.",
+      "Allowing an outer navigation operation to overwrite navigation initiated synchronously by a save callback.",
+      "Changing search preview behavior or public interfaces."
+    ],
+    "lifecycle_identity": [
+      "Document buffers are keyed by document identity and owned by BufferBank.",
+      "A Badge owns its live store subscription, independently of the document buffer.",
+      "Workspace generation distinguishes navigation requests, including synchronous reentrant requests."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Route workspace edits through the existing trailing-task utility with a 120 ms quiet interval, persisting only the latest text in each burst."
+      },
+      {
+        "id": "O2",
+        "text": "Keep the trailing task reusable so subsequent editing bursts continue to save."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve draft persistence across departure: pending edits must not be discarded when switching documents, closing, or disposing. Preserve the existing guarantee that edits preceding departure have reached the store before departure returns."
+      },
+      {
+        "id": "O4",
+        "text": "Account for synchronous navigation during persistence and publication. Once a nested navigation supersedes an outer request, the outer request must not install its requested document over the newer state."
+      },
+      {
+        "id": "O5",
+        "text": "Keep document-buffer responsibility in BufferBank and subscription responsibility in Badge; preserve document identities, text, status payload semantics, and public interfaces."
+      },
+      {
+        "id": "O6",
+        "text": "Leave the adjacent search preview's behavior unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "Restart the 120 ms quiet interval when another edit arrives before the pending save.",
+      "Clear consumed pending task state before invoking save work, preserving the utility's existing support for subsequent work.",
+      "Complete departure-related persistence before the departure operation returns.",
+      "Recheck navigation authority after operations that can synchronously invoke navigation, before installing an outer request's document."
+    ],
+    "preservation": [
+      "Existing open(id), edit(text), close(), dispose(), query(text), and hide() interfaces.",
+      "Per-document buffer ownership independent of the current badge.",
+      "Synchronous store listener behavior and original status payload semantics.",
+      "Preview's separate 40 ms trailing task and cancellation on hide."
+    ],
+    "scope": [
+      "Workspace draft persistence in src/workflow.php using the existing Trailing utility and BufferBank.",
+      "This stage specifies obligations without modifying files."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces."
+      },
+      {
+        "file": "TASK",
+        "quote": "The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: separate BufferBank service"
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription. A store listener may call navigation synchronously. All source identities/text and status payloads retain original semantics."
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function edit($text){$view=$this->current;if($view){$this->env->write($view->id,$text);}}function close(){++$this->generation;$this->retire();}function dispose(){$this->close();}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "$value=$this->pending; $this->pending=null; $this->handle=null;\n        if ($value !== null) ($this->work)($value);"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "class Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}"
+      }
+    ],
+    "triggers": [
+      "Editing while a document is open.",
+      "Another edit before the quiet interval expires.",
+      "Expiration of the current burst's quiet interval.",
+      "Opening another document, closing, or disposing with pending edits.",
+      "Synchronous navigation from a store listener during a save."
+    ],
+    "unknowns": [
+      "Departure flushing is not expressly named in TASK; it follows from preserving existing draft persistence when introducing delayed writes.",
+      "The supplied sources do not specify handling for exceptions from environment callbacks or saves.",
+      "The supplied sources do not establish asynchronous decoding or subscription bootstrap behavior; those experience-based patterns add no requirements here."
+    ]
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "After multiple edits within 120 ms, the store receives only the latest text when the quiet interval expires.",
+      "A later editing burst saves normally after an earlier burst has completed.",
+      "Switching, closing, or disposing preserves the departing document's latest draft.",
+      "Navigation performed synchronously by a save callback remains authoritative after the outer operation resumes.",
+      "Preview query timing, hide cancellation, and reuse remain unchanged."
+    ],
+    "forbidden_effects": [
+      "Writing to the store on every keystroke.",
+      "Saving superseded text from the same editing burst.",
+      "Losing a pending draft because its badge is detached.",
+      "Allowing an outer navigation operation to overwrite navigation initiated synchronously by a save callback.",
+      "Changing search preview behavior or public interfaces."
+    ],
+    "lifecycle_identity": [
+      "Document buffers are keyed by document identity and owned by BufferBank.",
+      "A Badge owns its live store subscription, independently of the document buffer.",
+      "Workspace generation distinguishes navigation requests, including synchronous reentrant requests."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Route workspace edits through the existing trailing-task utility with a 120 ms quiet interval, persisting only the latest text in each burst."
+      },
+      {
+        "id": "O2",
+        "text": "Keep the trailing task reusable so subsequent editing bursts continue to save."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve draft persistence across departure: pending edits must not be discarded when switching documents, closing, or disposing. Preserve the existing guarantee that edits preceding departure have reached the store before departure returns."
+      },
+      {
+        "id": "O4",
+        "text": "Account for synchronous navigation during persistence and publication. Once a nested navigation supersedes an outer request, the outer request must not install its requested document over the newer state."
+      },
+      {
+        "id": "O5",
+        "text": "Keep document-buffer responsibility in BufferBank and subscription responsibility in Badge; preserve document identities, text, status payload semantics, and public interfaces."
+      },
+      {
+        "id": "O6",
+        "text": "Leave the adjacent search preview's behavior unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "Restart the 120 ms quiet interval when another edit arrives before the pending save.",
+      "Clear consumed pending task state before invoking save work, preserving the utility's existing support for subsequent work.",
+      "Complete departure-related persistence before the departure operation returns.",
+      "Recheck navigation authority after operations that can synchronously invoke navigation, before installing an outer request's document."
+    ],
+    "preservation": [
+      "Existing open(id), edit(text), close(), dispose(), query(text), and hide() interfaces.",
+      "Per-document buffer ownership independent of the current badge.",
+      "Synchronous store listener behavior and original status payload semantics.",
+      "Preview's separate 40 ms trailing task and cancellation on hide."
+    ],
+    "scope": [
+      "Workspace draft persistence in src/workflow.php using the existing Trailing utility and BufferBank.",
+      "This stage specifies obligations without modifying files."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces."
+      },
+      {
+        "file": "TASK",
+        "quote": "The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: separate BufferBank service"
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription. A store listener may call navigation synchronously. All source identities/text and status payloads retain original semantics."
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function edit($text){$view=$this->current;if($view){$this->env->write($view->id,$text);}}function close(){++$this->generation;$this->retire();}function dispose(){$this->close();}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "$value=$this->pending; $this->pending=null; $this->handle=null;\n        if ($value !== null) ($this->work)($value);"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "class Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}"
+      }
+    ],
+    "triggers": [
+      "Editing while a document is open.",
+      "Another edit before the quiet interval expires.",
+      "Expiration of the current burst's quiet interval.",
+      "Opening another document, closing, or disposing with pending edits.",
+      "Synchronous navigation from a store listener during a save."
+    ],
+    "unknowns": [
+      "Departure flushing is not expressly named in TASK; it follows from preserving existing draft persistence when introducing delayed writes.",
+      "The supplied sources do not specify handling for exceptions from environment callbacks or saves.",
+      "The supplied sources do not establish asynchronous decoding or subscription bootstrap behavior; those experience-based patterns add no requirements here."
+    ]
+  },
+  "origin": "success",
+  "source_sha256": "6f9ffede7ae09cf3ebf613f96bc73c8ae928cb11330aa65fb76ce6859928e6b2",
+  "status": "awaiting_content_review",
+  "task": "The workspace draft editor currently writes to the store on every keystroke.\nCoalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces.\nThe adjacent search preview is outside this maintenance change.\n",
+  "trajectory": [
+    {
+      "candidate_inventory": {
+        "README.md": "a2ba7bbb3f81a76a1510adce7333a9d10d94dd42ecdff5013276830df8990584",
+        "VISIBLE_CHECKS.md": "dc29cf42d60c6ebd0b30e69cceb422b4d053d2044af43bbe711dfe32c6f01c3c",
+        "dependencies.lock.json": "025b3c84bd17b27eba12f2c299aada316781fcb6ba66ab4beddcb44bb0281991",
+        "docs/host-api.md": "191f3a39cbf21303313def3e9000b28324cb2386bcc1cd5dc40ef6e2e9edb4dc",
+        "package-lock.json": "2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59",
+        "package.json": "66db10140e649e83eadde7fe04cb4ccb1467c20f5a7db2117520ab1572467f1a",
+        "src/workflow.php": "aa41a117d42f333eb519e66eaa921a555f747ffe7942577eab1bae8d8b374bc1"
+      },
+      "candidate_sources": {
+        "README.md": "Hotel coordination — A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: separate BufferBank service\n",
+        "VISIBLE_CHECKS.md": "Public checks are deterministic external examples, not hidden gold. They are executed after each submitted Action. Keep original task/source obligations. Checks: latest quiet burst (120ms), persistence before departure returns, synchronous save callback navigation stays authoritative, preview hide discards pending work and allows reuse.\nUse the declared runtime: php PHP 7.4.3. The external adapter is not mounted in the model workspace; do not access scorer/reference files. Build temporary artifacts in /tmp.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"PHP 7.4.3\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide(). Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled. Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription. A store listener may call navigation synchronously. All source identities/text and status payloads retain original semantics.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.php": "<?php\nclass Store {\n    private $records, $listeners = [], $serial = 0, $revision = 0;\n    function __construct($records) { $this->records = $records; }\n    function read($id) { return $this->records[$id] ?? ''; }\n    function subscribe($fn) { $token = ++$this->serial; $this->listeners[$token] = $fn; return $token; }\n    function stop($token) { unset($this->listeners[$token]); }\n    function write($id, $text) {\n        $this->records[$id] = $text;\n        $event = ['id'=>$id, 'text'=>$text, 'revision'=>++$this->revision];\n        foreach ($this->listeners as $token=>$fn) if (isset($this->listeners[$token])) $fn($event);\n        return $event;\n    }\n}\nclass Trailing {\n    private $env, $delay, $work, $handle = null, $pending = null;\n    function __construct($env, $delay, $work) { $this->env=$env; $this->delay=$delay; $this->work=$work; }\n    function push($value) {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=$value;\n        $this->handle=$this->env->schedule(function() { $this->flush(); }, $this->delay);\n    }\n    function flush() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $value=$this->pending; $this->pending=null; $this->handle=null;\n        if ($value !== null) ($this->work)($value);\n    }\n    function cancel() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=null; $this->handle=null;\n    }\n}\n\nclass Badge {public $id,$buffer;private $env,$token;function __construct($env,$id,$buffer){$this->env=$env;$this->id=$id;$this->buffer=$buffer;$this->token=$env->store->subscribe(function($e)use($env,$id){if($e['id']===$id)$env->output('status',$e);});}function detach(){$this->env->store->stop($this->token);}}\nclass BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}\nclass Workspace {\n    private $env, $current = null, $generation = 0;\n    private $bank;\n    function __construct($env) { $this->env=$env; $this->bank=new BufferBank(); }\n    private function retire() {\n        $request=$this->generation;\n        $old=$this->current;\n        $this->current=null;\n        if ($old) {\n            try {\n                $old->buffer->flush();\n            } finally {\n                $old->detach();\n            }\n        }\n        // Saving may have synchronously navigated to a newer document.\n        if ($request === $this->generation) $this->env->output('document',null);\n    }\n    function open($id) {\n        $request=++$this->generation;\n        $this->retire();\n        if ($request !== $this->generation) return;\n        $buffer=$this->bank->get($this->env,$id);\n        $this->current=new Badge($this->env,$id,$buffer);\n        $this->env->output('document',['id'=>$id,'text'=>$this->env->store->read($id)]);\n    }\n    function edit($text) {\n        $view=$this->current;\n        if ($view) $view->buffer->push($text);\n    }\n    function close() { ++$this->generation; $this->retire(); }\n    function dispose() { $this->close(); }\n}\nclass Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}\n"
+      },
+      "feedback": {
+        "observations": [
+          {
+            "actual": {
+              "afterQuiet": "two",
+              "beforeQuiet": "before"
+            },
+            "check": "public_quiet_burst_latest",
+            "passed": true
+          },
+          {
+            "actual": {
+              "current": "B",
+              "departedText": "saved"
+            },
+            "check": "public_departure_persists_latest",
+            "passed": true
+          },
+          {
+            "actual": {
+              "current": "B"
+            },
+            "check": "public_nested_navigation_remains_authoritative",
+            "passed": true
+          },
+          {
+            "actual": [
+              "keep"
+            ],
+            "check": "public_preview_discard_and_reuse",
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "unknowns": [
+          "Public examples are not exhaustive; gold is independent."
+        ]
+      },
+      "number": 1,
+      "visible_passed": true
+    }
+  ]
+}

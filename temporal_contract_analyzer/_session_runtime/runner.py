@@ -50,7 +50,7 @@ def source_proof(events,original):
             read_tokens=tokens if tokens and Path(tokens[0]).name in ['cat','nl','sed','head','tail','rg'] else []
         except ValueError:pass
         for f in original.rglob('*'):
-            if f.suffix not in ['.js','.py','.jsx','.ts','.tsx','.vue'] or f.is_symlink() or not f.is_file():continue
+            if f.suffix not in ['.js','.mjs','.cjs','.py','.jsx','.ts','.tsx','.vue','.go','.rb','.php','.java'] or f.is_symlink() or not f.is_file():continue
             matched=sorted({x.strip() for x in f.read_text().splitlines() if len(x.strip())>=20}&normalized)
             full=f.read_text();rel=str(f.relative_to(original))
             # Exit status of a combined read is not proof that no file was read.

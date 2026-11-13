@@ -43,7 +43,7 @@ class Launcher:
         node = self.config['node']
         if not re.fullmatch(r'/runtime/node(?:16|18|24)/bin/node', node):
             raise ValueError('Require a public solver Node runtime')
-        path = str(Path(node).parent) + ':/runtime/bin:/public-cli:/usr/local/bin:/usr/bin:/bin:/opt'
+        path = str(Path(node).parent) + ':/runtime/bin:/public-cli:/opt/go1.13.8/bin:/usr/bin:/usr/local/bin:/bin:/opt'
         for name in ('.bash_profile', '.profile'):
             (home/name).write_text('export PATH="' + path + '"\n')
         hooks = json.loads((profile/'hooks.json').read_text())
@@ -83,6 +83,7 @@ class Launcher:
         for key, value in dict(HOME='/home/agent', CODEX_HOME='/home/agent/.codex',
                               PATH=path, LANG='C.UTF-8', DIAG_CALL_ID=call,
                               NODE_PATH='/runtime/frontend/node_modules',
+                              GOCACHE='/tmp/go-cache', GO111MODULE='off',
                               PYTHONDONTWRITEBYTECODE='1').items():
             args.extend(['--env', key + '=' + value])
         # Forward proxy values by name, without embedding credentials in command logs.

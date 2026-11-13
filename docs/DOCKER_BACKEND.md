@@ -9,9 +9,11 @@ The evolution controller reuses existing public solver and trusted grading
 images. It keeps its own guarded single-session runner, schemas, accounting,
 archival, expert gate and stop rules. It never imports a SWE experiment scheduler.
 The adapter covers the current registered `legacy-js`/`python` probe contracts;
-it does not claim support for every SWE-TempoC task. Initial admission is limited
-to self-contained vanilla-js and Python. Frontend/upstream dependency mounting
-has not been validated on the solver side and is rejected before model dispatch.
+it does not claim support for every SWE-TempoC task. The standalone legacy calibration API remains limited to self-contained vanilla-js
+and the Python adapter. V4 native-language training uses the case-specific Docker
+preparation and calibration path described in [Docker training](DOCKER_TRAINING.md);
+it verifies each registered case before model dispatch. These are separate
+preparation APIs sharing the same container transport.
 
 ## Images and zero-model preparation
 
@@ -80,11 +82,11 @@ errors. No model is called and no reference patch is sent to a solver.
 ## V4 integration
 
 Use the [V4 configuration and CLI](TEMPOEVO_V4.md) for new learning and testing.
-`tempoevo run --execute` is the only model-execution entrypoint. Its current
-`NativeV4Backend` uses isolated native model sessions; adding the Docker `backend`
-object above to a V4 configuration does not select containerized model execution.
-The shared Docker adapter remains available for deterministic preparation and
-trusted scoring. Historical V1–V3 batches are read-only through `history status/report`.
+`tempoevo run --execute` is the only model-execution entrypoint. New live runs
+require `backend.kind=docker` and containerized visible/gold evaluators. All model
+roles use the shared Docker transport. AST extraction runs in a separate offline
+solver container; the host retains scheduling and archive management. See
+[Docker training setup](DOCKER_TRAINING.md). Historical V1–V3 batches are read-only.
 
 V4 accepts separate visible and gold evaluator commands, each receiving the
 candidate path as its final argument. A trusted evaluator wrapper can invoke

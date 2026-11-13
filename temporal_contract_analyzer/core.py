@@ -17,7 +17,7 @@ from .publication import publication_patterns
 VERSION='0.6.10'
 ROOT=Path(__file__).resolve().parents[1]
 JS_EXT={'.js','.mjs','.cjs','.jsx','.ts','.tsx'}
-CODE_EXT=JS_EXT|{'.py','.vue','.go','.java','.rs','.c','.h','.cpp','.cs','.rb'}
+CODE_EXT=JS_EXT|{'.py','.vue','.go','.java','.rs','.c','.h','.cpp','.cs','.rb','.php'}
 EXCLUDED={'oracle','reference','references','mutants','negative-controls','results','studies','evidence','paper','node_modules','vendor','dist','build','__pycache__','.git','.venv','venv'}
 MAX_FILE=1024*1024
 MAX_TOTAL=25*1024*1024

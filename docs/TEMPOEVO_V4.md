@@ -52,7 +52,7 @@ python3 -m temporal_contract_analyzer experience-memory review --store /path/to/
 ```
 
 Preparation, status and publication never launch a model. `run --execute` uses the
-shared isolated native CLI runner (`execution_backend.py`). Every LLM stage uses gpt-6.1-sol/medium;
+shared guarded CLI runner (`execution_backend.py`) through Docker. New live CLI runs require Docker model and evaluation configurations. Every LLM stage uses gpt-6.1-sol/medium;
 diagnosis and extraction use read-only analysis sessions with independent schemas,
 and their JSON results are archived without requiring routing's Markdown `contract`
 field. Task evidence accepts `TASK` and `original task` regardless of capitalization
@@ -61,9 +61,7 @@ inline-code delimiters are normalized. Source-code backticks remain significant.
 Experience extraction uses the review library's R/O/B/L/I/F/A labels,
 registered mechanism predicates and rule categories; prose applicability and
 exclusions belong in rule bodies. Action uses a writable isolated candidate workspace. No gold/referee directories
-are mounted into it. Requires Linux native isolation provisioning (`bwrap`, Codex,
-authentication and Node); this change does not provide a macOS native sandbox or a
-new Docker deployment adapter. No real model runs were performed for this change.
+are mounted into the solver. Docker images provide language tools and dependencies; model authentication is mounted only into ephemeral solver profiles. Host `bwrap` is no longer the live V4 namespace. See [Docker setup](DOCKER_TRAINING.md).
 
 ## Evaluation boundary and fairness
 
@@ -115,7 +113,7 @@ stages and actual delivery. Unstarted later attempts are not separate cases.
   not a trained retriever. No weight updates or learned ranking are implemented.
 - Contract semantic correctness and true human identity remain external judgments;
   deterministic citation/monotonic checks cannot certify them.
-- The generic host-command evaluator adapter does not automatically split existing
+- The evaluator adapter does not automatically split existing
   SWE-TempoC gold scorers into safe visible checks. Configure vetted public checks
   explicitly; never wire hidden details into a visible evaluator.
 - Expert summaries and publication are explicit local CLI operations; the existing
