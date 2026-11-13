@@ -1,0 +1,1087 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/progress.js\n+++ candidate/src/progress.js\n@@ -1,12 +1,30 @@\n // The source is shared by visits of the same file. Decoding may settle later.\n-export function watchTransferProgress(feed, receive, record) {\n+export function watchTransferProgress(feed, receive, record, isCurrent = () => true) {\n+  let stopped = false;\n+  let nextPacket = 0;\n+  let lastDisplayed = 0;\n+  const active = () => !stopped && isCurrent();\n   const listener = event => {\n-    const deliver = frame => { record(frame); receive(frame); };\n+    // Startup can reenter navigation before our cleanup handle is returned.\n+    if (!active()) return;\n+    const packet = ++nextPacket;\n+    const deliver = frame => {\n+      // Admitted work retains its history even after its owner departs.\n+      record(frame);\n+      if (active() && packet > lastDisplayed) {\n+        lastDisplayed = packet;\n+        receive(frame);\n+      }\n+    };\n     const decoded = feed.decode(event.detail);\n     if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n     else deliver(decoded);\n   };\n+  feed.target.addEventListener(\"progress\", listener);\n   feed.start();\n-  feed.target.addEventListener(\"progress\", listener);\n-  return () => feed.target.removeEventListener(\"progress\", listener);\n+  return () => {\n+    if (stopped) return;\n+    stopped = true;\n+    feed.target.removeEventListener(\"progress\", listener);\n+  };\n }\n--- original/src/queue.js\n+++ candidate/src/queue.js\n@@ -9,6 +9,7 @@\n   const attemptId = ++state.nextAttempt;\n   state.record(makeQueueRecord(visit.file, attemptId, visit.id, kind));\n   const progress = {\n+    isCurrent() { return state.current === visit; },\n     record(frame) { state.recordProgress({ fileId: visit.file.id, attemptId, frame }); },\n     receive(frame) {\n       if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });\n--- original/src/transfer.js\n+++ candidate/src/transfer.js\n@@ -9,7 +9,8 @@\n   }, { once: true });\n   transport({ file, attemptId, signal: controller.signal });\n   if (file.progressFeed) {\n-    stopProgress = watchTransferProgress(file.progressFeed, progress.receive, progress.record);\n+    stopProgress = watchTransferProgress(file.progressFeed, progress.receive, progress.record,\n+      () => !controller.signal.aborted && (!progress.isCurrent || progress.isCurrent()));\n     if (controller.signal.aborted) stopProgress();\n   }\n   return { file, attemptId, signal: controller.signal,\n",
+        "from_previous": "--- previous/src/progress.js\n+++ candidate/src/progress.js\n@@ -1,12 +1,30 @@\n // The source is shared by visits of the same file. Decoding may settle later.\n-export function watchTransferProgress(feed, receive, record) {\n+export function watchTransferProgress(feed, receive, record, isCurrent = () => true) {\n+  let stopped = false;\n+  let nextPacket = 0;\n+  let lastDisplayed = 0;\n+  const active = () => !stopped && isCurrent();\n   const listener = event => {\n-    const deliver = frame => { record(frame); receive(frame); };\n+    // Startup can reenter navigation before our cleanup handle is returned.\n+    if (!active()) return;\n+    const packet = ++nextPacket;\n+    const deliver = frame => {\n+      // Admitted work retains its history even after its owner departs.\n+      record(frame);\n+      if (active() && packet > lastDisplayed) {\n+        lastDisplayed = packet;\n+        receive(frame);\n+      }\n+    };\n     const decoded = feed.decode(event.detail);\n     if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n     else deliver(decoded);\n   };\n+  feed.target.addEventListener(\"progress\", listener);\n   feed.start();\n-  feed.target.addEventListener(\"progress\", listener);\n-  return () => feed.target.removeEventListener(\"progress\", listener);\n+  return () => {\n+    if (stopped) return;\n+    stopped = true;\n+    feed.target.removeEventListener(\"progress\", listener);\n+  };\n }\n--- previous/src/queue.js\n+++ candidate/src/queue.js\n@@ -9,6 +9,7 @@\n   const attemptId = ++state.nextAttempt;\n   state.record(makeQueueRecord(visit.file, attemptId, visit.id, kind));\n   const progress = {\n+    isCurrent() { return state.current === visit; },\n     record(frame) { state.recordProgress({ fileId: visit.file.id, attemptId, frame }); },\n     receive(frame) {\n       if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });\n--- previous/src/transfer.js\n+++ candidate/src/transfer.js\n@@ -9,7 +9,8 @@\n   }, { once: true });\n   transport({ file, attemptId, signal: controller.signal });\n   if (file.progressFeed) {\n-    stopProgress = watchTransferProgress(file.progressFeed, progress.receive, progress.record);\n+    stopProgress = watchTransferProgress(file.progressFeed, progress.receive, progress.record,\n+      () => !controller.signal.aborted && (!progress.isCurrent || progress.isCurrent()));\n     if (controller.signal.aborted) stopProgress();\n   }\n   return { file, attemptId, signal: controller.signal,\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [],
+        "coverage": [
+          {
+            "path": "src/notice.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/panel.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/progress-source.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/progress.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/queue.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/retry.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/telemetry.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/transfer.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/workspace.js",
+            "status": "parsed"
+          },
+          {
+            "path": "tests/visible.mjs",
+            "status": "parsed"
+          }
+        ],
+        "events": [
+          {
+            "arguments": [
+              "listener"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "listeners.delete",
+            "column": 31,
+            "conditions": [
+              "conditional expression type === \"progress\""
+            ],
+            "end_column": 57,
+            "end_line": 21,
+            "id": "src/progress-source.js::e21",
+            "kind": "call",
+            "line": 21,
+            "path": "src/progress-source.js",
+            "receiver": "listeners",
+            "scope": "<module>/createProgressFeed/<callback>#2",
+            "text": "listeners.delete(listener)"
+          },
+          {
+            "arguments": [],
+            "binding": "parameter_callback",
+            "callee": "onDetach",
+            "column": 59,
+            "conditions": [
+              "if type === \"progress\" && listeners.delete(listener)"
+            ],
+            "end_column": 69,
+            "end_line": 21,
+            "id": "src/progress-source.js::e22",
+            "kind": "call",
+            "line": 21,
+            "path": "src/progress-source.js",
+            "receiver": "",
+            "scope": "<module>/createProgressFeed/<callback>#2",
+            "text": "onDetach()"
+          },
+          {
+            "column": 8,
+            "conditions": [],
+            "end_column": 53,
+            "end_line": 6,
+            "expression": "decoded && typeof decoded.then === \"function\"",
+            "id": "src/progress.js::e8",
+            "kind": "guard",
+            "line": 6,
+            "path": "src/progress.js",
+            "scope": "<module>/watchTransferProgress/listener",
+            "text": "decoded && typeof decoded.then === \"function\""
+          },
+          {
+            "arguments": [
+              "deliver"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "decoded.then",
+            "column": 55,
+            "conditions": [
+              "if decoded && typeof decoded.then === \"function\""
+            ],
+            "end_column": 76,
+            "end_line": 6,
+            "id": "src/progress.js::e9",
+            "kind": "call",
+            "line": 6,
+            "path": "src/progress.js",
+            "receiver": "decoded",
+            "scope": "<module>/watchTransferProgress/listener",
+            "text": "decoded.then(deliver)"
+          },
+          {
+            "arguments": [
+              "\"progress\"",
+              "listener"
+            ],
+            "binding": "parameter_member",
+            "callee": "feed.target.removeEventListener",
+            "column": 15,
+            "conditions": [],
+            "end_column": 68,
+            "end_line": 11,
+            "id": "src/progress.js::e16",
+            "kind": "call",
+            "line": 11,
+            "path": "src/progress.js",
+            "receiver": "feed.target",
+            "scope": "<module>/watchTransferProgress/<callback>",
+            "text": "feed.target.removeEventListener(\"progress\", listener)"
+          },
+          {
+            "column": 8,
+            "conditions": [],
+            "end_column": 53,
+            "end_line": 6,
+            "expression": "decoded && typeof decoded.then === \"function\"",
+            "id": "src/telemetry.js::e7",
+            "kind": "guard",
+            "line": 6,
+            "path": "src/telemetry.js",
+            "scope": "<module>/collectProgressTelemetry/listener",
+            "text": "decoded && typeof decoded.then === \"function\""
+          },
+          {
+            "arguments": [
+              "deliver"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "decoded.then",
+            "column": 55,
+            "conditions": [
+              "if decoded && typeof decoded.then === \"function\""
+            ],
+            "end_column": 76,
+            "end_line": 6,
+            "id": "src/telemetry.js::e8",
+            "kind": "call",
+            "line": 6,
+            "path": "src/telemetry.js",
+            "receiver": "decoded",
+            "scope": "<module>/collectProgressTelemetry/listener",
+            "text": "decoded.then(deliver)"
+          },
+          {
+            "arguments": [
+              "\"progress\"",
+              "listener"
+            ],
+            "binding": "parameter_member",
+            "callee": "feed.target.removeEventListener",
+            "column": 15,
+            "conditions": [],
+            "end_column": 68,
+            "end_line": 11,
+            "id": "src/telemetry.js::e15",
+            "kind": "call",
+            "line": 11,
+            "path": "src/telemetry.js",
+            "receiver": "feed.target",
+            "scope": "<module>/collectProgressTelemetry/<callback>",
+            "text": "feed.target.removeEventListener(\"progress\", listener)"
+          },
+          {
+            "arguments": [
+              "\"abort\"",
+              "() => {\n    stopProgress();\n    onCancel({ file, attemptId, signal: controller.signal });\n  }",
+              "{ once: true }"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "controller.signal.addEventListener",
+            "column": 2,
+            "conditions": [],
+            "end_column": 20,
+            "end_line": 9,
+            "id": "src/transfer.js::e9",
+            "kind": "call",
+            "line": 6,
+            "path": "src/transfer.js",
+            "receiver": "controller.signal",
+            "scope": "<module>/createTransfer",
+            "text": "controller.signal.addEventListener(\"abort\", () => {\n    stopProgress();\n    onCancel({ file, attemptId, signal: controller.signal });\n  }, { once: true })"
+          },
+          {
+            "arguments": [
+              "{ file, attemptId, signal: controller.signal }"
+            ],
+            "binding": "parameter_callback",
+            "callee": "transport",
+            "column": 2,
+            "conditions": [],
+            "end_column": 59,
+            "end_line": 10,
+            "id": "src/transfer.js::e10",
+            "kind": "call",
+            "line": 10,
+            "path": "src/transfer.js",
+            "receiver": "",
+            "scope": "<module>/createTransfer",
+            "text": "transport({ file, attemptId, signal: controller.signal })"
+          },
+          {
+            "column": 110,
+            "conditions": [],
+            "end_column": 122,
+            "end_line": 48,
+            "id": "tests/visible.mjs::e125",
+            "kind": "await",
+            "line": 48,
+            "path": "tests/visible.mjs",
+            "scope": "<module>/<callback>#4",
+            "text": "await tick()"
+          },
+          {
+            "arguments": [],
+            "binding": "unresolved",
+            "callee": "w.dispose",
+            "column": 72,
+            "conditions": [],
+            "end_column": 83,
+            "end_line": 49,
+            "id": "tests/visible.mjs::e129",
+            "kind": "call",
+            "line": 49,
+            "path": "tests/visible.mjs",
+            "receiver": "w",
+            "scope": "<module>/<callback>#4",
+            "text": "w.dispose()"
+          },
+          {
+            "column": 119,
+            "conditions": [],
+            "end_column": 131,
+            "end_line": 53,
+            "id": "tests/visible.mjs::e153",
+            "kind": "await",
+            "line": 53,
+            "path": "tests/visible.mjs",
+            "scope": "<module>/<callback>#5",
+            "text": "await tick()"
+          },
+          {
+            "column": 145,
+            "conditions": [],
+            "end_column": 157,
+            "end_line": 53,
+            "id": "tests/visible.mjs::e156",
+            "kind": "await",
+            "line": 53,
+            "path": "tests/visible.mjs",
+            "scope": "<module>/<callback>#5",
+            "text": "await tick()"
+          },
+          {
+            "arguments": [],
+            "binding": "unresolved",
+            "callee": "w.dispose",
+            "column": 86,
+            "conditions": [],
+            "end_column": 97,
+            "end_line": 54,
+            "id": "tests/visible.mjs::e161",
+            "kind": "call",
+            "line": 54,
+            "path": "tests/visible.mjs",
+            "receiver": "w",
+            "scope": "<module>/<callback>#5",
+            "text": "w.dispose()"
+          },
+          {
+            "column": 137,
+            "conditions": [],
+            "end_column": 149,
+            "end_line": 68,
+            "id": "tests/visible.mjs::e243",
+            "kind": "await",
+            "line": 68,
+            "path": "tests/visible.mjs",
+            "scope": "<module>/<callback>#8",
+            "text": "await tick()"
+          },
+          {
+            "arguments": [],
+            "binding": "unresolved",
+            "callee": "w.dispose",
+            "column": 124,
+            "conditions": [],
+            "end_column": 135,
+            "end_line": 69,
+            "id": "tests/visible.mjs::e250",
+            "kind": "call",
+            "line": 69,
+            "path": "tests/visible.mjs",
+            "receiver": "w",
+            "scope": "<module>/<callback>#8",
+            "text": "w.dispose()"
+          }
+        ],
+        "findings": [
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅是共现线索；需追踪是否属于同一工作、同一生命周期。",
+            "evidence": [
+              "src/progress.js::e9",
+              "src/progress.js::e16"
+            ],
+            "message": "同一文件中同时存在完成回调登记和监听移除。",
+            "path": "src/progress.js",
+            "review_question": "若二者相关，移除监听后，已开始的工作完成时是否还有有效性检查？",
+            "rule": "continuation-and-listener-removal",
+            "scope": "<module>/watchTransferProgress/listener"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅是共现线索；需追踪是否属于同一工作、同一生命周期。",
+            "evidence": [
+              "src/telemetry.js::e8",
+              "src/telemetry.js::e15"
+            ],
+            "message": "同一文件中同时存在完成回调登记和监听移除。",
+            "path": "src/telemetry.js",
+            "review_question": "若二者相关，移除监听后，已开始的工作完成时是否还有有效性检查？",
+            "rule": "continuation-and-listener-removal",
+            "scope": "<module>/collectProgressTelemetry/listener"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/progress.js::e9",
+              "src/progress.js::e16"
+            ],
+            "message": "完成回调/等待点与关闭、重新打开或清理边界名称线索出现在同一词法单元。",
+            "path": "src/progress.js",
+            "review_question": "关闭、卸载和切换是否是不同边界？哪些边界应使旧结果失效，哪些工作应继续？需从仓库证据确认。",
+            "rule": "continuation-lifecycle-boundaries",
+            "scope": "<module>/watchTransferProgress"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/progress.js::e8",
+              "src/progress.js::e9",
+              "src/progress.js::e16"
+            ],
+            "message": "列出相关词法单元中的条件判断，以及关闭/返回清理函数内的状态写入；存在判断不等于有效性保护。",
+            "path": "src/progress.js",
+            "review_question": "回调检查了什么状态？关闭、卸载、重开分别更新了什么？只取消计时器能否约束已发请求？相同标识重新使用时判断是否仍适用？",
+            "rule": "continuation-guard-state-review",
+            "scope": "<module>/watchTransferProgress"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/telemetry.js::e8",
+              "src/telemetry.js::e15"
+            ],
+            "message": "完成回调/等待点与关闭、重新打开或清理边界名称线索出现在同一词法单元。",
+            "path": "src/telemetry.js",
+            "review_question": "关闭、卸载和切换是否是不同边界？哪些边界应使旧结果失效，哪些工作应继续？需从仓库证据确认。",
+            "rule": "continuation-lifecycle-boundaries",
+            "scope": "<module>/collectProgressTelemetry"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/telemetry.js::e7",
+              "src/telemetry.js::e8",
+              "src/telemetry.js::e15"
+            ],
+            "message": "列出相关词法单元中的条件判断，以及关闭/返回清理函数内的状态写入；存在判断不等于有效性保护。",
+            "path": "src/telemetry.js",
+            "review_question": "回调检查了什么状态？关闭、卸载、重开分别更新了什么？只取消计时器能否约束已发请求？相同标识重新使用时判断是否仍适用？",
+            "rule": "continuation-guard-state-review",
+            "scope": "<module>/collectProgressTelemetry"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "tests/visible.mjs::e125",
+              "tests/visible.mjs::e129"
+            ],
+            "message": "完成回调/等待点与关闭、重新打开或清理边界名称线索出现在同一词法单元。",
+            "path": "tests/visible.mjs",
+            "review_question": "关闭、卸载和切换是否是不同边界？哪些边界应使旧结果失效，哪些工作应继续？需从仓库证据确认。",
+            "rule": "continuation-lifecycle-boundaries",
+            "scope": "<module>/<callback>#4"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "tests/visible.mjs::e153",
+              "tests/visible.mjs::e156",
+              "tests/visible.mjs::e161"
+            ],
+            "message": "完成回调/等待点与关闭、重新打开或清理边界名称线索出现在同一词法单元。",
+            "path": "tests/visible.mjs",
+            "review_question": "关闭、卸载和切换是否是不同边界？哪些边界应使旧结果失效，哪些工作应继续？需从仓库证据确认。",
+            "rule": "continuation-lifecycle-boundaries",
+            "scope": "<module>/<callback>#5"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "tests/visible.mjs::e243",
+              "tests/visible.mjs::e250"
+            ],
+            "message": "完成回调/等待点与关闭、重新打开或清理边界名称线索出现在同一词法单元。",
+            "path": "tests/visible.mjs",
+            "review_question": "关闭、卸载和切换是否是不同边界？哪些边界应使旧结果失效，哪些工作应继续？需从仓库证据确认。",
+            "rule": "continuation-lifecycle-boundaries",
+            "scope": "<module>/<callback>#8"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "回调未位于另一个嵌套函数体，且此前未发现 await/yield；只是源码上的候选直接通知路径。名称、循环元素和路径可达性未作类型/控制流证明，未证明它与其他文件中的订阅者是同一实例。",
+            "evidence": [
+              "src/progress-source.js::e21",
+              "src/progress-source.js::e22"
+            ],
+            "message": "成员写入或集合/持久化名称调用之后，同一非 async 函数直接调用参数回调或循环取出的可调用项。",
+            "path": "src/progress-source.js",
+            "review_question": "该调用是否通知外部消费者？消费者能否在返回前重新进入当前对象？调用后继续使用的状态是否仍有效，最新请求如何决定优先级？",
+            "rule": "state-write-inline-notification",
+            "scope": "<module>/createProgressFeed/<callback>#2"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "回调未位于另一个嵌套函数体，且此前未发现 await/yield；只是源码上的候选直接通知路径。名称、循环元素和路径可达性未作类型/控制流证明，未证明它与其他文件中的订阅者是同一实例。",
+            "evidence": [
+              "src/transfer.js::e9",
+              "src/transfer.js::e10"
+            ],
+            "message": "成员写入或集合/持久化名称调用之后，同一非 async 函数直接调用参数回调或循环取出的可调用项。",
+            "path": "src/transfer.js",
+            "review_question": "该调用是否通知外部消费者？消费者能否在返回前重新进入当前对象？调用后继续使用的状态是否仍有效，最新请求如何决定优先级？",
+            "rule": "state-write-inline-notification",
+            "scope": "<module>/createTransfer"
+          }
+        ],
+        "limitations": [
+          "结果是语法事实、静态候选调用关系与待核查模式，不是已证明的时序契约、缺陷、严重度或难度分。",
+          "同名 API 只作为线索；不做全程序类型/别名/控制流证明。动态派发、对象工厂、函数参数传递的完整目标保持未知。",
+          "局部先后表示同一语法块中位置先后；条件、异常、循环、短路及调用是否实际执行仍需核查。",
+          "await 是潜在暂停点，并非必然切换；取消请求不等于工作与清理完成；移除监听不保证既有异步工作取消。",
+          "语法中的 if/try/finally 不等于已证明保护充分；无模式命中不等于程序安全。",
+          "未读取隐藏评分器、参考补丁、模型结果或人工 profile；分析根由操作者提供，文件内容的来源仍需核实。"
+        ],
+        "relations": [
+          {
+            "after": "src/progress-source.js::e22",
+            "before": "src/progress-source.js::e21",
+            "kind": "lexical_write_before_direct_call",
+            "qualification": "Source order in one function; path execution, callback type and reentry remain unproven."
+          },
+          {
+            "after": "src/transfer.js::e10",
+            "before": "src/transfer.js::e9",
+            "kind": "lexical_write_before_direct_call",
+            "qualification": "Source order in one function; path execution, callback type and reentry remain unproven."
+          }
+        ],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "parsed",
+        "target_definitions": []
+      },
+      "sources": {
+        "README.md": "# Transfer retry panel with decoded progress\n\nThis workspace selects files, starts transfers, records queue and progress\nhistory, and paints progress for the open panel. Run it with Node v16.20.2; it\nhas no dependencies. `src/workspace.js` exports the workspace and the source\nhelpers used by the host application.\n\nSelecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file again does open another visit.\nThe feed object is shared by attempts and visits for that file. Its `start()`\nmethod may synchronously emit cached data, and `decode(packet)` may return a\nvalue or a Promise.\n\n`recordProgress` appends transfer history. `showProgress` paints the panel.\nThe queue adapter in `src/queue.js` shows how those two outputs currently relate\nto a visit. Queue records, notices, cancellation, retry, navigation, and cleanup\nretain their existing behavior. Queue records remain\n`{fileId, attemptId, visitId, kind}` unless a separate authorization adds\n`byteCount` from `file.size`.\n\nOne startup window is relevant to this maintenance request: `start()` may emit\nmore than one packet synchronously. A `showProgress` callback may select or hide\nanother visit before `start()` returns, while its caller has not yet received\nthe returned cleanup handle.\n\nThe same feed API also has a diagnostic consumer in `src/telemetry.js`.\nIt is not the panel and must keep its existing behavior while the panel defect\nis repaired. `src/progress-source.js` is the host-visible feed implementation;\nthe navigation and transfer modules show how ownership is handed off when a\nlistener is released. Host callbacks are synchronous unless their code returns\na Promise.\n",
+        "VISIBLE_CHECKS.md": "# Public development checks\n\nRun `/runtime/node /workspace/tests/visible.mjs /workspace` from the isolated Action workspace. These examples were authored from the original maintenance request, README, and public modules before consulting any scorer/reference implementation. They are not a full specification.\n\nThe original task requires warm initial progress, preservation of transfer/retry/navigation/cleanup/audit/queue behavior, out-of-order full-frame display freshness, streaming, telemetry and subsequent uses. README states that startup may emit multiple packets before returning; a paint callback can synchronously hide or replace its visit before the cleanup handle returns. It also states visit-vs-attempt identity and shared-feed reuse. Public source distinguishes retained audit from current-visit painting and defines synchronous detach callbacks.\n\nExamples cover cached bootstrap, live streaming and the original queue shape; telemetry delta-only policy; retained audit and suppressed painting after departure; display freshness when two decodes settle in reverse order; admission during multi-packet startup after inline hide/switch; pending work across same-feed reopening; retry record/visit behavior including cancellation reentry; detach reentry; independent workspaces. A decoder's completion order does not invent new frame content rules. Checks are regression examples of the public obligations, not hidden scoring details. Preserve the public tests and configuration.\n",
+        "package.json": "{\n  \"name\": \"transfer-progress-composition-v4\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"engines\": {\n    \"node\": \"16.20.2\"\n  }\n}\n",
+        "src/notice.js": "// A queued notice describes the accepted attempt in its originating visit.\nexport function publishQueued(state, visit, handle) {\n  state.showQueued({ fileId: visit.file.id, attemptId: handle.attemptId,\n    visitId: visit.id, status: \"queued\" });\n}\n",
+        "src/panel.js": "import { enqueueTransfer } from \"./queue.js\";\nimport { publishQueued } from \"./notice.js\";\n\nexport function releaseVisit(visit) {\n  const handle = visit.handle;\n  visit.handle = null;\n  if (handle) handle.cancel();\n}\n\nexport function selectFile(state, file) {\n  if (state.disposed) return null;\n  const requestId = ++state.nextVisit;\n  const previous = state.current;\n  state.current = null;\n  if (previous) releaseVisit(previous);\n  if (state.disposed || state.nextVisit !== requestId) return null;\n  const visit = { id: requestId, file, handle: null };\n  state.current = visit;\n  const handle = enqueueTransfer(state, visit, \"select\");\n  if (state.current === visit) {\n    visit.handle = handle;\n    publishQueued(state, visit, handle);\n  } else {\n    handle.cancel();\n  }\n  return handle;\n}\n\nexport function hidePanel(state) {\n  state.nextVisit++;\n  const previous = state.current;\n  state.current = null;\n  if (previous) releaseVisit(previous);\n}\n\nexport function disposeWorkspace(state) {\n  if (state.disposed) return;\n  state.disposed = true;\n  hidePanel(state);\n  for (const handle of state.tasks.values()) handle.cancel();\n}\n",
+        "src/progress-source.js": "class ProgressEvent extends Event {\n  constructor(packet) {\n    super(\"progress\");\n    this.detail = packet;\n  }\n}\n\n// Removal commits before notifying the host. The host callback is synchronous\n// and may call workspace.select(...) or workspace.hide(). Repeated removal is inert.\nexport function createProgressFeed({ initialPacket, decode = value => value, onDetach = () => {} }) {\n  const target = new EventTarget();\n  const listeners = new Set();\n  const add = target.addEventListener.bind(target);\n  const remove = target.removeEventListener.bind(target);\n  target.addEventListener = (type, listener, options) => {\n    add(type, listener, options);\n    if (type === \"progress\") listeners.add(listener);\n  };\n  target.removeEventListener = (type, listener, options) => {\n    remove(type, listener, options);\n    if (type === \"progress\" && listeners.delete(listener)) onDetach();\n  };\n  return {\n    target,\n    decode,\n    start() {\n      const packet = typeof initialPacket === \"function\" ? initialPacket() : initialPacket;\n      if (packet !== undefined) target.dispatchEvent(new ProgressEvent(packet));\n    },\n    emit(packet) { target.dispatchEvent(new ProgressEvent(packet)); },\n  };\n}\n",
+        "src/progress.js": "// The source is shared by visits of the same file. Decoding may settle later.\nexport function watchTransferProgress(feed, receive, record) {\n  const listener = event => {\n    const deliver = frame => { record(frame); receive(frame); };\n    const decoded = feed.decode(event.detail);\n    if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n    else deliver(decoded);\n  };\n  feed.start();\n  feed.target.addEventListener(\"progress\", listener);\n  return () => feed.target.removeEventListener(\"progress\", listener);\n}\n",
+        "src/queue.js": "import { createTransfer } from \"./transfer.js\";\n\n// Queue records are retained even when their originating panel visit ends.\nexport function makeQueueRecord(file, attemptId, visitId, kind) {\n  return { fileId: file.id, attemptId, visitId, kind };\n}\n\nexport function enqueueTransfer(state, visit, kind) {\n  const attemptId = ++state.nextAttempt;\n  state.record(makeQueueRecord(visit.file, attemptId, visit.id, kind));\n  const progress = {\n    record(frame) { state.recordProgress({ fileId: visit.file.id, attemptId, frame }); },\n    receive(frame) {\n      if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });\n    },\n  };\n  const handle = createTransfer(visit.file, attemptId, state.transport, state.onCancel, progress);\n  state.tasks.set(attemptId, handle);\n  return handle;\n}\n",
+        "src/retry.js": "import { enqueueTransfer } from \"./queue.js\";\nimport { publishQueued } from \"./notice.js\";\n\n// A retry click accepts exactly one command for the current visit and file.\nexport function retryTransfer(state) {\n  const visit = state.current;\n  if (!visit || !visit.handle || state.disposed) return null;\n  const previous = visit.handle;\n  previous.cancel();\n  const handle = enqueueTransfer(state, visit, \"retry\");\n  if (state.current === visit) visit.handle = handle;\n  else handle.cancel();\n  if (state.current === visit) publishQueued(state, visit, handle);\n  return handle;\n}\n",
+        "src/telemetry.js": "// Diagnostics count live deltas only. A cached bootstrap is panel state, not a delta.\nexport function collectProgressTelemetry(feed, recordDelta) {\n  const listener = event => {\n    const deliver = frame => recordDelta(frame);\n    const decoded = feed.decode(event.detail);\n    if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n    else deliver(decoded);\n  };\n  feed.start();\n  feed.target.addEventListener(\"progress\", listener);\n  return () => feed.target.removeEventListener(\"progress\", listener);\n}\n",
+        "src/transfer.js": "import { watchTransferProgress } from \"./progress.js\";\n\nexport function createTransfer(file, attemptId, transport, onCancel, progress = {}) {\n  const controller = new AbortController();\n  let stopProgress = () => {};\n  controller.signal.addEventListener(\"abort\", () => {\n    stopProgress();\n    onCancel({ file, attemptId, signal: controller.signal });\n  }, { once: true });\n  transport({ file, attemptId, signal: controller.signal });\n  if (file.progressFeed) {\n    stopProgress = watchTransferProgress(file.progressFeed, progress.receive, progress.record);\n    if (controller.signal.aborted) stopProgress();\n  }\n  return { file, attemptId, signal: controller.signal,\n    cancel() { if (!controller.signal.aborted) controller.abort(); } };\n}\n",
+        "src/workspace.js": "import { selectFile, hidePanel, disposeWorkspace } from \"./panel.js\";\nimport { retryTransfer } from \"./retry.js\";\n\nexport function createTransferWorkspace({ transport, onCancel, record, showQueued, recordProgress = () => {}, showProgress = () => {} }) {\n  const state = { transport, onCancel, record, showQueued, recordProgress, showProgress, current: null,\n    nextVisit: 0, nextAttempt: 0, tasks: new Map(), disposed: false };\n  return {\n    select(file) { return selectFile(state, file); },\n    retry() { return retryTransfer(state); },\n    hide() { hidePanel(state); },\n    dispose() { disposeWorkspace(state); },\n    snapshot() {\n      const visit = state.current;\n      return { visitId: visit ? visit.id : null, fileId: visit ? visit.file.id : null,\n        attemptId: visit && visit.handle ? visit.handle.attemptId : null,\n        disposed: state.disposed, attempts: state.nextAttempt };\n    },\n  };\n}\n\nexport { createTransfer } from \"./transfer.js\";\nexport { makeQueueRecord, enqueueTransfer } from \"./queue.js\";\nexport { publishQueued } from \"./notice.js\";\nexport { releaseVisit, selectFile, hidePanel, disposeWorkspace } from \"./panel.js\";\nexport { retryTransfer } from \"./retry.js\";\nexport { collectProgressTelemetry } from \"./telemetry.js\";\nexport { createProgressFeed } from \"./progress-source.js\";\n",
+        "tests/visible.mjs": "import { pathToFileURL } from 'node:url';\nimport path from 'node:path';\nimport assert from 'node:assert/strict';\nconst root = process.argv[2];\nconst api = await import(pathToFileURL(path.join(root, 'src/workspace.js')).href);\nconst results = [];\nconst tick = async () => { for (let i=0;i<8;i++) await Promise.resolve(); };\nconst value = row => row.frame.value;\nfunction setup(extra = {}) {\n  const log = { records: [], queued: [], audit: [], shown: [], cancelled: [] };\n  let workspace;\n  workspace = api.createTransferWorkspace({\n    transport() {},\n    onCancel(row) { log.cancelled.push(row.attemptId); extra.onCancel?.(row,workspace); },\n    record(row) { log.records.push(row); },\n    showQueued(row) { log.queued.push(row); },\n    recordProgress(row) { log.audit.push(row); },\n    showProgress(row) { log.shown.push(row); extra.showProgress?.(row,workspace); },\n  });\n  return { workspace, log };\n}\nfunction feedMany(values) {\n  const target = new EventTarget();\n  const emit = packet => { const e = new Event('progress'); e.detail = packet; target.dispatchEvent(e); };\n  return { target, decode: x => x, start() { for (const v of values) emit({value:v}); }, emit };\n}\nasync function check(name, action) {\n  try { const actual = await action(); results.push({check:name,passed:true,actual}); }\n  catch (error) { results.push({check:name,passed:false,actual:error.actual ?? null,expected:error.expected ?? null,error:String(error.message)}); }\n}\nawait check('public_warm_bootstrap', async () => {\n  const {workspace:w,log:l}=setup();const f=api.createProgressFeed({initialPacket:{value:5}});\n  w.select({id:'A',size:10,progressFeed:f});\n  assert.deepEqual(l.shown.map(value),[5]);assert.deepEqual(l.audit.map(value),[5]);w.dispose();return {shown:[5],audit:[5]};\n});\nawait check('public_streaming_and_queue_shape', async () => {\n  const {workspace:w,log:l}=setup();const f=api.createProgressFeed({});w.select({id:'A',size:10,progressFeed:f});f.emit({value:8});\n  assert.deepEqual(l.shown.map(value),[8]);assert.deepEqual(l.audit.map(value),[8]);\n  assert.deepEqual(l.records,[{fileId:'A',attemptId:1,visitId:1,kind:'select'}]);w.dispose();return {shown:[8],records:l.records};\n});\nawait check('public_diagnostic_delta_policy', async () => {\n  const f=api.createProgressFeed({initialPacket:{value:1}});const deltas=[];\n  const stop=api.collectProgressTelemetry(f,x=>deltas.push(x.value));f.emit({value:2});stop();f.emit({value:3});\n  assert.deepEqual(deltas,[2]);return deltas;\n});\nawait check('public_admitted_decode_after_hide', async () => {\n  const tickets=[];const f=api.createProgressFeed({decode:x=>new Promise(resolve=>tickets.push(()=>resolve(x)))});\n  const {workspace:w,log:l}=setup();w.select({id:'A',progressFeed:f});f.emit({value:4});w.hide();tickets[0]();await tick();\n  assert.deepEqual(l.audit.map(value),[4]);assert.deepEqual(l.shown,[]);w.dispose();return {audit:[4],shown:[]};\n});\nawait check('public_out_of_order_full_frames', async () => {\n  const tickets=[];const f=api.createProgressFeed({decode:x=>new Promise(resolve=>tickets.push(()=>resolve(x)))});\n  const {workspace:w,log:l}=setup();w.select({id:'A',progressFeed:f});f.emit({value:1});f.emit({value:2});tickets[1]();await tick();tickets[0]();await tick();\n  assert.deepEqual(l.shown.map(value),[2]);assert.deepEqual(l.audit.map(value),[2,1]);w.dispose();return {shown:[2],audit:[2,1]};\n});\nawait check('public_inline_hide_during_multi_packet_start', async () => {\n  const {workspace:w,log:l}=setup({showProgress(row,host){if(row.frame.value===1)host.hide();}});const f=feedMany([1,2]);w.select({id:'A',progressFeed:f});\n  assert.deepEqual(l.shown.map(value),[1]);assert.deepEqual(l.audit.map(value),[1]);f.emit({value:3});assert.deepEqual(l.audit.map(value),[1]);assert.equal(w.snapshot().fileId,null);w.dispose();return {shown:[1],audit:[1]};\n});\nawait check('public_inline_switch_keeps_new_owner', async () => {\n  const b={id:'B',progressFeed:api.createProgressFeed({initialPacket:{value:7}})};let switched=false;\n  const {workspace:w,log:l}=setup({showProgress(row,host){if(!switched&&row.fileId==='A'){switched=true;host.select(b);}}});const f=feedMany([1,2]);w.select({id:'A',progressFeed:f});b.progressFeed.emit({value:8});\n  assert.deepEqual(l.shown.map(row=>row.fileId+':'+value(row)),['A:1','B:7','B:8']);\n  assert.deepEqual(l.audit.map(row=>row.fileId+':'+value(row)),['A:1','B:7','B:8']);assert.equal(w.snapshot().fileId,'B');w.dispose();return {shown:['A:1','B:7','B:8']};\n});\nawait check('public_same_feed_reopen_pending_decode', async () => {\n  const tickets=[];const f=api.createProgressFeed({decode:x=>new Promise(resolve=>tickets.push(()=>resolve(x)))});const file={id:'A',progressFeed:f};\n  const {workspace:w,log:l}=setup();w.select(file);f.emit({value:1});w.hide();w.select(file);f.emit({value:2});tickets[0]();tickets[1]();await tick();\n  assert.deepEqual(l.shown.map(value),[2]);assert.deepEqual(l.audit.map(value),[1,2]);assert.equal(w.snapshot().attempts,2);w.dispose();return {shown:[2],audit:[1,2]};\n});\nawait check('public_retry_retains_visit_and_record', async () => {\n  const {workspace:w,log:l}=setup();w.select({id:'A',size:11});const before=w.snapshot();w.retry();\n  assert.deepEqual(l.records,[{fileId:'A',attemptId:1,visitId:1,kind:'select'},{fileId:'A',attemptId:2,visitId:1,kind:'retry'}]);assert.equal(w.snapshot().visitId,before.visitId);assert.equal(w.snapshot().attemptId,2);assert.deepEqual(l.cancelled,[1]);w.dispose();return {records:l.records};\n});\nawait check('public_retry_cancellation_reentry', async () => {\n  let changed=false;const {workspace:w,log:l}=setup({onCancel(row,host){if(!changed){changed=true;host.select({id:'B'});}}});w.select({id:'A'});w.retry();\n  assert.deepEqual(l.records,[{fileId:'A',attemptId:1,visitId:1,kind:'select'},{fileId:'B',attemptId:2,visitId:2,kind:'select'},{fileId:'A',attemptId:3,visitId:1,kind:'retry'}]);assert.equal(w.snapshot().fileId,'B');assert.equal(w.snapshot().attemptId,2);assert.deepEqual(l.queued.map(row=>row.fileId),['A','B']);w.dispose();return {records:l.records,current:'B'};\n});\nawait check('public_detach_reentry_keeps_new_visit', async () => {\n  let changed=false;const b={id:'B',progressFeed:api.createProgressFeed({})};const {workspace:w,log:l}=setup();const f=api.createProgressFeed({onDetach(){if(!changed){changed=true;w.select(b);}}});w.select({id:'A',progressFeed:f});w.hide();b.progressFeed.emit({value:9});\n  assert.equal(w.snapshot().fileId,'B');assert.deepEqual(l.shown.map(value),[9]);w.dispose();return {current:'B',shown:[9]};\n});\nawait check('public_independent_workspaces', async () => {\n  const first=setup(),second=setup();first.workspace.select({id:'A'});second.workspace.select({id:'B'});first.workspace.dispose();\n  assert.equal(second.workspace.snapshot().fileId,'B');assert.equal(second.workspace.snapshot().disposed,false);second.workspace.retry();assert.equal(second.workspace.snapshot().attemptId,2);second.workspace.dispose();return {independent:true};\n});\nconsole.log(JSON.stringify({passed:results.every(x=>x.passed),observations:results,regressions:[],unknowns:[]}));\n"
+      },
+      "task": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives. Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior. Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward. Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses.\n"
+    },
+    "source_sha256": "20a46af9820e5d6cdf5d8c9b0494f8d1c6f1e5a74ca616671ff7a181bcf326e5",
+    "task_id": "transfer-progress-composition-v4-window-cued"
+  },
+  "experience": {
+    "excludes": [],
+    "labels": [
+      "O",
+      "L",
+      "I",
+      "A"
+    ],
+    "limitations": [
+      "These rules apply to the supplied shared-feed, visit-and-attempt ownership model; other ownership or history-retention policies require separate evidence.",
+      "The task does not specify decode rejection, thrown callback, malformed-frame, or frame-content comparison policies.",
+      "Static review hints and automatic contracts are guidance, not normative evidence. Supplied passing observations demonstrate only those examples; they do not prove causality, exhaustive correctness, or cross-task benefit.",
+      "No files were modified, and no scorer, reference implementation, or hidden tests were accessed."
+    ],
+    "requires": [
+      "shared_lifetime",
+      "observer_lifetime",
+      "async_resume",
+      "inline_reentry",
+      "effect_lifetimes"
+    ],
+    "rules": [
+      {
+        "body": "Apply when a shared source serves distinct visits and attempts, startup can emit synchronously, and decoding can settle later. README.md: \"Selecting a file creates a visit. Retry replaces the physical attempt without\\nopening another visit. Selecting the same file again does open another visit.\" README.md: \"The feed object is shared by attempts and visits for that file. Its `start()`\\nmethod may synchronously emit cached data, and `decode(packet)` may return a\\nvalue or a Promise.\" Feed or file identity alone therefore cannot establish visit ownership.",
+        "category": "applicability"
+      },
+      {
+        "body": "Install the panel listener before starting a source that can synchronously emit cached progress. TASK: \"A transfer with a warm progress source shows no initial progress until a later\\npacket arrives. Restore the initial progress update without changing the public\\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior.\" The original src/progress.js orders \"feed.start();\" before \"feed.target.addEventListener(\\\"progress\\\", listener);\"; check and correct that ordering for the panel consumer.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Check originating-visit validity before admitting each packet, including while startup has not returned its cleanup capability. README.md: \"One startup window is relevant to this maintenance request: `start()` may emit\\nmore than one packet synchronously. A `showProgress` callback may select or hide\\nanother visit before `start()` returns, while its caller has not yet received\\nthe returned cleanup handle.\" Logical retirement must therefore prevent subsequent decoding and recording independently of eventual listener removal.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Separate retained history from permission to paint. Already-admitted decoding retains its history output after departure, while painting requires the originating visit to remain current. README.md: \"`recordProgress` appends transfer history. `showProgress` paints the panel.\" src/progress.js: \"const deliver = frame => { record(frame); receive(frame); };\" src/queue.js: \"if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });\" Recheck visibility after recording because host callbacks may synchronously navigate.",
+        "category": "preservation"
+      },
+      {
+        "body": "Track freshness by packet order within the subscription, independently of decode completion order. Record admitted frames while suppressing an older frame's painting after a newer frame has painted; update freshness state before invoking visible callbacks. TASK: \"Full\\nprogress frames may decode out of order; do not allow an older frame to roll the\\ncurrent display backward.\" This does not authorize numeric comparisons or invented frame-content rules.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Preserve ownership across synchronous cleanup and navigation: retire or clear old ownership before external callbacks, and recheck ownership before installing a returned handle. src/panel.js: \"visit.handle = null;\\n  if (handle) handle.cancel();\" src/panel.js: \"if (state.current === visit) {\\n    visit.handle = handle;\\n    publishQueued(state, visit, handle);\\n  } else {\\n    handle.cancel();\\n  }\" src/progress-source.js: \"// Removal commits before notifying the host. The host callback is synchronous\\n// and may call workspace.select(...) or workspace.hide(). Repeated removal is inert.\" Old completion or cleanup must preserve the newer visit's resources.",
+        "category": "preservation"
+      },
+      {
+        "body": "Keep the repair scoped to panel progress ordering, admission, and freshness. Preserve retry's captured command and existing record shape: src/retry.js: \"// A retry click accepts exactly one command for the current visit and file.\" src/queue.js: \"return { fileId: file.id, attemptId, visitId, kind };\" Preserve telemetry's separate startup policy: src/telemetry.js: \"// Diagnostics count live deltas only. A cached bootstrap is panel state, not a delta.\" Do not generalize panel listener-before-start ordering to every consumer or expand queue records.",
+        "category": "exclusion"
+      },
+      {
+        "body": "Verify warm bootstrap and later streaming; reverse decode settlement with retained history and fresh painting; hide, switch, and same-file reopening; and multiple startup packets where the first paint navigates before startup returns. Check rejection of later packets separately from retained settlement of earlier admitted packets. Also check cancellation and detach reentry, retry attribution, telemetry, and independent workspaces. TASK: \"Preserve ordinary streaming, diagnostic telemetry,\\nand subsequent uses.\" README.md: \"Queue records, notices, cancellation, retry, navigation, and cleanup\\nretain their existing behavior.\" Public examples can exercise these obligations but do not exhaust them.",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "A synchronous cached startup packet is recorded and displayed for the current visit.",
+      "Live progress continues after startup.",
+      "When newer full frames finish decoding before older ones, later settlement of the older frames does not roll the display backward; both remain in progress history.",
+      "During multi-packet startup, synchronous hide or selection prevents the retired visit from admitting subsequent packets, even before startup returns its cleanup handle.",
+      "Previously admitted decodes retain their history output after departure, without painting the retired visit.",
+      "Reopening the same file preserves the new visit's progress and resources independently of pending work from the old visit.",
+      "Retry, cancellation reentry, detach reentry, queue records, and independent workspaces retain their existing behavior.",
+      "Diagnostic telemetry continues to exclude cached bootstrap and collect live deltas."
+    ],
+    "forbidden_effects": [
+      "Losing the initial cached panel progress update.",
+      "Displaying an older full frame after a newer frame has already been displayed by the same subscription.",
+      "Dropping retained history solely because an admitted decode completes after cancellation or navigation.",
+      "Allowing a retired visit to decode and record subsequent startup packets while physical listener cleanup is unavailable.",
+      "Allowing old startup completion or cleanup to replace or release a newer visit's resources.",
+      "Changing telemetry to count its cached bootstrap.",
+      "Adding byteCount or otherwise expanding queue records without separate authorization."
+    ],
+    "lifecycle_identity": [
+      "Each selection creates a distinct visit, including selection of the same file.",
+      "Retry creates a replacement physical attempt within the existing visit.",
+      "A feed is shared across attempts and visits for its file; feed identity alone cannot establish visit validity.",
+      "Progress history remains associated with the originating file and attempt; panel painting additionally depends on the originating visit still being current.",
+      "Frame freshness must follow packet order within the relevant subscription rather than asynchronous decode completion order."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Observe panel progress before invoking startup so synchronous cached packets can produce the initial progress update."
+      },
+      {
+        "id": "O2",
+        "text": "Continue decoding, recording, and displaying ordinary live progress for the active visit after startup."
+      },
+      {
+        "id": "O3",
+        "text": "Retain progress history for admitted frames while preventing out-of-order decode completion from rolling the current display backward."
+      },
+      {
+        "id": "O4",
+        "text": "Make admission of subsequent packets depend on the originating visit remaining active, including the synchronous startup interval before a cleanup handle is returned."
+      },
+      {
+        "id": "O5",
+        "text": "Permit previously admitted decodes to record their settled frames after departure, but do not let them paint a retired visit or a later visit using the same feed."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve ownership through synchronous navigation, cancellation, and listener-detach callbacks; old work must not overwrite the current visit's handle or cancel its resources."
+      },
+      {
+        "id": "O7",
+        "text": "Preserve public transfer, retry, navigation, cleanup, notices, audit attribution, and queue-record semantics, including an accepted retry's originating visit and file."
+      },
+      {
+        "id": "O8",
+        "text": "Keep diagnostic telemetry's existing live-delta-only behavior and preserve subsequent uses of shared feeds and independent workspaces."
+      }
+    ],
+    "ordering_barriers": [
+      "Install the panel progress listener before calling feed.start().",
+      "Determine whether an event belongs to an active originating visit before beginning its decoding or recording.",
+      "Retire the old visit logically before callbacks or continuing startup can admit more events; do not rely solely on eventual listener removal.",
+      "At decode settlement, retain the history output and independently check permission and freshness before painting.",
+      "Recheck ownership after synchronous external callbacks before assigning handles or publishing visit-dependent notices.",
+      "Preserve the feed's existing removal-before-host-notification ordering."
+    ],
+    "preservation": [
+      "Queue records retain {fileId, attemptId, visitId, kind}.",
+      "A retry accepts one command for its captured current visit and file, even if cancellation synchronously navigates elsewhere.",
+      "Queued notices describe accepted attempts in their originating visits and follow existing current-visit publication conditions.",
+      "Cancellation, listener removal, disposal, and repeated cleanup retain their existing semantics.",
+      "Progress records retain their existing fileId, attemptId, and frame attribution.",
+      "Telemetry remains a separate consumer with its existing startup ordering and pending-decode behavior.",
+      "Shared-feed reuse and workspace independence remain supported.",
+      "Tests and configuration remain unchanged."
+    ],
+    "scope": [
+      "Restore warm initial panel progress and enforce full-frame display freshness.",
+      "Handle synchronous startup reentry and delayed decoding within the existing visit and attempt lifecycle.",
+      "Use only TASK and supplied public code/documents as normative evidence; analysis hints and evaluation observations do not add requirements.",
+      "This structured contract stage makes no file modifications."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives. Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior."
+      },
+      {
+        "file": "TASK",
+        "quote": "Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward. Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses."
+      },
+      {
+        "file": "README.md",
+        "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file again does open another visit.\nThe feed object is shared by attempts and visits for that file."
+      },
+      {
+        "file": "README.md",
+        "quote": "Its `start()`\nmethod may synchronously emit cached data, and `decode(packet)` may return a\nvalue or a Promise."
+      },
+      {
+        "file": "README.md",
+        "quote": "One startup window is relevant to this maintenance request: `start()` may emit\nmore than one packet synchronously. A `showProgress` callback may select or hide\nanother visit before `start()` returns, while its caller has not yet received\nthe returned cleanup handle."
+      },
+      {
+        "file": "README.md",
+        "quote": "Queue records, notices, cancellation, retry, navigation, and cleanup\nretain their existing behavior. Queue records remain\n`{fileId, attemptId, visitId, kind}` unless a separate authorization adds\n`byteCount` from `file.size`."
+      },
+      {
+        "file": "src/progress.js",
+        "quote": "const deliver = frame => { record(frame); receive(frame); };"
+      },
+      {
+        "file": "src/queue.js",
+        "quote": "record(frame) { state.recordProgress({ fileId: visit.file.id, attemptId, frame }); },\n    receive(frame) {\n      if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });\n    },"
+      },
+      {
+        "file": "src/progress-source.js",
+        "quote": "// Removal commits before notifying the host. The host callback is synchronous\n// and may call workspace.select(...) or workspace.hide(). Repeated removal is inert."
+      },
+      {
+        "file": "src/retry.js",
+        "quote": "// A retry click accepts exactly one command for the current visit and file."
+      },
+      {
+        "file": "src/telemetry.js",
+        "quote": "// Diagnostics count live deltas only. A cached bootstrap is panel state, not a delta."
+      },
+      {
+        "file": "README.md",
+        "quote": "The same feed API also has a diagnostic consumer in `src/telemetry.js`.\nIt is not the panel and must keep its existing behavior while the panel defect\nis repaired."
+      }
+    ],
+    "triggers": [
+      "Selecting a file whose feed emits cached progress synchronously.",
+      "Receiving live packets whose decodes settle out of order.",
+      "A progress callback synchronously hiding the panel or selecting another visit during startup.",
+      "A pending decode settling after hide, switch, cancellation, or same-file reopening.",
+      "Cancellation or listener removal synchronously reentering workspace navigation.",
+      "Retrying within an existing visit or reusing a shared feed."
+    ],
+    "unknowns": [
+      "The supplied requirements do not define new handling for decode rejection, thrown host callbacks, or malformed frames.",
+      "No frame-content comparison or numeric monotonicity policy is specified; freshness concerns packet order, not invented rules about frame values.",
+      "The internal mechanism for admission, cleanup handoff, and freshness tracking is an implementation choice."
+    ]
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "A synchronous cached startup packet is recorded and displayed for the current visit.",
+      "Live progress continues after startup.",
+      "When newer full frames finish decoding before older ones, later settlement of the older frames does not roll the display backward; both remain in progress history.",
+      "During multi-packet startup, synchronous hide or selection prevents the retired visit from admitting subsequent packets, even before startup returns its cleanup handle.",
+      "Previously admitted decodes retain their history output after departure, without painting the retired visit.",
+      "Reopening the same file preserves the new visit's progress and resources independently of pending work from the old visit.",
+      "Retry, cancellation reentry, detach reentry, queue records, and independent workspaces retain their existing behavior.",
+      "Diagnostic telemetry continues to exclude cached bootstrap and collect live deltas."
+    ],
+    "forbidden_effects": [
+      "Losing the initial cached panel progress update.",
+      "Displaying an older full frame after a newer frame has already been displayed by the same subscription.",
+      "Dropping retained history solely because an admitted decode completes after cancellation or navigation.",
+      "Allowing a retired visit to decode and record subsequent startup packets while physical listener cleanup is unavailable.",
+      "Allowing old startup completion or cleanup to replace or release a newer visit's resources.",
+      "Changing telemetry to count its cached bootstrap.",
+      "Adding byteCount or otherwise expanding queue records without separate authorization."
+    ],
+    "lifecycle_identity": [
+      "Each selection creates a distinct visit, including selection of the same file.",
+      "Retry creates a replacement physical attempt within the existing visit.",
+      "A feed is shared across attempts and visits for its file; feed identity alone cannot establish visit validity.",
+      "Progress history remains associated with the originating file and attempt; panel painting additionally depends on the originating visit still being current.",
+      "Frame freshness must follow packet order within the relevant subscription rather than asynchronous decode completion order."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Observe panel progress before invoking startup so synchronous cached packets can produce the initial progress update."
+      },
+      {
+        "id": "O2",
+        "text": "Continue decoding, recording, and displaying ordinary live progress for the active visit after startup."
+      },
+      {
+        "id": "O3",
+        "text": "Retain progress history for admitted frames while preventing out-of-order decode completion from rolling the current display backward."
+      },
+      {
+        "id": "O4",
+        "text": "Make admission of subsequent packets depend on the originating visit remaining active, including the synchronous startup interval before a cleanup handle is returned."
+      },
+      {
+        "id": "O5",
+        "text": "Permit previously admitted decodes to record their settled frames after departure, but do not let them paint a retired visit or a later visit using the same feed."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve ownership through synchronous navigation, cancellation, and listener-detach callbacks; old work must not overwrite the current visit's handle or cancel its resources."
+      },
+      {
+        "id": "O7",
+        "text": "Preserve public transfer, retry, navigation, cleanup, notices, audit attribution, and queue-record semantics, including an accepted retry's originating visit and file."
+      },
+      {
+        "id": "O8",
+        "text": "Keep diagnostic telemetry's existing live-delta-only behavior and preserve subsequent uses of shared feeds and independent workspaces."
+      }
+    ],
+    "ordering_barriers": [
+      "Install the panel progress listener before calling feed.start().",
+      "Determine whether an event belongs to an active originating visit before beginning its decoding or recording.",
+      "Retire the old visit logically before callbacks or continuing startup can admit more events; do not rely solely on eventual listener removal.",
+      "At decode settlement, retain the history output and independently check permission and freshness before painting.",
+      "Recheck ownership after synchronous external callbacks before assigning handles or publishing visit-dependent notices.",
+      "Preserve the feed's existing removal-before-host-notification ordering."
+    ],
+    "preservation": [
+      "Queue records retain {fileId, attemptId, visitId, kind}.",
+      "A retry accepts one command for its captured current visit and file, even if cancellation synchronously navigates elsewhere.",
+      "Queued notices describe accepted attempts in their originating visits and follow existing current-visit publication conditions.",
+      "Cancellation, listener removal, disposal, and repeated cleanup retain their existing semantics.",
+      "Progress records retain their existing fileId, attemptId, and frame attribution.",
+      "Telemetry remains a separate consumer with its existing startup ordering and pending-decode behavior.",
+      "Shared-feed reuse and workspace independence remain supported.",
+      "Tests and configuration remain unchanged."
+    ],
+    "scope": [
+      "Restore warm initial panel progress and enforce full-frame display freshness.",
+      "Handle synchronous startup reentry and delayed decoding within the existing visit and attempt lifecycle.",
+      "Use only TASK and supplied public code/documents as normative evidence; analysis hints and evaluation observations do not add requirements.",
+      "This structured contract stage makes no file modifications."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives. Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior."
+      },
+      {
+        "file": "TASK",
+        "quote": "Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward. Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses."
+      },
+      {
+        "file": "README.md",
+        "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file again does open another visit.\nThe feed object is shared by attempts and visits for that file."
+      },
+      {
+        "file": "README.md",
+        "quote": "Its `start()`\nmethod may synchronously emit cached data, and `decode(packet)` may return a\nvalue or a Promise."
+      },
+      {
+        "file": "README.md",
+        "quote": "One startup window is relevant to this maintenance request: `start()` may emit\nmore than one packet synchronously. A `showProgress` callback may select or hide\nanother visit before `start()` returns, while its caller has not yet received\nthe returned cleanup handle."
+      },
+      {
+        "file": "README.md",
+        "quote": "Queue records, notices, cancellation, retry, navigation, and cleanup\nretain their existing behavior. Queue records remain\n`{fileId, attemptId, visitId, kind}` unless a separate authorization adds\n`byteCount` from `file.size`."
+      },
+      {
+        "file": "src/progress.js",
+        "quote": "const deliver = frame => { record(frame); receive(frame); };"
+      },
+      {
+        "file": "src/queue.js",
+        "quote": "record(frame) { state.recordProgress({ fileId: visit.file.id, attemptId, frame }); },\n    receive(frame) {\n      if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });\n    },"
+      },
+      {
+        "file": "src/progress-source.js",
+        "quote": "// Removal commits before notifying the host. The host callback is synchronous\n// and may call workspace.select(...) or workspace.hide(). Repeated removal is inert."
+      },
+      {
+        "file": "src/retry.js",
+        "quote": "// A retry click accepts exactly one command for the current visit and file."
+      },
+      {
+        "file": "src/telemetry.js",
+        "quote": "// Diagnostics count live deltas only. A cached bootstrap is panel state, not a delta."
+      },
+      {
+        "file": "README.md",
+        "quote": "The same feed API also has a diagnostic consumer in `src/telemetry.js`.\nIt is not the panel and must keep its existing behavior while the panel defect\nis repaired."
+      }
+    ],
+    "triggers": [
+      "Selecting a file whose feed emits cached progress synchronously.",
+      "Receiving live packets whose decodes settle out of order.",
+      "A progress callback synchronously hiding the panel or selecting another visit during startup.",
+      "A pending decode settling after hide, switch, cancellation, or same-file reopening.",
+      "Cancellation or listener removal synchronously reentering workspace navigation.",
+      "Retrying within an existing visit or reusing a shared feed."
+    ],
+    "unknowns": [
+      "The supplied requirements do not define new handling for decode rejection, thrown host callbacks, or malformed frames.",
+      "No frame-content comparison or numeric monotonicity policy is specified; freshness concerns packet order, not invented rules about frame values.",
+      "The internal mechanism for admission, cleanup handoff, and freshness tracking is an implementation choice."
+    ]
+  },
+  "origin": "success",
+  "source_sha256": "20a46af9820e5d6cdf5d8c9b0494f8d1c6f1e5a74ca616671ff7a181bcf326e5",
+  "status": "awaiting_content_review",
+  "task": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives. Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior. Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward. Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses.\n",
+  "trajectory": [
+    {
+      "candidate_inventory": {
+        "README.md": "36e85c7cec3482ce21d2a6b148595675d3409f44ddd95e91f28cb86bc55f6741",
+        "VISIBLE_CHECKS.md": "a61446ac1169740bf8895850c37e95d04332893fa1e102655a14d35d4988b340",
+        "package.json": "258f1b4c936cc31c1863ddf8aed0241271f5ec0c004a445057572ed9be07899e",
+        "src/notice.js": "73e745110bf4f17ec126903f39780c134e0286ac8859939d0f0e3383f944fe56",
+        "src/panel.js": "9c0ac97b224ade688d62bde60f1b3327e7b565a22ec4bf16450ae1269190269e",
+        "src/progress-source.js": "fa6b9877c3fec8b95e1b5190fcf4514372e75b3b427c658435250e8ee52abe7a",
+        "src/progress.js": "554d896f27b940d7fb6ffbf11700fca2c3ab482b26ba6c46642e9c5acdf8d98c",
+        "src/queue.js": "52931cc15d0066fe01269c4455cec716b5967fc7b2a7642b4c1f4a007d477272",
+        "src/retry.js": "69f8b3b9e8f1f97f5a66e39a2fdad4c13e0668662ba4f32942e9bed3b2d382ff",
+        "src/telemetry.js": "03347f4ca2d1c5806ec2b1fc33f3623502311e429dd9a9af9693f6fa290c030d",
+        "src/transfer.js": "5a0a3b95a12659a18af9f07cf369c504b93b046b44883b947cddd8b85eb6a8c8",
+        "src/workspace.js": "0ab132eee919e73a2668d652d971bbe8c7a20246e19fa63c44ebc44ec9cd98dd",
+        "tests/visible.mjs": "baf5f7cb56ddf4e6b3a34a379dbb670f14b6b0cc36dba15665b97cfac08bd10f"
+      },
+      "candidate_sources": {
+        "README.md": "# Transfer retry panel with decoded progress\n\nThis workspace selects files, starts transfers, records queue and progress\nhistory, and paints progress for the open panel. Run it with Node v16.20.2; it\nhas no dependencies. `src/workspace.js` exports the workspace and the source\nhelpers used by the host application.\n\nSelecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file again does open another visit.\nThe feed object is shared by attempts and visits for that file. Its `start()`\nmethod may synchronously emit cached data, and `decode(packet)` may return a\nvalue or a Promise.\n\n`recordProgress` appends transfer history. `showProgress` paints the panel.\nThe queue adapter in `src/queue.js` shows how those two outputs currently relate\nto a visit. Queue records, notices, cancellation, retry, navigation, and cleanup\nretain their existing behavior. Queue records remain\n`{fileId, attemptId, visitId, kind}` unless a separate authorization adds\n`byteCount` from `file.size`.\n\nOne startup window is relevant to this maintenance request: `start()` may emit\nmore than one packet synchronously. A `showProgress` callback may select or hide\nanother visit before `start()` returns, while its caller has not yet received\nthe returned cleanup handle.\n\nThe same feed API also has a diagnostic consumer in `src/telemetry.js`.\nIt is not the panel and must keep its existing behavior while the panel defect\nis repaired. `src/progress-source.js` is the host-visible feed implementation;\nthe navigation and transfer modules show how ownership is handed off when a\nlistener is released. Host callbacks are synchronous unless their code returns\na Promise.\n",
+        "VISIBLE_CHECKS.md": "# Public development checks\n\nRun `/runtime/node /workspace/tests/visible.mjs /workspace` from the isolated Action workspace. These examples were authored from the original maintenance request, README, and public modules before consulting any scorer/reference implementation. They are not a full specification.\n\nThe original task requires warm initial progress, preservation of transfer/retry/navigation/cleanup/audit/queue behavior, out-of-order full-frame display freshness, streaming, telemetry and subsequent uses. README states that startup may emit multiple packets before returning; a paint callback can synchronously hide or replace its visit before the cleanup handle returns. It also states visit-vs-attempt identity and shared-feed reuse. Public source distinguishes retained audit from current-visit painting and defines synchronous detach callbacks.\n\nExamples cover cached bootstrap, live streaming and the original queue shape; telemetry delta-only policy; retained audit and suppressed painting after departure; display freshness when two decodes settle in reverse order; admission during multi-packet startup after inline hide/switch; pending work across same-feed reopening; retry record/visit behavior including cancellation reentry; detach reentry; independent workspaces. A decoder's completion order does not invent new frame content rules. Checks are regression examples of the public obligations, not hidden scoring details. Preserve the public tests and configuration.\n",
+        "package.json": "{\n  \"name\": \"transfer-progress-composition-v4\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"engines\": {\n    \"node\": \"16.20.2\"\n  }\n}\n",
+        "src/notice.js": "// A queued notice describes the accepted attempt in its originating visit.\nexport function publishQueued(state, visit, handle) {\n  state.showQueued({ fileId: visit.file.id, attemptId: handle.attemptId,\n    visitId: visit.id, status: \"queued\" });\n}\n",
+        "src/panel.js": "import { enqueueTransfer } from \"./queue.js\";\nimport { publishQueued } from \"./notice.js\";\n\nexport function releaseVisit(visit) {\n  const handle = visit.handle;\n  visit.handle = null;\n  if (handle) handle.cancel();\n}\n\nexport function selectFile(state, file) {\n  if (state.disposed) return null;\n  const requestId = ++state.nextVisit;\n  const previous = state.current;\n  state.current = null;\n  if (previous) releaseVisit(previous);\n  if (state.disposed || state.nextVisit !== requestId) return null;\n  const visit = { id: requestId, file, handle: null };\n  state.current = visit;\n  const handle = enqueueTransfer(state, visit, \"select\");\n  if (state.current === visit) {\n    visit.handle = handle;\n    publishQueued(state, visit, handle);\n  } else {\n    handle.cancel();\n  }\n  return handle;\n}\n\nexport function hidePanel(state) {\n  state.nextVisit++;\n  const previous = state.current;\n  state.current = null;\n  if (previous) releaseVisit(previous);\n}\n\nexport function disposeWorkspace(state) {\n  if (state.disposed) return;\n  state.disposed = true;\n  hidePanel(state);\n  for (const handle of state.tasks.values()) handle.cancel();\n}\n",
+        "src/progress-source.js": "class ProgressEvent extends Event {\n  constructor(packet) {\n    super(\"progress\");\n    this.detail = packet;\n  }\n}\n\n// Removal commits before notifying the host. The host callback is synchronous\n// and may call workspace.select(...) or workspace.hide(). Repeated removal is inert.\nexport function createProgressFeed({ initialPacket, decode = value => value, onDetach = () => {} }) {\n  const target = new EventTarget();\n  const listeners = new Set();\n  const add = target.addEventListener.bind(target);\n  const remove = target.removeEventListener.bind(target);\n  target.addEventListener = (type, listener, options) => {\n    add(type, listener, options);\n    if (type === \"progress\") listeners.add(listener);\n  };\n  target.removeEventListener = (type, listener, options) => {\n    remove(type, listener, options);\n    if (type === \"progress\" && listeners.delete(listener)) onDetach();\n  };\n  return {\n    target,\n    decode,\n    start() {\n      const packet = typeof initialPacket === \"function\" ? initialPacket() : initialPacket;\n      if (packet !== undefined) target.dispatchEvent(new ProgressEvent(packet));\n    },\n    emit(packet) { target.dispatchEvent(new ProgressEvent(packet)); },\n  };\n}\n",
+        "src/progress.js": "// The source is shared by visits of the same file. Decoding may settle later.\nexport function watchTransferProgress(feed, receive, record, isCurrent = () => true) {\n  let stopped = false;\n  let nextPacket = 0;\n  let lastDisplayed = 0;\n  const active = () => !stopped && isCurrent();\n  const listener = event => {\n    // Startup can reenter navigation before our cleanup handle is returned.\n    if (!active()) return;\n    const packet = ++nextPacket;\n    const deliver = frame => {\n      // Admitted work retains its history even after its owner departs.\n      record(frame);\n      if (active() && packet > lastDisplayed) {\n        lastDisplayed = packet;\n        receive(frame);\n      }\n    };\n    const decoded = feed.decode(event.detail);\n    if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n    else deliver(decoded);\n  };\n  feed.target.addEventListener(\"progress\", listener);\n  feed.start();\n  return () => {\n    if (stopped) return;\n    stopped = true;\n    feed.target.removeEventListener(\"progress\", listener);\n  };\n}\n",
+        "src/queue.js": "import { createTransfer } from \"./transfer.js\";\n\n// Queue records are retained even when their originating panel visit ends.\nexport function makeQueueRecord(file, attemptId, visitId, kind) {\n  return { fileId: file.id, attemptId, visitId, kind };\n}\n\nexport function enqueueTransfer(state, visit, kind) {\n  const attemptId = ++state.nextAttempt;\n  state.record(makeQueueRecord(visit.file, attemptId, visit.id, kind));\n  const progress = {\n    isCurrent() { return state.current === visit; },\n    record(frame) { state.recordProgress({ fileId: visit.file.id, attemptId, frame }); },\n    receive(frame) {\n      if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });\n    },\n  };\n  const handle = createTransfer(visit.file, attemptId, state.transport, state.onCancel, progress);\n  state.tasks.set(attemptId, handle);\n  return handle;\n}\n",
+        "src/retry.js": "import { enqueueTransfer } from \"./queue.js\";\nimport { publishQueued } from \"./notice.js\";\n\n// A retry click accepts exactly one command for the current visit and file.\nexport function retryTransfer(state) {\n  const visit = state.current;\n  if (!visit || !visit.handle || state.disposed) return null;\n  const previous = visit.handle;\n  previous.cancel();\n  const handle = enqueueTransfer(state, visit, \"retry\");\n  if (state.current === visit) visit.handle = handle;\n  else handle.cancel();\n  if (state.current === visit) publishQueued(state, visit, handle);\n  return handle;\n}\n",
+        "src/telemetry.js": "// Diagnostics count live deltas only. A cached bootstrap is panel state, not a delta.\nexport function collectProgressTelemetry(feed, recordDelta) {\n  const listener = event => {\n    const deliver = frame => recordDelta(frame);\n    const decoded = feed.decode(event.detail);\n    if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n    else deliver(decoded);\n  };\n  feed.start();\n  feed.target.addEventListener(\"progress\", listener);\n  return () => feed.target.removeEventListener(\"progress\", listener);\n}\n",
+        "src/transfer.js": "import { watchTransferProgress } from \"./progress.js\";\n\nexport function createTransfer(file, attemptId, transport, onCancel, progress = {}) {\n  const controller = new AbortController();\n  let stopProgress = () => {};\n  controller.signal.addEventListener(\"abort\", () => {\n    stopProgress();\n    onCancel({ file, attemptId, signal: controller.signal });\n  }, { once: true });\n  transport({ file, attemptId, signal: controller.signal });\n  if (file.progressFeed) {\n    stopProgress = watchTransferProgress(file.progressFeed, progress.receive, progress.record,\n      () => !controller.signal.aborted && (!progress.isCurrent || progress.isCurrent()));\n    if (controller.signal.aborted) stopProgress();\n  }\n  return { file, attemptId, signal: controller.signal,\n    cancel() { if (!controller.signal.aborted) controller.abort(); } };\n}\n",
+        "src/workspace.js": "import { selectFile, hidePanel, disposeWorkspace } from \"./panel.js\";\nimport { retryTransfer } from \"./retry.js\";\n\nexport function createTransferWorkspace({ transport, onCancel, record, showQueued, recordProgress = () => {}, showProgress = () => {} }) {\n  const state = { transport, onCancel, record, showQueued, recordProgress, showProgress, current: null,\n    nextVisit: 0, nextAttempt: 0, tasks: new Map(), disposed: false };\n  return {\n    select(file) { return selectFile(state, file); },\n    retry() { return retryTransfer(state); },\n    hide() { hidePanel(state); },\n    dispose() { disposeWorkspace(state); },\n    snapshot() {\n      const visit = state.current;\n      return { visitId: visit ? visit.id : null, fileId: visit ? visit.file.id : null,\n        attemptId: visit && visit.handle ? visit.handle.attemptId : null,\n        disposed: state.disposed, attempts: state.nextAttempt };\n    },\n  };\n}\n\nexport { createTransfer } from \"./transfer.js\";\nexport { makeQueueRecord, enqueueTransfer } from \"./queue.js\";\nexport { publishQueued } from \"./notice.js\";\nexport { releaseVisit, selectFile, hidePanel, disposeWorkspace } from \"./panel.js\";\nexport { retryTransfer } from \"./retry.js\";\nexport { collectProgressTelemetry } from \"./telemetry.js\";\nexport { createProgressFeed } from \"./progress-source.js\";\n",
+        "tests/visible.mjs": "import { pathToFileURL } from 'node:url';\nimport path from 'node:path';\nimport assert from 'node:assert/strict';\nconst root = process.argv[2];\nconst api = await import(pathToFileURL(path.join(root, 'src/workspace.js')).href);\nconst results = [];\nconst tick = async () => { for (let i=0;i<8;i++) await Promise.resolve(); };\nconst value = row => row.frame.value;\nfunction setup(extra = {}) {\n  const log = { records: [], queued: [], audit: [], shown: [], cancelled: [] };\n  let workspace;\n  workspace = api.createTransferWorkspace({\n    transport() {},\n    onCancel(row) { log.cancelled.push(row.attemptId); extra.onCancel?.(row,workspace); },\n    record(row) { log.records.push(row); },\n    showQueued(row) { log.queued.push(row); },\n    recordProgress(row) { log.audit.push(row); },\n    showProgress(row) { log.shown.push(row); extra.showProgress?.(row,workspace); },\n  });\n  return { workspace, log };\n}\nfunction feedMany(values) {\n  const target = new EventTarget();\n  const emit = packet => { const e = new Event('progress'); e.detail = packet; target.dispatchEvent(e); };\n  return { target, decode: x => x, start() { for (const v of values) emit({value:v}); }, emit };\n}\nasync function check(name, action) {\n  try { const actual = await action(); results.push({check:name,passed:true,actual}); }\n  catch (error) { results.push({check:name,passed:false,actual:error.actual ?? null,expected:error.expected ?? null,error:String(error.message)}); }\n}\nawait check('public_warm_bootstrap', async () => {\n  const {workspace:w,log:l}=setup();const f=api.createProgressFeed({initialPacket:{value:5}});\n  w.select({id:'A',size:10,progressFeed:f});\n  assert.deepEqual(l.shown.map(value),[5]);assert.deepEqual(l.audit.map(value),[5]);w.dispose();return {shown:[5],audit:[5]};\n});\nawait check('public_streaming_and_queue_shape', async () => {\n  const {workspace:w,log:l}=setup();const f=api.createProgressFeed({});w.select({id:'A',size:10,progressFeed:f});f.emit({value:8});\n  assert.deepEqual(l.shown.map(value),[8]);assert.deepEqual(l.audit.map(value),[8]);\n  assert.deepEqual(l.records,[{fileId:'A',attemptId:1,visitId:1,kind:'select'}]);w.dispose();return {shown:[8],records:l.records};\n});\nawait check('public_diagnostic_delta_policy', async () => {\n  const f=api.createProgressFeed({initialPacket:{value:1}});const deltas=[];\n  const stop=api.collectProgressTelemetry(f,x=>deltas.push(x.value));f.emit({value:2});stop();f.emit({value:3});\n  assert.deepEqual(deltas,[2]);return deltas;\n});\nawait check('public_admitted_decode_after_hide', async () => {\n  const tickets=[];const f=api.createProgressFeed({decode:x=>new Promise(resolve=>tickets.push(()=>resolve(x)))});\n  const {workspace:w,log:l}=setup();w.select({id:'A',progressFeed:f});f.emit({value:4});w.hide();tickets[0]();await tick();\n  assert.deepEqual(l.audit.map(value),[4]);assert.deepEqual(l.shown,[]);w.dispose();return {audit:[4],shown:[]};\n});\nawait check('public_out_of_order_full_frames', async () => {\n  const tickets=[];const f=api.createProgressFeed({decode:x=>new Promise(resolve=>tickets.push(()=>resolve(x)))});\n  const {workspace:w,log:l}=setup();w.select({id:'A',progressFeed:f});f.emit({value:1});f.emit({value:2});tickets[1]();await tick();tickets[0]();await tick();\n  assert.deepEqual(l.shown.map(value),[2]);assert.deepEqual(l.audit.map(value),[2,1]);w.dispose();return {shown:[2],audit:[2,1]};\n});\nawait check('public_inline_hide_during_multi_packet_start', async () => {\n  const {workspace:w,log:l}=setup({showProgress(row,host){if(row.frame.value===1)host.hide();}});const f=feedMany([1,2]);w.select({id:'A',progressFeed:f});\n  assert.deepEqual(l.shown.map(value),[1]);assert.deepEqual(l.audit.map(value),[1]);f.emit({value:3});assert.deepEqual(l.audit.map(value),[1]);assert.equal(w.snapshot().fileId,null);w.dispose();return {shown:[1],audit:[1]};\n});\nawait check('public_inline_switch_keeps_new_owner', async () => {\n  const b={id:'B',progressFeed:api.createProgressFeed({initialPacket:{value:7}})};let switched=false;\n  const {workspace:w,log:l}=setup({showProgress(row,host){if(!switched&&row.fileId==='A'){switched=true;host.select(b);}}});const f=feedMany([1,2]);w.select({id:'A',progressFeed:f});b.progressFeed.emit({value:8});\n  assert.deepEqual(l.shown.map(row=>row.fileId+':'+value(row)),['A:1','B:7','B:8']);\n  assert.deepEqual(l.audit.map(row=>row.fileId+':'+value(row)),['A:1','B:7','B:8']);assert.equal(w.snapshot().fileId,'B');w.dispose();return {shown:['A:1','B:7','B:8']};\n});\nawait check('public_same_feed_reopen_pending_decode', async () => {\n  const tickets=[];const f=api.createProgressFeed({decode:x=>new Promise(resolve=>tickets.push(()=>resolve(x)))});const file={id:'A',progressFeed:f};\n  const {workspace:w,log:l}=setup();w.select(file);f.emit({value:1});w.hide();w.select(file);f.emit({value:2});tickets[0]();tickets[1]();await tick();\n  assert.deepEqual(l.shown.map(value),[2]);assert.deepEqual(l.audit.map(value),[1,2]);assert.equal(w.snapshot().attempts,2);w.dispose();return {shown:[2],audit:[1,2]};\n});\nawait check('public_retry_retains_visit_and_record', async () => {\n  const {workspace:w,log:l}=setup();w.select({id:'A',size:11});const before=w.snapshot();w.retry();\n  assert.deepEqual(l.records,[{fileId:'A',attemptId:1,visitId:1,kind:'select'},{fileId:'A',attemptId:2,visitId:1,kind:'retry'}]);assert.equal(w.snapshot().visitId,before.visitId);assert.equal(w.snapshot().attemptId,2);assert.deepEqual(l.cancelled,[1]);w.dispose();return {records:l.records};\n});\nawait check('public_retry_cancellation_reentry', async () => {\n  let changed=false;const {workspace:w,log:l}=setup({onCancel(row,host){if(!changed){changed=true;host.select({id:'B'});}}});w.select({id:'A'});w.retry();\n  assert.deepEqual(l.records,[{fileId:'A',attemptId:1,visitId:1,kind:'select'},{fileId:'B',attemptId:2,visitId:2,kind:'select'},{fileId:'A',attemptId:3,visitId:1,kind:'retry'}]);assert.equal(w.snapshot().fileId,'B');assert.equal(w.snapshot().attemptId,2);assert.deepEqual(l.queued.map(row=>row.fileId),['A','B']);w.dispose();return {records:l.records,current:'B'};\n});\nawait check('public_detach_reentry_keeps_new_visit', async () => {\n  let changed=false;const b={id:'B',progressFeed:api.createProgressFeed({})};const {workspace:w,log:l}=setup();const f=api.createProgressFeed({onDetach(){if(!changed){changed=true;w.select(b);}}});w.select({id:'A',progressFeed:f});w.hide();b.progressFeed.emit({value:9});\n  assert.equal(w.snapshot().fileId,'B');assert.deepEqual(l.shown.map(value),[9]);w.dispose();return {current:'B',shown:[9]};\n});\nawait check('public_independent_workspaces', async () => {\n  const first=setup(),second=setup();first.workspace.select({id:'A'});second.workspace.select({id:'B'});first.workspace.dispose();\n  assert.equal(second.workspace.snapshot().fileId,'B');assert.equal(second.workspace.snapshot().disposed,false);second.workspace.retry();assert.equal(second.workspace.snapshot().attemptId,2);second.workspace.dispose();return {independent:true};\n});\nconsole.log(JSON.stringify({passed:results.every(x=>x.passed),observations:results,regressions:[],unknowns:[]}));\n"
+      },
+      "feedback": {
+        "observations": [
+          {
+            "actual": {
+              "audit": [
+                5
+              ],
+              "shown": [
+                5
+              ]
+            },
+            "check": "public_warm_bootstrap",
+            "passed": true
+          },
+          {
+            "actual": {
+              "records": [
+                {
+                  "attemptId": 1,
+                  "fileId": "A",
+                  "kind": "select",
+                  "visitId": 1
+                }
+              ],
+              "shown": [
+                8
+              ]
+            },
+            "check": "public_streaming_and_queue_shape",
+            "passed": true
+          },
+          {
+            "actual": [
+              2
+            ],
+            "check": "public_diagnostic_delta_policy",
+            "passed": true
+          },
+          {
+            "actual": {
+              "audit": [
+                4
+              ],
+              "shown": []
+            },
+            "check": "public_admitted_decode_after_hide",
+            "passed": true
+          },
+          {
+            "actual": {
+              "audit": [
+                2,
+                1
+              ],
+              "shown": [
+                2
+              ]
+            },
+            "check": "public_out_of_order_full_frames",
+            "passed": true
+          },
+          {
+            "actual": {
+              "audit": [
+                1
+              ],
+              "shown": [
+                1
+              ]
+            },
+            "check": "public_inline_hide_during_multi_packet_start",
+            "passed": true
+          },
+          {
+            "actual": {
+              "shown": [
+                "A:1",
+                "B:7",
+                "B:8"
+              ]
+            },
+            "check": "public_inline_switch_keeps_new_owner",
+            "passed": true
+          },
+          {
+            "actual": {
+              "audit": [
+                1,
+                2
+              ],
+              "shown": [
+                2
+              ]
+            },
+            "check": "public_same_feed_reopen_pending_decode",
+            "passed": true
+          },
+          {
+            "actual": {
+              "records": [
+                {
+                  "attemptId": 1,
+                  "fileId": "A",
+                  "kind": "select",
+                  "visitId": 1
+                },
+                {
+                  "attemptId": 2,
+                  "fileId": "A",
+                  "kind": "retry",
+                  "visitId": 1
+                }
+              ]
+            },
+            "check": "public_retry_retains_visit_and_record",
+            "passed": true
+          },
+          {
+            "actual": {
+              "current": "B",
+              "records": [
+                {
+                  "attemptId": 1,
+                  "fileId": "A",
+                  "kind": "select",
+                  "visitId": 1
+                },
+                {
+                  "attemptId": 2,
+                  "fileId": "B",
+                  "kind": "select",
+                  "visitId": 2
+                },
+                {
+                  "attemptId": 3,
+                  "fileId": "A",
+                  "kind": "retry",
+                  "visitId": 1
+                }
+              ]
+            },
+            "check": "public_retry_cancellation_reentry",
+            "passed": true
+          },
+          {
+            "actual": {
+              "current": "B",
+              "shown": [
+                9
+              ]
+            },
+            "check": "public_detach_reentry_keeps_new_visit",
+            "passed": true
+          },
+          {
+            "actual": {
+              "independent": true
+            },
+            "check": "public_independent_workspaces",
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "unknowns": []
+      },
+      "number": 1,
+      "visible_passed": true
+    }
+  ]
+}
