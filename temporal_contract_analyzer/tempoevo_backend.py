@@ -24,6 +24,7 @@ class NativeV4Backend:
         prompt=('Use only the original task and supplied public code/documents as normative evidence. '
             'Experience and automatic Contract are fallible guidance. Evaluation observations do not create business requirements. '
             'Never access a scorer, reference implementation or hidden tests. '
+            'For evidence cite the original task as file TASK; use exact public source paths and copy the quoted wording. '
             'For Action edit only business code in /workspace; preserve tests/configuration. Other stages return structured output without modifying files.\n'+canonical(payload))
         (directory/'native-stage').mkdir()
         result=NativeBackend().execute(protocol,role,prompt,payload.get('schema'),directory/'native-stage')

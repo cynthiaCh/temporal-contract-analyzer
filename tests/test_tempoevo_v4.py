@@ -106,12 +106,21 @@ class V4Tests(unittest.TestCase):
 
     def test_task_citation_alias_still_requires_matching_public_content(self):
         from temporal_contract_analyzer.tempoevo_v4 import evidence_valid
-        for name in ('TASK','original task'):
+        for name in ('TASK','original task','Original task',' task '):
             evidence_valid([dict(file=name,quote='Preserve accepted work.')],'Preserve accepted work.',{})
             with self.assertRaises(EvidenceError):
                 evidence_valid([dict(file=name,quote='Delete accepted work.')],'Preserve accepted work.',{})
         with self.assertRaises(EvidenceError):
             evidence_valid([dict(file='unknown source',quote='Preserve accepted work.')],'Preserve accepted work.',{})
+
+    def test_markdown_citations_tolerate_inline_code_formatting_not_changed_words(self):
+        from temporal_contract_analyzer.tempoevo_v4 import evidence_valid
+        sources={'README.md':'`start()` may emit\nmore packets before `showProgress` returns.',
+                 'main.js':'const key = `original`;'}
+        evidence_valid([dict(file='README.md',quote='start() may emit more packets before showProgress returns.')],'',sources)
+        for name,quote in [('README.md','begin() may emit more packets'),('main.js','const key = original;')]:
+            with self.subTest(source=name):
+                with self.assertRaises(EvidenceError):evidence_valid([dict(file=name,quote=quote)],'',sources)
 
     def test_extraction_schema_uses_the_review_library_vocabulary(self):
         from temporal_contract_analyzer.tempoevo_v4 import EXPERIENCE_SCHEMA

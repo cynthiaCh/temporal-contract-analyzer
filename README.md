@@ -84,3 +84,8 @@ summary; held-out testing reads frozen approved memory and cannot learn.
 All V4 LLM stages use `gpt-6.1-sol / medium`. Historical V1–V3 data remain readable; their execution engines are removed. See [V4 protocol, budgets and limitations](docs/TEMPOEVO_V4.md),
 [learning configuration](examples/tempoevo-v4/learning.json), and
 [testing configuration](examples/tempoevo-v4/testing.json).
+
+For development training selection, use the frozen
+[GPT-6.1 Sol medium hardest-50 index](examples/tempoevo-v4/case-selections/gpt61-sol-medium-hardest50-20261029/README.md).
+It retains historical counts and provenance; verify the case runtime, task condition
+and input version before preparing a new V4 trajectory. Record new results separately.

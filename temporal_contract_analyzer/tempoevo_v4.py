@@ -4,6 +4,7 @@ from pathlib import Path
 import difflib
 import fcntl
 import json
+import re
 import shutil
 import time
 
@@ -52,9 +53,16 @@ EXPERIENCE_SCHEMA = obj_schema(dict(
 
 def evidence_valid(rows, task, sources):
     for row in rows:
-        body=task if row['file'] in ('TASK','original task') else sources.get(row['file'],'')
-        quote=' '.join(row['quote'].split())
-        if not quote or quote not in ' '.join(body.split()):raise EvidenceError('Unsupported public-source citation')
+        task_ref=row['file'].strip().casefold() in ('task','original task')
+        body=task if task_ref else sources.get(row['file'],'')
+        def normalized(text):
+            # Markdown inline-code delimiters change presentation, not wording.
+            # Keep source-code backticks significant outside Markdown/task text.
+            if task_ref or Path(row['file']).suffix.lower()=='.md':
+                text=re.sub(r'(?<!`)`([^`\n]+)`(?!`)',r'\1',text)
+            return ' '.join(text.split())
+        quote=normalized(row['quote'])
+        if not quote or quote not in normalized(body):raise EvidenceError('Unsupported public-source citation')
 
 
 def check_contract(contract, task, sources, before=None):

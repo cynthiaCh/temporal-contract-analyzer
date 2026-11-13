@@ -55,8 +55,10 @@ Preparation, status and publication never launch a model. `run --execute` uses t
 shared isolated native CLI runner (`execution_backend.py`). Every LLM stage uses gpt-6.1-sol/medium;
 diagnosis and extraction use read-only analysis sessions with independent schemas,
 and their JSON results are archived without requiring routing's Markdown `contract`
-field. Task evidence accepts `TASK` and `original task` with the same exact-content
-matching. Experience extraction uses the review library's R/O/B/L/I/F/A labels,
+field. Task evidence accepts `TASK` and `original task` regardless of capitalization
+or surrounding whitespace. Quotes must match public wording; whitespace and Markdown
+inline-code delimiters are normalized. Source-code backticks remain significant.
+Experience extraction uses the review library's R/O/B/L/I/F/A labels,
 registered mechanism predicates and rule categories; prose applicability and
 exclusions belong in rule bodies. Action uses a writable isolated candidate workspace. No gold/referee directories
 are mounted into it. Requires Linux native isolation provisioning (`bwrap`, Codex,
