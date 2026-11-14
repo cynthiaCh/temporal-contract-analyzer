@@ -1,6 +1,6 @@
 # V8: online provisional learning and frozen evaluation
 
-New roots use `tempoevo-trajectory-v8`; historical roots remain readable and cannot
+V8 defines the online provisional channel. New execution uses [V9](TEMPOEVO_V9.md), which explicitly forwards cumulative within-task diagnoses. V8 roots used `tempoevo-trajectory-v8`; historical roots remain readable and cannot
 silently resume under the new runtime. Model weights, three-Action limits,
 deterministic scoring, controlled training feedback, transport recovery and human
 expert identity requirements remain unchanged.

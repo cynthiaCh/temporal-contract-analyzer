@@ -1,0 +1,136 @@
+{
+  "schema_version": "experience-bundle-v2",
+  "id": "v8-ae5ebd22e6c5cffa-success",
+  "version": "reflection-3035bd7eed5a0b1e",
+  "parent_sha256": null,
+  "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+  "labels": [
+    "O",
+    "L",
+    "I",
+    "A"
+  ],
+  "requires": [
+    "deferred_batch",
+    "inline_reentry",
+    "effect_lifetimes"
+  ],
+  "excludes": [
+    "different_ownership_policy",
+    "discard_boundary_policy"
+  ],
+  "rules": [
+    {
+      "id": "R01",
+      "body": "Apply when immediate document writes become reusable trailing work, document buffers outlive visible subscriptions, and save callbacks can synchronously navigate. Confirm any departure deadline independently. README.md: \"A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate.\"",
+      "category": "applicability"
+    },
+    {
+      "id": "R02",
+      "body": "Bind edits to their originating document's reusable buffer, preserve the no-current-view guard, replace pending text, and restart the quiet interval on each edit. TASK: \"Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\\ninterval, write only the latest text in that editing burst. Subsequent bursts\\nmust continue to save.\" Here \\n denotes original line breaks. src/workflow.go binds buffer work with \"NewTrailing(env,120,func(text string){env.Write(id,text)})\" and guards editing with \"view:=w.current;if view!=nil\".",
+      "category": "event_relation"
+    },
+    {
+      "id": "R03",
+      "body": "Consume pending state before invoking saving so callback-enqueued edits survive as a new burst. Preserve empty text as valid work and avoid post-callback clearing. src/workflow.go: \"if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\" followed by \"if text!=nil { t.work(*text) }\".",
+      "category": "event_relation"
+    },
+    {
+      "id": "R04",
+      "body": "Keep persistent document work separate from badge subscription cleanup. Retirement must not discard accepted edits or destroy reusable document buffers. docs/host-api.md: \"Document buffers are owned by the store BufferBank, while Badge owns only a live subscription.\" src/workflow.go: \"func(b *Badge)detach(){b.env.Store().Stop(b.token)}\". Survival alone does not require flushing before departure returns; establish that deadline separately.",
+      "category": "preservation"
+    },
+    {
+      "id": "R05",
+      "body": "Preserve navigation authority around callback-capable saving. Capture the departing badge, release current ownership, clean up the captured subscription, and retain the generation check before installing a destination. src/workflow.go: \"old:=w.current;w.current=nil\" and \"if true&&request!=w.generation{return}\". docs/host-api.md: \"A store listener may call navigation synchronously.\" If departure saving is added, finish retirement mutations before saving or recheck authority before subsequent mutations, so an outer document-clear output cannot erase nested navigation. Attempt 1 illustrates clearing the document before flushing the captured buffer; that ordering is an implementation example.",
+      "category": "event_relation"
+    },
+    {
+      "id": "R06",
+      "body": "Preserve public interfaces, document display, subscription cleanup, status filtering, and original identity and payload semantics. TASK: \"Preserve the editor's other behavior and public interfaces.\" docs/host-api.md: \"All source identities/text and status payloads retain original semantics.\" src/workflow.go filters status with \"if e[\\\"id\\\"]==id{env.Output(\\\"status\\\",e)}\" and delegates disposal with \"func(w *Workspace)Dispose(){w.Close()}\". Use the supplied integration evidence rather than importing framework lifecycle requirements.",
+      "category": "preservation"
+    },
+    {
+      "id": "R07",
+      "body": "Keep transient preview outside the repair, including when considering shared-utility changes. TASK: \"The adjacent search preview is outside this maintenance change.\" src/workflow.go: \"NewTrailing(env,40,func(query string){env.Output(\\\"preview\\\",Value{\\\"query\\\":query})})\" and \"func(p *Preview)Hide(){p.task.Cancel()}\". Preserve its 40 ms interval, discard on hide, and subsequent reuse; do not transfer persistent document policy to preview.",
+      "category": "exclusion"
+    },
+    {
+      "id": "R08",
+      "body": "Use controlled time and synchronous callbacks to check no immediate write, latest text after 120 ms of quiet, deadline restart, subsequent bursts, empty text, and originating-document binding. Exercise switch, close, dispose, same-document reopening, subscription cleanup, save-triggered open/close, and callback-enqueued edits. Check that outer retirement cannot clear nested navigation. Verify preview delay, hide cancellation, and reuse. Require accepted document work to survive retirement; assert persistence before departure returns only with independent normative support. These checks follow TASK's \"Subsequent bursts\\nmust continue to save.\" and \"Preserve the editor's other behavior and public interfaces.\", together with the cited ownership, callback, and utility behavior. Here \\n denotes an original line break. Evaluation observations remain examples.",
+      "category": "verification"
+    }
+  ],
+  "review": {
+    "status": "candidate",
+    "kind": "ai_assisted",
+    "source_sha256": "3035bd7eed5a0b1ee8569b406709fdf98bc17524012476d87b9c774cbc8db6c6",
+    "limitations": [
+      "Store ownership establishes survival of accepted document work, not a requirement to save before departure returns. TASK explicitly introduces deferred writes; the former immediate-write implementation does not independently establish a departure deadline.",
+      "Attempt 1 flushes on departure and passes the supplied observations. This demonstrates one implementation, not a business requirement, causality, exhaustive correctness, or cross-task benefit.",
+      "Synchronous timer startup, delivery after cancellation, callback exceptions, write failures, and permanent disposal semantics are unspecified.",
+      "Multiple workspaces sharing a store and document are not explicitly specified; per-document buffer ownership does not establish an additional coordination policy.",
+      "Framework lifecycle integrations cited by related experiences are absent from the supplied Go source.",
+      "This reflection uses only supplied material. No files were modified and no scorer, reference implementation, or hidden tests were accessed."
+    ]
+  },
+  "audit": {
+    "sources": [
+      {
+        "path": "/home/sribd/Downloads/wangshu/tempoevo-v8-online-top25-20261114_202942/draft-autosave-handoff-vue3-port-go/trajectory/candidate-pool/success-evidence.json",
+        "sha256": "3035bd7eed5a0b1ee8569b406709fdf98bc17524012476d87b9c774cbc8db6c6"
+      }
+    ],
+    "rule_links": [
+      {
+        "rule_id": "R01",
+        "source_sha256": "3035bd7eed5a0b1ee8569b406709fdf98bc17524012476d87b9c774cbc8db6c6",
+        "pointer": "/experience/rules/0"
+      },
+      {
+        "rule_id": "R02",
+        "source_sha256": "3035bd7eed5a0b1ee8569b406709fdf98bc17524012476d87b9c774cbc8db6c6",
+        "pointer": "/experience/rules/1"
+      },
+      {
+        "rule_id": "R03",
+        "source_sha256": "3035bd7eed5a0b1ee8569b406709fdf98bc17524012476d87b9c774cbc8db6c6",
+        "pointer": "/experience/rules/2"
+      },
+      {
+        "rule_id": "R04",
+        "source_sha256": "3035bd7eed5a0b1ee8569b406709fdf98bc17524012476d87b9c774cbc8db6c6",
+        "pointer": "/experience/rules/3"
+      },
+      {
+        "rule_id": "R05",
+        "source_sha256": "3035bd7eed5a0b1ee8569b406709fdf98bc17524012476d87b9c774cbc8db6c6",
+        "pointer": "/experience/rules/4"
+      },
+      {
+        "rule_id": "R06",
+        "source_sha256": "3035bd7eed5a0b1ee8569b406709fdf98bc17524012476d87b9c774cbc8db6c6",
+        "pointer": "/experience/rules/5"
+      },
+      {
+        "rule_id": "R07",
+        "source_sha256": "3035bd7eed5a0b1ee8569b406709fdf98bc17524012476d87b9c774cbc8db6c6",
+        "pointer": "/experience/rules/6"
+      },
+      {
+        "rule_id": "R08",
+        "source_sha256": "3035bd7eed5a0b1ee8569b406709fdf98bc17524012476d87b9c774cbc8db6c6",
+        "pointer": "/experience/rules/7"
+      }
+    ],
+    "notes": [
+      "V8 origin: success",
+      "Reflection operation: revise",
+      "Reflection targets: d0eb804bbe09d7360e31818d779009dd32d4e3d9e19575e48f8d2bfb1b5a7821",
+      "Not approved; training acceptance or expert summary does not verify cross-task effectiveness"
+    ],
+    "outcome_refs": []
+  },
+  "body_sha256": "3bc0589cffeaa3c316162b1862a0ded8a163412ef4318c7287a0ccf31b8dff41",
+  "sha256": "2de685593e4c108163f06da31293d2ec51679a013335883eadeed45ef2ffc1e9"
+}

@@ -94,7 +94,7 @@ class ModelRetryTests(unittest.TestCase):
     def test_model_drift_and_old_v5_are_blocked(self):
         loop=self.prepare(model_config=str(self.config_file()))
         self.assertEqual(loop.run(fixtures.Backend(),execute=True)['status'],'execution_invalid')
-        for version in ['tempoevo-trajectory-v5','tempoevo-trajectory-v6','tempoevo-trajectory-v7']:
+        for version in ['tempoevo-trajectory-v5','tempoevo-trajectory-v6','tempoevo-trajectory-v7','tempoevo-trajectory-v8']:
             loop=self.prepare();p=read(loop.root/'protocol.json');p['schema_version']=version;loop.save('protocol.json',p)
             with self.assertRaisesRegex(EvidenceError,'Historical protocol'):loop.run(RetryBackend(),execute=True)
 

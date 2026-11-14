@@ -1,0 +1,1584 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/workflow.rb\n+++ candidate/src/workflow.rb\n@@ -52,13 +52,16 @@\n class Workspace\n  def initialize(env);@env,@current,@generation=env,nil,0;@bank=BufferBank.new;end\n  def retire\n-  old,@current=@current,nil;old.detach if old && !false;@env.output('document',nil);nil if old;old.detach if old && false\n+  old,@current=@current,nil\n+  old.detach if old\n+  @env.output('document',nil)\n+  old.buffer.flush if old\n  end\n  def open(id)\n-  @generation+=1;request=@generation;retire;return if true && request!=@generation\n+  @generation+=1;request=@generation;retire;return if request!=@generation\n   buffer=@bank.get(@env,id);@current=Badge.new(@env,id,buffer);@env.output('document',{'id'=>id,'text'=>@env.store.read(id)})\n  end\n- def edit(text);view=@current;@env.write(view.id,text) if view;end\n+ def edit(text);view=@current;view.buffer.push(text) if view;end\n  def close;@generation+=1;retire;end\n  def dispose;close;end\n end\n",
+        "from_previous": "--- previous/src/workflow.rb\n+++ candidate/src/workflow.rb\n@@ -52,13 +52,16 @@\n class Workspace\n  def initialize(env);@env,@current,@generation=env,nil,0;@bank=BufferBank.new;end\n  def retire\n-  old,@current=@current,nil;old.detach if old && !false;@env.output('document',nil);nil if old;old.detach if old && false\n+  old,@current=@current,nil\n+  old.detach if old\n+  @env.output('document',nil)\n+  old.buffer.flush if old\n  end\n  def open(id)\n-  @generation+=1;request=@generation;retire;return if true && request!=@generation\n+  @generation+=1;request=@generation;retire;return if request!=@generation\n   buffer=@bank.get(@env,id);@current=Badge.new(@env,id,buffer);@env.output('document',{'id'=>id,'text'=>@env.store.read(id)})\n  end\n- def edit(text);view=@current;@env.write(view.id,text) if view;end\n+ def edit(text);view=@current;view.buffer.push(text) if view;end\n  def close;@generation+=1;retire;end\n  def dispose;close;end\n end\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [],
+        "coverage": [
+          {
+            "path": "src/workflow.rb",
+            "status": "unsupported_language"
+          }
+        ],
+        "events": [],
+        "findings": [],
+        "limitations": [
+          "结果是语法事实、静态候选调用关系与待核查模式，不是已证明的时序契约、缺陷、严重度或难度分。",
+          "同名 API 只作为线索；不做全程序类型/别名/控制流证明。动态派发、对象工厂、函数参数传递的完整目标保持未知。",
+          "局部先后表示同一语法块中位置先后；条件、异常、循环、短路及调用是否实际执行仍需核查。",
+          "await 是潜在暂停点，并非必然切换；取消请求不等于工作与清理完成；移除监听不保证既有异步工作取消。",
+          "语法中的 if/try/finally 不等于已证明保护充分；无模式命中不等于程序安全。",
+          "未读取隐藏评分器、参考补丁、模型结果或人工 profile；分析根由操作者提供，文件内容的来源仍需核实。"
+        ],
+        "relations": [],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "partial",
+        "target_definitions": []
+      },
+      "sources": {
+        "README.md": "Theatre operations — A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: separate BufferBank service\n",
+        "VISIBLE_CHECKS.md": "Public checks are deterministic external examples, not hidden gold. They are executed after each submitted Action. Keep original task/source obligations. Checks: latest quiet burst (120ms), persistence before departure returns, synchronous save callback navigation stays authoritative, preview hide discards pending work and allows reuse.\nUse the declared runtime: ruby Ruby 2.7.0. The external adapter is not mounted in the model workspace; do not access scorer/reference files. Build temporary artifacts in /tmp.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Ruby 2.7.0\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide(). Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled. Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription. A store listener may call navigation synchronously. All source identities/text and status payloads retain original semantics.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.rb": "class Store\n  def initialize(records)\n    @records = records.each_with_object({}) { |(id, text), copy| copy[id.dup.freeze] = text.dup.freeze }\n    @listeners, @serial, @revision = {}, 0, 0\n  end\n  def read(id); @records.fetch(id, '').dup.freeze; end\n  def subscribe(&block)\n    @serial += 1\n    @listeners[@serial] = block\n    @serial\n  end\n  def stop(token); @listeners.delete(token); end\n  def write(id, text)\n    @records[id] = text.dup.freeze\n    @revision += 1\n    event = {id: id.dup.freeze, text: @records[id], revision: @revision}\n    @listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }\n    event\n  end\nend\nclass Trailing\n  def initialize(env, delay, &work)\n    @env, @delay, @work = env, delay, work\n    @handle = @pending = nil\n  end\n  def push(value)\n    @env.cancel(@handle) unless @handle.nil?\n    @pending = value\n    @handle = @env.schedule(@delay) { flush }\n  end\n  def flush\n    @env.cancel(@handle) unless @handle.nil?\n    value = @pending\n    @handle = @pending = nil\n    @work.call(value) unless value.nil?\n  end\n  def cancel\n    @env.cancel(@handle) unless @handle.nil?\n    @handle = @pending = nil\n  end\nend\n\nclass Badge\n attr_reader :id,:buffer\n def initialize(env,id,buffer);@env,@id,@buffer=env,id,buffer;@token=env.store.subscribe {|e| env.output('status',e) if e[:id]==id};end\n def detach;@env.store.stop(@token);end\nend\nclass BufferBank\n def initialize;@entries={};end\n def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end\nend\nclass Workspace\n def initialize(env);@env,@current,@generation=env,nil,0;@bank=BufferBank.new;end\n def retire\n  old,@current=@current,nil;old.detach if old && !false;@env.output('document',nil);nil if old;old.detach if old && false\n end\n def open(id)\n  @generation+=1;request=@generation;retire;return if true && request!=@generation\n  buffer=@bank.get(@env,id);@current=Badge.new(@env,id,buffer);@env.output('document',{'id'=>id,'text'=>@env.store.read(id)})\n end\n def edit(text);view=@current;@env.write(view.id,text) if view;end\n def close;@generation+=1;retire;end\n def dispose;close;end\nend\nclass Preview\n def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end\n def query(text);@task.push(text);end\n def hide;@task.cancel;end\nend\n"
+      },
+      "task": "The workspace draft editor currently writes to the store on every keystroke.\nCoalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces.\nThe adjacent search preview is outside this maintenance change.\n"
+    },
+    "source_sha256": "30caa6f8b210efd9f8ecf990103267cd0351a6cb4a0d9bb78fcb8388d4a57dee",
+    "task_id": "draft-autosave-handoff-vanilla-port-ruby"
+  },
+  "experience": {
+    "excludes": [
+      "different_ownership_policy",
+      "discard_boundary_policy"
+    ],
+    "labels": [
+      "O",
+      "L",
+      "I",
+      "A"
+    ],
+    "limitations": [
+      "Buffer ownership establishes survival of accepted edits, not a requirement to save before departure returns. Neither the automatic Contract nor evaluation observations establish that deadline.",
+      "Attempt 1 uses departure-time flushing and reportedly passes the supplied observations. This supports an implementation example, not causality, exhaustive correctness, or cross-task effectiveness.",
+      "Synchronous timer startup, callbacks after cancellation, callback exceptions, write failures, mutable caller-supplied text ownership, and permanent disposal semantics are not separately specified.",
+      "Subscription bootstrap, asynchronous decoding, arrival ordering, audit retention, and retry queues are absent from this task; the supplied subscription experiences introduce no corresponding requirements.",
+      "This reflection uses supplied material only. No files were modified and no scorer, reference implementation, or hidden tests were accessed."
+    ],
+    "requires": [
+      "deferred_batch",
+      "inline_reentry",
+      "effect_lifetimes"
+    ],
+    "rules": [
+      {
+        "body": "Apply when immediate document writes become reusable trailing work, persistent document buffers outlive visible subscriptions, and save callbacks can synchronously navigate. Confirm any departure deadline independently. README.md: \"A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate.\"",
+        "category": "applicability"
+      },
+      {
+        "body": "Bind accepted edits to their originating document's reusable task, replace pending text, restart the quiet interval on each edit, and retain the no-current-view guard. TASK: \"Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\\ninterval, write only the latest text in that editing burst. Subsequent bursts\\nmust continue to save.\" Here the quoted line breaks denote the original task's line breaks. src/workflow.rb: \"def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end\" and \"def edit(text);view=@current;@env.write(view.id,text) if view;end\".",
+        "category": "event_relation"
+      },
+      {
+        "body": "Consume the pending batch before invoking callback-capable saving so edits queued by synchronous reentry survive as a new burst. Preserve empty text as valid work and avoid clearing pending state after the callback. src/workflow.rb: \"value = @pending\\n    @handle = @pending = nil\\n    @work.call(value) unless value.nil?\". The quoted line breaks denote source line breaks.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Keep document persistence separate from badge subscription cleanup. Retirement must not discard accepted edits or destroy reusable document buffers. docs/host-api.md: \"Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription.\" src/workflow.rb: \"def detach;@env.store.stop(@token);end\". Survival alone does not mandate flushing before departure returns.",
+        "category": "preservation"
+      },
+      {
+        "body": "Preserve navigation authority around callback-capable departure work. Release current ownership and clean up the captured badge; retain the request check before installing a destination. src/workflow.rb: \"old,@current=@current,nil\" and \"@generation+=1;request=@generation;retire;return if true && request!=@generation\". docs/host-api.md: \"A store listener may call navigation synchronously.\" If retirement adds a save, place it after remaining retirement mutations, or recheck authority before subsequent mutations, so a document-clear output cannot overwrite nested navigation. Attempt 1 illustrates clearing the document before flushing the captured buffer.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Preserve public interfaces, document display, live subscription cleanup, document identity, and text and status payload semantics. TASK: \"Preserve the editor's other behavior and public interfaces.\" docs/host-api.md: \"All source identities/text and status payloads retain original semantics.\" Preserve the status filter in src/workflow.rb: \"env.output('status',e) if e[:id]==id\".",
+        "category": "preservation"
+      },
+      {
+        "body": "Keep transient preview outside the repair, including when considering shared-utility changes. TASK: \"The adjacent search preview is outside this maintenance change.\" src/workflow.rb: \"def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end\" and \"def hide;@task.cancel;end\". Preserve its 40 ms interval, discard on hide, and later reuse; do not transfer document persistence policy to preview.",
+        "category": "exclusion"
+      },
+      {
+        "body": "Use controlled time to check no immediate write, latest text after 120 ms of quiet, deadline restart, subsequent bursts, empty text, independent document buffers, and originating-document binding. Exercise switch, close, dispose, same-document reopening, subscription cleanup, save-triggered open/close, and callback-enqueued edits. Check that departure output cannot clear a nested navigation's document. Verify preview delay, hide cancellation, and reuse. Require accepted document edits to survive retirement; require persistence before departure returns only with independent normative support. These checks follow TASK's \"Preserve the editor's other behavior and public interfaces.\" and the cited ownership, callback, and utility behavior; evaluation observations remain examples.",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "Several edits within 120 ms produce one store write containing the latest text after the quiet interval.",
+      "A later editing burst schedules and saves again.",
+      "Pending document edits remain the originating document's responsibility when its badge detaches.",
+      "Departure preserves persistence of edits already accepted by the editor.",
+      "Navigation invoked synchronously by a save listener remains authoritative.",
+      "Preview query timing, cancellation, and reuse retain their existing behavior."
+    ],
+    "forbidden_effects": [
+      "Changing the adjacent search preview.",
+      "Changing public interfaces, source identities, text semantics, or status payload semantics.",
+      "Dropping accepted document edits merely because their live badge detaches.",
+      "Allowing an older navigation operation to overwrite navigation performed synchronously by a store listener.",
+      "Treating experience, automatic contracts, or evaluation observations as additional business requirements.",
+      "Accessing scorers, reference implementations, or hidden tests.",
+      "Modifying files during this extraction stage."
+    ],
+    "lifecycle_identity": [
+      "BufferBank owns document buffers independently of the currently displayed Badge.",
+      "BufferBank entries are keyed by document id; delayed saves must remain associated with that originating id.",
+      "Badge owns the live status subscription and detaches it on retirement.",
+      "Workspace generation identifies navigation requests and protects against superseded operations.",
+      "Preview owns a separate trailing task with its own lifetime."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Route document edits through the existing trailing-task utility with a 120 ms quiet interval, saving only the latest text in each burst."
+      },
+      {
+        "id": "O2",
+        "text": "Keep the trailing task reusable so subsequent editing bursts continue to save."
+      },
+      {
+        "id": "O3",
+        "text": "Keep pending document work under BufferBank ownership and retain its originating document identity across badge retirement."
+      },
+      {
+        "id": "O4",
+        "text": "Preserve persistence of edits accepted before departure. Introducing delayed writes must not cause close, replacement, or disposal to lose edits previously saved synchronously."
+      },
+      {
+        "id": "O5",
+        "text": "Account for synchronous navigation during store writes: retire obsolete ownership before callback-capable persistence, and recheck navigation ownership before installing a replacement view."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve existing public interfaces and document/status semantics, and leave search preview behavior outside the maintenance change."
+      }
+    ],
+    "ordering_barriers": [
+      "Accept the latest text and restart its quiet interval before a scheduled save can run.",
+      "Clear a trailing task's pending state before invoking its work, preserving the existing utility's reentrant behavior.",
+      "Retire the departing view's ownership before a save can invoke synchronous navigation.",
+      "After callback-capable departure work, verify that the original navigation request is still current before publishing a replacement document."
+    ],
+    "preservation": [
+      "Store writes continue to synchronously notify eligible listeners with the existing event payload.",
+      "Document buffers remain separate from live badge subscriptions.",
+      "Previously accepted edits retain the existing persistence guarantee across departure.",
+      "The current navigation-generation protection remains effective when persistence introduces additional callback opportunities.",
+      "Preview retains its 40 ms trailing interval and hide cancellation."
+    ],
+    "scope": [
+      "Extract requirements for the workspace draft editor maintenance task from TASK and supplied public sources.",
+      "The business implementation is in src/workflow.rb.",
+      "No file modifications are requested in this extraction stage."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces."
+      },
+      {
+        "file": "TASK",
+        "quote": "The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription. A store listener may call navigation synchronously."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "All source identities/text and status payloads retain original semantics."
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def edit(text);view=@current;@env.write(view.id,text) if view;end"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "value = @pending\n    @handle = @pending = nil\n    @work.call(value) unless value.nil?"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "@generation+=1;request=@generation;retire;return if true && request!=@generation"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end\n def query(text);@task.push(text);end\n def hide;@task.cancel;end"
+      }
+    ],
+    "triggers": [
+      "Editing while a document badge is current.",
+      "Another edit arriving before the document's quiet interval expires.",
+      "Expiry of a document's 120 ms quiet interval.",
+      "Opening another document, closing, or disposing with pending edits.",
+      "A synchronous store listener initiating navigation during persistence.",
+      "Starting another editing burst after an earlier save."
+    ],
+    "unknowns": [
+      "The task does not prescribe a specific implementation for preserving departure persistence; flushing pending work is an implementation choice supported by the existing Trailing#flush interface.",
+      "Timer behavior beyond the explicitly controlled schedule/cancel interface is not specified.",
+      "Mutable caller-supplied text ownership and store-write exception handling are not separately specified.",
+      "Public check descriptions provide verification examples, not independent business requirements."
+    ]
+  },
+  "final_training_acceptance": {
+    "feedback": {
+      "observations": [
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Close checkpoint: preserve the persistent document buffer independently of the departing view badge."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Dispose checkpoint: preserve the document-buffer persistence and view-cleanup behavior in public source."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Empty-edit checkpoint: preserve valid empty document text."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Preview-delay checkpoint: preserve the adjacent transient preview quiet interval."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Preview-hide checkpoint: hiding a preview discards its pending transient work."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Preview-reuse checkpoint: later preview input remains usable."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Quiet-burst checkpoint: coalesce edits and preserve the latest text after the declared quiet interval."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Save/close checkpoint: preserve synchronous close performed by a save callback."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Save/navigation checkpoint: synchronous save callbacks may navigate; preserve the navigation chosen by that callback."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Reopen checkpoint: document storage persists independently of a new opening of the same document."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Subsequent-burst checkpoint: later editing bursts must continue to save."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Switch checkpoint: preserve persistent document buffers and the lifetime of the current view badge."
+        }
+      ],
+      "passed": true,
+      "regressions": [],
+      "unknowns": []
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "Several edits within 120 ms produce one store write containing the latest text after the quiet interval.",
+      "A later editing burst schedules and saves again.",
+      "Pending document edits remain the originating document's responsibility when its badge detaches.",
+      "Departure preserves persistence of edits already accepted by the editor.",
+      "Navigation invoked synchronously by a save listener remains authoritative.",
+      "Preview query timing, cancellation, and reuse retain their existing behavior."
+    ],
+    "forbidden_effects": [
+      "Changing the adjacent search preview.",
+      "Changing public interfaces, source identities, text semantics, or status payload semantics.",
+      "Dropping accepted document edits merely because their live badge detaches.",
+      "Allowing an older navigation operation to overwrite navigation performed synchronously by a store listener.",
+      "Treating experience, automatic contracts, or evaluation observations as additional business requirements.",
+      "Accessing scorers, reference implementations, or hidden tests.",
+      "Modifying files during this extraction stage."
+    ],
+    "lifecycle_identity": [
+      "BufferBank owns document buffers independently of the currently displayed Badge.",
+      "BufferBank entries are keyed by document id; delayed saves must remain associated with that originating id.",
+      "Badge owns the live status subscription and detaches it on retirement.",
+      "Workspace generation identifies navigation requests and protects against superseded operations.",
+      "Preview owns a separate trailing task with its own lifetime."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Route document edits through the existing trailing-task utility with a 120 ms quiet interval, saving only the latest text in each burst."
+      },
+      {
+        "id": "O2",
+        "text": "Keep the trailing task reusable so subsequent editing bursts continue to save."
+      },
+      {
+        "id": "O3",
+        "text": "Keep pending document work under BufferBank ownership and retain its originating document identity across badge retirement."
+      },
+      {
+        "id": "O4",
+        "text": "Preserve persistence of edits accepted before departure. Introducing delayed writes must not cause close, replacement, or disposal to lose edits previously saved synchronously."
+      },
+      {
+        "id": "O5",
+        "text": "Account for synchronous navigation during store writes: retire obsolete ownership before callback-capable persistence, and recheck navigation ownership before installing a replacement view."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve existing public interfaces and document/status semantics, and leave search preview behavior outside the maintenance change."
+      }
+    ],
+    "ordering_barriers": [
+      "Accept the latest text and restart its quiet interval before a scheduled save can run.",
+      "Clear a trailing task's pending state before invoking its work, preserving the existing utility's reentrant behavior.",
+      "Retire the departing view's ownership before a save can invoke synchronous navigation.",
+      "After callback-capable departure work, verify that the original navigation request is still current before publishing a replacement document."
+    ],
+    "preservation": [
+      "Store writes continue to synchronously notify eligible listeners with the existing event payload.",
+      "Document buffers remain separate from live badge subscriptions.",
+      "Previously accepted edits retain the existing persistence guarantee across departure.",
+      "The current navigation-generation protection remains effective when persistence introduces additional callback opportunities.",
+      "Preview retains its 40 ms trailing interval and hide cancellation."
+    ],
+    "scope": [
+      "Extract requirements for the workspace draft editor maintenance task from TASK and supplied public sources.",
+      "The business implementation is in src/workflow.rb.",
+      "No file modifications are requested in this extraction stage."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces."
+      },
+      {
+        "file": "TASK",
+        "quote": "The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription. A store listener may call navigation synchronously."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "All source identities/text and status payloads retain original semantics."
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def edit(text);view=@current;@env.write(view.id,text) if view;end"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "value = @pending\n    @handle = @pending = nil\n    @work.call(value) unless value.nil?"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "@generation+=1;request=@generation;retire;return if true && request!=@generation"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end\n def query(text);@task.push(text);end\n def hide;@task.cancel;end"
+      }
+    ],
+    "triggers": [
+      "Editing while a document badge is current.",
+      "Another edit arriving before the document's quiet interval expires.",
+      "Expiry of a document's 120 ms quiet interval.",
+      "Opening another document, closing, or disposing with pending edits.",
+      "A synchronous store listener initiating navigation during persistence.",
+      "Starting another editing burst after an earlier save."
+    ],
+    "unknowns": [
+      "The task does not prescribe a specific implementation for preserving departure persistence; flushing pending work is an implementation choice supported by the existing Trailing#flush interface.",
+      "Timer behavior beyond the explicitly controlled schedule/cancel interface is not specified.",
+      "Mutable caller-supplied text ownership and store-write exception handling are not separately specified.",
+      "Public check descriptions provide verification examples, not independent business requirements."
+    ]
+  },
+  "origin": "success",
+  "reflection_update": {
+    "change_summary": [
+      "Replace Java-specific citations with exact supplied Ruby source paths and wording.",
+      "Make the retirement-output ordering checkpoint explicit when departure-time saving introduces synchronous navigation.",
+      "Retain the distinction between persistence survival and an independently specified departure deadline; do not import the automatic Contract's stronger timing requirement."
+    ],
+    "failure_attribution": "not_applicable",
+    "operation": "revise",
+    "reason": "Revise the closest deferred-document-work guidance for the supplied Ruby source and an explicit retirement-output checkpoint. The complementary JavaScript guidance has the same core ownership and deadline boundary; merging it adds no distinct obligation. The subscription experiences have narrower bootstrap/decoding applicability and are not normative evidence here. Attempt 1 is the only supplied attempt and reports success, so there is no demonstrated implementation failure or disproof of existing guidance; this revision makes no efficacy claim.",
+    "supporting_attempts": [
+      1
+    ],
+    "target_sha256s": [
+      "d0eb804bbe09d7360e31818d779009dd32d4e3d9e19575e48f8d2bfb1b5a7821"
+    ]
+  },
+  "related_experiences": [
+    {
+      "audit": {
+        "notes": [
+          "Karen-authorized assisted consolidation",
+          "Reflection operation: merge",
+          "Reflection targets: 14e13837e2663a4de293658527a99490d4db7bfcdbd813ecf73997ca3bb90628,0ca152a0bc2a51f01aa3c45cc4b5623fec41e5169d2f04264fa3d6bec718c3fd,2251411000873e1fef16bd9bc482729721d6aefb044d7a19130884b379cded01",
+          "All original decisions and frozen histories retained; no new efficacy claim."
+        ],
+        "outcome_refs": [],
+        "rule_links": [
+          {
+            "pointer": "/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R04",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R05",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/6",
+            "rule_id": "R07",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/7",
+            "rule_id": "R08",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/8",
+            "rule_id": "R09",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R02",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R02",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R03",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R03",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R04",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R04",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R04",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R05",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R05",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/6",
+            "rule_id": "R05",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R06",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/6",
+            "rule_id": "R06",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R07",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R07",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/6",
+            "rule_id": "R07",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/7",
+            "rule_id": "R08",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/8",
+            "rule_id": "R09",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R02",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R03",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R04",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R04",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R05",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R05",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R05",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R06",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R06",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R07",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R07",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R07",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/6",
+            "rule_id": "R08",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/7",
+            "rule_id": "R09",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R02",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R02",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R03",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R03",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R04",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R04",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R04",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R05",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R05",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R06",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R07",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R07",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/6",
+            "rule_id": "R08",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/7",
+            "rule_id": "R09",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          }
+        ],
+        "sources": [
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/experience-memory/workflow/merges/9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba.json",
+            "sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/experience-memory/records/14e13837e2663a4de293658527a99490d4db7bfcdbd813ecf73997ca3bb90628.json",
+            "sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/experience-memory/records/0ca152a0bc2a51f01aa3c45cc4b5623fec41e5169d2f04264fa3d6bec718c3fd.json",
+            "sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/experience-memory/records/2251411000873e1fef16bd9bc482729721d6aefb044d7a19130884b379cded01.json",
+            "sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          }
+        ]
+      },
+      "body_sha256": "b892de98745da29e597ccd0807baa82582a058ae4992b80a60ae40a84b68b0e3",
+      "excludes": [],
+      "id": "v5-2776429f192bf1df-success",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": "14e13837e2663a4de293658527a99490d4db7bfcdbd813ecf73997ca3bb90628",
+      "requires": [
+        "async_resume",
+        "effect_lifetimes",
+        "inline_reentry",
+        "shared_lifetime"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Karen-authorized assisted content consolidation; no new behavioral replay or verified cross-task effectiveness."
+        ],
+        "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when one reusable progress source serves distinct visits and physical attempts, startup may emit cached state synchronously, decoding may complete later or out of order, and audit/history has a different lifetime from visible presentation.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Install the panel listener before starting a source that may emit cached progress synchronously. Preserve later streaming and the original startup and cleanup interfaces.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Decide packet admission for its originating visit/attempt before decoding, including while startup has not yet returned a cleanup capability. Retirement immediately revokes further admission; physical listener removal alone is not the logical lifetime boundary.",
+          "category": "event_relation",
+          "id": "R03"
+        },
+        {
+          "body": "Assign arrival identity before decoding, and publish only completions newer than the last displayed frame for that originating subscription/attempt. Commit freshness state before callback-capable painting. Compare arrival identity, not numeric loaded values: later full frames may legitimately decrease or reset.",
+          "category": "event_relation",
+          "id": "R04"
+        },
+        {
+          "body": "Separate admission, retained audit/history, and visible publication. Already-admitted decoding retains its audit/history after retirement or a newer visible frame, while painting must recheck the originating visit and freshness. Reopening the same source creates a distinct visit.",
+          "category": "preservation",
+          "id": "R05"
+        },
+        {
+          "body": "Establish cleanup ownership before synchronous startup can navigate. Retire old ownership before reentrant cleanup; recheck ownership before installing a returned handle. Never let an outer startup overwrite a newer visit resource. Preserve idempotent removal and cancellation.",
+          "category": "preservation",
+          "id": "R06"
+        },
+        {
+          "body": "Preserve accepted retry commands and their entry-bound queue records across cancellation callbacks, including navigation during cancellation. Do not add an early return that drops an accepted command merely because the callback navigates.",
+          "category": "preservation",
+          "id": "R07"
+        },
+        {
+          "body": "Keep the repair scoped to panel reception, admission, ordering and their necessary lifetime coordination. Preserve diagnostic/audit consumer policy and original queue-record shape; do not generalize panel visibility policy to independent consumers.",
+          "category": "exclusion",
+          "id": "R08"
+        },
+        {
+          "body": "Check warm cached bootstrap and later streaming, reversed decoding with every admitted audit retained, decreasing/reset frames, late completion after departure and same-file reopening. Exercise synchronous hide/switch/dispose during startup and cleanup, multiple startup packets, subsequent-packet rejection, retry cancellation navigation and diagnostic operation after stop.",
+          "category": "verification",
+          "id": "R09"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "65638386e4ccee67e9f48851c6e75675dbb1b394ed1f2a1b0344c92aad0291e3",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "karen-merge-9e5796908166"
+    },
+    {
+      "audit": {
+        "notes": [
+          "V3 reflection candidate; not human approval."
+        ],
+        "outcome_refs": [],
+        "rule_links": [
+          {
+            "pointer": "/changes/0",
+            "rule_id": "R01",
+            "source_sha256": "5bd92ddaf21788a0e3c0035b0e0c11461c556284f32530c0f6f33444779898e4"
+          }
+        ],
+        "sources": [
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer-three-lowpass-training-20261112_172447/listener-registration-order-vanilla/composition-recovery/raw-reflection.json",
+            "sha256": "5056bc4abc88c3020e4dfdd6055b950e6b197e43e772db64362d1f3ea931f8ee"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer-three-lowpass-training-20261112_172447/listener-registration-order-vanilla/composition-recovery/reflection-input.json",
+            "sha256": "fa9aace47e7f41d10198c392766b5bb4d54503ef58cbf0e084c7d9037795f63a"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer-matched-lowpass-training-20261112_214154/listener-registration-order-vanilla/reflection-completion/raw-reflection.json",
+            "sha256": "5bd92ddaf21788a0e3c0035b0e0c11461c556284f32530c0f6f33444779898e4"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer-matched-lowpass-training-20261112_214154/listener-registration-order-vanilla/reflection-completion/reflection-input.json",
+            "sha256": "c0806fb2ca559309fe912fd29de6de3c877f0e3c47458d38244b71c668269363"
+          }
+        ]
+      },
+      "body_sha256": "ace3820ae9f11925427cfdaf8d82d2a00a11335c399d870db0088bc1bd90d0f9",
+      "excludes": [],
+      "id": "dev-5bb2ae60564a4deb-composition-recovery",
+      "labels": [
+        "O",
+        "L",
+        "I"
+      ],
+      "parent_sha256": "58bb995b5cb6fd6e305600894801b7111874c35118f0e7088d3b969dcb3d699b",
+      "requires": [
+        "async_resume",
+        "inline_reentry"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "AI evidence review not performed; pending human content review."
+        ],
+        "source_sha256": "5bd92ddaf21788a0e3c0035b0e0c11461c556284f32530c0f6f33444779898e4",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "When a subscription can begin decoding before its listener is removed, bind both its cleanup handle and permission to publish a decoded value to the panel visit that started it. Install a provisional cleanup handle before startup; if synchronous publication hides or switches the panel, do not let the outer startup replace the newer visit’s handle. Listener removal stops new reception but does not itself decide whether an already-started decode may publish: after a switch, hide, or synchronous reentry retires the originating visit, its settlement must not update the panel. Preserve bootstrap and later updates for the current visit, including a later visit using the same channel. Verify synchronous bootstrap reentry plus delayed decode across close, switch, and same-channel reopening: retired visits produce no publication and the active visit still receives its bootstrap and later update.",
+          "category": "event_relation",
+          "id": "R01"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "e9888a2095efc6aa2731fd3b0490a93d6ccad456a01c559d90c8c08821faa1d4",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "dev-e6a6d89baacb4320-reflection-only"
+    },
+    {
+      "audit": {
+        "notes": [
+          "V4 origin: success",
+          "Not approved; visible success or expert summary does not verify effectiveness"
+        ],
+        "outcome_refs": [],
+        "rule_links": [
+          {
+            "pointer": "/experience/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5"
+          },
+          {
+            "pointer": "/experience/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5"
+          },
+          {
+            "pointer": "/experience/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5"
+          },
+          {
+            "pointer": "/experience/rules/3",
+            "rule_id": "R04",
+            "source_sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5"
+          },
+          {
+            "pointer": "/experience/rules/4",
+            "rule_id": "R05",
+            "source_sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5"
+          },
+          {
+            "pointer": "/experience/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5"
+          },
+          {
+            "pointer": "/experience/rules/6",
+            "rule_id": "R07",
+            "source_sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5"
+          }
+        ],
+        "sources": [
+          {
+            "path": "/home/sribd/Downloads/wangshu/tempoevo-v4-listener-training-20261113_084448/trajectory-final/candidate-pool/success-evidence.json",
+            "sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5"
+          }
+        ]
+      },
+      "body_sha256": "a62e87ed35a2a14d56e0876d562388a0da9e5d379dd6eb4582565342f7fb8d25",
+      "excludes": [],
+      "id": "v4-1b981c5bf6a37f7f-success",
+      "labels": [
+        "O",
+        "L",
+        "I"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "async_resume",
+        "inline_reentry"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "These rules are supported by the supplied task and public source for this lifecycle; applicability to other systems requires confirming their own delivery and navigation semantics.",
+          "Public source comments establish asynchronous decoding, synchronous navigation, and transport reuse. Visit-bound ownership follows from preserving those behaviors when repairing bootstrap delivery.",
+          "VISIBLE_CHECKS.md mentions a README that was not supplied; that reported README requirement is not independent evidence.",
+          "Visible checks provide examples, not an exhaustive specification. A passing run does not establish causality, complete correctness, or cross-task benefit.",
+          "Decoder rejection handling, connection failure policy, and ordering among independently completing decodes are unspecified.",
+          "AbortController is one possible implementation mechanism, not a source-required design.",
+          "AI-assisted format adaptation, pending human review: free-text labels mapped to source-routing O/L/I; requires constrained to known async_resume/inline_reentry; original applicability and exclusion text retained verbatim in rules. This is not human approval."
+        ],
+        "source_sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Confirm whether subscription startup can emit synchronously and whether the consumer must receive that emission. Identify the consumer lifetime that owns delivery and cleanup, including synchronous callback reentry. Distinguish listener removal from completion of work already started. Confirm whether a transport can be reused across separate visits before using transport identity as a validity check.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "For a consumer that requires bootstrap state, register reception before invoking startup that can emit synchronously. src/channel.js emits bootstrap inline unless deferred, while src/subscription.js originally connects before registering. Check both bootstrap modes and later updates.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Bind permission to publish decoded values to the visit that received the frame. src/subscription.js permits Promise decoding and explicitly states that listener removal does not stop an existing decode. On close or replacement, retire that visit and check its permission immediately before publication. Check pending completion after close and switch while preserving active-visit delivery.",
+          "category": "event_relation",
+          "id": "R03"
+        },
+        {
+          "body": "Establish retirement and cleanup ownership before startup can publish. src/workspace-navigation.js explicitly permits publication to synchronously switch or hide the panel. An older startup returning afterward must not overwrite the resulting visit's cleanup ownership. Check inline switch and hide, subsequent updates, and eventual cleanup.",
+          "category": "event_relation",
+          "id": "R04"
+        },
+        {
+          "body": "Give each opening an independent lifetime even when it reuses the same transport. src/workspace-navigation.js explicitly supports transport reuse. Check that pending results from a retired opening remain suppressed while the later opening receives bootstrap and updates.",
+          "category": "event_relation",
+          "id": "R05"
+        },
+        {
+          "body": "Scope the ordering repair to the presence subscription. The task forbids changing the metrics consumer, and src/metrics-consumer.js deliberately relies on attaching after synchronous bootstrap to count deltas only. Check that presence gains bootstrap delivery while metrics retain their existing output.",
+          "category": "preservation",
+          "id": "R06"
+        },
+        {
+          "body": "Changing the metrics consumer or its intentional delta-only behavior. Treating automatic contracts, experience text, AST hints, or evaluation observations as business requirements. Accessing scorers, reference implementations, or hidden tests. Modifying files during this extraction stage.",
+          "category": "exclusion",
+          "id": "R07"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "97924a91ad16ed62aec6938381acda6dd8d8944a44cbbfe8f9264669958b0f92",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "v1"
+    },
+    {
+      "audit": {
+        "notes": [
+          "Training-only; not approved for long-term retrieval."
+        ],
+        "outcome_refs": [],
+        "rule_links": [
+          {
+            "pointer": "/experience/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "df2c37e9b4f562daee0a17150f01ef86c5946bff1385b66fa8a3464a6666633c"
+          },
+          {
+            "pointer": "/experience/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "df2c37e9b4f562daee0a17150f01ef86c5946bff1385b66fa8a3464a6666633c"
+          },
+          {
+            "pointer": "/experience/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "df2c37e9b4f562daee0a17150f01ef86c5946bff1385b66fa8a3464a6666633c"
+          },
+          {
+            "pointer": "/experience/rules/3",
+            "rule_id": "R04",
+            "source_sha256": "df2c37e9b4f562daee0a17150f01ef86c5946bff1385b66fa8a3464a6666633c"
+          },
+          {
+            "pointer": "/experience/rules/4",
+            "rule_id": "R05",
+            "source_sha256": "df2c37e9b4f562daee0a17150f01ef86c5946bff1385b66fa8a3464a6666633c"
+          },
+          {
+            "pointer": "/experience/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "df2c37e9b4f562daee0a17150f01ef86c5946bff1385b66fa8a3464a6666633c"
+          },
+          {
+            "pointer": "/experience/rules/6",
+            "rule_id": "R07",
+            "source_sha256": "df2c37e9b4f562daee0a17150f01ef86c5946bff1385b66fa8a3464a6666633c"
+          },
+          {
+            "pointer": "/experience/rules/7",
+            "rule_id": "R08",
+            "source_sha256": "df2c37e9b4f562daee0a17150f01ef86c5946bff1385b66fa8a3464a6666633c"
+          }
+        ],
+        "sources": [
+          {
+            "path": "online-source.json",
+            "sha256": "df2c37e9b4f562daee0a17150f01ef86c5946bff1385b66fa8a3464a6666633c"
+          }
+        ]
+      },
+      "body_sha256": "c181ac53a91a417f76741859a4f60574c12eeedc5a2047705915805c0a34e9e0",
+      "excludes": [
+        "different_ownership_policy",
+        "discard_boundary_policy"
+      ],
+      "id": "online-df2c37e9b4f562daee0a1715",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "deferred_batch",
+        "inline_reentry",
+        "effect_lifetimes"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Independent buffer ownership requires accepted work to survive view retirement; it does not independently establish a deadline requiring a save before departure returns. The automatic Contract and evaluation observations cannot establish that deadline.",
+          "Attempt 1 uses departure-time flushing and reportedly passes the supplied observations. This is one implementation example, not proof of causality, exhaustive correctness, or cross-task effectiveness.",
+          "Synchronous timer startup, callbacks after cancellation, callback exceptions, write failures, and permanent disposal semantics are unspecified.",
+          "The subscription experiences concern bootstrap delivery, asynchronous decoding, arrival ordering, audit retention, and retry queues. Those mechanisms are absent from this task and supply no additional obligations.",
+          "This reflection uses supplied material only; no files were modified and no scorer, reference implementation, or hidden tests were accessed.",
+          "Unreviewed provisional training guidance; effectiveness unknown."
+        ],
+        "source_sha256": "df2c37e9b4f562daee0a17150f01ef86c5946bff1385b66fa8a3464a6666633c",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when immediate document writes become reusable trailing work, document buffers outlive visible subscriptions, and save callbacks can synchronously navigate. Confirm any departure deadline separately. README.md: \"A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate.\"",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Bind accepted edits to their originating document's reusable trailing task, replace pending text, restart the quiet interval on every edit, and preserve the no-current-view guard. TASK: \"Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save.\" src/coordinator.js: \"trailing(env.timers,120,text=>env.store.write(id,text))\". src/services.js: \"push(text) { if (ticket !== null) timers.cancel(ticket); value = text; ticket = timers.schedule(flush, wait); },\"",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Clear the consumed batch before invoking callback-capable saving, preserving new edits queued by synchronous callback reentry. Preserve empty text as valid work; do not replace the null check with a truthiness check or clear pending work after the callback. src/services.js: \"const flush = () => { const saved = value; retire(); if (saved !== null) consume(saved); };\"",
+          "category": "event_relation",
+          "id": "R03"
+        },
+        {
+          "body": "Separate persistent document work from subscription cleanup. View retirement must not discard accepted edits or destroy reusable per-document tasks. docs/host-api.md: \"Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription.\" Survival does not alone mandate immediate flushing on departure; establish any such deadline independently.",
+          "category": "preservation",
+          "id": "R04"
+        },
+        {
+          "body": "Preserve navigation authority around callback-capable saving. Capture the departing view, release current ownership before retirement callbacks, and clean up the captured subscription without clearing a newer view afterward. Retain the request check before installing an opening. src/coordinator.js: \"const old=getView();setView(null);\" and \"const mine=++request;retire();if(true&&mine!==request)return;\" docs/host-api.md: \"A store listener may call navigation synchronously.\" If departure-time saving is added, ensure subsequent outer mutations cannot overwrite nested navigation; place saving after final retirement mutations or recheck authority before continuing.",
+          "category": "event_relation",
+          "id": "R05"
+        },
+        {
+          "body": "Preserve public interfaces, document display, live status filtering, and document identity, text, and status payload semantics. TASK: \"Preserve the editor's other behavior and public interfaces.\" docs/host-api.md: \"All source identities/text and status payloads retain original semantics.\" src/coordinator.js: \"if(event.id===id)env.renderStatus(event);\" Verify coordinator cleanup through the supplied React integration as well: src/Workspace.jsx contains \"useEffect(()=>api.dispose,[api]);\".",
+          "category": "preservation",
+          "id": "R06"
+        },
+        {
+          "body": "Keep transient search preview outside the repair, including its 40 ms delay, discard on hide, and subsequent reuse. TASK: \"The adjacent search preview is outside this maintenance change.\" src/services.js: \"const task = trailing(timers, 40, query => publish({query}));\" and \"return {query: text => task.push(text), hide: () => task.cancel()};\" Do not transfer persistent document ownership policy to preview or change its behavior through shared-utility edits.",
+          "category": "exclusion",
+          "id": "R07"
+        },
+        {
+          "body": "Use controlled time to check no immediate write, latest text only after 120 ms of quiet, deadline restart, subsequent bursts, empty text, originating-document binding, and independent document buffers. Exercise switch, close, dispose, same-document reopening, subscription cleanup, save-triggered open/close, and callback-enqueued edits. Verify cleanup through both coordinator calls and React effect cleanup. Check preview delay, hide cancellation, and reuse. Require accepted document work to survive retirement; assert persistence before departure returns only with independent normative support. These checks derive from TASK's \"Subsequent bursts\nmust continue to save.\" and \"Preserve the editor's other behavior and public interfaces.\", together with the ownership, callback, and utility evidence above; evaluation observations remain examples.",
+          "category": "verification",
+          "id": "R08"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "6526aac2da65ba1422ccbce1340ff77c750c47fc15dda332914650d0d5a99cb1",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "v1"
+    },
+    {
+      "audit": {
+        "notes": [
+          "Training-only; not approved for long-term retrieval."
+        ],
+        "outcome_refs": [],
+        "rule_links": [
+          {
+            "pointer": "/experience/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "fd799f490ae0dbd8e2cc246ebf5781b854aba5c9b9c2c0df8fadab2e08621e74"
+          },
+          {
+            "pointer": "/experience/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "fd799f490ae0dbd8e2cc246ebf5781b854aba5c9b9c2c0df8fadab2e08621e74"
+          },
+          {
+            "pointer": "/experience/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "fd799f490ae0dbd8e2cc246ebf5781b854aba5c9b9c2c0df8fadab2e08621e74"
+          },
+          {
+            "pointer": "/experience/rules/3",
+            "rule_id": "R04",
+            "source_sha256": "fd799f490ae0dbd8e2cc246ebf5781b854aba5c9b9c2c0df8fadab2e08621e74"
+          },
+          {
+            "pointer": "/experience/rules/4",
+            "rule_id": "R05",
+            "source_sha256": "fd799f490ae0dbd8e2cc246ebf5781b854aba5c9b9c2c0df8fadab2e08621e74"
+          },
+          {
+            "pointer": "/experience/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "fd799f490ae0dbd8e2cc246ebf5781b854aba5c9b9c2c0df8fadab2e08621e74"
+          },
+          {
+            "pointer": "/experience/rules/6",
+            "rule_id": "R07",
+            "source_sha256": "fd799f490ae0dbd8e2cc246ebf5781b854aba5c9b9c2c0df8fadab2e08621e74"
+          },
+          {
+            "pointer": "/experience/rules/7",
+            "rule_id": "R08",
+            "source_sha256": "fd799f490ae0dbd8e2cc246ebf5781b854aba5c9b9c2c0df8fadab2e08621e74"
+          }
+        ],
+        "sources": [
+          {
+            "path": "online-source.json",
+            "sha256": "fd799f490ae0dbd8e2cc246ebf5781b854aba5c9b9c2c0df8fadab2e08621e74"
+          }
+        ]
+      },
+      "body_sha256": "ddcb67cabfda1dc6095467ab6950531e77c91856c8ab8c6de3778588027d20e2",
+      "excludes": [
+        "different_ownership_policy",
+        "discard_boundary_policy"
+      ],
+      "id": "online-fd799f490ae0dbd8e2cc246e",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "deferred_batch",
+        "inline_reentry",
+        "effect_lifetimes"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Independent buffer ownership establishes survival of accepted work, not a deadline requiring persistence before departure returns. TASK and the original business source do not separately require departure-time flushing.",
+          "Attempt 1 demonstrates one implementation that flushes on departure and reportedly passes the supplied checks. This does not make that implementation choice a business requirement or establish causality, exhaustive correctness, or cross-task benefit.",
+          "Synchronous timer startup, delivery after timer cancellation, write failures, and callback exception recovery are unspecified.",
+          "The supplied subscription experiences concern bootstrap reception and asynchronous decoding; those mechanisms are absent here and must not be imported.",
+          "This reflection uses the supplied task, public sources, and trajectory only. No files were modified and no scorer, reference implementation, or hidden tests were accessed.",
+          "Unreviewed provisional training guidance; effectiveness unknown."
+        ],
+        "source_sha256": "fd799f490ae0dbd8e2cc246ebf5781b854aba5c9b9c2c0df8fadab2e08621e74",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when immediate document writes become reusable trailing work, document buffers outlive visible subscriptions, and save callbacks can synchronously navigate. Confirm any departure deadline independently. README.md: \"A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate.\"",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Bind accepted edits to their originating document, replace pending text and restart the quiet interval on every edit, and retain reuse for later bursts. TASK: \"Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\\ninterval, write only the latest text in that editing burst. Subsequent bursts\\nmust continue to save.\" src/Workflow.java binds document work with \"new Trailing(env,120,text->env.write(k,text))\". Preserve the existing no-current-view edit guard.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Consume the completed batch before invoking callback-capable work so reentrant edits remain pending for a new burst. Preserve empty text as valid work. src/Workflow.java: \"void flush() { if(handle!=null)env.cancel(handle); String text=pending; handle=null;pending=null; if(text!=null)work.accept(text); }\". Do not add post-callback clearing that erases newly queued work.",
+          "category": "event_relation",
+          "id": "R03"
+        },
+        {
+          "body": "Keep persistent document work separate from badge subscription cleanup. Retirement must not discard accepted edits or destroy per-document buffer reuse. docs/host-api.md: \"Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription.\" src/Workflow.java: \"void detach(){env.store().stop(token);}\". Independent ownership alone does not require flushing before departure returns; establish that deadline separately before applying a persistence-on-departure rule.",
+          "category": "preservation",
+          "id": "R04"
+        },
+        {
+          "body": "Preserve navigation authority around callback-capable work. Capture the departing badge and clear current ownership before retirement callbacks, complete cleanup of that captured subscription, and retain the generation check before installing a destination. src/Workflow.java: \"Badge old=current;current=null;\" and \"if(true&&request!=generation)return;\". docs/host-api.md: \"A store listener may call navigation synchronously.\" If departure adds a save before document clearing, recheck authority before that clearing as well, so nested navigation is not overwritten.",
+          "category": "event_relation",
+          "id": "R05"
+        },
+        {
+          "body": "Preserve document display, status filtering, public interfaces, document identities, and text and status payload semantics. TASK: \"Preserve the editor's other behavior and public interfaces.\" docs/host-api.md: \"All source identities/text and status payloads retain original semantics.\" src/Workflow.java filters status with \"if(id.equals(e.get(\\\"id\\\")))env.output(\\\"status\\\",e);\".",
+          "category": "preservation",
+          "id": "R06"
+        },
+        {
+          "body": "Keep transient preview behavior outside the repair; do not apply persistent document lifetime policy to it. TASK: \"The adjacent search preview is outside this maintenance change.\" src/Workflow.java uses \"new Trailing(env,40,q->\" and \"void hide(){task.cancel();}\". Preserve its 40 ms quiet interval, discard on hide, and subsequent reuse, including when changing the shared trailing utility.",
+          "category": "exclusion",
+          "id": "R07"
+        },
+        {
+          "body": "Use controlled time and synchronous callbacks to check no early write, latest text, deadline restart, subsequent bursts, empty text, independent document buffers, and original-document binding. Exercise switch, close, dispose, same-document reopening, subscription cleanup, save-triggered navigation, and callback-enqueued edits. Verify preview delay, cancellation, and reuse. Require accepted document work to survive retirement; assert persistence before departure returns only with independent normative support. Treat supplied evaluation observations as examples, not requirements.",
+          "category": "verification",
+          "id": "R08"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "d0eb804bbe09d7360e31818d779009dd32d4e3d9e19575e48f8d2bfb1b5a7821",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "v1"
+    }
+  ],
+  "source_sha256": "30caa6f8b210efd9f8ecf990103267cd0351a6cb4a0d9bb78fcb8388d4a57dee",
+  "status": "awaiting_content_review",
+  "task": "The workspace draft editor currently writes to the store on every keystroke.\nCoalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces.\nThe adjacent search preview is outside this maintenance change.\n",
+  "training_accepted": true,
+  "trajectory": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "49ffd59e1bc796cedcd9da0e2da4ac8ab2e48d6430e0921f97fd1d38f00d3d4c",
+        "VISIBLE_CHECKS.md": "72987151d2a97646a48c7afd409fff21930dbdb8ab0420e0cca1f1b315e7a4fb",
+        "dependencies.lock.json": "e8f19df14d2674e4b41249c1681e37b4e56730614ce0547bac56c23b896a5b30",
+        "docs/host-api.md": "191f3a39cbf21303313def3e9000b28324cb2386bcc1cd5dc40ef6e2e9edb4dc",
+        "package-lock.json": "2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59",
+        "package.json": "66db10140e649e83eadde7fe04cb4ccb1467c20f5a7db2117520ab1572467f1a",
+        "src/workflow.rb": "d0d9b79f0591ca454a18afa14e20369a0423a6ed2ee49debe42c8bba02439cfe"
+      },
+      "candidate_sources": {
+        "README.md": "Theatre operations — A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: separate BufferBank service\n",
+        "VISIBLE_CHECKS.md": "Public checks are deterministic external examples, not hidden gold. They are executed after each submitted Action. Keep original task/source obligations. Checks: latest quiet burst (120ms), persistence before departure returns, synchronous save callback navigation stays authoritative, preview hide discards pending work and allows reuse.\nUse the declared runtime: ruby Ruby 2.7.0. The external adapter is not mounted in the model workspace; do not access scorer/reference files. Build temporary artifacts in /tmp.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Ruby 2.7.0\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide(). Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled. Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription. A store listener may call navigation synchronously. All source identities/text and status payloads retain original semantics.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.rb": "class Store\n  def initialize(records)\n    @records = records.each_with_object({}) { |(id, text), copy| copy[id.dup.freeze] = text.dup.freeze }\n    @listeners, @serial, @revision = {}, 0, 0\n  end\n  def read(id); @records.fetch(id, '').dup.freeze; end\n  def subscribe(&block)\n    @serial += 1\n    @listeners[@serial] = block\n    @serial\n  end\n  def stop(token); @listeners.delete(token); end\n  def write(id, text)\n    @records[id] = text.dup.freeze\n    @revision += 1\n    event = {id: id.dup.freeze, text: @records[id], revision: @revision}\n    @listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }\n    event\n  end\nend\nclass Trailing\n  def initialize(env, delay, &work)\n    @env, @delay, @work = env, delay, work\n    @handle = @pending = nil\n  end\n  def push(value)\n    @env.cancel(@handle) unless @handle.nil?\n    @pending = value\n    @handle = @env.schedule(@delay) { flush }\n  end\n  def flush\n    @env.cancel(@handle) unless @handle.nil?\n    value = @pending\n    @handle = @pending = nil\n    @work.call(value) unless value.nil?\n  end\n  def cancel\n    @env.cancel(@handle) unless @handle.nil?\n    @handle = @pending = nil\n  end\nend\n\nclass Badge\n attr_reader :id,:buffer\n def initialize(env,id,buffer);@env,@id,@buffer=env,id,buffer;@token=env.store.subscribe {|e| env.output('status',e) if e[:id]==id};end\n def detach;@env.store.stop(@token);end\nend\nclass BufferBank\n def initialize;@entries={};end\n def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end\nend\nclass Workspace\n def initialize(env);@env,@current,@generation=env,nil,0;@bank=BufferBank.new;end\n def retire\n  old,@current=@current,nil\n  old.detach if old\n  @env.output('document',nil)\n  old.buffer.flush if old\n end\n def open(id)\n  @generation+=1;request=@generation;retire;return if request!=@generation\n  buffer=@bank.get(@env,id);@current=Badge.new(@env,id,buffer);@env.output('document',{'id'=>id,'text'=>@env.store.read(id)})\n end\n def edit(text);view=@current;view.buffer.push(text) if view;end\n def close;@generation+=1;retire;end\n def dispose;close;end\nend\nclass Preview\n def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end\n def query(text);@task.push(text);end\n def hide;@task.cancel;end\nend\n"
+      },
+      "delivered_sha256s": [
+        "65638386e4ccee67e9f48851c6e75675dbb1b394ed1f2a1b0344c92aad0291e3",
+        "e9888a2095efc6aa2731fd3b0490a93d6ccad456a01c559d90c8c08821faa1d4",
+        "97924a91ad16ed62aec6938381acda6dd8d8944a44cbbfe8f9264669958b0f92"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "actual": {
+              "afterQuiet": "two",
+              "beforeQuiet": "before"
+            },
+            "check": "public_quiet_burst_latest",
+            "passed": true
+          },
+          {
+            "actual": {
+              "current": "B",
+              "departedText": "saved"
+            },
+            "check": "public_departure_persists_latest",
+            "passed": true
+          },
+          {
+            "actual": {
+              "current": "B"
+            },
+            "check": "public_nested_navigation_remains_authoritative",
+            "passed": true
+          },
+          {
+            "actual": [
+              "keep"
+            ],
+            "check": "public_preview_discard_and_reuse",
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Close checkpoint: preserve the persistent document buffer independently of the departing view badge."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Dispose checkpoint: preserve the document-buffer persistence and view-cleanup behavior in public source."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Empty-edit checkpoint: preserve valid empty document text."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Preview-delay checkpoint: preserve the adjacent transient preview quiet interval."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Preview-hide checkpoint: hiding a preview discards its pending transient work."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Preview-reuse checkpoint: later preview input remains usable."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Quiet-burst checkpoint: coalesce edits and preserve the latest text after the declared quiet interval."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Save/close checkpoint: preserve synchronous close performed by a save callback."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Save/navigation checkpoint: synchronous save callbacks may navigate; preserve the navigation chosen by that callback."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Reopen checkpoint: document storage persists independently of a new opening of the same document."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Subsequent-burst checkpoint: later editing bursts must continue to save."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Switch checkpoint: preserve persistent document buffers and the lifetime of the current view badge."
+            }
+          ],
+          "passed": true,
+          "regressions": [],
+          "unknowns": []
+        },
+        "unknowns": [
+          "Public examples are not exhaustive; gold is independent."
+        ]
+      },
+      "number": 1,
+      "training_result": {
+        "feedback": {
+          "observations": [
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Close checkpoint: preserve the persistent document buffer independently of the departing view badge."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Dispose checkpoint: preserve the document-buffer persistence and view-cleanup behavior in public source."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Empty-edit checkpoint: preserve valid empty document text."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Preview-delay checkpoint: preserve the adjacent transient preview quiet interval."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Preview-hide checkpoint: hiding a preview discards its pending transient work."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Preview-reuse checkpoint: later preview input remains usable."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Quiet-burst checkpoint: coalesce edits and preserve the latest text after the declared quiet interval."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Save/close checkpoint: preserve synchronous close performed by a save callback."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Save/navigation checkpoint: synchronous save callbacks may navigate; preserve the navigation chosen by that callback."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Reopen checkpoint: document storage persists independently of a new opening of the same document."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Subsequent-burst checkpoint: later editing bursts must continue to save."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Switch checkpoint: preserve persistent document buffers and the lifetime of the current view badge."
+            }
+          ],
+          "passed": true,
+          "regressions": [],
+          "unknowns": []
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ]
+}

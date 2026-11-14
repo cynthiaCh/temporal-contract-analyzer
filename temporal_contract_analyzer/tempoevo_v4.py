@@ -14,7 +14,7 @@ from .candidate_files import capture, inventory, write_files
 from .core import EvidenceError, canonical, sha
 from ._session_runtime.model_settings import resolve_profile, identity
 
-VERSION = 'tempoevo-trajectory-v8'
+VERSION = 'tempoevo-trajectory-v9'
 MODEL = identity(resolve_profile())
 CONDITIONS = ('baseline', 'contract', 'bm25', 'structured', 'fixed_contract')
 LIMITS = dict(routing=dict(requests=12, seconds=600), contract=dict(requests=12, seconds=600), action=dict(requests=24, seconds=600),
@@ -191,7 +191,7 @@ class Trajectory:
 
     def verify(self):
         p=read(self.root/'protocol.json')
-        if p.get('schema_version')!=VERSION:raise EvidenceError('Historical protocol is read-only; prepare a new V8 root')
+        if p.get('schema_version')!=VERSION:raise EvidenceError('Historical protocol is read-only; prepare a new V9 root')
         binding=read(self.root/'binding.json')
         for name,key in [('protocol.json','protocol'),('memory-snapshot.json','bank'),('ast-evidence.json','ast')]:
             if sha((self.root/name).read_bytes())!=binding[key]:raise EvidenceError('Frozen V4 input drift')
@@ -372,7 +372,11 @@ class Trajectory:
                 payload=dict(public,contract=state['contract'],experience=delivery['experience_text'],
                     candidate_sources={k:v.decode() for k,v in capture(base)[0].items()},
                     feedback=None if number==1 else state['attempts'][-1]['feedback'],
-                    instruction='Repair the supplied current candidate. Preserve original task obligations and correct behavior. No scorer, reference, gold patch or hidden tests are available.')
+                    within_task_reflections=[dict(source_attempt=d['attempt']-1,for_action=d['attempt'],
+                        observed_feedback=deepcopy(state['attempts'][d['attempt']-2]['feedback']),
+                        status='unverified_task_local_reflection',**{k:deepcopy(d[k]) for k in ('diagnosis','explanation','structured_delta','supporting_evidence','remaining_unknowns','contract_changed')})
+                        for d in state['diagnoses'] if d['attempt']<=number],
+                    instruction='Repair the supplied current candidate. Use cumulative within_task_reflections from the actual preceding failed candidates, including when Contract is unchanged or no cross-task experience matched. Treat their explanations as fallible hypotheses: retain unknowns, check against public task/source and observations, and do not turn inferred causes or checks into new business requirements. Preserve original task obligations and correct behavior. No scorer, reference, gold patch or hidden tests are available.')
                 result=self._step(p,backend,'action-'+str(number),'action',payload)
                 candidate=result['candidate_sources']
                 if not isinstance(candidate,dict) or any(not isinstance(v,str) for v in candidate.values()):raise EvidenceError('Invalid candidate output')
