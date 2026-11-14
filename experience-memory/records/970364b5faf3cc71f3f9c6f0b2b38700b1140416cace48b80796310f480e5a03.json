@@ -1,0 +1,137 @@
+{
+  "schema_version": "experience-bundle-v2",
+  "id": "v7-c86dcd4dabeba3bf-success",
+  "version": "reflection-39051784c3e672ca",
+  "parent_sha256": null,
+  "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+  "labels": [
+    "B",
+    "L",
+    "I",
+    "R"
+  ],
+  "requires": [
+    "shared_lifetime",
+    "observer_lifetime",
+    "deferred_batch",
+    "boundary_persistence",
+    "inline_reentry"
+  ],
+  "excludes": [
+    "discard_boundary_policy",
+    "different_ownership_policy"
+  ],
+  "rules": [
+    {
+      "id": "R01",
+      "body": "Apply when delayed edits belong to a persistent document buffer while the current view owns only an observation subscription. README.md: \"A workspace document buffer persists independently of the current view badge.\" docs/host-api.md: \"Document buffers are owned by the store BufferBank, while Badge owns only a live subscription.\" Preserve these separate lifetimes rather than tying pending document work to badge lifetime.",
+      "category": "applicability"
+    },
+    {
+      "id": "R02",
+      "body": "Route each edit through the existing document-keyed buffer; each new value replaces the pending value and restarts the quiet interval. TASK: \"Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\\ninterval, write only the latest text in that editing burst. Subsequent bursts\\nmust continue to save.\" src/workflow.py: \"        if key not in self.entries:self.entries[key]=Trailing(env,120,lambda text:env.write(key,text))\". Verify no edit-triggered write before quiet expires, one latest-value write afterward, and successful saves in subsequent bursts.",
+      "category": "event_relation"
+    },
+    {
+      "id": "R03",
+      "body": "Keep Trailing reusable and safe for synchronous reentry by clearing its pending state before calling work. src/workflow.py: \"        value = self.pending\\n        self.handle = self.pending = None\\n        if value is not None:\\n            self.work(value)\". Preserve the None sentinel so an empty string remains valid document text; verify an empty edit persists and a later burst still saves.",
+      "category": "preservation"
+    },
+    {
+      "id": "R04",
+      "body": "When introducing delayed persistence, settle outstanding draft work on departure through open, close, and dispose rather than discard it. This preserves the original synchronous persistence behavior under TASK: \"Preserve the editor's other behavior and public interfaces.\" src/workflow.py: \"    def edit(self,text):\\n        view=self.current\\n        if view:self.env.write(view.id,text)\" and \"    def close(self):self.generation+=1;self.retire()\\n    def dispose(self):self.close()\". Verify pending latest text is stored before each departure returns and reopening reads that text.",
+      "category": "preservation"
+    },
+    {
+      "id": "R05",
+      "body": "Retire the departing badge's subscription without destroying the store-owned buffer. A source-consistent sequence is to capture and clear the current badge, detach it, then flush its buffer. src/workflow.py: \"        old,self.current=self.current,None\\n        if old and not False:old.detach()\" and \"    def detach(self):self.env.store.stop(self.token)\". Verify departing badges stop receiving status events and reopening reuses the document buffer.",
+      "category": "event_relation"
+    },
+    {
+      "id": "R06",
+      "body": "Treat flushing as a synchronous callback boundary. docs/host-api.md: \"A store listener may call navigation synchronously.\" Preserve navigation ownership across that boundary: check the captured generation before emitting an outer document-clear event and before installing the outer requested badge. src/workflow.py: \"        self.generation+=1;request=self.generation\\n        self.retire()\\n        if True and request!=self.generation:return\". Verify a save listener that opens another document or closes the workspace remains authoritative after the original departure returns.",
+      "category": "verification"
+    },
+    {
+      "id": "R07",
+      "body": "Preserve store write and output semantics while changing edit scheduling. docs/host-api.md: \"All source identities/text and status payloads retain original semantics.\" src/workflow.py: \"        self.records[key] = text\\n        self.revision += 1\\n        event = dict(id=key, text=text, revision=self.revision)\". Verify committed writes retain document identity, exact text, revision updates, and live-subscription notification behavior.",
+      "category": "preservation"
+    },
+    {
+      "id": "R08",
+      "body": "Exclude the adjacent preview from the maintenance change and from the document departure policy. TASK: \"The adjacent search preview is outside this maintenance change.\" src/workflow.py: \"    def __init__(self,env):self.task=Trailing(env,40,lambda query:env.output('preview',dict(query=query)))\\n    def query(self,text):self.task.push(text)\\n    def hide(self):self.task.cancel()\". Preserve its separate 40 ms interval, query payload, hide cancellation, and reuse.",
+      "category": "exclusion"
+    }
+  ],
+  "review": {
+    "status": "candidate",
+    "kind": "ai_assisted",
+    "source_sha256": "39051784c3e672ca1474103eb792861342e0a362147f2054145dc34d7b91d0aa",
+    "limitations": [
+      "No frozen related experiences were supplied, so there is no existing guidance to retain, revise, or merge.",
+      "Attempt outcomes are supporting observations only. Their differing acceptance results do not establish causality or additional requirements.",
+      "Exact deadline ties, exception recovery, and coordination between multiple workspaces sharing a store are not specified by the supplied sources.",
+      "Detachment before flushing is a source-consistent implementation ordering, not an independently stated business requirement.",
+      "A successful attempt does not establish cross-task benefit."
+    ]
+  },
+  "audit": {
+    "sources": [
+      {
+        "path": "/home/sribd/Downloads/wangshu/tempoevo-v7-autocontract-noexperience-top25-20261113_232348/draft-autosave-handoff-vue3-port-python3/trajectory/candidate-pool/success-evidence.json",
+        "sha256": "39051784c3e672ca1474103eb792861342e0a362147f2054145dc34d7b91d0aa"
+      }
+    ],
+    "rule_links": [
+      {
+        "rule_id": "R01",
+        "source_sha256": "39051784c3e672ca1474103eb792861342e0a362147f2054145dc34d7b91d0aa",
+        "pointer": "/experience/rules/0"
+      },
+      {
+        "rule_id": "R02",
+        "source_sha256": "39051784c3e672ca1474103eb792861342e0a362147f2054145dc34d7b91d0aa",
+        "pointer": "/experience/rules/1"
+      },
+      {
+        "rule_id": "R03",
+        "source_sha256": "39051784c3e672ca1474103eb792861342e0a362147f2054145dc34d7b91d0aa",
+        "pointer": "/experience/rules/2"
+      },
+      {
+        "rule_id": "R04",
+        "source_sha256": "39051784c3e672ca1474103eb792861342e0a362147f2054145dc34d7b91d0aa",
+        "pointer": "/experience/rules/3"
+      },
+      {
+        "rule_id": "R05",
+        "source_sha256": "39051784c3e672ca1474103eb792861342e0a362147f2054145dc34d7b91d0aa",
+        "pointer": "/experience/rules/4"
+      },
+      {
+        "rule_id": "R06",
+        "source_sha256": "39051784c3e672ca1474103eb792861342e0a362147f2054145dc34d7b91d0aa",
+        "pointer": "/experience/rules/5"
+      },
+      {
+        "rule_id": "R07",
+        "source_sha256": "39051784c3e672ca1474103eb792861342e0a362147f2054145dc34d7b91d0aa",
+        "pointer": "/experience/rules/6"
+      },
+      {
+        "rule_id": "R08",
+        "source_sha256": "39051784c3e672ca1474103eb792861342e0a362147f2054145dc34d7b91d0aa",
+        "pointer": "/experience/rules/7"
+      }
+    ],
+    "notes": [
+      "V7 origin: success",
+      "Reflection operation: new",
+      "Reflection targets: ",
+      "Not approved; training acceptance or expert summary does not verify cross-task effectiveness"
+    ],
+    "outcome_refs": []
+  },
+  "body_sha256": "0557c7080514e067f9b1ed61ea7d58fe808cc6a93750325f7c8db0345f060cd3",
+  "sha256": "970364b5faf3cc71f3f9c6f0b2b38700b1140416cace48b80796310f480e5a03"
+}

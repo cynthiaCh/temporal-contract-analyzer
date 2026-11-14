@@ -1,0 +1,673 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/workflow.rb\n+++ candidate/src/workflow.rb\n@@ -52,13 +52,16 @@\n class Workspace\n  def initialize(env);@env,@current,@generation=env,nil,0;@buffers={};end\n  def retire\n-  old,@current=@current,nil;old.detach if old && !false;@env.output('document',nil);nil if old;old.detach if old && false\n+  old,@current=@current,nil\n+  old.detach if old\n+  @env.output('document',nil)\n+  old.buffer.flush if old\n  end\n  def open(id)\n   @generation+=1;request=@generation;retire;return if true && request!=@generation\n   buffer=(@buffers[id] ||= Trailing.new(@env,120){|text| @env.write(id,text)});@current=Badge.new(@env,id,buffer);@env.output('document',{'id'=>id,'text'=>@env.store.read(id)})\n  end\n- def edit(text);view=@current;@env.write(view.id,text) if view;end\n+ def edit(text);view=@current;view.buffer.push(text) if view;end\n  def close;@generation+=1;retire;end\n  def dispose;close;end\n end\n",
+        "from_previous": "--- previous/src/workflow.rb\n+++ candidate/src/workflow.rb\n@@ -52,13 +52,16 @@\n class Workspace\n  def initialize(env);@env,@current,@generation=env,nil,0;@buffers={};end\n  def retire\n-  old,@current=@current,nil;old.detach if old && !false;@env.output('document',nil);nil if old;old.detach if old && false\n+  old,@current=@current,nil\n+  old.detach if old\n+  @env.output('document',nil)\n+  old.buffer.flush if old\n  end\n  def open(id)\n   @generation+=1;request=@generation;retire;return if true && request!=@generation\n   buffer=(@buffers[id] ||= Trailing.new(@env,120){|text| @env.write(id,text)});@current=Badge.new(@env,id,buffer);@env.output('document',{'id'=>id,'text'=>@env.store.read(id)})\n  end\n- def edit(text);view=@current;@env.write(view.id,text) if view;end\n+ def edit(text);view=@current;view.buffer.push(text) if view;end\n  def close;@generation+=1;retire;end\n  def dispose;close;end\n end\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [],
+        "coverage": [
+          {
+            "path": "src/workflow.rb",
+            "status": "unsupported_language"
+          }
+        ],
+        "events": [],
+        "findings": [],
+        "limitations": [
+          "结果是语法事实、静态候选调用关系与待核查模式，不是已证明的时序契约、缺陷、严重度或难度分。",
+          "同名 API 只作为线索；不做全程序类型/别名/控制流证明。动态派发、对象工厂、函数参数传递的完整目标保持未知。",
+          "局部先后表示同一语法块中位置先后；条件、异常、循环、短路及调用是否实际执行仍需核查。",
+          "await 是潜在暂停点，并非必然切换；取消请求不等于工作与清理完成；移除监听不保证既有异步工作取消。",
+          "语法中的 if/try/finally 不等于已证明保护充分；无模式命中不等于程序安全。",
+          "未读取隐藏评分器、参考补丁、模型结果或人工 profile；分析根由操作者提供，文件内容的来源仍需核实。"
+        ],
+        "relations": [],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "partial",
+        "target_definitions": []
+      },
+      "sources": {
+        "README.md": "Theatre operations — A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: coordinator dictionary\n",
+        "VISIBLE_CHECKS.md": "Public checks are deterministic external examples, not hidden gold. They are executed after each submitted Action. Keep original task/source obligations. Checks: latest quiet burst (120ms), persistence before departure returns, synchronous save callback navigation stays authoritative, preview hide discards pending work and allows reuse.\nUse the declared runtime: ruby Ruby 2.7.0. The external adapter is not mounted in the model workspace; do not access scorer/reference files. Build temporary artifacts in /tmp.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Ruby 2.7.0\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide(). Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled. Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription. A store listener may call navigation synchronously. All source identities/text and status payloads retain original semantics.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.rb": "class Store\n  def initialize(records)\n    @records = records.each_with_object({}) { |(id, text), copy| copy[id.dup.freeze] = text.dup.freeze }\n    @listeners, @serial, @revision = {}, 0, 0\n  end\n  def read(id); @records.fetch(id, '').dup.freeze; end\n  def subscribe(&block)\n    @serial += 1\n    @listeners[@serial] = block\n    @serial\n  end\n  def stop(token); @listeners.delete(token); end\n  def write(id, text)\n    @records[id] = text.dup.freeze\n    @revision += 1\n    event = {id: id.dup.freeze, text: @records[id], revision: @revision}\n    @listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }\n    event\n  end\nend\nclass Trailing\n  def initialize(env, delay, &work)\n    @env, @delay, @work = env, delay, work\n    @handle = @pending = nil\n  end\n  def push(value)\n    @env.cancel(@handle) unless @handle.nil?\n    @pending = value\n    @handle = @env.schedule(@delay) { flush }\n  end\n  def flush\n    @env.cancel(@handle) unless @handle.nil?\n    value = @pending\n    @handle = @pending = nil\n    @work.call(value) unless value.nil?\n  end\n  def cancel\n    @env.cancel(@handle) unless @handle.nil?\n    @handle = @pending = nil\n  end\nend\n\nclass Badge\n attr_reader :id,:buffer\n def initialize(env,id,buffer);@env,@id,@buffer=env,id,buffer;@token=env.store.subscribe {|e| env.output('status',e) if e[:id]==id};end\n def detach;@env.store.stop(@token);end\nend\nclass BufferBank\n def initialize;@entries={};end\n def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end\nend\nclass Workspace\n def initialize(env);@env,@current,@generation=env,nil,0;@buffers={};end\n def retire\n  old,@current=@current,nil;old.detach if old && !false;@env.output('document',nil);nil if old;old.detach if old && false\n end\n def open(id)\n  @generation+=1;request=@generation;retire;return if true && request!=@generation\n  buffer=(@buffers[id] ||= Trailing.new(@env,120){|text| @env.write(id,text)});@current=Badge.new(@env,id,buffer);@env.output('document',{'id'=>id,'text'=>@env.store.read(id)})\n end\n def edit(text);view=@current;@env.write(view.id,text) if view;end\n def close;@generation+=1;retire;end\n def dispose;close;end\nend\nclass Preview\n def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end\n def query(text);@task.push(text);end\n def hide;@task.cancel;end\nend\n"
+      },
+      "task": "The workspace draft editor currently writes to the store on every keystroke.\nCoalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces.\nThe adjacent search preview is outside this maintenance change.\n"
+    },
+    "source_sha256": "3f3ff1e38b92f36015bb81842967cc3eaacdc48cfb1b6ecfdd635b446e0edb26",
+    "task_id": "draft-autosave-handoff-precise-rule-vanilla-port-ruby"
+  },
+  "experience": {
+    "excludes": [
+      "discard_boundary_policy",
+      "different_ownership_policy"
+    ],
+    "labels": [
+      "O",
+      "B",
+      "I"
+    ],
+    "limitations": [
+      "The guidance applies to persistent document edits; it does not establish a universal flush-on-departure policy for transient work.",
+      "Public sources do not specify recovery from exceptions in store listeners or timer operations, or ordering when input and timer expiration occur simultaneously.",
+      "Attempt 1 supplies supporting observations only. One passing implementation does not prove causality, exhaustive correctness, or benefit across other tasks.",
+      "No frozen related experiences were supplied for comparison."
+    ],
+    "requires": [
+      "deferred_batch",
+      "boundary_persistence",
+      "observer_lifetime",
+      "inline_reentry"
+    ],
+    "rules": [
+      {
+        "body": "Apply when converting immediate persistent edits into reusable trailing saves while retaining existing behavior. TASK: \"Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\\ninterval, write only the latest text in that editing burst. Subsequent bursts\\nmust continue to save. Preserve the editor's other behavior and public interfaces.\"",
+        "category": "applicability"
+      },
+      {
+        "body": "Push active-document edits into that document's existing 120 ms trailing task. Each new edit cancels the previous scheduled expiration and replaces the pending value; expiration writes only the latest value to the associated document identity. Preserve empty text and the no-current-document guard. src/workflow.rb: \"    @env.cancel(@handle) unless @handle.nil?\\n    @pending = value\\n    @handle = @env.schedule(@delay) { flush }\"; \"def edit(text);view=@current;@env.write(view.id,text) if view;end\"; \"buffer=(@buffers[id] ||= Trailing.new(@env,120){|text| @env.write(id,text)})\".",
+        "category": "event_relation"
+      },
+      {
+        "body": "Clear pending state before invoking save work so synchronous callbacks can schedule fresh work without an older flush erasing it. Retain task reuse after expiration and explicit flushing. src/workflow.rb: \"    value = @pending\\n    @handle = @pending = nil\\n    @work.call(value) unless value.nil?\". TASK: \"Subsequent bursts\\nmust continue to save.\"",
+        "category": "preservation"
+      },
+      {
+        "body": "Keep document tasks owned by the coordinator dictionary independently of badge subscriptions. Detach a departing badge's subscription and persist its pending text before departure returns through open, close, or dispose; do not discard document edits as view cleanup. This preserves persistence previously provided by immediate writes. README.md: \"A workspace document buffer persists independently of the current view badge.\" docs/host-api.md: \"Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription.\" src/workflow.rb: \"def edit(text);view=@current;@env.write(view.id,text) if view;end\"; \"def close;@generation+=1;retire;end\"; \"def dispose;close;end\".",
+        "category": "preservation"
+      },
+      {
+        "body": "Treat flushing as a synchronous reentry boundary. Retire the outgoing view before invoking its save, and retain the navigation generation check after retirement so a callback's open or close remains authoritative over an older open request. docs/host-api.md: \"A store listener may call navigation synchronously.\" src/workflow.rb: \"@generation+=1;request=@generation;retire;return if true && request!=@generation\".",
+        "category": "event_relation"
+      },
+      {
+        "body": "Preserve public methods, store identity/text handling, and status event filtering and payloads. docs/host-api.md: \"createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide().\"; \"All source identities/text and status payloads retain original semantics.\" src/workflow.rb: \"@token=env.store.subscribe {|e| env.output('status',e) if e[:id]==id}\".",
+        "category": "preservation"
+      },
+      {
+        "body": "Exclude adjacent preview behavior from the document persistence change. Keep its separate 40 ms task, hide cancellation, and later reuse; do not impose document flushing on it. TASK: \"The adjacent search preview is outside this maintenance change.\" src/workflow.rb: \"def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end\"; \"def query(text);@task.push(text);end\"; \"def hide;@task.cancel;end\".",
+        "category": "exclusion"
+      },
+      {
+        "body": "Verify no write before the document quiet interval, one latest-value write afterward, and a successful subsequent burst. Check pending persistence on open, close, and dispose, including reopening the same identity and empty text. Exercise synchronous save callbacks that open or close and confirm their navigation remains authoritative. Check badge subscription cleanup and unchanged preview delay, hide cancellation, and reuse. These checks follow the quoted task, ownership, synchronous-callback, and existing utility behavior; evaluation observations do not add requirements.",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "Edits within one 120 ms quiet interval produce one write containing the latest text.",
+      "A later editing burst can produce another save.",
+      "Pending document edits are persisted before departure returns.",
+      "Navigation invoked synchronously by a save callback remains authoritative.",
+      "Preview retains its existing 40 ms delay, cancellation, and reuse behavior."
+    ],
+    "forbidden_effects": [
+      "Writing to the store on every keystroke.",
+      "Losing pending document text when its badge detaches.",
+      "Overwriting navigation performed synchronously during a save callback.",
+      "Changing the adjacent search preview as part of this maintenance change."
+    ],
+    "lifecycle_identity": [
+      "Document buffers belong to the workspace coordinator dictionary and persist independently of a badge.",
+      "Each document buffer saves to its associated document identity.",
+      "Badge ownership covers its live store subscription.",
+      "Preview owns a separate trailing task."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Route active-document edits through the existing trailing-task utility with a 120 ms quiet interval; save only the latest text in each burst."
+      },
+      {
+        "id": "O2",
+        "text": "Keep trailing document tasks reusable so subsequent editing bursts continue to save."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve persistence on departure: pending edits must be saved before open, close, or dispose completes departure from the edited document."
+      },
+      {
+        "id": "O4",
+        "text": "Handle synchronous save-callback navigation without allowing an older navigation operation to replace the resulting current view."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve public interfaces, document identities and text, status payload semantics, subscription behavior, and edits with no current document having no effect."
+      },
+      {
+        "id": "O6",
+        "text": "Leave search-preview behavior unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "A new edit resets the pending document save's quiet interval.",
+      "Clear a trailing task's pending state before invoking its work, preserving its existing reentrant behavior.",
+      "Complete pending document persistence before departure returns.",
+      "After a save invokes synchronous navigation, an older open request must respect the updated navigation generation."
+    ],
+    "preservation": [
+      "Existing createWorkspace open(id), edit(text), close(), and dispose() interfaces.",
+      "Existing createSearchPreview query(text) and hide() interfaces.",
+      "Original document identities, text, and status payload semantics.",
+      "Synchronous store read, write, and subscription behavior.",
+      "Preview's separate 40 ms quiet interval and cancellation behavior."
+    ],
+    "scope": [
+      "Workspace draft-edit persistence in src/workflow.rb.",
+      "Reuse of the existing Trailing utility and coordinator-owned document buffers.",
+      "Preservation of departure and synchronous navigation behavior while delaying edit writes."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces."
+      },
+      {
+        "file": "TASK",
+        "quote": "The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: coordinator dictionary"
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide(). Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription. A store listener may call navigation synchronously. All source identities/text and status payloads retain original semantics."
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def edit(text);view=@current;@env.write(view.id,text) if view;end"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "@generation+=1;request=@generation;retire;return if true && request!=@generation"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "    value = @pending\n    @handle = @pending = nil\n    @work.call(value) unless value.nil?"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def hide;@task.cancel;end"
+      }
+    ],
+    "triggers": [
+      "An edit arrives while a document is open.",
+      "Another edit arrives before the pending 120 ms interval expires.",
+      "The document's quiet interval expires.",
+      "Open, close, or dispose departs from a document with pending edits.",
+      "A store listener navigates synchronously during a save."
+    ],
+    "unknowns": [
+      "The supplied documents do not specify exception handling for failing store listeners or timer operations.",
+      "The supplied documents do not define timer ordering when an edit and expiration occur at exactly the same instant."
+    ]
+  },
+  "final_training_acceptance": {
+    "feedback": {
+      "observations": [
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Close checkpoint: preserve the persistent document buffer independently of the departing view badge."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Dispose checkpoint: preserve the document-buffer persistence and view-cleanup behavior in public source."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Empty-edit checkpoint: preserve valid empty document text."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Preview-delay checkpoint: preserve the adjacent transient preview quiet interval."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Preview-hide checkpoint: hiding a preview discards its pending transient work."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Preview-reuse checkpoint: later preview input remains usable."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Quiet-burst checkpoint: coalesce edits and preserve the latest text after the declared quiet interval."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Save/close checkpoint: preserve synchronous close performed by a save callback."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Save/navigation checkpoint: synchronous save callbacks may navigate; preserve the navigation chosen by that callback."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Reopen checkpoint: document storage persists independently of a new opening of the same document."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Subsequent-burst checkpoint: later editing bursts must continue to save."
+        },
+        {
+          "actual": true,
+          "expected": true,
+          "passed": true,
+          "summary": "Switch checkpoint: preserve persistent document buffers and the lifetime of the current view badge."
+        }
+      ],
+      "passed": true,
+      "regressions": [],
+      "unknowns": []
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "Edits within one 120 ms quiet interval produce one write containing the latest text.",
+      "A later editing burst can produce another save.",
+      "Pending document edits are persisted before departure returns.",
+      "Navigation invoked synchronously by a save callback remains authoritative.",
+      "Preview retains its existing 40 ms delay, cancellation, and reuse behavior."
+    ],
+    "forbidden_effects": [
+      "Writing to the store on every keystroke.",
+      "Losing pending document text when its badge detaches.",
+      "Overwriting navigation performed synchronously during a save callback.",
+      "Changing the adjacent search preview as part of this maintenance change."
+    ],
+    "lifecycle_identity": [
+      "Document buffers belong to the workspace coordinator dictionary and persist independently of a badge.",
+      "Each document buffer saves to its associated document identity.",
+      "Badge ownership covers its live store subscription.",
+      "Preview owns a separate trailing task."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Route active-document edits through the existing trailing-task utility with a 120 ms quiet interval; save only the latest text in each burst."
+      },
+      {
+        "id": "O2",
+        "text": "Keep trailing document tasks reusable so subsequent editing bursts continue to save."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve persistence on departure: pending edits must be saved before open, close, or dispose completes departure from the edited document."
+      },
+      {
+        "id": "O4",
+        "text": "Handle synchronous save-callback navigation without allowing an older navigation operation to replace the resulting current view."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve public interfaces, document identities and text, status payload semantics, subscription behavior, and edits with no current document having no effect."
+      },
+      {
+        "id": "O6",
+        "text": "Leave search-preview behavior unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "A new edit resets the pending document save's quiet interval.",
+      "Clear a trailing task's pending state before invoking its work, preserving its existing reentrant behavior.",
+      "Complete pending document persistence before departure returns.",
+      "After a save invokes synchronous navigation, an older open request must respect the updated navigation generation."
+    ],
+    "preservation": [
+      "Existing createWorkspace open(id), edit(text), close(), and dispose() interfaces.",
+      "Existing createSearchPreview query(text) and hide() interfaces.",
+      "Original document identities, text, and status payload semantics.",
+      "Synchronous store read, write, and subscription behavior.",
+      "Preview's separate 40 ms quiet interval and cancellation behavior."
+    ],
+    "scope": [
+      "Workspace draft-edit persistence in src/workflow.rb.",
+      "Reuse of the existing Trailing utility and coordinator-owned document buffers.",
+      "Preservation of departure and synchronous navigation behavior while delaying edit writes."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces."
+      },
+      {
+        "file": "TASK",
+        "quote": "The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: coordinator dictionary"
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide(). Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription. A store listener may call navigation synchronously. All source identities/text and status payloads retain original semantics."
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def edit(text);view=@current;@env.write(view.id,text) if view;end"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "@generation+=1;request=@generation;retire;return if true && request!=@generation"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "    value = @pending\n    @handle = @pending = nil\n    @work.call(value) unless value.nil?"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def hide;@task.cancel;end"
+      }
+    ],
+    "triggers": [
+      "An edit arrives while a document is open.",
+      "Another edit arrives before the pending 120 ms interval expires.",
+      "The document's quiet interval expires.",
+      "Open, close, or dispose departs from a document with pending edits.",
+      "A store listener navigates synchronously during a save."
+    ],
+    "unknowns": [
+      "The supplied documents do not specify exception handling for failing store listeners or timer operations.",
+      "The supplied documents do not define timer ordering when an edit and expiration occur at exactly the same instant."
+    ]
+  },
+  "origin": "success",
+  "reflection_update": {
+    "change_summary": [
+      "Create reusable guidance for delayed persistent edits with coordinator-owned tasks, departure flushing, and synchronous navigation reentry.",
+      "Separate persistent document cleanup from transient preview cancellation.",
+      "Include source-grounded preservation checks and explicit limits on evaluation evidence."
+    ],
+    "failure_attribution": "not_applicable",
+    "operation": "new",
+    "reason": "No related experiences or target hashes were supplied, so there is no existing guidance to retain, revise, or merge. The original task and public source support this distinct guidance. Attempt 1 is supporting implementation evidence, not a source of business requirements; no failed implementation or experience gap is established.",
+    "supporting_attempts": [
+      1
+    ],
+    "target_sha256s": []
+  },
+  "related_experiences": [],
+  "source_sha256": "3f3ff1e38b92f36015bb81842967cc3eaacdc48cfb1b6ecfdd635b446e0edb26",
+  "status": "awaiting_content_review",
+  "task": "The workspace draft editor currently writes to the store on every keystroke.\nCoalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces.\nThe adjacent search preview is outside this maintenance change.\n",
+  "training_accepted": true,
+  "trajectory": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "78f2a2f1ab360605a3d1066f74bd08aee35b2eddcbdc021c1916e894b28f2fb7",
+        "VISIBLE_CHECKS.md": "72987151d2a97646a48c7afd409fff21930dbdb8ab0420e0cca1f1b315e7a4fb",
+        "dependencies.lock.json": "e8f19df14d2674e4b41249c1681e37b4e56730614ce0547bac56c23b896a5b30",
+        "docs/host-api.md": "aa49039b3634175a433555774eb01de7f4da933865199503971a085c04b35f9b",
+        "package-lock.json": "2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59",
+        "package.json": "66db10140e649e83eadde7fe04cb4ccb1467c20f5a7db2117520ab1572467f1a",
+        "src/workflow.rb": "b859cc6758336d8171c42c8397f78146658d048ae1f6c6b8ad3810307674a5bc"
+      },
+      "candidate_sources": {
+        "README.md": "Theatre operations — A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: coordinator dictionary\n",
+        "VISIBLE_CHECKS.md": "Public checks are deterministic external examples, not hidden gold. They are executed after each submitted Action. Keep original task/source obligations. Checks: latest quiet burst (120ms), persistence before departure returns, synchronous save callback navigation stays authoritative, preview hide discards pending work and allows reuse.\nUse the declared runtime: ruby Ruby 2.7.0. The external adapter is not mounted in the model workspace; do not access scorer/reference files. Build temporary artifacts in /tmp.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Ruby 2.7.0\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide(). Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled. Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription. A store listener may call navigation synchronously. All source identities/text and status payloads retain original semantics.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.rb": "class Store\n  def initialize(records)\n    @records = records.each_with_object({}) { |(id, text), copy| copy[id.dup.freeze] = text.dup.freeze }\n    @listeners, @serial, @revision = {}, 0, 0\n  end\n  def read(id); @records.fetch(id, '').dup.freeze; end\n  def subscribe(&block)\n    @serial += 1\n    @listeners[@serial] = block\n    @serial\n  end\n  def stop(token); @listeners.delete(token); end\n  def write(id, text)\n    @records[id] = text.dup.freeze\n    @revision += 1\n    event = {id: id.dup.freeze, text: @records[id], revision: @revision}\n    @listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }\n    event\n  end\nend\nclass Trailing\n  def initialize(env, delay, &work)\n    @env, @delay, @work = env, delay, work\n    @handle = @pending = nil\n  end\n  def push(value)\n    @env.cancel(@handle) unless @handle.nil?\n    @pending = value\n    @handle = @env.schedule(@delay) { flush }\n  end\n  def flush\n    @env.cancel(@handle) unless @handle.nil?\n    value = @pending\n    @handle = @pending = nil\n    @work.call(value) unless value.nil?\n  end\n  def cancel\n    @env.cancel(@handle) unless @handle.nil?\n    @handle = @pending = nil\n  end\nend\n\nclass Badge\n attr_reader :id,:buffer\n def initialize(env,id,buffer);@env,@id,@buffer=env,id,buffer;@token=env.store.subscribe {|e| env.output('status',e) if e[:id]==id};end\n def detach;@env.store.stop(@token);end\nend\nclass BufferBank\n def initialize;@entries={};end\n def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end\nend\nclass Workspace\n def initialize(env);@env,@current,@generation=env,nil,0;@buffers={};end\n def retire\n  old,@current=@current,nil\n  old.detach if old\n  @env.output('document',nil)\n  old.buffer.flush if old\n end\n def open(id)\n  @generation+=1;request=@generation;retire;return if true && request!=@generation\n  buffer=(@buffers[id] ||= Trailing.new(@env,120){|text| @env.write(id,text)});@current=Badge.new(@env,id,buffer);@env.output('document',{'id'=>id,'text'=>@env.store.read(id)})\n end\n def edit(text);view=@current;view.buffer.push(text) if view;end\n def close;@generation+=1;retire;end\n def dispose;close;end\nend\nclass Preview\n def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end\n def query(text);@task.push(text);end\n def hide;@task.cancel;end\nend\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "actual": {
+              "afterQuiet": "two",
+              "beforeQuiet": "before"
+            },
+            "check": "public_quiet_burst_latest",
+            "passed": true
+          },
+          {
+            "actual": {
+              "current": "B",
+              "departedText": "saved"
+            },
+            "check": "public_departure_persists_latest",
+            "passed": true
+          },
+          {
+            "actual": {
+              "current": "B"
+            },
+            "check": "public_nested_navigation_remains_authoritative",
+            "passed": true
+          },
+          {
+            "actual": [
+              "keep"
+            ],
+            "check": "public_preview_discard_and_reuse",
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Close checkpoint: preserve the persistent document buffer independently of the departing view badge."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Dispose checkpoint: preserve the document-buffer persistence and view-cleanup behavior in public source."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Empty-edit checkpoint: preserve valid empty document text."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Preview-delay checkpoint: preserve the adjacent transient preview quiet interval."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Preview-hide checkpoint: hiding a preview discards its pending transient work."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Preview-reuse checkpoint: later preview input remains usable."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Quiet-burst checkpoint: coalesce edits and preserve the latest text after the declared quiet interval."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Save/close checkpoint: preserve synchronous close performed by a save callback."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Save/navigation checkpoint: synchronous save callbacks may navigate; preserve the navigation chosen by that callback."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Reopen checkpoint: document storage persists independently of a new opening of the same document."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Subsequent-burst checkpoint: later editing bursts must continue to save."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Switch checkpoint: preserve persistent document buffers and the lifetime of the current view badge."
+            }
+          ],
+          "passed": true,
+          "regressions": [],
+          "unknowns": []
+        },
+        "unknowns": [
+          "Public examples are not exhaustive; gold is independent."
+        ]
+      },
+      "number": 1,
+      "training_result": {
+        "feedback": {
+          "observations": [
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Close checkpoint: preserve the persistent document buffer independently of the departing view badge."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Dispose checkpoint: preserve the document-buffer persistence and view-cleanup behavior in public source."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Empty-edit checkpoint: preserve valid empty document text."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Preview-delay checkpoint: preserve the adjacent transient preview quiet interval."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Preview-hide checkpoint: hiding a preview discards its pending transient work."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Preview-reuse checkpoint: later preview input remains usable."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Quiet-burst checkpoint: coalesce edits and preserve the latest text after the declared quiet interval."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Save/close checkpoint: preserve synchronous close performed by a save callback."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Save/navigation checkpoint: synchronous save callbacks may navigate; preserve the navigation chosen by that callback."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Reopen checkpoint: document storage persists independently of a new opening of the same document."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Subsequent-burst checkpoint: later editing bursts must continue to save."
+            },
+            {
+              "actual": true,
+              "expected": true,
+              "passed": true,
+              "summary": "Switch checkpoint: preserve persistent document buffers and the lifetime of the current view badge."
+            }
+          ],
+          "passed": true,
+          "regressions": [],
+          "unknowns": []
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ]
+}

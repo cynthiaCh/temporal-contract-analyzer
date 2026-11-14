@@ -1,0 +1,125 @@
+{
+  "schema_version": "experience-bundle-v2",
+  "id": "v7-5ada6a6851664ea0-success",
+  "version": "reflection-9b9229df5871842f",
+  "parent_sha256": null,
+  "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+  "labels": [
+    "B",
+    "L",
+    "R"
+  ],
+  "requires": [
+    "deferred_batch",
+    "boundary_persistence",
+    "observer_lifetime",
+    "inline_reentry"
+  ],
+  "excludes": [
+    "different_ownership_policy",
+    "discard_boundary_policy",
+    "no_lazy_shared_mechanism"
+  ],
+  "rules": [
+    {
+      "id": "R01",
+      "body": "Apply when edit persistence is delayed while document-buffer ownership outlives the current view subscription and saving can synchronously navigate. README.md states: \"A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate.\" docs/host-api.md states: \"Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription.\" Distinguish these lifetimes before choosing cleanup behavior.",
+      "category": "applicability"
+    },
+    {
+      "id": "R02",
+      "body": "Route active-document edits into the existing document buffer's trailing task. Reset the quiet interval on each edit, retain only the latest text, and allow later bursts to save. TASK states: \"Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\\ninterval, write only the latest text in that editing burst. Subsequent bursts\\nmust continue to save.\" src/coordinator.js already binds each task to its document identity: \"trailing(env.timers,120,text=>env.store.write(id,text))\". Preserve that binding rather than resolving the current view identity when the delayed save runs.",
+      "category": "event_relation"
+    },
+    {
+      "id": "R03",
+      "body": "Preserve persistence when navigating or departing by flushing pending text from the captured departing buffer before open, close, or dispose returns. Retiring a badge must stop its subscription without discarding its document's pending save or destroying BufferBank ownership. This follows from TASK: \"Preserve the editor's other behavior and public interfaces.\" and README.md: \"A workspace document buffer persists independently of the current view badge.\" The original src/coordinator.js edit path writes synchronously: \"edit(text){const view=getView();if(view){env.store.write(view.id,text);}}\"; introducing deferred edits must not make those edits disappear on departure.",
+      "category": "preservation"
+    },
+    {
+      "id": "R04",
+      "body": "Before flushing a departing buffer, capture the old view, clear the published current view, stop the old subscription, and finish retirement rendering. Flush the captured buffer after those retirement effects so a save callback cannot be followed by stale retirement effects that erase its navigation. Advance navigation request identity at entry and recheck it after retirement before an outer open publishes its destination. docs/host-api.md states: \"A store listener may call navigation synchronously.\" src/coordinator.js supplies the existing authority mechanism: \"const mine=++request;retire();if(true&&mine!==request)return;\". Preserve newer navigation through wrapper cleanup as well: src/workspace.js originally performs \"dispose(){api.dispose();node.off('.scope');node.removeData('view');}\"; unconditional view-data removal after a reentrant save can erase a view established during api.dispose().",
+      "category": "event_relation"
+    },
+    {
+      "id": "R05",
+      "body": "Preserve the trailing utility's consumption order: capture the pending value, clear pending state and cancel the timer, then invoke the consumer. src/services.js states: \"const flush = () => { const saved = value; retire(); if (saved !== null) consume(saved); };\" This prevents the consumed burst from remaining pending during synchronous callbacks and permits subsequent pushes. Preserve valid empty text; the existing pending sentinel is null, so do not replace its check with a truthiness test.",
+      "category": "preservation"
+    },
+    {
+      "id": "R06",
+      "body": "Keep public interfaces, document identities, text, rendering, and status payload semantics intact. docs/host-api.md states: \"All source identities/text and status payloads retain original semantics.\" Leave search preview's separate delay and discard policy unchanged. TASK states: \"The adjacent search preview is outside this maintenance change.\" src/services.js states: \"const task = trailing(timers, 40, query => publish({query}));\" and \"return {query: text => task.push(text), hide: () => task.cancel()};\". Do not generalize persistent-document flushing into preview hide.",
+      "category": "exclusion"
+    },
+    {
+      "id": "R07",
+      "body": "Verify with explicitly controlled timers and synchronous store listeners. Check no save before 120 ms of quiet, timer reset after another edit, exactly the latest text saved at the interval, empty text saved, and a later burst saved again. For open, close, and dispose with pending text, inspect the departed document's stored value immediately after return and ensure canceled timers cannot duplicate it. Make a save listener synchronously open another document or close; verify the resumed outer call and workspace cleanup preserve that newer result and subscription ownership. Reopen the same document to check retained identity and persistence. Confirm preview still waits 40 ms, hide cancels pending work, and later queries remain usable. These checks derive from TASK's quiet-interval and preservation wording, docs/host-api.md's synchronous navigation statement, and the quoted src/services.js preview implementation; evaluation outcomes add no requirements.",
+      "category": "verification"
+    }
+  ],
+  "review": {
+    "status": "candidate",
+    "kind": "ai_assisted",
+    "source_sha256": "9b9229df5871842f9437c79849daf7b8cc91e6eaf59a31b1a977048cd7960185",
+    "limitations": [
+      "This guidance applies to persistent document buffers with synchronous save callbacks and a separate view subscription lifetime. It does not establish a universal flush-on-departure policy for transient work.",
+      "The task and public sources do not specify recovery from throwing store listeners, rendering callbacks, or timer operations.",
+      "Attempt 1 supplies one successful implementation observation. It does not prove causality, exhaustive correctness, or benefit across other tasks.",
+      "Automatic contracts, AST hints, and evaluation observations are not normative evidence. No related frozen experiences were supplied."
+    ]
+  },
+  "audit": {
+    "sources": [
+      {
+        "path": "/home/sribd/Downloads/wangshu/tempoevo-v7-autocontract-noexperience-top25-20261113_232348/draft-autosave-handoff-vanilla-port-jquery/trajectory/candidate-pool/success-evidence.json",
+        "sha256": "9b9229df5871842f9437c79849daf7b8cc91e6eaf59a31b1a977048cd7960185"
+      }
+    ],
+    "rule_links": [
+      {
+        "rule_id": "R01",
+        "source_sha256": "9b9229df5871842f9437c79849daf7b8cc91e6eaf59a31b1a977048cd7960185",
+        "pointer": "/experience/rules/0"
+      },
+      {
+        "rule_id": "R02",
+        "source_sha256": "9b9229df5871842f9437c79849daf7b8cc91e6eaf59a31b1a977048cd7960185",
+        "pointer": "/experience/rules/1"
+      },
+      {
+        "rule_id": "R03",
+        "source_sha256": "9b9229df5871842f9437c79849daf7b8cc91e6eaf59a31b1a977048cd7960185",
+        "pointer": "/experience/rules/2"
+      },
+      {
+        "rule_id": "R04",
+        "source_sha256": "9b9229df5871842f9437c79849daf7b8cc91e6eaf59a31b1a977048cd7960185",
+        "pointer": "/experience/rules/3"
+      },
+      {
+        "rule_id": "R05",
+        "source_sha256": "9b9229df5871842f9437c79849daf7b8cc91e6eaf59a31b1a977048cd7960185",
+        "pointer": "/experience/rules/4"
+      },
+      {
+        "rule_id": "R06",
+        "source_sha256": "9b9229df5871842f9437c79849daf7b8cc91e6eaf59a31b1a977048cd7960185",
+        "pointer": "/experience/rules/5"
+      },
+      {
+        "rule_id": "R07",
+        "source_sha256": "9b9229df5871842f9437c79849daf7b8cc91e6eaf59a31b1a977048cd7960185",
+        "pointer": "/experience/rules/6"
+      }
+    ],
+    "notes": [
+      "V7 origin: success",
+      "Reflection operation: new",
+      "Reflection targets: ",
+      "Not approved; training acceptance or expert summary does not verify cross-task effectiveness"
+    ],
+    "outcome_refs": []
+  },
+  "body_sha256": "1ff5d1c1607df605d1274541ff1a18543ade533860748015b00980cae521132e",
+  "sha256": "0805d64bde08d1dc24c3f2ebf5ab0440a86e78c2e29f9a4c1a27c6042ed8f86e"
+}

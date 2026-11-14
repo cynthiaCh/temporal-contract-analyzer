@@ -8,6 +8,8 @@ parser.add_argument('--start-rank',type=int,default=1,help='First one-based CSV 
 parser.add_argument('--training-feedback',type=Path,help='Explicit public feedback mapping JSON, frozen in every trajectory')
 parser.add_argument('--model-config',type=Path,help='Model profiles JSON file')
 parser.add_argument('--model-profile',help='Named model profile; defaults to the configuration default')
+parser.add_argument('--condition',choices=['structured','contract'],default='structured',help='Contract keeps Auto-Contract but never reads cross-task memory')
+parser.add_argument('--training-feedback-by-family',type=Path,help='Frozen family-to-public-feedback mapping JSON')
 args=parser.parse_args()
 if args.start_rank<1 or args.limit<1:parser.error('--start-rank and --limit must be positive')
 repo=Path(__file__).resolve().parents[2];sys.path.insert(0,str(repo))
@@ -24,9 +26,17 @@ all_rows=list(csv.DictReader((repo/'examples/tempoevo-v4/case-selections/gpt61-s
 rows=[row for row in all_rows if args.start_rank<=int(row['rank'])<args.start_rank+args.limit]
 if len(rows)!=args.limit:parser.error('Requested rank range is not fully present in the selection CSV')
 feedback=json.loads(args.training_feedback.read_text()) if args.training_feedback else {}
+family_feedback=json.loads(args.training_feedback_by_family.read_text()) if args.training_feedback_by_family else {}
 from temporal_contract_analyzer.training_acceptance import validate_mapping
 validate_mapping(feedback)
-root=args.root.resolve();root.mkdir();bank=approval.freeze(repo/'experience-memory');(root/'memory-snapshot.json').write_text(json.dumps(bank,indent=2)+'\n')
+for mapping in family_feedback.values():validate_mapping(mapping)
+root=args.root.resolve();root.mkdir()
+if args.condition=='contract':
+ bank=dict(schema_version='experience-active-snapshot-v1',scope='research_only',entries=[])
+ from temporal_contract_analyzer.core import canonical
+ bank['sha256']=sha(canonical(bank).encode())
+else:bank=approval.freeze(repo/'experience-memory')
+(root/'memory-snapshot.json').write_text(json.dumps(bank,indent=2)+'\n')
 out=[]
 solver=args.solver_image;grader=args.grader_image
 for row in rows:
@@ -53,7 +63,7 @@ for row in rows:
    controls.append(record)
   entry['controls']=controls
   config=dict(task_id=cid,task=c['task'],candidate=str(r/'public'),store=str(repo/'experience-memory'),mode='learning',condition='structured',max_attempts=3,model=MODEL,binary=shutil.which('codex'),backend=dict(kind='docker',solver_image=solver,grader_image=grader,solver_node='/runtime/node16/bin/node'),memory_snapshot=bank,visible_evaluator=visible,training_evaluator=gold,required_visible_checks=True,training_feedback=feedback,protected_paths=['README.md','VISIBLE_CHECKS.md'])
-  config.update(model=identity(settings),model_profile=settings['profile'])
+  config.update(model=identity(settings),model_profile=settings['profile'],condition=args.condition,training_feedback=family_feedback.get(family,feedback))
   if args.model_config:config['model_config']=str(args.model_config.resolve())
   (r/'config.json').write_text(json.dumps(config,indent=2)+'\n');Trajectory(r/'trajectory').prepare(config);entry['status']='prepared'
  except Exception as e:entry.update(status='preflight_failed',error=repr(e))

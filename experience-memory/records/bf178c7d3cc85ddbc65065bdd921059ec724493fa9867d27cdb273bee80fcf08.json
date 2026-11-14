@@ -1,0 +1,144 @@
+{
+  "schema_version": "experience-bundle-v2",
+  "id": "v7-7880807c48b44efe-success",
+  "version": "reflection-6782e4e17961d748",
+  "parent_sha256": null,
+  "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+  "labels": [
+    "O",
+    "B",
+    "I"
+  ],
+  "requires": [
+    "shared_lifetime",
+    "observer_lifetime",
+    "deferred_batch",
+    "boundary_persistence",
+    "inline_reentry"
+  ],
+  "excludes": [
+    "discard_boundary_policy"
+  ],
+  "rules": [
+    {
+      "id": "R01",
+      "body": "Apply when coalescing persistent edits using an existing trailing utility while preserving surrounding behavior. TASK: \"Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\\ninterval, write only the latest text in that editing burst. Subsequent bursts\\nmust continue to save. Preserve the editor's other behavior and public interfaces.\" Treat departure persistence as a preservation obligation derived from the former synchronous write behavior, not from evaluation examples.",
+      "category": "applicability"
+    },
+    {
+      "id": "R02",
+      "body": "Route each effective edit to the document's existing trailing buffer. Replacement edits restart the quiet interval and replace pending text; after 120 ms without another edit, persist the latest text once. Keep later bursts usable. src/workflow.go: \"func(b *BufferBank)get(env Environment,id string)*Trailing{if b.entries==nil{b.entries=map[string]*Trailing{}};if b.entries[id]==nil{b.entries[id]=NewTrailing(env,120,func(text string){env.Write(id,text)})};return b.entries[id]}\"",
+      "category": "event_relation"
+    },
+    {
+      "id": "R03",
+      "body": "Keep persistent buffer ownership separate from subscription ownership. Detaching a badge must release its live subscription without discarding the document's pending persistence or destroying the bank-owned reusable buffer. docs/host-api.md: \"Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription.\"",
+      "category": "preservation"
+    },
+    {
+      "id": "R04",
+      "body": "Before Open, Close, or Dispose finishes departing from a document, complete pending persistence needed to preserve previously synchronous edits. A departure may flush before the quiet interval expires; the ordinary quiet-interval rule does not justify leaving departing edits unpersisted. TASK: \"Preserve the editor's other behavior and public interfaces.\" src/workflow.go: \"func(w *Workspace)Edit(text string){view:=w.current;if view!=nil{w.env.Write(view.id,text)}}\" and \"func(w *Workspace)Dispose(){w.Close()}\"",
+      "category": "preservation"
+    },
+    {
+      "id": "R05",
+      "body": "Clear the trailing task's captured pending state and timer handle before invoking its work callback, so synchronous reentry can schedule fresh work without that work being erased by the outer flush. Preserve the existing implementation order in src/workflow.go: \"if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\\n    if text!=nil { t.work(*text) }\"",
+      "category": "event_relation"
+    },
+    {
+      "id": "R06",
+      "body": "Treat departure flushing as a synchronous callback boundary. Retire the captured departing badge without subsequently clearing a badge installed by nested navigation, and honor the existing generation guard before an outer Open installs its requested document. docs/host-api.md: \"A store listener may call navigation synchronously.\" src/workflow.go: \"func(w *Workspace)Open(id string){w.generation++;request:=w.generation;w.retire();if true&&request!=w.generation{return};buffer:=w.bank.get(w.env,id);w.current=NewBadge(w.env,id,buffer);w.env.Output(\\\"document\\\",Value{\\\"id\\\":id,\\\"text\\\":w.env.Store().Read(id)})}\"",
+      "category": "event_relation"
+    },
+    {
+      "id": "R07",
+      "body": "Preserve public interfaces, source document identities, valid text including an empty string, status event payloads, and ineffective edits when no badge is current. docs/host-api.md: \"All source identities/text and status payloads retain original semantics.\" src/workflow.go: \"func(w *Workspace)Edit(text string){view:=w.current;if view!=nil{w.env.Write(view.id,text)}}\"",
+      "category": "preservation"
+    },
+    {
+      "id": "R08",
+      "body": "Keep the adjacent preview outside the change, including its separate 40 ms trailing interval and cancellation/reuse semantics. TASK: \"The adjacent search preview is outside this maintenance change.\" src/workflow.go: \"func NewPreview(env Environment)*Preview{return &Preview{NewTrailing(env,40,func(query string){env.Output(\\\"preview\\\",Value{\\\"query\\\":query})})}}\" and \"func(p *Preview)Hide(){p.task.Cancel()}\"",
+      "category": "exclusion"
+    },
+    {
+      "id": "R09",
+      "body": "Verify the source-derived boundaries with a controlled timer: no ordinary write before 120 ms of quiet, one latest-text write after quiet, another successful burst, pending persistence completed on departure, and nested navigation remaining authoritative during a save. Include empty text and no-current-badge edits. Check preview preservation if the shared utility changes. These checks operationalize TASK's \"Subsequent bursts\\nmust continue to save. Preserve the editor's other behavior and public interfaces.\" and docs/host-api.md's \"A store listener may call navigation synchronously.\"",
+      "category": "verification"
+    }
+  ],
+  "review": {
+    "status": "candidate",
+    "kind": "ai_assisted",
+    "source_sha256": "6782e4e17961d7487651f0fb3aa753de2af10ac47a76fbc782db2ac39fad865d",
+    "limitations": [
+      "Applies where delayed document persistence must preserve existing departure behavior and synchronous callbacks may navigate; it does not establish a universal flush-on-detach policy.",
+      "Public sources do not prescribe a complete ordering of badge detachment, document output, and departure flushing. Preserve documented observable behavior without inventing additional ordering requirements.",
+      "Timer behavior at simultaneous edit/deadline boundaries and the Environment implementation are unspecified.",
+      "Attempt 1 provides supporting observations, not proof of causality, exhaustive correctness, or benefit on other tasks. Evaluation observations are not normative requirements."
+    ]
+  },
+  "audit": {
+    "sources": [
+      {
+        "path": "/home/sribd/Downloads/wangshu/tempoevo-v7-autocontract-noexperience-top25-20261113_232348/draft-autosave-handoff-vanilla-port-go/trajectory/candidate-pool/success-evidence.json",
+        "sha256": "6782e4e17961d7487651f0fb3aa753de2af10ac47a76fbc782db2ac39fad865d"
+      }
+    ],
+    "rule_links": [
+      {
+        "rule_id": "R01",
+        "source_sha256": "6782e4e17961d7487651f0fb3aa753de2af10ac47a76fbc782db2ac39fad865d",
+        "pointer": "/experience/rules/0"
+      },
+      {
+        "rule_id": "R02",
+        "source_sha256": "6782e4e17961d7487651f0fb3aa753de2af10ac47a76fbc782db2ac39fad865d",
+        "pointer": "/experience/rules/1"
+      },
+      {
+        "rule_id": "R03",
+        "source_sha256": "6782e4e17961d7487651f0fb3aa753de2af10ac47a76fbc782db2ac39fad865d",
+        "pointer": "/experience/rules/2"
+      },
+      {
+        "rule_id": "R04",
+        "source_sha256": "6782e4e17961d7487651f0fb3aa753de2af10ac47a76fbc782db2ac39fad865d",
+        "pointer": "/experience/rules/3"
+      },
+      {
+        "rule_id": "R05",
+        "source_sha256": "6782e4e17961d7487651f0fb3aa753de2af10ac47a76fbc782db2ac39fad865d",
+        "pointer": "/experience/rules/4"
+      },
+      {
+        "rule_id": "R06",
+        "source_sha256": "6782e4e17961d7487651f0fb3aa753de2af10ac47a76fbc782db2ac39fad865d",
+        "pointer": "/experience/rules/5"
+      },
+      {
+        "rule_id": "R07",
+        "source_sha256": "6782e4e17961d7487651f0fb3aa753de2af10ac47a76fbc782db2ac39fad865d",
+        "pointer": "/experience/rules/6"
+      },
+      {
+        "rule_id": "R08",
+        "source_sha256": "6782e4e17961d7487651f0fb3aa753de2af10ac47a76fbc782db2ac39fad865d",
+        "pointer": "/experience/rules/7"
+      },
+      {
+        "rule_id": "R09",
+        "source_sha256": "6782e4e17961d7487651f0fb3aa753de2af10ac47a76fbc782db2ac39fad865d",
+        "pointer": "/experience/rules/8"
+      }
+    ],
+    "notes": [
+      "V7 origin: success",
+      "Reflection operation: new",
+      "Reflection targets: ",
+      "Not approved; training acceptance or expert summary does not verify cross-task effectiveness"
+    ],
+    "outcome_refs": []
+  },
+  "body_sha256": "e77dbff44134d654d7889322a35b803bab2eb29d92ef6ed9190f1ed5fdb7b539",
+  "sha256": "bf178c7d3cc85ddbc65065bdd921059ec724493fa9867d27cdb273bee80fcf08"
+}

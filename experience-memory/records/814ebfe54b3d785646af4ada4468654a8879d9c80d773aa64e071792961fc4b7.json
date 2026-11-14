@@ -1,0 +1,133 @@
+{
+  "schema_version": "experience-bundle-v2",
+  "id": "v7-2caf65a92c1455e0-success",
+  "version": "reflection-4b74023fc29f7a6c",
+  "parent_sha256": null,
+  "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+  "labels": [
+    "O",
+    "B",
+    "R"
+  ],
+  "requires": [
+    "deferred_batch",
+    "boundary_persistence",
+    "observer_lifetime",
+    "inline_reentry"
+  ],
+  "excludes": [
+    "discard_boundary_policy"
+  ],
+  "rules": [
+    {
+      "id": "R01",
+      "body": "Apply when introducing trailing persistence into an editor whose document buffers outlive view subscriptions and whose save callbacks can navigate synchronously. README.md states: \"A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate.\"",
+      "category": "applicability"
+    },
+    {
+      "id": "R02",
+      "body": "Route current-document edits through its existing trailing task, resetting the quiet interval on each edit and retaining the latest text. TASK states: \"Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\\ninterval, write only the latest text in that editing burst. Subsequent bursts\\nmust continue to save.\" Verify no write before 120 ms of quiet, one latest-text write at the interval, and successful saves from later bursts.",
+      "category": "event_relation"
+    },
+    {
+      "id": "R03",
+      "body": "Separate persistent-buffer ownership from subscription ownership. docs/host-api.md states: \"Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription.\" Preserve the document-keyed BufferBank; detaching a Badge must stop its subscription without discarding pending document text.",
+      "category": "preservation"
+    },
+    {
+      "id": "R04",
+      "body": "Flush the departing document's pending text before open, close, or dispose returns. Clear the current Badge and detach its subscription before the flush can invoke synchronous listeners. Preserve the existing document-clear output. TASK requires: \"Preserve the editor's other behavior and public interfaces.\" docs/host-api.md states: \"Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled.\" Immediate writes in the original editor already made edits persistent before departure; deferral must preserve that boundary.",
+      "category": "event_relation"
+    },
+    {
+      "id": "R05",
+      "body": "Treat persistence as a synchronous reentry boundary. Capture an open request's generation before departure and validate it after departure, before installing the requested Badge or publishing its document. A listener's newer open or close must remain authoritative. docs/host-api.md states: \"A store listener may call navigation synchronously.\" The original src/Workflow.java contains: \"long request=++generation;retire();if(true&&request!=generation)return;\"",
+      "category": "event_relation"
+    },
+    {
+      "id": "R06",
+      "body": "Keep the trailing task reusable and clear consumed pending state before invoking its work, so synchronous callbacks cannot cause the same pending value to be consumed twice. Preserve the existing src/Workflow.java implementation: \"void flush() { if(handle!=null)env.cancel(handle); String text=pending; handle=null;pending=null; if(text!=null)work.accept(text); }\" Preserve empty-string edits as valid text and editing without a current document as a no-op.",
+      "category": "preservation"
+    },
+    {
+      "id": "R07",
+      "body": "Preserve document identities, stored text on open, status payloads, and subscription cleanup. docs/host-api.md states: \"All source identities/text and status payloads retain original semantics.\" Verify departure saves the latest text, retired Badges stop receiving status, reopening reads persisted text, and synchronous save callbacks that open or close are not superseded by the outer open.",
+      "category": "verification"
+    },
+    {
+      "id": "R08",
+      "body": "Do not apply document departure flushing to the adjacent preview or change the shared trailing utility in ways that alter preview behavior. TASK states: \"The adjacent search preview is outside this maintenance change.\" Preserve its separate 40 ms delay, discard-on-hide cancellation, and later reuse. src/Workflow.java contains: \"void query(String text){task.push(text);}void hide(){task.cancel();}\"",
+      "category": "exclusion"
+    }
+  ],
+  "review": {
+    "status": "candidate",
+    "kind": "ai_assisted",
+    "source_sha256": "4b74023fc29f7a6cec62d5f55443bb9918950ae90f0ccec3e2fddf55a0747b6b",
+    "limitations": [
+      "Applies where document edits must persist across departure; transient work with discard-on-hide behavior requires a different boundary policy.",
+      "The supplied public sources do not define exception handling for persistence or listener failures, or guarantees for timer callbacks executed after cancellation.",
+      "Attempt 1 supplies supporting observations only. A single passing attempt does not establish causality, exhaustive correctness, or benefit across tasks.",
+      "No related experiences were supplied for comparison."
+    ]
+  },
+  "audit": {
+    "sources": [
+      {
+        "path": "/home/sribd/Downloads/wangshu/tempoevo-v7-autocontract-noexperience-top25-20261113_232348/draft-autosave-handoff-vanilla-port-java/trajectory/candidate-pool/success-evidence.json",
+        "sha256": "4b74023fc29f7a6cec62d5f55443bb9918950ae90f0ccec3e2fddf55a0747b6b"
+      }
+    ],
+    "rule_links": [
+      {
+        "rule_id": "R01",
+        "source_sha256": "4b74023fc29f7a6cec62d5f55443bb9918950ae90f0ccec3e2fddf55a0747b6b",
+        "pointer": "/experience/rules/0"
+      },
+      {
+        "rule_id": "R02",
+        "source_sha256": "4b74023fc29f7a6cec62d5f55443bb9918950ae90f0ccec3e2fddf55a0747b6b",
+        "pointer": "/experience/rules/1"
+      },
+      {
+        "rule_id": "R03",
+        "source_sha256": "4b74023fc29f7a6cec62d5f55443bb9918950ae90f0ccec3e2fddf55a0747b6b",
+        "pointer": "/experience/rules/2"
+      },
+      {
+        "rule_id": "R04",
+        "source_sha256": "4b74023fc29f7a6cec62d5f55443bb9918950ae90f0ccec3e2fddf55a0747b6b",
+        "pointer": "/experience/rules/3"
+      },
+      {
+        "rule_id": "R05",
+        "source_sha256": "4b74023fc29f7a6cec62d5f55443bb9918950ae90f0ccec3e2fddf55a0747b6b",
+        "pointer": "/experience/rules/4"
+      },
+      {
+        "rule_id": "R06",
+        "source_sha256": "4b74023fc29f7a6cec62d5f55443bb9918950ae90f0ccec3e2fddf55a0747b6b",
+        "pointer": "/experience/rules/5"
+      },
+      {
+        "rule_id": "R07",
+        "source_sha256": "4b74023fc29f7a6cec62d5f55443bb9918950ae90f0ccec3e2fddf55a0747b6b",
+        "pointer": "/experience/rules/6"
+      },
+      {
+        "rule_id": "R08",
+        "source_sha256": "4b74023fc29f7a6cec62d5f55443bb9918950ae90f0ccec3e2fddf55a0747b6b",
+        "pointer": "/experience/rules/7"
+      }
+    ],
+    "notes": [
+      "V7 origin: success",
+      "Reflection operation: new",
+      "Reflection targets: ",
+      "Not approved; training acceptance or expert summary does not verify cross-task effectiveness"
+    ],
+    "outcome_refs": []
+  },
+  "body_sha256": "f217505a63cdcd8f5b2c842c1c2fbd3652798275f82d4974f7a3f2e37559615a",
+  "sha256": "814ebfe54b3d785646af4ada4468654a8879d9c80d773aa64e071792961fc4b7"
+}
