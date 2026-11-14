@@ -14,7 +14,7 @@ from .candidate_files import capture, inventory, write_files
 from .core import EvidenceError, canonical, sha
 from ._session_runtime.model_settings import resolve_profile, identity
 
-VERSION = 'tempoevo-trajectory-v7'
+VERSION = 'tempoevo-trajectory-v8'
 MODEL = identity(resolve_profile())
 CONDITIONS = ('baseline', 'contract', 'bm25', 'structured', 'fixed_contract')
 LIMITS = dict(routing=dict(requests=12, seconds=600), contract=dict(requests=12, seconds=600), action=dict(requests=24, seconds=600),
@@ -94,6 +94,11 @@ class Trajectory:
     def prepare(self, config):
         if self.root.exists():raise EvidenceError('Use a new trajectory root')
         cfg=deepcopy(config)
+        policy=cfg.get('learning_policy','frozen')
+        if policy not in ('frozen','online'):raise EvidenceError('Invalid learning policy')
+        if policy=='online' and (cfg.get('mode')!='learning' or cfg.get('condition') not in ('structured','bm25') or not cfg.get('online_memory') or not memory.text(cfg.get('task_id'))):raise EvidenceError('Online memory requires memory-enabled learning and an explicit training pool')
+        if policy!='online' and cfg.get('online_memory'):raise EvidenceError('Frozen/testing trajectories cannot access an online pool')
+        cfg['learning_policy']=policy
         for key in ('task','candidate','store','mode','condition','visible_evaluator'):
             if key not in cfg:raise EvidenceError('Missing '+key)
         if cfg['mode'] not in ('learning','testing') or cfg['condition'] not in CONDITIONS:raise EvidenceError('Invalid mode/condition')
@@ -120,6 +125,10 @@ class Trajectory:
         if self.root==source or source in self.root.parents:raise EvidenceError('Trajectory must be outside candidate')
         files,_=capture(source);sources={k:v.decode('utf-8') for k,v in files.items()}
         store=Path(cfg['store']).resolve()
+        if policy=='online':
+            pool=Path(cfg['online_memory']).resolve()
+            if any(pool==p or pool in p.parents or p in pool.parents for p in (store,source,self.root)):raise EvidenceError('Online pool must be separate from long-term store and trajectory/candidate')
+            cfg['online_memory']=str(pool)
         bank=approval.validate_snapshot(store,cfg['memory_snapshot']) if cfg.get('memory_snapshot') else approval.freeze(store)
         from .preanalysis import analyze_candidate
         if cfg.get('backend',{}).get('kind')=='docker':
@@ -177,16 +186,21 @@ class Trajectory:
         self.save('binding.json',dict(protocol=sha((self.root/'protocol.json').read_bytes()),
             bank=sha((self.root/'memory-snapshot.json').read_bytes()),ast=sha((self.root/'ast-evidence.json').read_bytes()),
             implementation=sha(Path(__file__).read_bytes()),evaluators=evaluator_hashes,
-            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name('experience_reflection.py'),Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
+            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name('online_memory.py'),Path(__file__).with_name('experience_reflection.py'),Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
         self.report();return self.state()
 
     def verify(self):
         p=read(self.root/'protocol.json')
-        if p.get('schema_version')!=VERSION:raise EvidenceError('Historical protocol is read-only; prepare a new V7 root')
+        if p.get('schema_version')!=VERSION:raise EvidenceError('Historical protocol is read-only; prepare a new V8 root')
         binding=read(self.root/'binding.json')
         for name,key in [('protocol.json','protocol'),('memory-snapshot.json','bank'),('ast-evidence.json','ast')]:
             if sha((self.root/name).read_bytes())!=binding[key]:raise EvidenceError('Frozen V4 input drift')
         if sha(Path(__file__).read_bytes())!=binding['implementation']:raise EvidenceError('Frozen implementation changed')
+        online_digest=self.state().get('online_snapshot_sha256')
+        if online_digest:
+            from .online_memory import validate_snapshot
+            snapshot=validate_snapshot(read(self.root/'online-snapshot.json'))
+            if snapshot['sha256']!=online_digest:raise EvidenceError('Online task snapshot changed')
         for path,digest in dict(binding['evaluators'],**binding['runtime']).items():
             if sha(Path(path).read_bytes())!=digest:raise EvidenceError('Frozen evaluator/runtime drift')
         if inventory(capture(self.root/'original')[0])!=p['original_inventory']:raise EvidenceError('Original code drift')
@@ -199,7 +213,7 @@ class Trajectory:
         return self.status('cancelled',cancelled=True,stop_reason='cancelled')
 
     def retrieve(self,p):
-        bank=read(self.root/'memory-snapshot.json');bundles=[e['bundle'] for e in bank['entries']]
+        bank=p['memory_snapshot'];bundles=[e['bundle'] for e in bank['entries']]
         condition=p['condition'];result=dict(selected_sha256s=[],experience_text=None,reason='condition_has_no_memory')
         if condition=='bm25':
             hits=memory.search_records(bundles,p['task'],limit=5,include_all=True)['results']
@@ -211,6 +225,9 @@ class Trajectory:
             review=dict(input_sha256=routing.input_digest(a,p['task'],sources),reviewer='unreviewed_model_analysis',approved=False,
                 blocking_issues=[],scope_unknowns=[],evidence=[],reason='Prepared source-bound routing metadata')
             result=updates.route_view(dict(task=p['task'],sources=sources,analysis=a,review=review),bundles)
+        online={r['bundle']['sha256'] for r in read(self.root/'online-snapshot.json')['entries']} if p.get('learning_policy')=='online' else set()
+        result['provisional_sha256s']=[c for c in result.get('selected_sha256s',[]) if c in online]
+        if result['provisional_sha256s']:result['experience_text']='TRAINING ONLY: includes unreviewed provisional guidance with unknown effectiveness. Check against public task/source evidence.\n'+result['experience_text']
         self.save('delivery.json',result);return result
 
     def _step(self,p,backend,key,kind,payload):
@@ -300,6 +317,17 @@ class Trajectory:
         sources={k:v.decode() for k,v in capture(self.root/'original')[0].items()}
         public=dict(task=p['task'],sources=sources,ast=read(self.root/'ast-evidence.json'))
         try:
+            if p['learning_policy']=='online':
+                from . import online_memory
+                path=self.root/'online-snapshot.json'
+                if not path.exists():
+                    if self.state()['stages']:raise EvidenceError('Cannot resnapshot a started online trajectory')
+                    snapshot=online_memory.capture(Path(p['online_memory']),self.root,p.get('task_id'))
+                    self.save('online-snapshot.json',snapshot);self.status(self.state()['status'],online_snapshot_sha256=snapshot['sha256'])
+                else:
+                    snapshot=online_memory.validate_snapshot(read(path))
+                    if self.state().get('online_snapshot_sha256')!=snapshot['sha256']:raise EvidenceError('Unbound online snapshot')
+                p=deepcopy(p);p['memory_snapshot']['entries']+=snapshot['entries']
             if not (self.root/'delivery.json').exists() and p['condition'] in ('structured','fixed_contract') and not p.get('routing_analysis'):
                 from . import experience_routing as routing
                 proposal=self._step(p,backend,'routing','routing',dict(public,schema=taxonomy.analysis_schema(),
@@ -376,6 +404,9 @@ class Trajectory:
                     acceptance_passed=accepted if p['mode']=='learning' else None,training_result=acceptance,
                     feedback=feedback,candidate_sources=candidate,candidate_inventory=inventory(capture(directory)[0])))
                 self.save('state.json',state)
+                if p['learning_policy']=='online':
+                    from .online_memory import usage
+                    usage(Path(p['online_memory']),self.root,number,delivery.get('provisional_sha256s',[]),accepted)
                 if accepted:break
                 self.status('revision_pending');state=self.state()
             state=self.state();last=state['attempts'][-1]
@@ -403,6 +434,7 @@ class Trajectory:
                     self.save('candidate-pool/success.json',dict(status='awaiting_content_review',origin='success',
                         task=p['task'],evidence=evidence,training_accepted=True,final_training_acceptance=self.state()['final_acceptance'],source_sha256=p['source_sha256'],initial_contract=read(self.root/'initial-contract.json') if p['condition']!='baseline' else None,
                         final_contract=self.state()['contract'],trajectory=self.state()['attempts'],experience=learned['experience'],reflection_update=update,related_experiences=related,effectiveness_verified=False))
+                    self._enqueue_online(p,'success')
                 elif len(state['attempts'])==3 and all(a['acceptance_passed'] is False for a in state['attempts']):
                     self.save('expert-summary-task.json',dict(status='awaiting_expert_summary',task=p['task'],evidence=evidence,
                         initial_contract=read(self.root/'initial-contract.json') if p['condition']!='baseline' else None,final_contract=self.state()['contract'],
@@ -433,7 +465,15 @@ class Trajectory:
         self.status('awaiting_content_review')
         self.save('candidate-pool/expert.json',dict(status='awaiting_content_review',origin='expert_failure',summary=task,
             experience=summary['experience'],reflection_update=update,related_experiences=task.get('related_experiences',[]),effectiveness_verified=False))
+        self._enqueue_online(p,'expert')
         return task
+
+    def _enqueue_online(self,p,name):
+        if p.get('learning_policy')!='online':return
+        from .online_memory import append
+        record=read(self.root/'candidate-pool'/(name+'.json'))
+        result=append(Path(p['online_memory']),self.root,p.get('task_id'),record)
+        self.save('candidate-pool/'+name+'-online.json',result)
 
     def publish_candidate(self, name):
         """Materialize an immutable unapproved record for the existing human review UI."""
@@ -454,11 +494,12 @@ class Trajectory:
         self.save(source.relative_to(self.root),stable_record);code=sha(source.read_bytes())
         rules=[dict(id='R%02d'%i,**rule) for i,rule in enumerate(experience['rules'],1)]
         parent=next((b for b in record['related_experiences'] if b['sha256']==next(iter(update['target_sha256s']),None)),None)
-        payload=dict(schema_version=memory.BUNDLE_VERSION_V2,id=parent['id'] if parent else 'v7-'+sha(str(self.root).encode())[:16]+'-'+name,version='reflection-'+code[:16],parent_sha256=parent['sha256'] if parent else None,
+        if parent and not any(b['sha256']==parent['sha256'] for b in memory.records(p['store'])):parent=None
+        payload=dict(schema_version=memory.BUNDLE_VERSION_V2,id=parent['id'] if parent else 'v8-'+sha(str(self.root).encode())[:16]+'-'+name,version='reflection-'+code[:16],parent_sha256=parent['sha256'] if parent else None,
             taxonomy_version=__import__('temporal_contract_analyzer.taxonomy',fromlist=['VERSION']).VERSION,
             labels=experience['labels'],requires=experience['requires'],excludes=experience['excludes'],rules=rules,
             review=dict(status='candidate',kind='human' if name=='expert' else 'ai_assisted',source_sha256=code,limitations=experience.get('limitations',[])),
-            audit=dict(sources=[dict(path=str(source),sha256=code)],rule_links=[dict(rule_id=r['id'],source_sha256=code,pointer='/experience/rules/'+str(i)) for i,r in enumerate(rules)],notes=['V7 origin: '+record['origin'],'Reflection operation: '+update['operation'],'Reflection targets: '+','.join(update['target_sha256s']),'Not approved; training acceptance or expert summary does not verify cross-task effectiveness'],outcome_refs=[]))
+            audit=dict(sources=[dict(path=str(source),sha256=code)],rule_links=[dict(rule_id=r['id'],source_sha256=code,pointer='/experience/rules/'+str(i)) for i,r in enumerate(rules)],notes=['V8 origin: '+record['origin'],'Reflection operation: '+update['operation'],'Reflection targets: '+','.join(update['target_sha256s']),'Not approved; training acceptance or expert summary does not verify cross-task effectiveness'],outcome_refs=[]))
         with (Path(p['store'])/'decision.lock').open('a') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX)
             expected=memory.seal(payload)
@@ -475,7 +516,7 @@ class Trajectory:
             path=self.root/'stages'/row['key']/'result.json'
             if path.exists() and 'requests' not in row:
                 result=read(path);row['measured_requests']=result.get('requests');row['measured_tokens']=result.get('tokens')
-        result=dict(protocol=p['schema_version'],model=p['model'],model_profile=p['model_profile'],mode=p['mode'],condition=p['condition'],status=state['status'],
+        result=dict(protocol=p['schema_version'],learning_policy=p['learning_policy'],online_snapshot_sha256=state.get('online_snapshot_sha256'),model=p['model'],model_profile=p['model_profile'],mode=p['mode'],condition=p['condition'],status=state['status'],
             reflection_updates=[dict(name=name,update=read(self.root/'candidate-pool'/(name+'.json')).get('reflection_update'),
                 publication_kind=read(self.root/'candidate-pool'/(name+'.json')).get('publication_kind')) for name in ('success','expert') if (self.root/'candidate-pool'/(name+'.json')).exists()],
             transport_executions=sum(len(s.get('executions',[])) for s in state['stages']),

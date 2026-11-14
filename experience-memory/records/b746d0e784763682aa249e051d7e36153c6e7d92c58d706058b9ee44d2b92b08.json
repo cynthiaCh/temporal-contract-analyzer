@@ -1,0 +1,136 @@
+{
+  "schema_version": "experience-bundle-v2",
+  "id": "v5-465578687a8544eb-success",
+  "version": "reflection-a2ccaa737b3ec6ae",
+  "parent_sha256": "4735b1b896e729f3de094a31b0acd64dc177548b53f0ffa1364beac84adb7338",
+  "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+  "labels": [
+    "O",
+    "L",
+    "I",
+    "A"
+  ],
+  "requires": [
+    "deferred_batch",
+    "shared_lifetime",
+    "inline_reentry",
+    "effect_lifetimes"
+  ],
+  "excludes": [
+    "different_ownership_policy",
+    "discard_boundary_policy"
+  ],
+  "rules": [
+    {
+      "id": "R01",
+      "body": "Apply when document edits become deferred, persistent buffers outlive view subscriptions, and synchronous saves can navigate. Establish ownership and departure policy from each task's source. README.md states: \"A workspace document buffer persists independently of the current view badge.\" docs/host-api.md states: \"A store listener may call navigation synchronously.\" A mandatory departure flush is not an applicability prerequisite for the batching and ownership guidance.",
+      "category": "applicability"
+    },
+    {
+      "id": "R02",
+      "body": "Replace each document's pending value and restart its quiet interval on each accepted edit. Deliver only the latest value after that interval, including valid empty text, and retain reuse for subsequent bursts. TASK states: \"Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\\ninterval, write only the latest text in that editing burst. Subsequent bursts\\nmust continue to save.\" src/workflow.go implements replacement and scheduling with \"t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\".",
+      "category": "event_relation"
+    },
+    {
+      "id": "R03",
+      "body": "Consume and clear a completed batch before invoking callback-capable work. Nested edits must remain fresh work and must not be erased by the outer flush. Preserve the ordering in src/workflow.go: \"if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\" followed by \"if text!=nil { t.work(*text) }\".",
+      "category": "event_relation"
+    },
+    {
+      "id": "R04",
+      "body": "Bind pending text to its originating document through the store-owned buffer, rather than resolving the current view when the timer fires. Subscription detachment must not discard persistent document work. docs/host-api.md states: \"Document buffers are owned by the store BufferBank, while Badge owns only a live subscription.\" src/workflow.go binds saving with \"NewTrailing(env,120,func(text string){env.Write(id,text)})\" and limits badge detachment to \"func(b *Badge)detach(){b.env.Store().Stop(b.token)}\". Preserve the no-current-view edit guard and same-document buffer reuse.",
+      "category": "preservation"
+    },
+    {
+      "id": "R05",
+      "body": "When departure performs a synchronous save, retire the captured departing view and its subscription before that save can reenter. Do not let an older navigation overwrite a later navigation started by a callback. Preserve the existing generation check in src/workflow.go: \"w.generation++;request:=w.generation;w.retire();if true&&request!=w.generation{return}\". Complete cleanup for captured resources without clearing newer view state or subscriptions.",
+      "category": "event_relation"
+    },
+    {
+      "id": "R06",
+      "body": "Preserve synchronous public operations, document identities and text, and original status payloads. TASK states: \"Preserve the editor's other behavior and public interfaces.\" docs/host-api.md states: \"Store read/write/subscribe is synchronous\" and \"All source identities/text and status payloads retain original semantics.\" In src/workflow.go, the badge forwards the original event through \"env.Output(\\\"status\\\",e)\".",
+      "category": "preservation"
+    },
+    {
+      "id": "R07",
+      "body": "Keep transient preview policy separate from persistent document policy. TASK states: \"The adjacent search preview is outside this maintenance change.\" Preserve src/workflow.go's \"NewTrailing(env,40,func(query string){env.Output(\\\"preview\\\",Value{\\\"query\\\":query})})\" and \"func(p *Preview)Hide(){p.task.Cancel()}\". Hidden preview work is discarded, while later queries remain usable.",
+      "category": "exclusion"
+    },
+    {
+      "id": "R08",
+      "body": "Use controlled timers and synchronous listeners to check no early write, latest-value delivery, restarted deadlines, subsequent bursts, empty text, original-document binding, and persistence across switch/close/dispose and reopening. Check nested open/close during saves, newly queued edits during callbacks, subscription cleanup, original status payloads, and preview delay/cancellation/reuse. Derive expected outcomes from TASK's \"write only the latest text in that editing burst\" and docs/host-api.md's \"A store listener may call navigation synchronously.\" Require persistence before departure returns only when that timing is independently specified by the task or behavioral source.",
+      "category": "verification"
+    }
+  ],
+  "review": {
+    "status": "candidate",
+    "kind": "ai_assisted",
+    "source_sha256": "a2ccaa737b3ec6ae4586b5598accade3107be3a0c76bbc856e293dfbf898fbc3",
+    "limitations": [
+      "The original task and descriptive public source do not establish that pending edits must be flushed before departure returns. Preserve pending document work without treating the observed departure timing as a requirement.",
+      "Attempt 1 passed the supplied observations with departure flushing. This supports that candidate only; it does not establish that flushing is required, prove causality, or demonstrate cross-task effectiveness.",
+      "Separate environments sharing a Store may inherit the first environment captured by BufferBank. Their timer and write interchangeability is unspecified.",
+      "Submission results and visit-bound confirmation rules from related experiences have no corresponding interface in this source and are not transferred.",
+      "No files were modified and no scorer, reference implementation, or hidden tests were accessed."
+    ]
+  },
+  "audit": {
+    "sources": [
+      {
+        "path": "/home/sribd/Downloads/wangshu/tempoevo-v7-with-experience-top25-20261114_105943/draft-autosave-handoff-vue3-port-go/trajectory/candidate-pool/success-evidence.json",
+        "sha256": "a2ccaa737b3ec6ae4586b5598accade3107be3a0c76bbc856e293dfbf898fbc3"
+      }
+    ],
+    "rule_links": [
+      {
+        "rule_id": "R01",
+        "source_sha256": "a2ccaa737b3ec6ae4586b5598accade3107be3a0c76bbc856e293dfbf898fbc3",
+        "pointer": "/experience/rules/0"
+      },
+      {
+        "rule_id": "R02",
+        "source_sha256": "a2ccaa737b3ec6ae4586b5598accade3107be3a0c76bbc856e293dfbf898fbc3",
+        "pointer": "/experience/rules/1"
+      },
+      {
+        "rule_id": "R03",
+        "source_sha256": "a2ccaa737b3ec6ae4586b5598accade3107be3a0c76bbc856e293dfbf898fbc3",
+        "pointer": "/experience/rules/2"
+      },
+      {
+        "rule_id": "R04",
+        "source_sha256": "a2ccaa737b3ec6ae4586b5598accade3107be3a0c76bbc856e293dfbf898fbc3",
+        "pointer": "/experience/rules/3"
+      },
+      {
+        "rule_id": "R05",
+        "source_sha256": "a2ccaa737b3ec6ae4586b5598accade3107be3a0c76bbc856e293dfbf898fbc3",
+        "pointer": "/experience/rules/4"
+      },
+      {
+        "rule_id": "R06",
+        "source_sha256": "a2ccaa737b3ec6ae4586b5598accade3107be3a0c76bbc856e293dfbf898fbc3",
+        "pointer": "/experience/rules/5"
+      },
+      {
+        "rule_id": "R07",
+        "source_sha256": "a2ccaa737b3ec6ae4586b5598accade3107be3a0c76bbc856e293dfbf898fbc3",
+        "pointer": "/experience/rules/6"
+      },
+      {
+        "rule_id": "R08",
+        "source_sha256": "a2ccaa737b3ec6ae4586b5598accade3107be3a0c76bbc856e293dfbf898fbc3",
+        "pointer": "/experience/rules/7"
+      }
+    ],
+    "notes": [
+      "V7 origin: success",
+      "Reflection operation: revise",
+      "Reflection targets: 4735b1b896e729f3de094a31b0acd64dc177548b53f0ffa1364beac84adb7338",
+      "Not approved; training acceptance or expert summary does not verify cross-task effectiveness"
+    ],
+    "outcome_refs": []
+  },
+  "body_sha256": "2232cddd571ec65d38cc9c13478956eef2b2bc80f902c3eada2ccaf3128b4c9f",
+  "sha256": "b746d0e784763682aa249e051d7e36153c6e7d92c58d706058b9ee44d2b92b08"
+}

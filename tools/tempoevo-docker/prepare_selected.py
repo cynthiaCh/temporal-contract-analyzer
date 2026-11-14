@@ -10,8 +10,12 @@ parser.add_argument('--model-config',type=Path,help='Model profiles JSON file')
 parser.add_argument('--model-profile',help='Named model profile; defaults to the configuration default')
 parser.add_argument('--condition',choices=['structured','contract'],default='structured',help='Contract keeps Auto-Contract but never reads cross-task memory')
 parser.add_argument('--training-feedback-by-family',type=Path,help='Frozen family-to-public-feedback mapping JSON')
+parser.add_argument('--learning-policy',choices=['frozen','online'],default='frozen')
+parser.add_argument('--online-memory',type=Path,help='Training-only shared provisional memory directory')
 args=parser.parse_args()
 if args.start_rank<1 or args.limit<1:parser.error('--start-rank and --limit must be positive')
+if args.learning_policy=='online' and (args.condition!='structured' or not args.online_memory):parser.error('Online learning requires structured condition and --online-memory')
+if args.learning_policy=='frozen' and args.online_memory:parser.error('Frozen runs cannot read an online pool')
 repo=Path(__file__).resolve().parents[2];sys.path.insert(0,str(repo))
 from temporal_contract_analyzer.case_catalog import bench_root
 bench=bench_root()
@@ -64,6 +68,8 @@ for row in rows:
   entry['controls']=controls
   config=dict(task_id=cid,task=c['task'],candidate=str(r/'public'),store=str(repo/'experience-memory'),mode='learning',condition='structured',max_attempts=3,model=MODEL,binary=shutil.which('codex'),backend=dict(kind='docker',solver_image=solver,grader_image=grader,solver_node='/runtime/node16/bin/node'),memory_snapshot=bank,visible_evaluator=visible,training_evaluator=gold,required_visible_checks=True,training_feedback=feedback,protected_paths=['README.md','VISIBLE_CHECKS.md'])
   config.update(model=identity(settings),model_profile=settings['profile'],condition=args.condition,training_feedback=family_feedback.get(family,feedback))
+  config['learning_policy']=args.learning_policy
+  if args.online_memory:config['online_memory']=str(args.online_memory.resolve())
   if args.model_config:config['model_config']=str(args.model_config.resolve())
   (r/'config.json').write_text(json.dumps(config,indent=2)+'\n');Trajectory(r/'trajectory').prepare(config);entry['status']='prepared'
  except Exception as e:entry.update(status='preflight_failed',error=repr(e))

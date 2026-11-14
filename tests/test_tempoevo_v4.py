@@ -180,7 +180,7 @@ class V4Tests(unittest.TestCase):
         with patch('temporal_contract_analyzer.execution_backend.NativeBackend.execute',return_value=fake) as call:
             result=adapter.execute('diagnosis',payload,MODEL,dict(requests=12,seconds=600),directory)
         self.assertTrue(result['valid']);self.assertEqual(call.call_args[0][1],'analysis')
-        self.assertEqual(call.call_args[0][0]['execution_policy'],'tempoevo-trajectory-v7')
+        self.assertEqual(call.call_args[0][0]['execution_policy'],'tempoevo-trajectory-v8')
         self.assertEqual(result['requests'],1)
 
     def test_native_evaluator_writes_artifacts_outside_the_frozen_candidate(self):

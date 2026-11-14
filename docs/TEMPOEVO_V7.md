@@ -1,6 +1,6 @@
 # TempoEvo V7: reflection as reviewed experience maintenance
 
-New execution uses `tempoevo-trajectory-v7`. V1–V6 batches remain read-only. V7
+V7 describes frozen reflection maintenance. New execution uses [V8](TEMPOEVO_V8.md); V7 roots are read-only. V7 used `tempoevo-trajectory-v7`. V1–V6 batches remain read-only. V7
 retains V6 model profiles, bounded transport recovery, request/time budgets and
 V5 training-versus-testing acceptance boundaries.
 

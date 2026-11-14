@@ -110,7 +110,7 @@ class NativeBackend:
         pass
 
     def execute(self, protocol, role, prompt, schema, directory):
-        if protocol.get('execution_policy') != 'tempoevo-trajectory-v7':raise EvidenceError('Historical execution retired; only V7 sessions may execute')
+        if protocol.get('execution_policy') != 'tempoevo-trajectory-v8':raise EvidenceError('Historical execution retired; only V8 sessions may execute')
         if role not in ROLES:raise EvidenceError('Unsupported shared execution role')
         logical_role=role
         if not protocol.get('boundary_preflight_complete'):self.preflight(protocol)
