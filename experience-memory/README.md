@@ -1,5 +1,23 @@
 # Research experience memory
 
+**The current experience file is [`experiences.json`](experiences.json).**
+It contains all twelve experiences, their Chinese titles, applicability,
+recommendations, counterexamples and inline Iris acceptance. Edit this file
+directly. No separate decision, case, source or version files are generated.
+The review launcher opens a simple view of this file.
+
+Use the organized store for a new review or retrieval snapshot:
+
+```bash
+python3 -B -m temporal_contract_analyzer experience-memory review --store experience-memory/experiences.json
+python3 -B -m temporal_contract_analyzer experience-memory freeze --store experience-memory/experiences.json
+```
+
+Content acceptance records the user's decision under Iris; it does not establish
+cross-task effectiveness. Pre-existing historical records remain below and are
+not the current experience file. The extra organization and per-version acceptance
+files generated during this cleanup have been removed.
+
 This is the shared **research-only** experience store. It does not replace a
 production registry or alter existing experiment prompts.
 

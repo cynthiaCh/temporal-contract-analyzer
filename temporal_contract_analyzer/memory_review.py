@@ -63,7 +63,7 @@ class ReviewServer(ThreadingHTTPServer):
 
     def __init__(self, store, port=0):
         self.store = Path(store).expanduser().resolve()
-        if not (self.store/'memory.json').is_file():
+        if not self.store.is_file() and not (self.store/'memory.json').is_file():
             raise EvidenceError('Choose an existing experience memory store')
         memory.records(self.store)
         super().__init__(('127.0.0.1', port), ReviewHandler)
@@ -75,6 +75,10 @@ class ReviewHandler(LocalHandler):
         url = urlsplit(self.path)
         parts = url.path.strip('/').split('/')
         query = parse_qs(url.query)
+        if self.server.store.is_file() and url.path == '/':
+            from .compact_experience import page
+            self.send(page(self.server.store), content_type='text/html; charset=utf-8', report=True)
+            return
         assets = {'/': 'memory-review.html', '/memory-review.js': 'memory-review.js',
                   '/memory-review.css': 'memory-review.css'}
         if url.path in assets:
@@ -118,7 +122,7 @@ class ReviewHandler(LocalHandler):
                 source = next((s for s in bundle['audit']['sources'] if s['sha256'] == code), None)
                 if source is None:
                     raise EvidenceError('Evidence must belong to this experience version')
-                raw = (self.server.store/'sources'/code).read_text(encoding='utf-8')
+                raw = memory.source_bytes(self.server.store, code).decode('utf-8')
                 pointer = query.get('pointer', [''])[0]
                 value = memory.json_pointer(raw, pointer)
                 text = raw if pointer == '' else json.dumps(value, ensure_ascii=False, indent=2)
@@ -142,6 +146,8 @@ class ReviewHandler(LocalHandler):
             self.send({'error': 'Not found'}, 404)
 
     def post(self, data):
+        if self.server.store.is_file():
+            raise EvidenceError('Edit experience content and review directly in the single JSON file')
         parts = urlsplit(self.path).path.strip('/').split('/')
         if len(parts)==4 and parts[:2]==['api','reflection-proposals'] and parts[3]=='decision':
             from .experience_reflection import review_evidence

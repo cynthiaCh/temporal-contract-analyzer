@@ -32,6 +32,10 @@ def _acceptance(rows, code):
 
 
 def _index(store, bundles, rows):
+    if Path(store).is_file():
+        accepted = {r['candidate_sha256'] for r in rows if r['decision']=='accept'}
+        return dict(schema_version=ACTIVE_VERSION, history=[],
+                    versions={b['id']:code for code,b in bundles.items() if code in accepted})
     path = Path(store)/'active.json'
     if not path.is_file():
         raise EvidenceError('Explicit active.json is missing; migrate-active with an exact reviewed version mapping')
@@ -180,6 +184,12 @@ def activate(store, code, expected_current, actor, reason='', *, rollback=False)
 
 def decisions(store):
     store = Path(store)
+    if store.is_file():
+        from .compact_experience import materialize
+        bundles, rows, _ = materialize(store)
+        for bundle, row in zip(bundles, rows):
+            validate_decision(row, bundle)
+        return rows
     bundles = {b['sha256']:b for b in memory.records(store)}
     result = []
     for path in sorted((store/'decisions').glob('*.json')):
@@ -245,6 +255,8 @@ def validate_decision(row, bundle, bundles=None, prior=None):
 def decide(store, candidate_sha256, request, report_sha256=None, *, activate_version=False,
            expected_current=UNSPECIFIED):
     """Operator entry point. Never called by automatic reflection or repair."""
+    if Path(store).is_file():
+        raise EvidenceError('Edit experience content and review directly in the single JSON file')
     fields = {'reviewer', 'decision', 'reason', 'scope', 'rules'}
     if not isinstance(request, dict) or not fields<=set(request) or set(request)-fields-{'inherit_from','auto_enable','request_id'}:
         raise EvidenceError('Expert request must contain reviewer, decision, reason, scope and per-rule findings')
@@ -369,7 +381,7 @@ def validate_snapshot(store, snapshot):
     for entry in snapshot['entries']:
         memory.object_fields(entry, {'bundle', 'expert_decision'}, 'active snapshot entry')
         bundle, decision = entry['bundle'], entry['expert_decision']
-        memory.validate(bundle, lambda code:(Path(store)/'sources'/code).read_bytes())
+        memory.validate(bundle, lambda code:memory.source_bytes(store, code))
         if history is None:
             history = decisions(store)
             bundles = {b['sha256']:b for b in memory.records(store)}

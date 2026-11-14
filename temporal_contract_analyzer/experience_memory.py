@@ -175,6 +175,9 @@ def initialize(store):
 
 def records(store):
     store = Path(store)
+    if store.is_file():
+        from .compact_experience import materialize
+        return materialize(store)[0]
     if json.loads((store/'memory.json').read_text(encoding='utf-8')) != dict(
             schema_version=STORE_VERSION, scope='research_only', automatic_evolution=False):
         raise EvidenceError('Invalid research memory header')
@@ -209,6 +212,16 @@ def records(store):
 def tips(bundles):
     parents = {b['parent_sha256'] for b in bundles}
     return [b for b in bundles if b['sha256'] not in parents]
+
+
+def source_bytes(store, code):
+    if Path(store).is_file():
+        from .compact_experience import materialize
+        blobs = materialize(store)[2]
+        if code not in blobs:
+            raise EvidenceError('Single-file experience content changed')
+        return blobs[code]
+    return (Path(store)/'sources'/code).read_bytes()
 
 
 def add(store, payload, source_paths=()):
