@@ -3,6 +3,7 @@ import json
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 import re
+import threading
 from uuid import uuid4
 import webbrowser
 from urllib.parse import parse_qs, urlsplit
@@ -66,6 +67,7 @@ class ReviewServer(ThreadingHTTPServer):
         if not self.store.is_file() and not (self.store/'memory.json').is_file():
             raise EvidenceError('Choose an existing experience memory store')
         memory.records(self.store)
+        self.review_lock = threading.Lock()
         super().__init__(('127.0.0.1', port), ReviewHandler)
         self.url = 'http://127.0.0.1:' + str(self.server_address[1])
 
@@ -77,10 +79,10 @@ class ReviewHandler(LocalHandler):
         query = parse_qs(url.query)
         if self.server.store.is_file() and url.path == '/':
             from .compact_experience import page
-            self.send(page(self.server.store), content_type='text/html; charset=utf-8', report=True)
+            self.send(page(self.server.store), content_type='text/html; charset=utf-8')
             return
         assets = {'/': 'memory-review.html', '/memory-review.js': 'memory-review.js',
-                  '/memory-review.css': 'memory-review.css'}
+                  '/memory-review.css': 'memory-review.css', '/compact-review.js': 'compact-review.js'}
         if url.path in assets:
             name = assets[url.path]
             kind = 'text/html' if name.endswith('.html') else ('text/javascript' if name.endswith('.js') else 'text/css')
@@ -147,7 +149,13 @@ class ReviewHandler(LocalHandler):
 
     def post(self, data):
         if self.server.store.is_file():
-            raise EvidenceError('Edit experience content and review directly in the single JSON file')
+            if urlsplit(self.path).path != '/api/compact-review':
+                self.send({'error': 'Not found'}, 404)
+                return
+            from .compact_experience import save_review
+            with self.server.review_lock:
+                self.send(save_review(self.server.store, data))
+            return
         parts = urlsplit(self.path).path.strip('/').split('/')
         if len(parts)==4 and parts[:2]==['api','reflection-proposals'] and parts[3]=='decision':
             from .experience_reflection import review_evidence

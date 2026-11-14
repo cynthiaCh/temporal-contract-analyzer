@@ -2,11 +2,15 @@
 import json
 from pathlib import Path
 import tempfile
+import threading
 import unittest
+from urllib.error import HTTPError
+from urllib.request import build_opener, ProxyHandler, Request
 
 from temporal_contract_analyzer import compact_experience as compact
 from temporal_contract_analyzer import experience_memory as memory, experience_approval as approval
 from temporal_contract_analyzer.core import EvidenceError
+from temporal_contract_analyzer.memory_review import ReviewServer
 
 
 class CompactExperienceTests(unittest.TestCase):
@@ -32,6 +36,7 @@ class CompactExperienceTests(unittest.TestCase):
         snapshot=approval.freeze(self.path)
         self.assertEqual(approval.validate_snapshot(self.path, snapshot), snapshot)
         self.assertEqual(approval.active(self.path)[0]['bundle'], records[0])
+        self.assertEqual(memory.records(self.path.resolve()),records)
         self.assertEqual(list(self.path.parent.iterdir()), [self.path])
 
     def test_unaccepted_content_is_not_delivered(self):
@@ -61,6 +66,99 @@ class CompactExperienceTests(unittest.TestCase):
         self.assertIn(str(self.path), html)
         self.assertIn('Entry binding &lt;example&gt;', html)
         self.assertNotIn('Entry binding <example>', html)
+
+    def request(self, item_id='entry-binding', decision='accept'):
+        value=compact.load(self.path)
+        item=next(item for item in value['experiences'] if item['id']==item_id)
+        bundle=next(b for b in memory.records(self.path) if b['id']==item_id)
+        return dict(id=item_id, expected_record=bundle['sha256'],
+                    expected_review=compact.review_for(value,item),
+                    reviewer='Synthetic reviewer', decision=decision)
+
+    def per_item_reviews(self):
+        review=self.value.pop('review')
+        for item in self.value['experiences']:
+            item['review']=dict(review)
+        self.save()
+
+    def test_new_item_stays_pending_and_does_not_enter_retrieval(self):
+        self.per_item_reviews()
+        new=dict(self.value['experiences'][0], id='pending-item')
+        del new['review']
+        self.value['experiences'].insert(0,new)
+        self.save()
+        self.assertEqual([r['bundle']['id'] for r in approval.freeze(self.path)['entries']], ['entry-binding'])
+        self.assertEqual(len(approval.decisions(self.path)),1)
+        self.assertIn('待审核',compact.page(self.path).decode())
+        compact.save_review(self.path,self.request('pending-item'))
+        self.assertEqual(len(approval.freeze(self.path)['entries']),2)
+        self.assertEqual(list(self.path.parent.iterdir()),[self.path])
+
+    def test_review_changes_only_selected_item_and_reject_removes_delivery(self):
+        self.per_item_reviews()
+        other=dict(self.value['experiences'][0],id='other')
+        self.value['experiences'].append(other)
+        self.save()
+        result=compact.save_review(self.path,self.request(decision='reject'))
+        saved=compact.load(self.path)
+        self.assertEqual(saved['experiences'][1],other)
+        self.assertEqual(result['review']['decision'],'reject')
+        self.assertEqual([r['bundle']['id'] for r in approval.freeze(self.path)['entries']],['other'])
+        self.assertEqual(list(self.path.parent.iterdir()),[self.path])
+
+    def test_stale_or_invalid_review_does_not_write(self):
+        self.per_item_reviews()
+        request=self.request()
+        compact.save_review(self.path,self.request(decision='revise'))
+        before=self.path.read_bytes()
+        with self.assertRaises(EvidenceError): compact.save_review(self.path,request)
+        request=self.request();request['reviewer']=' '
+        with self.assertRaises(EvidenceError): compact.save_review(self.path,request)
+        request=self.request();request['decision']='pending'
+        with self.assertRaises(EvidenceError): compact.save_review(self.path,request)
+        self.assertEqual(self.path.read_bytes(),before)
+        request=self.request()
+        self.value=compact.load(self.path)
+        self.value['experiences'][0]['event_relation']='Updated recommendation.'
+        self.save()
+        before=self.path.read_bytes()
+        with self.assertRaises(EvidenceError): compact.save_review(self.path,request)
+        self.assertEqual(self.path.read_bytes(),before)
+
+    def test_existing_whole_file_review_is_preserved_when_saving_one_item(self):
+        self.value['experiences'].append(dict(self.value['experiences'][0],id='other'))
+        self.save()
+        original_review=dict(self.value['review'])
+        compact.save_review(self.path,self.request(decision='revise'))
+        saved=compact.load(self.path)
+        self.assertNotIn('review',saved)
+        self.assertEqual(saved['experiences'][1]['review'],original_review)
+
+    def test_review_page_submission_writes_only_the_json_file(self):
+        self.per_item_reviews()
+        del self.value['experiences'][0]['review']
+        self.save()
+        server=ReviewServer(self.path)
+        thread=threading.Thread(target=server.serve_forever,daemon=True)
+        thread.start()
+        client=build_opener(ProxyHandler({}))
+        try:
+            html=client.open(server.url).read().decode()
+            self.assertIn('保存审核',html)
+            self.assertIn('/compact-review.js',html)
+            self.assertEqual(approval.freeze(self.path)['entries'],[])
+            with client.open(server.url+'/compact-review.js') as response:
+                self.assertIn('X-TCA-Request',response.read().decode())
+            payload=json.dumps(self.request()).encode()
+            request=Request(server.url+'/api/compact-review',data=payload,
+                headers={'Content-Type':'application/json','X-TCA-Request':'local'})
+            result=json.loads(client.open(request).read())
+            self.assertEqual(result['review']['decision'],'accept')
+            self.assertEqual(len(approval.freeze(self.path)['entries']),1)
+            with self.assertRaises(HTTPError): client.open(request)
+            self.assertEqual(list(self.path.parent.iterdir()),[self.path])
+        finally:
+            server.shutdown();server.server_close();thread.join()
 
 
 if __name__ == '__main__':

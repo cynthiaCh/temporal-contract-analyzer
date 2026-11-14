@@ -187,8 +187,9 @@ def decisions(store):
     if store.is_file():
         from .compact_experience import materialize
         bundles, rows, _ = materialize(store)
-        for bundle, row in zip(bundles, rows):
-            validate_decision(row, bundle)
+        by_hash = {b['sha256']:b for b in bundles}
+        for row in rows:
+            validate_decision(row, by_hash[row['candidate_sha256']])
         return rows
     bundles = {b['sha256']:b for b in memory.records(store)}
     result = []
