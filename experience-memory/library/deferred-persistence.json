@@ -1,0 +1,254 @@
+{
+  "schema_version": "experience-library-single-file-v1",
+  "category": "延迟保存与编辑",
+  "experiences": [
+    {
+      "id": "editor-trailing-bursts",
+      "title": "按文档合并编辑并重启安静期",
+      "labels": [
+        "F",
+        "A"
+      ],
+      "requires": [
+        "deferred_batch"
+      ],
+      "excludes": [],
+      "applicability": "任务明确要求复用已有 trailing 工具，将一轮编辑合并为安静期后的最新文本。",
+      "event_relation": "每次编辑替换待保存文本并重启定时；间隔结束只保存最新值，后续独立编辑轮次仍可继续保存。不同文档使用各自的任务。",
+      "preservation": "保留原接口和精确输入，包括空字符串；保留无当前文档时编辑不产生写入的保护。",
+      "exclusion": "旧编辑案例为 120 ms，不能把它作为所有任务的常量；若要求逐事件处理，就不能使用丢弃中间值的合并策略。",
+      "verification": "用受控时钟检查无提前写入、到期前再编辑重启期限、到期一次最新值写入、第二轮成功、空文本和独立文档任务。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "editor-batch-reentry",
+      "title": "先消费批次状态再调用保存回调",
+      "labels": [
+        "O",
+        "A"
+      ],
+      "requires": [
+        "deferred_batch",
+        "inline_reentry"
+      ],
+      "excludes": [],
+      "applicability": "可复用任务的保存回调同步执行，并可能再次编辑或刷新任务。",
+      "event_relation": "捕获待消费值，先清除该批次的定时器和待消费状态，再调用保存。同步回调创建的新编辑属于下一批。",
+      "preservation": "保持后续复用，不重复消费旧值，也不在外层结束时擦掉回调新建的任务。使用原有空值标记。",
+      "exclusion": "不要把保存变成终态；不要以真假判断代替 None/null/nil 检查而丢弃合法空字符串。",
+      "verification": "保存回调中再次编辑和嵌套 flush，检查旧批次只保存一次、新批次仍存在且能按下一期限完成。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "editor-owner-lifetime",
+      "title": "文档缓冲区与视图订阅分别清理",
+      "labels": [
+        "L",
+        "A"
+      ],
+      "requires": [
+        "shared_lifetime",
+        "effect_lifetimes"
+      ],
+      "excludes": [],
+      "applicability": "持久文档缓冲由 store、BufferBank 或协调器字典拥有；视图只拥有当前状态订阅。",
+      "event_relation": "视图离开时清理它捕获的订阅，但不因此丢弃文档待保存文本或销毁仍需复用的文档任务。重新打开仍按文档身份找到缓冲区。",
+      "preservation": "保留多文档隔离、同文档重开、状态订阅移除和持续保存责任。具体所有者按当前实现确定。",
+      "exclusion": "不要把视图 detach 等同于取消持久工作；持久所有权本身也不能推导出离开必须立即 flush。",
+      "verification": "带待保存文本切换、关闭、销毁、同文档重开；分别检查缓冲复用、订阅释放和原文档的最终保存。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "editor-origin-binding",
+      "title": "延迟写入绑定接受编辑时的文档",
+      "labels": [
+        "I"
+      ],
+      "requires": [
+        "deferred_batch",
+        "entry_snapshot"
+      ],
+      "excludes": [],
+      "applicability": "文本先被接受，真正写入发生在稍后；在此期间当前视图可能已经改变。",
+      "event_relation": "把任务和保存闭包绑定到接受编辑时的文档或缓冲键，而不是执行定时器时重新读取当前视图。",
+      "preservation": "保留文档 ID、原文本、空文本和无当前视图的编辑保护，状态事件沿用 store 生成的语义。",
+      "exclusion": "不能把离开文档的文本写到新文档，也不能为了重用任务把不同文档的待保存槽合并。",
+      "verification": "A 编辑后切换到 B 再触发 A 定时器，检查写入归属；交错编辑两文档、清空文本、关闭后再编辑。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "editor-departure-deadline",
+      "title": "区分保存责任保留与离开前完成期限",
+      "labels": [
+        "B",
+        "L",
+        "A"
+      ],
+      "requires": [
+        "deferred_batch"
+      ],
+      "excludes": [],
+      "applicability": "旧库同时存在两种边界表述：从原同步写入和保持行为推导离开前完成；以及仅确认缓冲区存活、要求另行证明期限。",
+      "event_relation": "先确定当前任务的边界语义。若明确要求 open/close/dispose 或提交返回前完成，刷新捕获的原文档并消费原定时器；若只要求工作保留，则依约继续调度。",
+      "preservation": "两种分支都不能静默丢失已接受文本；有明确期限时，还需防止稍后重复保存。",
+      "exclusion": "同步 API、持久所有权、笼统保持其他行为或某次测试通过，单独都不足以推出 before-return 期限；也不能以较晚版本表述直接覆盖有依据的旧分支。",
+      "verification": "对明确期限分支在操作返回时立即读存储并随后推进时钟查重；对保留分支检查工作仍受原文档管理并按规定时机完成。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "editor-navigation-reentry",
+      "title": "离开清理和渲染不能覆盖保存回调的新导航",
+      "labels": [
+        "O",
+        "L",
+        "I"
+      ],
+      "requires": [
+        "inline_reentry"
+      ],
+      "excludes": [],
+      "applicability": "保存或订阅清理会同步调用宿主监听，监听可能打开另一文档或关闭工作区。",
+      "event_relation": "捕获旧视图并撤下其当前归属；在会导航的保存前完成旧视图清空等最后效果，或对回调后的剩余效果检查权限。外层 open 在退休操作后重新检查请求代号。",
+      "preservation": "嵌套 open/close、嵌套编辑和新视图渲染保持权威；销毁路径也要清理捕获资源，而不是清空回调新装的对象。",
+      "exclusion": "不能只保护最后安装视图，却漏掉稍后的清空渲染；也不能无条件规定所有宿主都必须先 detach，通知顺序需按其契约判断。",
+      "verification": "在定时保存及离开保存的监听内 open/close，检查外层返回后的文档输出、订阅和嵌套编辑；同时覆盖直接调用与实际卸载。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "editor-submit-entry",
+      "title": "已接受提交保留入口文本与返回结果",
+      "labels": [
+        "I",
+        "A",
+        "B"
+      ],
+      "requires": [
+        "entry_snapshot",
+        "inline_reentry"
+      ],
+      "excludes": [],
+      "applicability": "提交在入口接受文档和文本，且该提交契约要求记录结果前使接受的文本持久化。",
+      "event_relation": "在提交入口捕获文档及文本；完成约定保存再记录和返回该次提交的结果。保存或记录回调改变当前选择，不应重写已经接受的提交。",
+      "preservation": "保留入口绑定的持久结果和返回值；回调后编辑形成新工作，不应被前一提交误消费。",
+      "exclusion": "不要把此保留政策推广到允许导航撤销提交的任务，也不要把最新当前文本偷偷替换为入口文本的结果。",
+      "verification": "在保存、记录回调中导航和编辑，分别检查入口文档保存值、提交记录、同步返回结果以及随后编辑仍可保存。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "editor-confirmation-visit",
+      "title": "提交确认只属于实际接受它的访问",
+      "labels": [
+        "L",
+        "I"
+      ],
+      "requires": [
+        "effect_lifetimes",
+        "entry_snapshot"
+      ],
+      "excludes": [],
+      "applicability": "持久提交结果可在导航后保留，但可见确认只属于接受操作时的那次访问。",
+      "event_relation": "显示确认前检查原访问仍为当前访问；关闭、替换或重新打开同一文档都是独立访问时，旧确认不能复活。",
+      "preservation": "提交的持久结果和返回值继续按接受契约保留，不以显示失效为由丢弃结果。",
+      "exclusion": "文档 ID 相同不能代替访问身份；不要把确认显示条件与是否保存、是否记录结果合并成一个门槛。",
+      "verification": "提交回调中切换、关闭和同文档重开，检查持久结果保留而旧确认消失，当前合法确认仍能显示。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "editor-status-contract",
+      "title": "保存状态通知顺序必须按当前宿主约定",
+      "labels": [
+        "L",
+        "I"
+      ],
+      "requires": [
+        "effect_lifetimes"
+      ],
+      "excludes": [],
+      "applicability": "视图订阅有文档过滤、事件载荷和退休通知约定；旧案例既有保存前移除订阅，也有保留离开视图接收保存状态机会的要求。",
+      "event_relation": "保留文档读出与展示、事件原载荷及过滤。若宿主要求离开视图收到本次保存通知，按该顺序完成后再移除；若退休立即禁止 UI 效果，则先标记失效并保护后续输出。",
+      "preservation": "保留原公开与注入接口、精确文本、store 生成的状态和修订语义、订阅正常释放。",
+      "exclusion": "不能强行把不同案例的通知先后合并成统一清理顺序，也不能只验证存储值而漏掉状态显示与订阅泄漏。",
+      "verification": "分别观察保存通知与 detach 的顺序、退休后事件、其他文档事件过滤、重开读出、嵌套导航后文档和状态输出。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "editor-preview-policy",
+      "title": "瞬态预览保留隐藏即丢弃及再次复用",
+      "labels": [
+        "L"
+      ],
+      "requires": [
+        "deferred_batch"
+      ],
+      "excludes": [],
+      "applicability": "编辑器持久保存和搜索预览共享 trailing 工具，但预览有独立生命周期和取消策略。",
+      "event_relation": "维持预览自己的安静期、hide 时取消尚未发布内容、后续 query 再次正常调度；修改共享工具时一并验证预览。",
+      "preservation": "旧案例预览为 40 ms，编辑器为 120 ms；保留该案例各自参数，不把它们当成新任务默认值。",
+      "exclusion": "不能把文档离开 flush 改成预览 hide 的行为，也不能把预览的丢弃政策用于持久文档工作。",
+      "verification": "预览截止前 hide 后无输出，后续 query 仍正常输出；与编辑器待保存工作交错时两者参数和生命周期独立。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "editor-component-cleanup",
+      "title": "沿真实组件入口验证清理与暴露接口",
+      "labels": [
+        "L",
+        "O"
+      ],
+      "requires": [
+        "inline_reentry"
+      ],
+      "excludes": [],
+      "applicability": "协调器通过框架组件或工作区包装对外提供接口；直接调用正确不代表实际组件卸载也正确。",
+      "event_relation": "沿当前集成实际调用链验证 dispose、订阅移除和导航归属，不从其他框架版本照搬生命周期。",
+      "preservation": "保留 React effect cleanup、Vue 2 beforeDestroy、Vue 3 onBeforeUnmount/expose、jQuery 事件或各原生端实际存在的接口约定。",
+      "exclusion": "这些入口是不同案例的替代形式，不是要求一个项目同时实现；原生嵌入也不能被解释为拥有 DOM 或 Promise 运行时。",
+      "verification": "同时检查协调器公开调用与实际组件卸载；在卸载触发的保存中导航，检查新视图、外部可调用 API 和资源释放。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    }
+  ]
+}

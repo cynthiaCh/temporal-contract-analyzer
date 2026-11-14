@@ -68,8 +68,8 @@ class CompactExperienceTests(unittest.TestCase):
         self.assertNotIn('Entry binding <example>', html)
 
     def request(self, item_id='entry-binding', decision='accept'):
-        value=compact.load(self.path)
-        item=next(item for item in value['experiences'] if item['id']==item_id)
+        value,item=next((value,item) for _,value in compact.documents(self.path)
+                        for item in value['experiences'] if item['id']==item_id)
         bundle=next(b for b in memory.records(self.path) if b['id']==item_id)
         return dict(id=item_id, expected_record=bundle['sha256'],
                     expected_review=compact.review_for(value,item),
@@ -157,6 +157,65 @@ class CompactExperienceTests(unittest.TestCase):
             self.assertEqual(len(approval.freeze(self.path)['entries']),1)
             with self.assertRaises(HTTPError): client.open(request)
             self.assertEqual(list(self.path.parent.iterdir()),[self.path])
+        finally:
+            server.shutdown();server.server_close();thread.join()
+
+    def categorized_library(self):
+        self.per_item_reviews()
+        directory=self.path.parent/'library'
+        directory.mkdir()
+        accepted=self.value['experiences'][0]
+        pending=dict(accepted,id='pending-item',title='Pending category item')
+        del pending['review']
+        for filename,category,item in [('accepted.json','已整理主题',accepted),('pending.json','另一主题',pending)]:
+            (directory/filename).write_text(json.dumps(dict(schema_version=compact.VERSION,
+                category=category,experiences=[item]),ensure_ascii=False))
+        self.path=directory
+        return directory
+
+    def test_categories_aggregate_without_delivering_pending_items(self):
+        directory=self.categorized_library()
+        self.assertEqual(len(memory.records(directory)),2)
+        self.assertEqual([r['bundle']['id'] for r in approval.freeze(directory)['entries']],['entry-binding'])
+        snapshot=approval.freeze(directory)
+        approval.validate_snapshot(directory,snapshot)
+        html=compact.page(directory).decode()
+        self.assertIn('id="compact-category"',html)
+        self.assertIn('另一主题',html)
+        self.assertIn('pending.json',html)
+        self.assertEqual(len(memory.search(directory,'entry')['results']),2)
+
+    def test_category_review_updates_only_the_owning_file(self):
+        directory=self.categorized_library()
+        before=(directory/'accepted.json').read_bytes()
+        result=compact.save_review(directory,self.request('pending-item'))
+        self.assertEqual(result['file'],'pending.json')
+        self.assertEqual((directory/'accepted.json').read_bytes(),before)
+        self.assertEqual(len(approval.freeze(directory)['entries']),2)
+        self.assertEqual(sorted(p.name for p in directory.iterdir()),['accepted.json','pending.json'])
+
+    def test_cross_category_duplicate_ids_are_rejected(self):
+        directory=self.categorized_library()
+        value=json.loads((directory/'pending.json').read_text())
+        value['experiences'][0]['id']='entry-binding'
+        (directory/'pending.json').write_text(json.dumps(value))
+        with self.assertRaises(EvidenceError):memory.records(directory)
+
+    def test_category_http_review_uses_the_correct_file(self):
+        directory=self.categorized_library()
+        before=(directory/'accepted.json').read_bytes()
+        server=ReviewServer(directory)
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        client=build_opener(ProxyHandler({}))
+        try:
+            page=client.open(server.url).read().decode()
+            self.assertIn('全部分类',page)
+            request=Request(server.url+'/api/compact-review',data=json.dumps(self.request('pending-item')).encode(),
+                headers={'Content-Type':'application/json','X-TCA-Request':'local'})
+            result=json.loads(client.open(request).read())
+            self.assertEqual(result['file'],'pending.json')
+            self.assertEqual((directory/'accepted.json').read_bytes(),before)
+            self.assertEqual(len(list(directory.iterdir())),2)
         finally:
             server.shutdown();server.server_close();thread.join()
 

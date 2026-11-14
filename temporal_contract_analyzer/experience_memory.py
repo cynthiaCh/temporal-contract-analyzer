@@ -175,8 +175,8 @@ def initialize(store):
 
 def records(store):
     store = Path(store)
-    if store.is_file():
-        from .compact_experience import materialize
+    from .compact_experience import is_library, materialize
+    if is_library(store):
         return materialize(store)[0]
     if json.loads((store/'memory.json').read_text(encoding='utf-8')) != dict(
             schema_version=STORE_VERSION, scope='research_only', automatic_evolution=False):
@@ -215,8 +215,8 @@ def tips(bundles):
 
 
 def source_bytes(store, code):
-    if Path(store).is_file():
-        from .compact_experience import materialize
+    from .compact_experience import is_library, materialize
+    if is_library(store):
         blobs = materialize(store)[2]
         if code not in blobs:
             raise EvidenceError('Single-file experience content changed')

@@ -1,0 +1,187 @@
+{
+  "schema_version": "experience-library-single-file-v1",
+  "category": "进度与订阅",
+  "experiences": [
+    {
+      "id": "progress-bootstrap",
+      "title": "启动初始状态与诊断增量采用不同订阅顺序",
+      "labels": [
+        "O"
+      ],
+      "requires": [
+        "inline_reentry"
+      ],
+      "excludes": [],
+      "applicability": "启动可能同步发出缓存状态，面板需要该初始状态，而诊断消费者只统计后续增量。",
+      "event_relation": "需要初始状态的消费者先注册监听再启动；只观察实时增量的消费者按自己的约定注册。建立监听时同时明确接收它的访问对象。",
+      "preservation": "保留普通流式更新、延迟启动、诊断输出、公开启动与清理接口。",
+      "exclusion": "订阅即启动、订阅自动回放以及不需要初始状态的接口，不能直接照搬监听顺序；不能修改所有消费者来修一个面板。",
+      "verification": "分别检查同步初始状态、延迟初始状态、后续更新以及诊断消费者的增量计数。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "progress-admission-window",
+      "title": "启动尚未返回清理句柄时也要停止旧访问接收",
+      "labels": [
+        "L",
+        "I",
+        "A"
+      ],
+      "requires": [
+        "inline_reentry"
+      ],
+      "excludes": [],
+      "applicability": "一次启动可同步发出多个包；处理第一个包可能隐藏面板或打开另一访问，此时启动尚未交回物理清理能力。",
+      "event_relation": "每个包进入解码前先检查原访问和执行尝试的接收资格。访问失效立即撤销后续接收，不等待物理移除监听。",
+      "preservation": "此前已经接收的包仍按各自审计和显示契约结算；新访问正常接收初始及后续更新。",
+      "exclusion": "清理后监听数为零不能证明启动窗口正确；也不能把已经接收的工作误当成后来接收的新包。",
+      "verification": "在第一个同步回调中分别隐藏、切换、重新打开同一来源；在外层启动返回前继续发包，独立检查拒绝新包和结算旧包。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "progress-audit-publication",
+      "title": "延迟解码的历史记录与面板更新分别授权",
+      "labels": [
+        "L",
+        "I",
+        "A"
+      ],
+      "requires": [
+        "async_resume",
+        "effect_lifetimes"
+      ],
+      "excludes": [],
+      "applicability": "当前契约要求已接收进度继续记录历史，但界面更新只属于原访问；解码可能立即完成，也可能稍后完成。",
+      "event_relation": "绑定接收时的访问和尝试。完成时保留约定次数的历史记录，然后在绘制前重新检查访问有效性；历史记录回调也可能导航，必须再次检查。",
+      "preservation": "既保留已接收包的审计，也保持新访问的正常进度。监听移除本身不取消已经启动的解码。",
+      "exclusion": "不能用一个过早的有效性判断同时控制审计与显示；若另一任务明确丢弃历史义务，应按该任务处理。",
+      "verification": "让解码跨越隐藏、切换、重试和同来源重开；检查历史次数、旧面板不绘制、记录回调导航后的显示权限。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "progress-full-frame-order",
+      "title": "完整帧乱序以到达版本控制回退",
+      "labels": [
+        "F"
+      ],
+      "requires": [
+        "async_resume"
+      ],
+      "excludes": [],
+      "applicability": "包解码为完整替换帧；完成顺序可以与到达顺序相反，当前协议以到达次序判新旧。",
+      "event_relation": "解码前分配到达序号；只允许比该显示所有者已发布序号更新的帧绘制。先提交最新序号，再调用可能重入的绘制回调。",
+      "preservation": "旧帧不覆盖新显示，但已接收审计按契约保留。后来的 loaded 值可以下降或重置。",
+      "exclusion": "不能按字节数大小判新旧。旧案例有尝试内排序和同一访问内排序的表述，必须按当前协议确定跨重试的比较范围；不能重置序号后错误接收旧尝试结果，也不能把完整帧丢旧规则套到必需的增量事件。",
+      "verification": "反向完成两个解码、让新帧数值下降、在绘制中同步发出新包，并检查重试前后及访问更替时的版本范围。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "progress-cleanup-reentry",
+      "title": "启动与监听移除重入时保护新资源",
+      "labels": [
+        "O",
+        "L",
+        "I"
+      ],
+      "requires": [
+        "inline_reentry",
+        "attempt_resource"
+      ],
+      "excludes": [],
+      "applicability": "启动、取消或监听移除可同步导航；旧启动可能晚于新访问安装资源后才返回。",
+      "event_relation": "在可能回调前建立临时清理归属；取消前先让旧资源退出当前归属。返回真实句柄后重新检查所有者，失效的外层不能覆盖新访问句柄。",
+      "preservation": "清理捕获的旧资源、保留新资源，保持重复取消和重复移除无额外作用。宿主先提交移除再回调的约定保持不变。",
+      "exclusion": "不要只在启动后赋值句柄，也不要让旧清理无条件清空当前句柄；公开构造和取消接口必须保留。",
+      "verification": "在启动和 unlisten 回调中分别隐藏、切换和销毁；检查当前访问、后续更新、监听归属、物理取消和最终清理。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "progress-retry-entry",
+      "title": "重试取消回调不能改写已接受命令",
+      "labels": [
+        "I",
+        "A"
+      ],
+      "requires": [
+        "entry_snapshot",
+        "inline_reentry"
+      ],
+      "excludes": [],
+      "applicability": "当前契约在重试入口已接受一次原访问命令；重试只替换物理尝试，不打开新的访问。",
+      "event_relation": "捕获原访问、文件及记录归属；取消回调即使导航，仍保留约定的那次命令和入口绑定记录。新尝试能否挂到当前访问需要独立判断。",
+      "preservation": "命令次数、队列记录、返回值、取消通知和新访问资源都要保留；不能把记录归属改成回调导航后的选择。",
+      "exclusion": "这不是导航后永远继续重试的规则。若目标契约撤销该命令，应按撤销约定处理，而不是继承旧案例的保留政策。",
+      "verification": "在取消中切换或隐藏，检查恰好一次入口命令、原归属记录、失效句柄的取消，以及新访问不被覆盖。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "progress-record-contract",
+      "title": "队列记录和通知不随显示修复扩展",
+      "labels": [
+        "I",
+        "A"
+      ],
+      "requires": [
+        "entry_snapshot"
+      ],
+      "excludes": [],
+      "applicability": "修复范围是面板进度，队列记录、排队通知和公开传输行为明确保持原样。",
+      "event_relation": "记录和通知继续绑定入口的文件、尝试、访问及命令种类；显示逻辑的调整不改变这些记录的字段与次数。",
+      "preservation": "旧传输案例记录为 {fileId, attemptId, visitId, kind}；这些字段是该案例的契约，不是新系统的默认 API。",
+      "exclusion": "没有单独授权不能添加 byteCount，也不能凭 file.size 推断新的业务记录规则；界面通过不等于队列行为通过。自动 Contract、AST 提示和评价观察不能成为新的业务要求。分析阶段不修改实现，也不以隐藏评分或参考补丁代替当前契约。",
+      "verification": "分别比较选择、重试、取消、导航重入时的记录形状、次数、排队通知与返回句柄。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "progress-visit-isolation",
+      "title": "同一来源重用不等于同一次访问",
+      "labels": [
+        "L",
+        "I"
+      ],
+      "requires": [
+        "shared_lifetime",
+        "async_resume"
+      ],
+      "excludes": [],
+      "applicability": "来源可以跨访问、尝试或同一文件对象重用，每次打开拥有独立的界面生命周期。",
+      "event_relation": "用真正的访问或尝试身份控制效果，不能用文件、通道或传输对象相等代替访问身份。让后续访问重新获得自己的初始状态和流式更新。",
+      "preservation": "保留共享来源复用、多个工作区相互独立、后续有效使用及原有尝试管理。",
+      "exclusion": "不能为了屏蔽旧结果永久停掉共享来源，也不能让同对象重开复活旧访问的绘制权限。",
+      "verification": "同对象重开、同通道重开、旧解码晚完成、两个独立工作区交错操作；检查旧效果隔离与新访问继续工作。",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    }
+  ]
+}

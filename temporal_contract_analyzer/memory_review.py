@@ -64,7 +64,9 @@ class ReviewServer(ThreadingHTTPServer):
 
     def __init__(self, store, port=0):
         self.store = Path(store).expanduser().resolve()
-        if not self.store.is_file() and not (self.store/'memory.json').is_file():
+        from .compact_experience import is_library
+        self.compact = is_library(self.store)
+        if not self.compact and not (self.store/'memory.json').is_file():
             raise EvidenceError('Choose an existing experience memory store')
         memory.records(self.store)
         self.review_lock = threading.Lock()
@@ -77,7 +79,7 @@ class ReviewHandler(LocalHandler):
         url = urlsplit(self.path)
         parts = url.path.strip('/').split('/')
         query = parse_qs(url.query)
-        if self.server.store.is_file() and url.path == '/':
+        if self.server.compact and url.path == '/':
             from .compact_experience import page
             self.send(page(self.server.store), content_type='text/html; charset=utf-8')
             return
@@ -148,7 +150,7 @@ class ReviewHandler(LocalHandler):
             self.send({'error': 'Not found'}, 404)
 
     def post(self, data):
-        if self.server.store.is_file():
+        if self.server.compact:
             if urlsplit(self.path).path != '/api/compact-review':
                 self.send({'error': 'Not found'}, 404)
                 return

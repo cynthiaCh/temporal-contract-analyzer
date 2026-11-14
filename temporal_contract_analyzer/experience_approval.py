@@ -32,7 +32,8 @@ def _acceptance(rows, code):
 
 
 def _index(store, bundles, rows):
-    if Path(store).is_file():
+    from .compact_experience import is_library
+    if is_library(store):
         accepted = {r['candidate_sha256'] for r in rows if r['decision']=='accept'}
         return dict(schema_version=ACTIVE_VERSION, history=[],
                     versions={b['id']:code for code,b in bundles.items() if code in accepted})
@@ -184,8 +185,8 @@ def activate(store, code, expected_current, actor, reason='', *, rollback=False)
 
 def decisions(store):
     store = Path(store)
-    if store.is_file():
-        from .compact_experience import materialize
+    from .compact_experience import is_library, materialize
+    if is_library(store):
         bundles, rows, _ = materialize(store)
         by_hash = {b['sha256']:b for b in bundles}
         for row in rows:
@@ -256,8 +257,9 @@ def validate_decision(row, bundle, bundles=None, prior=None):
 def decide(store, candidate_sha256, request, report_sha256=None, *, activate_version=False,
            expected_current=UNSPECIFIED):
     """Operator entry point. Never called by automatic reflection or repair."""
-    if Path(store).is_file():
-        raise EvidenceError('Edit experience content and review directly in the single JSON file')
+    from .compact_experience import is_library
+    if is_library(store):
+        raise EvidenceError('Use the review page or edit review in the corresponding experience file')
     fields = {'reviewer', 'decision', 'reason', 'scope', 'rules'}
     if not isinstance(request, dict) or not fields<=set(request) or set(request)-fields-{'inherit_from','auto_enable','request_id'}:
         raise EvidenceError('Expert request must contain reviewer, decision, reason, scope and per-rule findings')

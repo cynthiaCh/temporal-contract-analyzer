@@ -2,10 +2,7 @@
 cd -- "${0:A:h}" || exit 1
 
 launcher_python='/usr/bin/python3'
-experience_store='experience-memory/experiences.json'
-if [[ ! -f "$experience_store" ]]; then
-  experience_store='experience-memory'
-fi
+experience_store='experience-memory/library'
 
 function launch_failed() {
   printf '\nExperience review could not start. Check the message above. Press Return to close.\n'
@@ -15,9 +12,9 @@ function launch_failed() {
 
 "$launcher_python" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else "Python 3.9 or newer is required.")' || launch_failed
 
-if [[ ! -f "$experience_store" && ! -f "$experience_store/memory.json" ]]; then
+if [[ ! -d "$experience_store" ]]; then
   printf '\nNo experience library was found in this repository.\n'
-  printf 'Initialize or restore experience-memory/ before opening the review page.\n'
+  printf 'Restore experience-memory/library/ before opening the review page.\n'
   launch_failed
 fi
 
