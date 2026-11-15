@@ -60,9 +60,14 @@ Actual requests, tokens, time, stage retries and missing usage remain reported.
 
 ## Testing boundary and continuation
 
-Only public observations affect repair. Public PASS or three effective Actions fixes
-candidate selection, followed by one trusted final Gold. Gold never affects selection,
-Contract, feedback or extra attempts. Testing never learns or publishes experience.
+Training and testing share `oracle_retry`: each generated patch is evaluated by
+the Oracle, FAIL triggers another Action and PASS stops, within three total Actions.
+Public checks are auxiliary and cannot override the Oracle. Only its pass/fail
+boolean enters repair feedback; reference patches and hidden assertion details do
+not. This is Oracle-assisted testing, not a final-only blind score. Testing still
+uses frozen memory and never learns or publishes experience. The former one-Gold,
+public-feedback-only protocol is historical and read-only; its results are not
+relabeled and new configurations cannot select it. See [feedback policy](PUBLIC_TEST_ADAPTERS.md).
 Runtime bindings now also cover semantic retrieval, routing, memory conversion and
 ranking code, so a changed retriever cannot silently affect an existing frozen root.
 
@@ -79,7 +84,7 @@ Offline synthetic tests cover unsupported domain premises despite label matches,
 unknown/weak/contradicted relevance, source-backed transfer, forged citations,
 missing/duplicate assessments, duplicate text, character/entry/recall bounds,
 unapproved exclusion, model profile/budget, historical read-only boundaries and
-final-only Gold/no-learning isolation. No benchmark Gold failure details are used to
+shared Oracle retry/no-learning isolation. No benchmark Gold failure details are used to
 tune retrieval. Model applicability judgments remain fallible; Python validates their
 structure and citations, not the truth of every semantic inference. Lexical recall
 can miss useful cross-domain candidates and token-set deduplication is conservative.

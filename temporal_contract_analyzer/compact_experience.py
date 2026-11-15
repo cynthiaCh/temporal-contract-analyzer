@@ -1,5 +1,7 @@
 """Categorized experience files and inline acceptance, without audit sidecars."""
 from html import escape
+from contextlib import contextmanager
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -49,6 +51,15 @@ def validate_review(review):
         raise EvidenceError('A completed review requires reviewer and time')
 
 
+def validate_proposal(proposal):
+    memory.object_fields(proposal, {'operation', 'target_ids'}, 'candidate proposal')
+    operation=proposal['operation'];targets=proposal['target_ids']
+    memory.strings(targets, 'candidate targets')
+    if operation not in ('new','revise','merge') or (operation=='new' and targets) \
+            or (operation=='revise' and len(targets)!=1) or (operation=='merge' and len(targets)<2):
+        raise EvidenceError('Invalid candidate operation or targets')
+
+
 def load(path):
     value = json.loads(Path(path).read_text(encoding='utf-8'))
     required = {'schema_version', 'experiences'}
@@ -70,41 +81,52 @@ def load(path):
         fields = {'id', 'title', 'labels', 'requires', 'excludes'} | {key for key, _ in SECTIONS}
         if isinstance(item, dict) and 'review' in item:
             fields.add('review')
+        if isinstance(item, dict) and 'proposal' in item:
+            fields.add('proposal')
         memory.object_fields(item, fields, 'experience')
         if not memory.text(item['id']) or item['id'] in ids or not memory.text(item['title']) \
                 or any(not memory.text(item[key]) for key, _ in SECTIONS):
             raise EvidenceError('Invalid or duplicate experience')
         ids.add(item['id'])
         validate_review(review_for(value, item))
+        if 'proposal' in item:
+            validate_proposal(item['proposal'])
     return value
+
+
+def _bundle(file, item):
+    raw=canonical({k:v for k,v in item.items() if k!='review'}).encode('utf-8')
+    code=sha(raw)
+    bundle=memory.seal(dict(schema_version=memory.BUNDLE_VERSION_V2,
+        id=item['id'], version='single-file-v1', parent_sha256=None,
+        taxonomy_version=taxonomy.VERSION, labels=item['labels'],
+        requires=item['requires'], excludes=item['excludes'],
+        rules=[dict(id=f'R{i:02d}', category=key, body=item[key])
+               for i, (key, _) in enumerate(SECTIONS, 1)],
+        review=dict(status='candidate', kind='ai_assisted', source_sha256=code,
+                    limitations=['Content acceptance does not establish cross-task effectiveness.']),
+        audit=dict(sources=[dict(path=file.name, sha256=code)],
+                   rule_links=[], notes=[], outcome_refs=[])))
+    memory.validate(bundle, lambda digest:raw if digest==code else b'')
+    return bundle, code, raw
 
 
 def materialize(path):
     """Adapt categorized content to existing retrieval objects in memory only."""
     bundles, decisions, blobs = [], [], {}
     entries = [(file, value, item) for file,value in documents(path) for item in value['experiences']]
-    for index, (file, value, item) in enumerate(entries, 1):
-        raw = canonical({k:v for k,v in item.items() if k!='review'}).encode('utf-8')
-        code = sha(raw)
+    sequence=0
+    for file, value, item in entries:
+        bundle, code, raw = _bundle(file, item)
         blobs[code] = raw
-        bundle = memory.seal(dict(schema_version=memory.BUNDLE_VERSION_V2,
-            id=item['id'], version='single-file-v1', parent_sha256=None,
-            taxonomy_version=taxonomy.VERSION, labels=item['labels'],
-            requires=item['requires'], excludes=item['excludes'],
-            rules=[dict(id=f'R{i:02d}', category=key, body=item[key])
-                   for i, (key, _) in enumerate(SECTIONS, 1)],
-            review=dict(status='candidate', kind='ai_assisted', source_sha256=code,
-                        limitations=['Content acceptance does not establish cross-task effectiveness.']),
-            audit=dict(sources=[dict(path=file.name, sha256=code)],
-                       rule_links=[], notes=[], outcome_refs=[])))
-        memory.validate(bundle, blobs.__getitem__)
         bundles.append(bundle)
         review = review_for(value, item)
         if review['decision']=='pending':
             continue
+        sequence+=1
         row = dict(review, reason='', scope='research', actor='named_operator',
                    schema_version='experience-expert-decision-v1',
-                   candidate_sha256=bundle['sha256'], report_sha256=None, sequence=index,
+                   candidate_sha256=bundle['sha256'], report_sha256=None, sequence=sequence,
                    rules=[dict(rule_id=r['id'], supported=review['decision']=='accept', reason='')
                           for r in bundle['rules']])
         row['sha256'] = memory.digest(canonical(row))
@@ -112,8 +134,91 @@ def materialize(path):
     return bundles, decisions, blobs
 
 
+@contextmanager
+def _locked(path):
+    # Lock the stable directory inode; atomic JSON replacement needs no lock sidecar.
+    path=Path(path)
+    descriptor=os.open(path.parent if path.is_file() else path, os.O_RDONLY)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(descriptor)
+
+
+def _write(file, value):
+    descriptor, temporary = tempfile.mkstemp(prefix='.write-', dir=file.parent)
+    try:
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+            json.dump(value, stream, ensure_ascii=False, indent=2)
+            stream.write('\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, file)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def publish_candidate(path, record):
+    """Stage compact content for review; never accept or replace existing guidance."""
+    from . import experience_reflection as reflection
+    experience=record['experience'];update=record['reflection_update']
+    targets={b['sha256']:b for b in record['related_experiences']}
+    if any(code not in targets for code in update['target_sha256s']):
+        raise EvidenceError('Candidate refers to an unknown experience')
+    target_ids=list(dict.fromkeys(targets[code]['id'] for code in update['target_sha256s']))
+    with _locked(path):
+        values=documents(path)
+        if update['operation']=='evidence':
+            current={b['sha256']:b for b in materialize(path)[0]}
+            if len(update['target_sha256s'])!=1 or update['target_sha256s'][0] not in current \
+                    or reflection.content(experience)!=reflection.content(current[update['target_sha256s'][0]]):
+                raise EvidenceError('Evidence supplement requires unchanged current guidance')
+            code=sha(canonical(dict(experience=experience,update=update)).encode())
+            return dict(published_proposal_sha256=code,publication_kind='evidence_proposal')
+        proposal=dict(operation=update['operation'],target_ids=target_ids)
+        validate_proposal(proposal)
+        rules=experience['rules']
+        if not isinstance(rules,list) or not rules:
+            raise EvidenceError('Candidate rules must not be empty')
+        for rule in rules:
+            memory.object_fields(rule, {'category','body'}, 'candidate rule')
+            if rule['category'] not in memory.CATEGORIES or not memory.text(rule['body']):
+                raise EvidenceError('Invalid candidate rule')
+        limitations=experience.get('limitations',[])
+        memory.strings(limitations, 'candidate limitations')
+        title=rules[0]['body'].strip().splitlines()[0][:120]
+        item=dict(title='Candidate: '+title,labels=experience['labels'],
+                  requires=experience['requires'],excludes=experience['excludes'])
+        for key,_ in SECTIONS:
+            item[key]='\n\n'.join(r['body'] for r in rules if r['category']==key) or 'Not specified in this candidate.'
+        if limitations:item['exclusion']+='\n\nCandidate limitations:\n'+'\n'.join('- '+v for v in limitations)
+        item['proposal']=proposal
+        item=dict(id='candidate-'+sha(canonical(item).encode())[:32],**item,
+                  review=dict(reviewer=None,decision='pending',at=None))
+        existing=next(((file,entry) for file,value in values for entry in value['experiences'] if entry['id']==item['id']),None)
+        if existing:
+            file,entry=existing
+            if {k:v for k,v in entry.items() if k!='review'}!={k:v for k,v in item.items() if k!='review'}:
+                raise EvidenceError('Published candidate content changed; refusing to overwrite it')
+        else:
+            path=Path(path);file=path if path.is_file() else path/'candidates.json'
+            value=next((value for owner,value in values if owner==file),None)
+            if value is None:value=dict(schema_version=VERSION,category='Candidate experiences',experiences=[])
+            _bundle(file,item)  # Validate before any write can affect retrieval/review.
+            value['experiences'].append(item)
+            _write(file,value)
+        return dict(published_sha256=_bundle(file,item)[0]['sha256'],publication_kind='experience_version')
+
+
 def save_review(path, request):
-    """Caller serializes writes; only the selected item's review is changed."""
+    """Serialize review and publication writes without separate decision files."""
+    with _locked(path):
+        return _save_review(path, request)
+
+
+def _save_review(path, request):
     memory.object_fields(request, {'id', 'expected_record', 'expected_review', 'reviewer', 'decision'}, 'review request')
     if not memory.text(request['reviewer']) or request['decision'] not in ('accept', 'revise', 'reject'):
         raise EvidenceError('请填写审核人并选择审核结论')
@@ -134,17 +239,7 @@ def save_review(path, request):
         del value['review']
     item['review'] = dict(reviewer=request['reviewer'].strip(), decision=request['decision'], at=archive.now())
     # Preserve JSON field order so a review update does not reformat every entry.
-    descriptor, temporary = tempfile.mkstemp(prefix='.write-', dir=file.parent)
-    try:
-        with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
-            json.dump(value, stream, ensure_ascii=False, indent=2)
-            stream.write('\n')
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, file)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+    _write(file,value)
     return dict(review=item['review'], record_sha256=bundle['sha256'], file=file.name)
 
 
@@ -162,9 +257,11 @@ def page(path):
         saved = status if state=='pending' else f'{status} · {review["reviewer"]} · {review["at"]}'
         sections = ''.join(f'<dt>{label}</dt><dd>{escape(item[key])}</dd>'
                            for key, label in SECTIONS)
+        proposal=item.get('proposal')
+        context=('<p class="meta">Proposal: '+escape(proposal['operation'])+' · Targets: '+escape(', '.join(proposal['target_ids']) or 'none')+'</p>') if proposal else ''
         cards.append(f'<article class="panel" data-state="{state}" data-category="{escape(category, quote=True)}"><h2>{escape(item["title"])}</h2>'
                      f'<p class="meta">{escape(category)} · {escape(file.name)}</p>'
-                     f'<p class="compact-status">{escape(saved)}</p><dl>{sections}</dl>'
+                     f'<p class="compact-status">{escape(saved)}</p>{context}<dl>{sections}</dl>'
                      f'<form data-id="{escape(item["id"], quote=True)}" '
                      f'data-record="{bundles[item["id"]]["sha256"]}" '
                      f'data-review="{escape(canonical(review), quote=True)}">'

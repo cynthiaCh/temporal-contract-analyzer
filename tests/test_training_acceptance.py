@@ -1,5 +1,9 @@
 """Offline training acceptance/held-out separation; synthetic models only."""
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
+from unittest.mock import patch
+import test_compact_experience as compact_fixtures
 import json
 from pathlib import Path
 import unittest
@@ -8,6 +12,8 @@ Backend=fixtures.Backend
 from temporal_contract_analyzer.tempoevo_v4 import read
 from temporal_contract_analyzer.training_acceptance import normalize
 from temporal_contract_analyzer.core import EvidenceError
+from temporal_contract_analyzer import experience_approval as approval, compact_experience as compact, experience_memory as memory
+from temporal_contract_analyzer.tempoevo_docker import evaluate
 
 
 class AcceptanceBackend(Backend):
@@ -32,13 +38,13 @@ class AcceptanceTests(unittest.TestCase):
   self.assertEqual([a['acceptance_passed'] for a in s['attempts']],[False,True]);self.assertTrue(all(a['visible_passed'] for a in s['attempts']))
   self.assertEqual([k for k,_ in b.evaluations],['visible','gold','visible','gold'])
   actions=[p for k,p,_,_ in b.calls if k=='action'];self.assertEqual(actions[1]['candidate_sources']['main.py'],'value = 1\n')
-  self.assertFalse(actions[1]['feedback']['training_acceptance']['passed']);self.assertEqual(s['stop_reason'],'training_accepted')
+  self.assertFalse(actions[1]['feedback']['oracle_acceptance']['passed']);self.assertEqual(s['stop_reason'],'oracle_accepted')
   for _,payload,_,_ in b.calls:
    serialized=json.dumps(payload);self.assertNotIn('SECRET',serialized);self.assertNotIn('private-id',serialized);self.assertNotIn('/oracle/',serialized)
   self.assertIn('SECRET', (loop.root/'stages/acceptance-1/raw-result.json').read_text())
- def test_gold_pass_required_public_fail_continues(self):
-  loop=self.prepare();s=loop.run(AcceptanceBackend(gold_at=1,visible_at=2),execute=True)
-  self.assertEqual(len(s['attempts']),2);self.assertFalse(s['attempts'][0]['acceptance_passed']);self.assertTrue(s['attempts'][0]['training_result']['passed'])
+ def test_gold_pass_public_fail_stops_in_training(self):
+  loop=self.prepare();s=loop.run(AcceptanceBackend(gold_at=1,visible_at=99),execute=True)
+  self.assertEqual(len(s['attempts']),1);self.assertTrue(s['attempts'][0]['acceptance_passed']);self.assertFalse(s['attempts'][0]['visible_passed'])
  def test_optional_public_failure_does_not_block_gold_acceptance(self):
   loop=self.prepare(required_visible_checks=False);s=loop.run(AcceptanceBackend(gold_at=1,visible_at=99),execute=True)
   self.assertTrue(s['training_accepted']);self.assertEqual(len(s['attempts']),1);self.assertFalse(s['attempts'][0]['visible_passed'])
@@ -82,12 +88,13 @@ class NormalizationTests(unittest.TestCase):
 class BoundaryTests(unittest.TestCase):
  setUp=fixtures.V4Tests.setUp
  prepare=fixtures.V4Tests.prepare
- def test_testing_only_one_final_gold_no_feedback_or_learning(self):
+ def test_testing_retries_with_verdict_feedback_without_learning(self):
   from temporal_contract_analyzer import experience_approval as approval
   loop=self.prepare(mode='testing',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
   b=AcceptanceBackend(gold_at=99,visible_at=2);before={str(p):p.read_bytes() for p in self.store.rglob('*') if p.is_file()}
   state=loop.run(b,execute=True)
-  self.assertEqual([k for k,_ in b.evaluations],['visible','visible','gold']);self.assertEqual(len(state['attempts']),2);self.assertFalse(state['gold_result']['passed'])
+  self.assertEqual([k for k,_ in b.evaluations],['visible','gold']*3);self.assertEqual(len(state['attempts']),3);self.assertFalse(state['gold_result']['passed'])
+  self.assertEqual(state['status'],'repair_exhausted')
   self.assertFalse((loop.root/'candidate-pool').exists());self.assertFalse((loop.root/'expert-summary-task.json').exists());self.assertNotIn('extract',[x[0] for x in b.calls])
   self.assertEqual(before,{str(p):p.read_bytes() for p in self.store.rglob('*') if p.is_file()})
   self.assertTrue(all('training_acceptance' not in json.dumps(x[1]) and 'SECRET' not in json.dumps(x[1]) for x in b.calls))
@@ -111,7 +118,7 @@ class BoundaryTests(unittest.TestCase):
   loop.run(b,execute=True);self.assertEqual(len(b.calls),count)
  def test_extraction_failure_preserves_accepted_assessment(self):
   loop=self.prepare();s=loop.run(Backend(invalid='extract'),execute=True)
-  self.assertEqual(s['status'],'execution_invalid');self.assertTrue(s['training_accepted']);self.assertEqual(s['repair_stop_reason'],'training_accepted')
+  self.assertEqual(s['status'],'execution_invalid');self.assertTrue(s['training_accepted']);self.assertEqual(s['repair_stop_reason'],'oracle_accepted')
   self.assertFalse((loop.root/'candidate-pool/success.json').exists())
  def test_raw_probe_exit_one_is_a_behavior_failure_not_transport_error(self):
   import sys
@@ -128,3 +135,212 @@ class BoundaryTests(unittest.TestCase):
   with patch('temporal_contract_analyzer.tempoevo_docker.image_identity'),patch('temporal_contract_analyzer.tempoevo_docker.subprocess.run',return_value=SimpleNamespace(returncode=1,stdout='{"verdict":"UNDERREACH"}',stderr='')),patch('temporal_contract_analyzer._session_runtime.docker_transport.stop'):
    raw=evaluate(payload,d)
   self.assertTrue(raw['valid']);self.assertFalse(normalize(raw)['passed'])
+
+ def test_unknown_public_verdict_is_allowed_but_missing_verdict_is_invalid(self):
+  candidate=self.root/'candidate';candidate.mkdir()
+  for value,valid in [({'passed':None},True),({},False)]:
+   with self.subTest(value=value),patch('temporal_contract_analyzer.tempoevo_docker.image_identity'),patch('temporal_contract_analyzer.tempoevo_docker.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout=json.dumps(value),stderr='')),patch('temporal_contract_analyzer._session_runtime.docker_transport.stop'):
+    result=evaluate(dict(candidate=str(candidate),evaluator=dict(image='sha256:'+'a'*64,command=['python3','/checks/project.py'])),self.root)
+    self.assertIs(result['valid'],valid)
+    if valid:self.assertIsNone(result['passed'])
+
+ def test_testing_oracle_accepts_the_scorer_failure_exit_code(self):
+  candidate=self.root/'candidate';candidate.mkdir()
+  with patch('temporal_contract_analyzer.tempoevo_docker.image_identity'),patch('temporal_contract_analyzer.tempoevo_docker.subprocess.run',return_value=SimpleNamespace(returncode=1,stdout='{"passed": false}',stderr='')),patch('temporal_contract_analyzer._session_runtime.docker_transport.stop'):
+   result=evaluate(dict(candidate=str(candidate),purpose='testing_acceptance',evaluator=dict(image='sha256:'+'a'*64,command=['python3','/checks/gold.py'])),self.root)
+  self.assertTrue(result['valid']);self.assertFalse(result['passed'])
+
+
+class OracleRetryTests(unittest.TestCase):
+    setUp=fixtures.V4Tests.setUp
+
+    def prepare(self, **changes):
+        config=dict(mode='testing',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
+        config.update(changes)
+        return fixtures.V4Tests.prepare(self,**config)
+
+
+    def test_no_public_checker_still_retries_on_oracle_failure(self):
+        loop=self.prepare(visible_evaluator=None)
+        backend=AcceptanceBackend(gold_at=2);state=loop.run(backend,execute=True)
+        self.assertEqual(state['status'],'passed',state.get('error'))
+        self.assertEqual(len(state['attempts']),2)
+        self.assertEqual([k for k,_ in backend.evaluations],['gold','gold'])
+        action2=[p for kind,p,_,_ in backend.calls if kind=='action'][1]
+        self.assertFalse(action2['feedback']['oracle_acceptance']['passed'])
+        self.assertNotIn('No external behavioral verdict is available',action2['instruction'])
+
+
+    def test_legacy_summary_remains_read_only(self):
+        loop=self.prepare();summary=(loop.root/'summary.json').read_bytes()
+        protocol=read(loop.root/'protocol.json');protocol['acceptance_policy']='visible_stop_then_independent_gold';loop.save('protocol.json',protocol)
+        self.assertEqual(loop.report(),json.loads(summary))
+        self.assertEqual((loop.root/'summary.json').read_bytes(),summary)
+
+    def test_training_and_testing_have_identical_repair_actions_and_feedback(self):
+        for gold_at in (1,2,3,99):
+            for public in (True,False,None):
+                with self.subTest(gold_at=gold_at,public=public):
+                    class Backend(AcceptanceBackend):
+                        def evaluate(inner,kind,payload,directory):
+                            value=super().evaluate(kind,payload,directory)
+                            if kind=='visible':value['passed']=public
+                            return value
+                    runs=[]
+                    for mode in ('learning','testing'):
+                        loop=self.prepare(mode=mode);backend=Backend(gold_at=gold_at)
+                        state=loop.run(backend,execute=True)
+                        self.assertNotEqual(state['status'],'execution_invalid',state.get('error'))
+                        self.assertEqual(len(state['attempts']),min(gold_at,3))
+                        self.assertEqual(state['gold_result']['passed'],gold_at<=3)
+                        self.assertNotIn('SECRET',json.dumps(backend.calls))
+                        actions=[(kind,payload,model,limits['requests']) for kind,payload,model,limits in backend.calls if kind in ('contract','diagnosis','action')]
+                        self.assertTrue(all(0<limits['seconds']<=600 for kind,_,_,limits in backend.calls if kind in ('contract','diagnosis','action')))
+                        runs.append((state,actions,read(loop.root/'protocol.json')))
+                        self.assertEqual(len([k for k,_ in backend.evaluations if k=='gold']),min(gold_at,3))
+                        if mode=='testing':
+                            self.assertFalse((loop.root/'candidate-pool').exists())
+                            self.assertFalse((loop.root/'expert-summary-task.json').exists())
+                    train,test=runs
+                    self.assertEqual(train[1],test[1])
+                    self.assertEqual(train[0]['repair_stop_reason'],test[0]['repair_stop_reason'])
+                    self.assertEqual([a['acceptance_passed'] for a in train[0]['attempts']],[a['acceptance_passed'] for a in test[0]['attempts']])
+                    for key in ('acceptance_policy','max_attempts','evaluation_budget'):
+                        self.assertEqual(train[2][key],test[2][key])
+                    for kind in ('contract','diagnosis','action'):
+                        self.assertEqual(train[2]['limits'][kind],test[2]['limits'][kind])
+
+    def test_new_runs_reject_legacy_stop_policies_in_either_mode(self):
+        for mode in ('learning','testing'):
+            with self.subTest(mode=mode):
+                with self.assertRaisesRegex(EvidenceError,'read-only'):self.prepare(mode=mode,acceptance_policy='visible_stop_then_independent_gold')
+                with self.assertRaisesRegex(EvidenceError,'advisory'):self.prepare(mode=mode,required_visible_checks=True)
+
+class CompactPublicationTests(unittest.TestCase):
+    prepare=fixtures.V4Tests.prepare
+
+    def setUp(self):
+        fixtures.V4Tests.setUp(self)
+        example=compact_fixtures.CompactExperienceTests();example.setUp();self.addCleanup(example.doCleanups)
+        self.store=self.root/'library';self.store.mkdir()
+        self.category=self.store/'mechanisms.json'
+        self.category.write_text(json.dumps(example.value))
+
+    def trained(self):
+        loop=self.prepare();state=loop.run(fixtures.Backend(),execute=True)
+        self.assertEqual(state['status'],'passed',state.get('error'))
+        return loop
+
+    def request(self, item):
+        bundle=next(b for b in memory.records(self.store) if b['id']==item['id'])
+        return dict(id=item['id'],expected_record=bundle['sha256'],expected_review=item['review'],reviewer='Synthetic reviewer',decision='accept')
+
+    def test_publish_review_and_retry_preserve_approved_content_and_snapshot(self):
+        before=self.category.read_bytes();snapshot=approval.freeze(self.store)
+        loop=self.trained();code=loop.publish_candidate('success')
+        self.assertEqual(self.category.read_bytes(),before)
+        self.assertEqual(approval.freeze(self.store),snapshot)
+        self.assertEqual(approval.validate_snapshot(self.store,snapshot),snapshot)
+        self.assertEqual({p.name for p in self.store.iterdir()},{'mechanisms.json','candidates.json'})
+        self.assertFalse((loop.root/'candidate-pool/success-evidence.json').exists())
+        item=compact.load(self.store/'candidates.json')['experiences'][0]
+        self.assertEqual(item['review'],dict(reviewer=None,decision='pending',at=None))
+        self.assertEqual(item['proposal'],dict(operation='new',target_ids=[]))
+        self.assertIn('Verify accepted identity',item['verification'])
+        self.assertIn('Synthetic fixture',item['exclusion'])
+        self.assertIn(item['id'],compact.page(self.store).decode())
+        self.assertEqual(next(b for b in memory.records(self.store) if b['id']==item['id'])['sha256'],code)
+        compact.save_review(self.store,self.request(item))
+        self.assertEqual(len(approval.freeze(self.store)['entries']),2)
+        # Recover from a lost local receipt, even after the reviewer has accepted it.
+        record=read(loop.root/'candidate-pool/success.json');record.pop('published_sha256')
+        loop.save('candidate-pool/success.json',record)
+        self.assertEqual(loop.publish_candidate('success'),code)
+        saved=compact.load(self.store/'candidates.json')['experiences']
+        self.assertEqual(len(saved),1);self.assertEqual(saved[0]['review']['decision'],'accept')
+
+    def test_single_file_publication_does_not_inherit_whole_file_acceptance(self):
+        self.store=self.category
+        snapshot=approval.freeze(self.store);loop=self.trained();loop.publish_candidate('success')
+        value=compact.load(self.store)
+        self.assertEqual(len(value['experiences']),2)
+        self.assertEqual(compact.review_for(value,value['experiences'][1])['decision'],'pending')
+        self.assertEqual(approval.freeze(self.store),snapshot)
+        self.assertEqual({p.name for p in self.category.parent.iterdir()},{'mechanisms.json'})
+
+    def test_revision_and_merge_remain_pending_and_identify_targets(self):
+        value=compact.load(self.category)
+        value['experiences'].append(dict(value['experiences'][0],id='other-binding'))
+        self.category.write_text(json.dumps(value));before=self.category.read_bytes()
+        for operation,count in [('revise',1),('merge',2)]:
+            loop=self.trained();path=loop.root/'candidate-pool/success.json';record=read(path)
+            targets=[entry['bundle'] for entry in approval.freeze(self.store)['entries']]
+            record['related_experiences']=targets
+            record['reflection_update'].update(operation=operation,target_sha256s=[t['sha256'] for t in targets[:count]],change_summary=['Synthetic guidance change'],supporting_attempts=[1])
+            loop.save('candidate-pool/success.json',record);loop.publish_candidate('success')
+        items=compact.load(self.store/'candidates.json')['experiences']
+        self.assertEqual([i['proposal']['operation'] for i in items],['revise','merge'])
+        self.assertEqual([len(i['proposal']['target_ids']) for i in items],[1,2])
+        self.assertTrue(all(i['review']['decision']=='pending' for i in items))
+        self.assertEqual(self.category.read_bytes(),before)
+
+    def test_failure_summary_publishes_pending_without_claiming_success(self):
+        snapshot=approval.freeze(self.store);loop=self.prepare()
+        self.assertEqual(loop.run(fixtures.Backend(99),execute=True)['status'],'awaiting_expert_summary')
+        summary=dict(expert='SYNTHETIC_HUMAN',confirmed_conclusions=[],unverified_hypotheses=[],
+            unresolved_behaviors=['Still failing'],boundaries_counterexamples=[],suggested_checks=[],
+            experience=dict(labels=['I'],requires=['entry_snapshot'],excludes=[],
+                rules=[dict(category='verification',body='Check retained selection identity.')],limitations=['Not a successful repair']))
+        loop.submit_expert(summary);code=loop.publish_candidate('expert')
+        item=compact.load(self.store/'candidates.json')['experiences'][0]
+        self.assertEqual(item['review']['decision'],'pending')
+        self.assertIn('Not a successful repair',item['exclusion'])
+        self.assertEqual(approval.freeze(self.store),snapshot)
+        self.assertFalse(read(loop.root/'candidate-pool/expert.json')['effectiveness_verified'])
+        self.assertEqual(loop.publish_candidate('expert'),code)
+
+    def test_testing_cannot_publish_into_compact_library(self):
+        loop=self.prepare(mode='testing',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
+        with self.assertRaisesRegex(EvidenceError,'Testing cannot write'):loop.publish_candidate('success')
+        self.assertEqual({p.name for p in self.store.iterdir()},{'mechanisms.json'})
+
+    def test_unchanged_evidence_creates_no_duplicate_or_legacy_sidecar(self):
+        loop=self.trained();path=loop.root/'candidate-pool/success.json';record=read(path)
+        target=memory.records(self.store)[0]
+        record['experience']=dict(labels=target['labels'],requires=target['requires'],excludes=target['excludes'],
+            rules=[dict(category=r['category'],body=r['body']) for r in target['rules']],limitations=[])
+        record['related_experiences']=[target]
+        record['reflection_update'].update(operation='evidence',target_sha256s=[target['sha256']])
+        loop.save('candidate-pool/success.json',record)
+        snapshot=approval.freeze(self.store);before=self.category.read_bytes()
+        code=loop.publish_candidate('success')
+        self.assertEqual(loop.publish_candidate('success'),code)
+        self.assertEqual(read(path)['publication_kind'],'evidence_proposal')
+        self.assertEqual({p.name for p in self.store.iterdir()},{'mechanisms.json'})
+        self.assertEqual(self.category.read_bytes(),before);self.assertEqual(approval.freeze(self.store),snapshot)
+
+    def test_invalid_or_edited_candidate_is_not_overwritten(self):
+        loop=self.trained();path=loop.root/'candidate-pool/success.json';record=read(path)
+        bad=deepcopy(record);bad['experience']['requires']=['invented-predicate']
+        loop.save('candidate-pool/success.json',bad)
+        before=self.category.read_bytes()
+        with self.assertRaises(EvidenceError):loop.publish_candidate('success')
+        self.assertEqual({p.name for p in self.store.iterdir()},{'mechanisms.json'})
+        self.assertEqual(self.category.read_bytes(),before)
+        loop.save('candidate-pool/success.json',record);loop.publish_candidate('success')
+        candidates=self.store/'candidates.json';value=compact.load(candidates)
+        value['experiences'][0]['verification']='Synthetic reviewer edit.'
+        candidates.write_text(json.dumps(value));before=candidates.read_bytes()
+        loop.save('candidate-pool/success.json',record)
+        with self.assertRaisesRegex(EvidenceError,'refusing to overwrite'):loop.publish_candidate('success')
+        self.assertEqual(candidates.read_bytes(),before)
+
+    def test_concurrent_publication_keeps_both_candidates_without_lock_files(self):
+        record=read(self.trained().root/'candidate-pool/success.json')
+        other=deepcopy(record);other['experience']['rules'][0]['body']='A different synthetic verification rule.'
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures=[executor.submit(compact.publish_candidate,self.store,r) for r in (record,other)]
+            receipts=[f.result(timeout=5) for f in futures]
+        self.assertEqual(len({r['published_sha256'] for r in receipts}),2)
+        self.assertEqual(len(compact.load(self.store/'candidates.json')['experiences']),2)
+        self.assertEqual({p.name for p in self.store.iterdir()},{'mechanisms.json','candidates.json'})

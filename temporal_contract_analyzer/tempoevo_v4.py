@@ -28,6 +28,12 @@ def read(path):
     return json.loads(Path(path).read_text())
 
 
+def visible_verdict(attempts):
+    values=[a['visible_passed'] for a in attempts]
+    if any(v is True for v in values):return True
+    return False if values and all(v is False for v in values) else None
+
+
 def obj_schema(properties):
     return dict(type='object', properties=properties, required=list(properties), additionalProperties=False)
 
@@ -99,9 +105,15 @@ class Trajectory:
         if policy=='online' and (cfg.get('mode')!='learning' or cfg.get('condition') not in ('structured','bm25') or not cfg.get('online_memory') or not memory.text(cfg.get('task_id'))):raise EvidenceError('Online memory requires memory-enabled learning and an explicit training pool')
         if policy!='online' and cfg.get('online_memory'):raise EvidenceError('Frozen/testing trajectories cannot access an online pool')
         cfg['learning_policy']=policy
-        for key in ('task','candidate','store','mode','condition','visible_evaluator'):
+        for key in ('task','candidate','store','mode','condition'):
             if key not in cfg:raise EvidenceError('Missing '+key)
         if cfg['mode'] not in ('learning','testing') or cfg['condition'] not in CONDITIONS:raise EvidenceError('Invalid mode/condition')
+        if any(key in cfg for key in ('public_checks','repair_policy','testing_policy')):
+            raise EvidenceError('Repair strategy switches were removed; training and testing always use Oracle acceptance')
+        if cfg.get('acceptance_policy','oracle_pass_or_action_budget_exhausted')!='oracle_pass_or_action_budget_exhausted':
+            raise EvidenceError('Historical protocol is read-only; prepare a new trajectory')
+        if cfg.get('required_visible_checks'):
+            raise EvidenceError('Training and testing use public checks as advisory feedback only')
         from .evaluation_split import enforce
         split=enforce(cfg)
         if split:cfg['evaluation_split']=split
@@ -186,10 +198,9 @@ class Trajectory:
             dict(version='bm25-v1' if cfg['condition']=='bm25' else 'no-memory',max_experiences=5 if cfg['condition']=='bm25' else 0))
         cfg.update(schema_version=VERSION,model=identity(settings),memory_snapshot=bank,max_attempts=attempts,limits=limits,total_request_cap=total,
             store=str(store),original_inventory=inventory(files),feedback_fields=['observations','regressions','unknowns'],
-            required_visible_checks=cfg.get('required_visible_checks',True),
-            acceptance_policy='training_gold_and_required_visible' if cfg['mode']=='learning' else 'visible_stop_then_independent_gold',
-            evaluation_budget=dict(visible=attempts,training_acceptance=attempts if cfg['mode']=='learning' else 0,independent_gold=1 if cfg['mode']=='testing' else 0),
-            held_out_eligible=False,split_status='unverified_no_independent_split_evidence',
+            required_visible_checks=False,acceptance_policy='oracle_pass_or_action_budget_exhausted',
+            evaluation_budget=dict(visible=attempts if cfg.get('visible_evaluator') else 0,oracle=attempts),
+            held_out_eligible=False,split_status='oracle_verdict_feedback_testing' if cfg['mode']=='testing' else 'unverified_no_independent_split_evidence',
             memory_snapshot_sha256=bank['sha256'],source_sha256=sha(canonical(sources).encode()))
         self.save('protocol.json',cfg);self.save('state.json',dict(status='prepared',attempts=[],stages=[],contract=None,diagnoses=[],cancelled=False))
         # Freeze executables and their static inputs; no evaluator output enters model context here.
@@ -201,7 +212,7 @@ class Trajectory:
 
     def verify(self):
         p=read(self.root/'protocol.json')
-        if p.get('schema_version')!=VERSION:raise EvidenceError('Historical protocol is read-only; prepare a new V11 root')
+        if p.get('schema_version')!=VERSION or p.get('acceptance_policy')!='oracle_pass_or_action_budget_exhausted':raise EvidenceError('Historical protocol is read-only; prepare a new V11 root')
         from .evaluation_split import enforce
         enforce(p)
         binding=read(self.root/'binding.json')
@@ -359,7 +370,9 @@ class Trajectory:
                 check_contract(result['output'],p['task'],sources);state=self.state();state['contract']=result['output'];self.save('initial-contract.json',result['output']);self.save('state.json',state)
             self.status('contract_ready');state=self.state()
             for number in range(1,p['max_attempts']+1):
-                if state['attempts'] and (state['attempts'][-1].get('acceptance_passed') if p['mode']=='learning' else state['attempts'][-1]['visible_passed']):break
+                if state['attempts']:
+                    last=state['attempts'][-1]
+                    if last['acceptance_passed']:break
                 if len(state['attempts'])>=number:
                     state=self.state();continue
                 if number>1 and p['condition']!='baseline' and not any(d['attempt']==number for d in state['diagnoses']):
@@ -408,22 +421,27 @@ class Trajectory:
                 original_diff=''.join(''.join(difflib.unified_diff(sources.get(k,'').splitlines(True),candidate.get(k,'').splitlines(True),fromfile='original/'+k,tofile='candidate/'+k)) for k in sorted(set(sources)|set(candidate)))
                 self.save('attempts/'+str(number)+'/diff.json',dict(from_original=original_diff,from_previous=''.join(''.join(difflib.unified_diff(payload['candidate_sources'].get(k,'').splitlines(True),candidate.get(k,'').splitlines(True),fromfile='previous/'+k,tofile='candidate/'+k)) for k in sorted(set(candidate)|set(payload['candidate_sources'])))))
                 self.status('evaluation_running')
-                evaluation=self._step(p,backend,'visible-'+str(number),'visible',dict(candidate=str(directory),evaluator=p['visible_evaluator']))
+                if not p.get('visible_evaluator'):
+                    evaluation=dict(passed=None,observations=[],regressions=[],unknowns=['No external public behavioral checks were run; candidate correctness is unverified.'])
+                else:
+                    evaluation=self._step(p,backend,'visible-'+str(number),'visible',dict(candidate=str(directory),evaluator=p['visible_evaluator']))
                 if inventory(capture(directory)[0])!=inventory({k:v.encode() for k,v in candidate.items()}):raise EvidenceError('Evaluator mutated candidate')
-                if type(evaluation.get('passed')) is not bool:raise EvidenceError('No visible verdict')
+                if 'passed' not in evaluation or (evaluation['passed'] is not None and type(evaluation['passed']) is not bool):raise EvidenceError('No visible verdict')
                 feedback={k:deepcopy(evaluation[k]) for k in p['feedback_fields'] if k in evaluation}
                 if set(feedback)!=set(p['feedback_fields']):raise EvidenceError('Visible evaluator must return complete observations/regressions/unknowns')
-                acceptance=None
-                accepted=evaluation['passed']
+                learning=p['mode']=='learning'
+                evaluator=p['training_evaluator'] if learning else p['gold_evaluator']
+                key=('acceptance-' if learning else 'oracle-')+str(number)
+                result=self._step(p,backend,key,'gold',dict(candidate=str(directory),evaluator=evaluator,
+                    purpose='training_acceptance' if learning else 'testing_acceptance'))
+                if inventory(capture(directory)[0])!=inventory({k:v.encode() for k,v in candidate.items()}):raise EvidenceError('Oracle evaluator mutated candidate')
+                accepted=result['passed']
+                feedback['oracle_acceptance']=deepcopy(result['feedback'])
                 if p['mode']=='learning':
-                    acceptance=self._step(p,backend,'acceptance-'+str(number),'gold',dict(candidate=str(directory),evaluator=p['training_evaluator'],purpose='training_acceptance'))
-                    if inventory(capture(directory)[0])!=inventory({k:v.encode() for k,v in candidate.items()}):raise EvidenceError('Acceptance evaluator mutated candidate')
-                    accepted=acceptance['passed'] and (evaluation['passed'] or not p['required_visible_checks'])
-                    feedback['training_acceptance']=acceptance['feedback']
                     self.save('training-exposure.json',dict(task_id=p.get('task_id'),source_sha256=p['source_sha256'],training_feedback_used=True,eligible_for_independent_testing=False))
                 state=self.state();state['attempts'].append(dict(number=number,visible_passed=evaluation['passed'],
                     delivered_sha256s=delivery.get('selected_sha256s',[]),
-                    acceptance_passed=accepted if p['mode']=='learning' else None,training_result=acceptance,
+                    acceptance_passed=accepted,training_result=result if learning else None,oracle_result=result,
                     feedback=feedback,candidate_sources=candidate,candidate_inventory=inventory(capture(directory)[0])))
                 self.save('state.json',state)
                 if p['learning_policy']=='online':
@@ -432,14 +450,11 @@ class Trajectory:
                 if accepted:break
                 self.status('revision_pending');state=self.state()
             state=self.state();last=state['attempts'][-1]
-            passed=last['acceptance_passed'] if p['mode']=='learning' else last['visible_passed']
-            directory=self.root/'attempts'/str(len(state['attempts']))/'candidate'
-            reason=('training_accepted' if p['mode']=='learning' else 'visible_checks_passed') if passed else 'action_budget_exhausted'
-            self.status('passed' if passed else 'repair_exhausted',repair_stop_reason=reason,first_pass_attempt=len(state['attempts']) if passed else None,stop_reason=reason,
-                training_accepted=passed if p['mode']=='learning' else None,final_acceptance=last['training_result'])
-            if p['mode']=='testing':
-                gold=self._step(p,backend,'gold','gold',dict(candidate=str(directory),evaluator=p['gold_evaluator'],purpose='independent_testing'))
-                self.status('passed' if passed else 'repair_exhausted',gold_result=gold)
+            passed=last['acceptance_passed']
+            reason='oracle_accepted' if passed else 'action_budget_exhausted'
+            final_status='passed' if passed else 'repair_exhausted'
+            self.status(final_status,repair_stop_reason=reason,first_pass_attempt=len(state['attempts']) if passed else None,stop_reason=reason,
+                training_accepted=passed if p['mode']=='learning' else None,final_acceptance=last['oracle_result'],gold_result=last['oracle_result'])
             if p['mode']=='learning':
                 from . import experience_reflection as reflection
                 used=list(dict.fromkeys(delivery.get('selected_sha256s',[])+[code for a in self.state()['attempts'] for code in a.get('delivered_sha256s',[])]))
@@ -507,6 +522,11 @@ class Trajectory:
         if name=='success' and (self.state().get('training_accepted') is not True or record.get('training_accepted') is not True):raise EvidenceError('Success experience requires training acceptance')
         from . import experience_reflection as reflection
         update=record['reflection_update'];experience=record['experience']
+        from . import compact_experience as compact
+        if compact.is_library(p['store']):
+            receipt=compact.publish_candidate(p['store'],record)
+            record.update(receipt);self.save(path.relative_to(self.root),record)
+            return receipt.get('published_sha256') or receipt['published_proposal_sha256']
         if update['operation']=='evidence':
             code=reflection.publish_evidence(p['store'],record)
             record.update(published_proposal_sha256=code,publication_kind='evidence_proposal');self.save(path.relative_to(self.root),record)
@@ -533,7 +553,7 @@ class Trajectory:
 
     def report(self):
         state=self.state();attempts=state['attempts'];p=read(self.root/'protocol.json')
-        if p.get('schema_version')!=VERSION:return read(self.root/'summary.json')
+        if p.get('schema_version')!=VERSION or p.get('acceptance_policy')!='oracle_pass_or_action_budget_exhausted':return read(self.root/'summary.json')
         for row in state['stages']:
             path=self.root/'stages'/row['key']/'result.json'
             if path.exists() and 'requests' not in row:
@@ -546,17 +566,19 @@ class Trajectory:
             known_tokens=sum((s.get('observed_tokens') or s.get('tokens') or {}).get('total_tokens') or 0 for s in state['stages']),
             unknown_usage_requests=None if any(s.get('unknown_usage_requests',0) is None for s in state['stages']) else sum(s.get('unknown_usage_requests',0) for s in state['stages']),
             usage_incomplete=any(s.get('usage_incomplete',False) for s in state['stages']),
-            cumulative_visible_pass=[any(a['visible_passed'] for a in attempts[:n]) if len(attempts)>=n or any(a['visible_passed'] for a in attempts) else None for n in (1,2,3)],
+            cumulative_visible_pass=[visible_verdict(attempts[:n]) if len(attempts)>=n or visible_verdict(attempts) is True else None for n in (1,2,3)],
             unstarted_actions=p['max_attempts']-sum(s['kind']=='action' for s in state['stages']),
             missing_action_evaluations=sum(s['kind']=='action' for s in state['stages'])-len(attempts),
             attempt_results=[dict(number=a['number'],visible_passed=a['visible_passed'],acceptance_passed=a.get('acceptance_passed'),feedback=a['feedback'],candidate_inventory=a['candidate_inventory']) for a in attempts],
             first_visible_pass_attempt=next((a['number'] for a in attempts if a['visible_passed']),None),
-            first_training_acceptance_attempt=next((a['number'] for a in attempts if a.get('acceptance_passed')),None),
+            first_training_acceptance_attempt=next((a['number'] for a in attempts if a.get('acceptance_passed')),None) if p['mode']=='learning' else None,
+            first_oracle_pass_attempt=next((a['number'] for a in attempts if a.get('oracle_result') and a['oracle_result']['passed']),None),
             final_visible_passed=attempts[-1]['visible_passed'] if attempts else None,
-            first_pass_attempt=state.get('first_pass_attempt'),visible_passed=any(a['visible_passed'] for a in attempts),
+            first_pass_attempt=state.get('first_pass_attempt'),visible_passed=visible_verdict(attempts),
             training_accepted=state.get('training_accepted'),final_acceptance=state.get('final_acceptance'),stop_reason=state.get('stop_reason'),repair_stop_reason=state.get('repair_stop_reason'),acceptance_policy=p.get('acceptance_policy'),
             per_round_evaluations=[dict(stage=s['key'],result=read(self.root/'stages'/s['key']/'result.json')) for s in state['stages'] if s['kind'] in ('visible','gold') and (self.root/'stages'/s['key']/'result.json').exists()],
             per_attempt_acceptance=[a.get('training_result') for a in attempts],required_visible_checks=p.get('required_visible_checks'),
+            per_attempt_oracle=[a.get('oracle_result') for a in attempts],
             held_out_eligible=p.get('held_out_eligible',False),split_status=p.get('split_status','unverified'),
             gold_result=state.get('gold_result'),attempts_started=sum(s['kind']=='action' for s in state['stages']),valid_attempts=len(attempts),
             contract_changes=sum(d['contract_changed'] for d in state['diagnoses']),

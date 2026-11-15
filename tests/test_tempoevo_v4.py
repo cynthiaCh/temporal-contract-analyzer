@@ -43,7 +43,7 @@ class Backend:
         return dict(valid=True,requests=1,tokens=dict(total_tokens=10),model=MODEL,output=out)
     def evaluate(self,stage,payload,directory):
         n=int((Path(payload['candidate'])/'main.py').read_text().split('=')[1])
-        if stage=='gold':return dict(valid=True,passed=False if payload.get('purpose')=='independent_testing' else n>=self.passes,hidden_failures=['SECRET_GOLD'])
+        if stage=='gold':return dict(valid=True,passed=n>=self.passes,hidden_failures=['SECRET_GOLD'])
         return dict(valid=True,passed=n>=self.passes,observations=[dict(actual=n,passed=n>=self.passes)],regressions=[],unknowns=[],hidden_failures=['SECRET_VISIBLE_EXTRA'])
 
 
@@ -89,7 +89,7 @@ class V4Tests(unittest.TestCase):
         from temporal_contract_analyzer import experience_approval as approval
         loop=self.prepare(mode='testing',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
         backend=Backend(2);before=list(self.store.rglob('*'));state=loop.run(backend,execute=True)
-        self.assertEqual(state['status'],'passed',state.get('error'));self.assertFalse(state['gold_result']['passed'])
+        self.assertEqual(state['status'],'passed',state.get('error'));self.assertTrue(state['gold_result']['passed'])
         self.assertNotIn('extract',[r[0] for r in backend.calls]);self.assertEqual(before,list(self.store.rglob('*')))
         for _,payload,_,_ in backend.calls:
             self.assertNotIn('SECRET',json.dumps(payload))

@@ -95,6 +95,13 @@ V4 frozen trajectories remain read-only. Training acceptance feedback changes th
 protocol; do not resume old roots. Independent dataset isolation is unverified
 unless supported by split evidence; exposed training cases are not held-out tests.
 
-CSV ranks 1–25 are reserved for training and 26–50 for final-only-Gold testing. Reserved test IDs cannot run learning. See [V10 split and scoring boundaries](docs/TEMPOEVO_V10.md). Historical selection and shared task families mean this split is not certified unseen.
+CSV ranks 1–25 are reserved for training and 26–50 for testing. Both modes share
+the same repair loop: at most three Oracle-guided attempts, retry on Oracle failure
+and stop on acceptance. Public checks are auxiliary. Testing exposes only the
+Oracle pass/fail verdict, keeps memory frozen and cannot learn.
+See the [current feedback policy](docs/PUBLIC_TEST_ADAPTERS.md); the former
+[V10 final-only scoring protocol](docs/TEMPOEVO_V10.md) remains historical.
+Reserved test IDs cannot run learning. Historical selection and shared task
+families mean this split is not certified unseen.
 
 Structured V11 delivery adds [source-grounded semantic applicability assessment](docs/TEMPOEVO_V11.md) after mechanism/BM25 recall; labels alone cannot authorize experience delivery. At most five nonredundant entries and 16,000 characters are injected. V10 histories remain read-only.

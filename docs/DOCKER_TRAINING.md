@@ -47,14 +47,15 @@ applicability before any approved experience is delivered.
 
 The first twenty historical selections are registered through
 `experiments/training-cases.json`. Registration does not certify runtime readiness:
-perform original/reference/negative control calibration first. Public examples in
-`tools/tempoevo-docker/public_checks.cjs` use task/README obligations. Trusted
-language RPC scaffolding stays in the grader, separate from hidden assertions,
-schedules and scoring. The unchanged original Gold probe serves per-round training acceptance in learning and final independent scoring in testing.
-Neither scaffold nor hidden gold is mounted into the model's solver workspace.
+perform original/reference/negative control calibration first. The original Gold
+probe evaluates each generated patch in both learning and testing. Hidden Gold
+code is never mounted into the model's solver workspace. Public project tests are
+optional auxiliary feedback; no task-family behavioral suite is generated.
 
-Each trajectory retains the same maximum three Actions, one frozen model profile, training-Gold-plus-required-public acceptance in learning, public-only stop and
-final independent Gold in testing, manual review and bounded request limits. Transient connection failures permit at most two archived stage restarts within the original stage request/time caps. Other invalid executions stop; no extra evaluated Actions are added.
+Each trajectory uses at most three Actions, one frozen model profile and Oracle
+acceptance to decide retries. Training alone extracts candidates for review;
+testing cannot learn. Transient connection failures permit at most two archived
+stage restarts within the original request/time caps. Other invalid executions stop.
 
 Prepare and run a selected rank range (preparation is zero-model):
 
