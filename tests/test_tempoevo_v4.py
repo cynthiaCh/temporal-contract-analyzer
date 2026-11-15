@@ -190,6 +190,31 @@ class V4Tests(unittest.TestCase):
         self.assertEqual(call.call_args[0][0]['execution_policy'],'tempoevo-trajectory-v11')
         self.assertEqual(result['requests'],1)
 
+    def test_action_adapter_accepts_complete_candidate_without_read_audit(self):
+        from unittest.mock import patch
+        from temporal_contract_analyzer.tempoevo_backend import NativeV4Backend
+        adapter=NativeV4Backend(dict(binary='/synthetic/codex'))
+        payload=dict(task='Public task',sources={'main.py':'value = 0\n'})
+        fake=dict(completed=True,infrastructure_valid=True,scoring_admissible=True,
+            final_candidate=str(self.source),receipt=dict(source_body_proofs=[]),
+            usage=dict(requests_started=1,total_usage=dict(total_tokens=7)))
+        with patch('temporal_contract_analyzer.execution_backend.NativeBackend.execute',return_value=fake):
+            result=adapter.execute('action',payload,MODEL,dict(requests=24,seconds=600),self.root/'action-adapter')
+        self.assertTrue(result['valid'],result)
+        self.assertEqual(result['native_receipt']['source_body_proofs'],[])
+        self.assertEqual(result['candidate_sources'],{'main.py':'value = 0\n'})
+
+    def test_action_adapter_still_rejects_invalid_candidate_or_archive(self):
+        from unittest.mock import patch
+        from temporal_contract_analyzer.tempoevo_backend import NativeV4Backend
+        adapter=NativeV4Backend(dict(binary='/synthetic/codex'))
+        fake=dict(completed=True,infrastructure_valid=True,scoring_admissible=False,
+            final_candidate=str(self.source),usage=dict(requests_started=1))
+        with patch('temporal_contract_analyzer.execution_backend.NativeBackend.execute',return_value=fake):
+            result=adapter.execute('action',dict(task='Public task',sources={'main.py':'value = 0\n'}),MODEL,
+                dict(requests=24,seconds=600),self.root/'invalid-action-adapter')
+        self.assertFalse(result['valid']);self.assertEqual(result['error'],'Candidate or archive validation failed')
+
     def test_native_evaluator_writes_artifacts_outside_the_frozen_candidate(self):
         import sys
         from temporal_contract_analyzer.tempoevo_backend import NativeV4Backend

@@ -25,10 +25,21 @@ def fake_command(archive,runtime,guard):
 phase=payload.get('phase','analysis')
 slot=dict(slot='ANALYSIS',phase=phase)
 if payload.get('logical_role'):slot['logical_role']=payload['logical_role']
+if payload.get('audit_error'):
+ def broken_audit(*args):raise ValueError('SYNTHETIC_AUDIT_FAILURE')
+ runner.source_proof=broken_audit
+if payload.get('archive_error'):
+ original_finalize=runner.Archive.finalize
+ def broken_archive(self,**kwargs):
+  result=original_finalize(self,**kwargs);result['status']='ERROR';return result
+ runner.Archive.finalize=broken_archive
+def fake_score(candidate,directory):
+ (directory/'called.json').write_text('true')
+ return dict(verdict='PASS')
 receipt=runner.session(slot,'Synthetic task and numbered source',
  case={},candidate=base/'candidate',task=base/'task.md',config=dict(seconds_per_session=20,
  requests_per_session=payload.get('cap',12),reflection_readonly=payload.get('readonly',False),model_settings=payload.get('model_settings')),
- run_dir=base/'run',command_factory=fake_command)
+ run_dir=base/'run',command_factory=fake_command,score_fn=fake_score if payload.get('score') else None)
 print(json.dumps(receipt))
 '''
 
@@ -69,9 +80,16 @@ docker=launcher.command(native,folder,runtime,phase,runtime/'hooks')
 print(json.dumps(dict(native=native,docker=docker)))
 '''
 
+PROOF_DRIVER = '''import json,sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+import runner
+print(json.dumps(runner.source_proof(json.load(sys.stdin),Path(sys.argv[2]))))
+'''
+
 
 class AnalysisRunnerTests(unittest.TestCase):
-    def run_fixture(self,mutate=False,phase='analysis',cap=12,readonly=False,requests=1,tool='',logical_role=None,output=None,schema=None,model_settings=None):
+    def run_fixture(self,mutate=False,phase='analysis',cap=12,readonly=False,requests=1,tool='',logical_role=None,output=None,schema=None,model_settings=None,score=False,archive_error=False,audit_error=False):
         temporary=tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup)
         root=Path(temporary.name);backend=root/'backend';backend.mkdir()
         for name in DEPENDENCIES:shutil.copyfile(SOURCE/name,backend/name)
@@ -85,10 +103,61 @@ class AnalysisRunnerTests(unittest.TestCase):
         if output is not None:analysis=output
         completed=subprocess.run([sys.executable,'-B','-c',DRIVER,str(backend),
             json.dumps(dict(base=str(root),analysis=analysis,mutate=mutate,phase=phase,cap=cap,
-                            readonly=readonly,requests=requests,tool=tool,logical_role=logical_role,model_settings=model_settings))],
+                            readonly=readonly,requests=requests,tool=tool,logical_role=logical_role,model_settings=model_settings,
+                            score=score,archive_error=archive_error,audit_error=audit_error))],
             capture_output=True,text=True,timeout=30)
         self.assertEqual(completed.returncode,0,completed.stderr)
         return root,analysis,json.loads(completed.stdout)
+
+    def test_complete_repair_without_tool_read_proof_reaches_scorer(self):
+        root,_,receipt=self.run_fixture(phase='repair',mutate=True,output=dict(report='Synthetic patch.'),score=True)
+        self.assertEqual(receipt['source_body_proofs'],[])
+        self.assertEqual(receipt['source_read_audit']['status'],'not_observed')
+        self.assertFalse(receipt['source_read_audit']['required_for_scoring'])
+        self.assertTrue(receipt['candidate_complete'],receipt)
+        self.assertTrue(receipt['scoring_admissible'],receipt)
+        self.assertEqual(receipt['scoring_status'],'COLLECTED')
+        self.assertTrue((root/'run/archive/score/called.json').exists())
+        self.assertTrue(receipt['scored_candidate_unchanged'])
+
+    def test_optional_source_audit_failure_does_not_block_scoring(self):
+        _,_,receipt=self.run_fixture(phase='repair',mutate=True,output=dict(report='Synthetic patch.'),score=True,audit_error=True)
+        self.assertEqual(receipt['source_read_audit']['status'],'unavailable')
+        self.assertIn('SYNTHETIC_AUDIT_FAILURE',receipt['source_read_audit']['error'])
+        self.assertTrue(receipt['scoring_admissible'],receipt)
+        self.assertEqual(receipt['scoring_status'],'COLLECTED')
+
+    def test_missing_read_proof_does_not_bypass_invalid_output_or_archive(self):
+        for changes in (dict(output=dict(wrong='Invalid repair schema')),dict(archive_error=True)):
+            with self.subTest(changes=changes):
+                config=dict(phase='repair',mutate=True,output=dict(report='Synthetic patch.'),score=True)
+                config.update(changes);root,_,receipt=self.run_fixture(**config)
+                self.assertEqual(receipt['source_body_proofs'],[])
+                self.assertFalse(receipt['scoring_admissible'],receipt)
+                self.assertFalse((root/'run/archive/score/called.json').exists())
+
+    def test_nonzero_combined_read_retains_optional_source_audit(self):
+        temporary=tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup)
+        root=Path(temporary.name);backend=root/'backend';backend.mkdir()
+        for name in DEPENDENCIES:shutil.copyfile(SOURCE/name,backend/name)
+        original=root/'original';(original/'src').mkdir(parents=True)
+        body="const acceptedDocumentIdentity = 'original';\nconst currentVisitIdentity = 'visit-one';\nconst retainedOperationResult = 'pending';\n"
+        (original/'src/session.js').write_text(body)
+        # The later rg failure must not erase successful cat output. Separators
+        # belong to the shell grammar, not to the source filename.
+        for separator in (';', '&&'):
+            for output,expected in ((body,1),(body.splitlines()[0],0)):
+                with self.subTest(separator=separator,complete_output=bool(expected)):
+                    event=dict(type='item.completed',item=dict(type='command_execution',exit_code=1,
+                        command="/bin/bash -lc 'cat src/session.js"+separator+" rg --files -g AGENTS.md'",
+                        aggregated_output=output))
+                    run=subprocess.run([sys.executable,'-B','-c',PROOF_DRIVER,str(backend),str(original)],
+                        input=json.dumps([event]),capture_output=True,text=True,timeout=10)
+                    self.assertEqual(run.returncode,0,run.stderr)
+                    proofs=json.loads(run.stdout);self.assertEqual(len(proofs),expected)
+                    if expected:
+                        self.assertEqual(proofs[0]['source'],'src/session.js')
+                        self.assertEqual(proofs[0]['proof_kind'],'complete_body_from_nonzero_read')
 
     def test_custom_model_hooks_match_frozen_session_profile(self):
         from temporal_contract_analyzer._session_runtime.model_settings import resolve_profile

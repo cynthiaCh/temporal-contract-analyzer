@@ -53,7 +53,7 @@ class NativeV4Backend:
             from .stage_retry import transient_transport
             if transient_transport(result,out['error']):out['failure_type']='transient_transport_error'
         if kind=='action' and valid:
-            if result.get('scoring_admissible') is not True:out.update(valid=False,error='No admissible source-reading/candidate proof')
+            if result.get('scoring_admissible') is not True:out.update(valid=False,error='Candidate or archive validation failed')
             out['candidate_sources']={k:v.decode() for k,v in capture(Path(result['final_candidate']))[0].items()}
         return out
 

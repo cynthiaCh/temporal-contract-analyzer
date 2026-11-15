@@ -34,7 +34,8 @@ def command(call,folder,phase,case,*,runtime,socket_dir,copy_auth=True):
     return cmd
 
 def source_proof(events,original):
-    # Same body-line evidence as historical runner, with both source suffixes.
+    # Best-effort audit of tool output, never a prerequisite for candidate scoring.
+    # The model may already have source in its prompt or read it by another tool.
     result=[]
     for n,e in enumerate(events,1):
         item=e.get('item') or {}
@@ -45,9 +46,15 @@ def source_proof(events,original):
         output=item.get('aggregated_output') or '';normalized={re.sub(r'^\s*\d+\s+','',x).strip() for x in output.splitlines()}
         command=item.get('command','');read_tokens=[]
         try:
-            tokens=shlex.split(command)
-            if tokens and Path(tokens[0]).name in ['bash','sh'] and any(x in tokens for x in ['-c','-lc']):tokens=shlex.split(tokens[-1])
-            read_tokens=tokens if tokens and Path(tokens[0]).name in ['cat','nl','sed','head','tail','rg'] else []
+            tokens=shlex.split(command);shell_text=command
+            if tokens and Path(tokens[0]).name in ['bash','sh'] and any(x in tokens for x in ['-c','-lc']):
+                shell_text=tokens[-1];tokens=shlex.split(shell_text)
+            if tokens and Path(tokens[0]).name in ['cat','nl','sed','head','tail','rg']:
+                # shlex.split keeps shell separators attached to filenames:
+                # `cat src/main.js; rg ...` used to hide a successful read when
+                # the later rg returned 1. Tokenize punctuation separately.
+                lexer=shlex.shlex(shell_text,posix=True,punctuation_chars=';&|');lexer.whitespace_split=True
+                read_tokens=list(lexer)
         except ValueError:pass
         for f in original.rglob('*'):
             if f.suffix not in ['.js','.mjs','.cjs','.py','.jsx','.ts','.tsx','.vue','.go','.rb','.php','.java'] or f.is_symlink() or not f.is_file():continue
@@ -186,11 +193,18 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
     accounted=bool(native.get('started')) and (pending==0 or budget_hit and pending==1) and len(posts)==native.get('completed')
     completed=outcome.get('exit_code')==0 and sum(e.get('type')=='turn.completed' for e in events)==1 and not any(e.get('type') in ['error','turn.failed'] for e in events) and not malformed and not budget_hit
     infra_ok=transport_stopped and not (guard.errors if 'guard' in locals() else []) and accounted and bool(model_events) and all(e.get('model')==model for e in model_events) and not native.get('blocked_tools') and all(e.get('status')=='completed' for e in posts) and not any(e.get('type')=='turn.failed' for e in events) and not malformed and completed
-    rec={**outcome,'native':native,'output_format_valid':format_ok,'infrastructure_valid':infra_ok,'status':'VALID' if infra_ok and completed else 'INVALID','archive_status':archive_state,'archive_failure_requires_stop':archive_state['status']!='OK','archive_stop_reason':'archive_error' if archive_state['status']!='OK' else None,'scoring_status':'NOT_REQUESTED','source_body_proofs':source_proof(events,a.original),'final_candidate':str(a.final) if a.final.exists() else None,'patch_delivered':archive_state['steps'].get('diff')=='CHANGED'}
+    source_audit=dict(basis='tool_output_only',required_for_scoring=False)
+    try:
+        proofs=source_proof(events,a.original)
+        source_audit['status']='observed' if proofs else 'not_observed'
+    except Exception as exc:
+        # Optional audit derivation cannot invalidate an otherwise complete patch.
+        proofs=[];source_audit.update(status='unavailable',error=repr(exc))
+    rec={**outcome,'native':native,'output_format_valid':format_ok,'infrastructure_valid':infra_ok,'status':'VALID' if infra_ok and completed else 'INVALID','archive_status':archive_state,'archive_failure_requires_stop':archive_state['status']!='OK','archive_stop_reason':'archive_error' if archive_state['status']!='OK' else None,'scoring_status':'NOT_REQUESTED','source_body_proofs':proofs,'source_read_audit':source_audit,'final_candidate':str(a.final) if a.final.exists() else None,'patch_delivered':archive_state['steps'].get('diff')=='CHANGED'}
     rec['turn_complete']=bool(completed and infra_ok)
     rec['candidate_complete']=bool(completed and infra_ok and format_ok)
     rec['material_valid']=bool(format_ok)
-    rec['scoring_admissible']=bool(phase=='repair' and rec['candidate_complete'] and rec['source_body_proofs'] and archive_state['status']=='OK')
+    rec['scoring_admissible']=bool(phase=='repair' and rec['candidate_complete'] and archive_state['status']=='OK')
     if rec['scoring_admissible'] and score_fn is not None:
         before=inventory(a.final);save(a.root/'score-before-manifest.json',before);score_dir=a.root/'score';score_dir.mkdir()
         try:
@@ -232,7 +246,6 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
                 save(a.root/'analysis-derivation.json',derivation)
             error=validate_analysis(analysis,sources)
             if error:raise ValueError(error)
-            if not rec['source_body_proofs']:raise ValueError('source body not read')
             if not infra_ok:raise ValueError('invalid preanalysis infrastructure')
             if not format_ok:raise ValueError('invalid report envelope')
             save(a.root/'analysis.json',analysis)
