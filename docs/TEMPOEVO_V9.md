@@ -1,6 +1,6 @@
 # V9: cumulative within-task reflection delivery
 
-New roots use `tempoevo-trajectory-v9`. V1–V8 trajectories remain readable and
+V9 defines task-local reflection delivery. New execution uses [V10](TEMPOEVO_V10.md); V9 roots are read-only. V9 roots used `tempoevo-trajectory-v9`. V1–V8 trajectories remain readable and
 cannot silently resume or have their recorded model inputs rewritten.
 
 V8's online pool handles **cross-task provisional knowledge**. That is distinct

@@ -30,7 +30,7 @@ class DockerTests(unittest.TestCase):
 
     def prepared(self):
         data=case_input('development');case=data['case_record'];files,_=capture(Path(data['candidate']))
-        protocol=dict(execution_policy='tempoevo-trajectory-v9',backend=CONFIG,case=case,binary='/synthetic/codex',
+        protocol=dict(execution_policy='tempoevo-trajectory-v11',backend=CONFIG,case=case,binary='/synthetic/codex',
             node='/runtime/node16/bin/node',scoring_inputs=scoring_inputs(case),input_path=data['candidate'],
             candidate_files=inventory(files),visible=dict(task=data['task']),candidate_sha256='a'*64,
             calibration=dict(synthetic=True))

@@ -92,7 +92,7 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
     fixture=command_factory is not None
     if not fixture and not allow_model_execution:raise RuntimeError('model execution disabled; this change is offline-only')
     if not fixture:
-        if config.get('protocol_schema')!='tempoevo-trajectory-v9':raise ValueError('Historical execution retired; V9 protocol required')
+        if config.get('protocol_schema')!='tempoevo-trajectory-v11':raise ValueError('Historical execution retired; V11 protocol required')
         verify(config.get('frozen_files',{}))
     seconds=config.get('seconds_per_session',600);stdout_limit=config.get('stdout_bytes',16777216)
     if not 0<seconds<=600 or not 0<stdout_limit<=16777216:raise ValueError('cannot increase original resource limits')

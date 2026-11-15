@@ -22,6 +22,13 @@ class Backend:
         self.calls.append((stage,deepcopy(payload),deepcopy(model),deepcopy(limits)))
         if self.invalid==stage:return dict(valid=False,error='synthetic timeout',requests=1,model=MODEL)
         if stage=='contract':out=contract()
+        elif stage=='selection':
+            evidence=[dict(file='TASK',quote=payload['task'])]
+            out=dict(assessments=[dict(sha256=c['sha256'],relevance='direct',
+                premises=[dict(condition='Synthetic public obligation',status='supported',evidence=evidence)],
+                object_mapping='Synthetic accepted work',contribution='Synthetic entry preservation',
+                covered_obligations=[o['id'] for o in payload['obligations']],supporting_evidence=evidence,
+                redundant_with=[],reason='Synthetic applicability fixture; not evidence of real semantic correctness.') for c in payload['candidates']])
         elif stage=='diagnosis':
             after=deepcopy(payload['contract_before'])
             if self.revise:after['checkpoints'].append('Check completion before navigation.')
@@ -180,7 +187,7 @@ class V4Tests(unittest.TestCase):
         with patch('temporal_contract_analyzer.execution_backend.NativeBackend.execute',return_value=fake) as call:
             result=adapter.execute('diagnosis',payload,MODEL,dict(requests=12,seconds=600),directory)
         self.assertTrue(result['valid']);self.assertEqual(call.call_args[0][1],'analysis')
-        self.assertEqual(call.call_args[0][0]['execution_policy'],'tempoevo-trajectory-v9')
+        self.assertEqual(call.call_args[0][0]['execution_policy'],'tempoevo-trajectory-v11')
         self.assertEqual(result['requests'],1)
 
     def test_native_evaluator_writes_artifacts_outside_the_frozen_candidate(self):
@@ -219,7 +226,11 @@ class V4Tests(unittest.TestCase):
             backend=Backend();state=loop.run(backend,execute=True)
             self.assertEqual(state['status'],'passed',state.get('error'))
             delivery=read(loop.root/'delivery.json');self.assertEqual(delivery['selected_sha256s'],[approved['sha256']])
-            self.assertEqual(backend.calls[0][0],'contract');self.assertIn(approved['rules'][0]['body'],backend.calls[0][1]['experience'])
+            contract_call=next(c for c in backend.calls if c[0]=='contract')
+            self.assertIn(approved['rules'][0]['body'],contract_call[1]['experience'])
+            if condition=='structured':
+                self.assertEqual(backend.calls[0][0],'selection')
+                self.assertEqual([c['sha256'] for c in backend.calls[0][1]['candidates']],[approved['sha256']])
 
     def test_cli_prepare_status_never_call_models(self):
         from temporal_contract_analyzer.cli import main
@@ -267,7 +278,7 @@ class V4Tests(unittest.TestCase):
 
     def test_raw_input_structured_mode_budgets_analysis_before_retrieval(self):
         from temporal_contract_analyzer import taxonomy
-        loop=self.prepare(condition='structured');self.assertEqual(loop.verify()['total_request_cap'],132)
+        loop=self.prepare(condition='structured');self.assertEqual(loop.verify()['total_request_cap'],168)
         class RoutingBackend(Backend):
             def execute(inner,kind,payload,model,limits,directory):
                 if kind=='routing':

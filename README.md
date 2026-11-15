@@ -45,12 +45,12 @@ python3 -B -m temporal_contract_analyzer experience-memory verify --store /path/
 python3 -B -m temporal_contract_analyzer experience-memory review --store /path/to/memory
 ```
 
-[Architecture and source map](docs/ARCHITECTURE.md), [memory format and retrieval](docs/EXPERIENCE_MEMORY.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [TempoEvo V9](docs/TEMPOEVO_V9.md) document the interfaces. Experience Review accepts exact immutable candidate versions; edits require their own acceptance. Approved records, including historical records, are eligible for future frozen retrieval snapshots when public task/source evidence satisfies their applicability and exclusion predicates. Cross-case effect validation is not an eligibility gate. Success candidates and human failure summaries remain unapproved until reviewed. Opening or submitting the review page cannot start model execution. Held-out testing reads a frozen approved snapshot and cannot learn. No paid calls are authorized by reading this README.
+[Architecture and source map](docs/ARCHITECTURE.md), [memory format and retrieval](docs/EXPERIENCE_MEMORY.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [TempoEvo V11](docs/TEMPOEVO_V11.md) document the interfaces. Experience Review accepts exact immutable candidate versions; edits require their own acceptance. Approved records, including historical records, are eligible for future frozen retrieval snapshots when public task/source evidence satisfies their applicability and exclusion predicates. Cross-case effect validation is not an eligibility gate. Success candidates and human failure summaries remain unapproved until reviewed. Opening or submitting the review page cannot start model execution. Held-out testing reads a frozen approved snapshot and cannot learn. No paid calls are authorized by reading this README.
 
 ## Optional integrations
 
 The only training/testing execution entrypoint is `tempoevo run --execute`.
-Prepare new V9 trajectories with `tempoevo prepare`. Historical V1–V3 batches are
+Prepare new V11 trajectories with `tempoevo prepare`. Historical V1–V3 batches are
 read-only: `history status --root BATCH` or `history report --root BATCH`.
 The retired `experience-evolution` command and old orchestration modules are removed.
 Shared native/Docker/scoring infrastructure remains separate from trajectory policy.
@@ -59,7 +59,7 @@ Shared native/Docker/scoring infrastructure remains separate from trajectory pol
 - On macOS, double-click `launch-ast-review.command` to open AST evidence review. It restarts the configured report service in the foreground; keep the terminal open and press Ctrl+C to stop it. Report annotations, analysis review and experience activation use separate records.
 - Benchmark execution requires the separately provisioned benchmark, matching scoring runtime and calibration. Set `TCA_BENCH_ROOT` explicitly for reproducible use; checkout-based sibling discovery remains a compatibility convenience.
 - The shared native runner requires explicit executables, isolation tools and frozen runtime/evaluator bindings; importing it cannot start a historical scheduler.
-- The [Docker backend](docs/DOCKER_BACKEND.md) provides shared isolation, zero-model calibration and trusted scoring infrastructure using pinned SWE-TempoC images. All new V9 model stages, AST extraction and evaluators use Docker; `tempoevo run --execute` remains the sole training entrypoint. See [Docker training setup](docs/DOCKER_TRAINING.md).
+- The [Docker backend](docs/DOCKER_BACKEND.md) provides shared isolation, zero-model calibration and trusted scoring infrastructure using pinned SWE-TempoC images. All new V11 model stages, AST extraction and evaluators use Docker; `tempoevo run --execute` remains the sole training entrypoint. See [Docker training setup](docs/DOCKER_TRAINING.md).
 
 ## Offline verification
 
@@ -75,7 +75,7 @@ Tests use synthetic runners and fixtures. They do not establish repair benefit o
 
 This is a prepared source tree, not a published release. The owner has not selected a project license. Preserve upstream notices for any separately redistributed third-party code. No license grant or venue acceptance is implied. The exported source excludes exposed research memory, original experiment data, installed dependencies and Git history.
 
-## TempoEvo V9
+## TempoEvo V11
 
 Task-local diagnoses are passed explicitly and cumulatively to subsequent Actions, even when the Contract remains unchanged; see [V9](docs/TEMPOEVO_V9.md). The new `tempoevo` CLI runs up to **three Actions per independent trajectory**,
 with deterministic feedback and optional Contract revision. Learning evaluates the
@@ -89,8 +89,12 @@ public feedback only, with one final independent Gold and no learning.
 For development training selection, use the frozen
 [GPT-6.1 Sol medium hardest-50 index](examples/tempoevo-v4/case-selections/gpt61-sol-medium-hardest50-20261029/README.md).
 It retains historical counts and provenance; verify the case runtime, task condition
-and input version before preparing a new V9 trajectory. Record new results separately.
+and input version before preparing a new V11 trajectory. Record new results separately.
 
 V4 frozen trajectories remain read-only. Training acceptance feedback changes the
 protocol; do not resume old roots. Independent dataset isolation is unverified
 unless supported by split evidence; exposed training cases are not held-out tests.
+
+CSV ranks 1–25 are reserved for training and 26–50 for final-only-Gold testing. Reserved test IDs cannot run learning. See [V10 split and scoring boundaries](docs/TEMPOEVO_V10.md). Historical selection and shared task families mean this split is not certified unseen.
+
+Structured V11 delivery adds [source-grounded semantic applicability assessment](docs/TEMPOEVO_V11.md) after mechanism/BM25 recall; labels alone cannot authorize experience delivery. At most five nonredundant entries and 16,000 characters are injected. V10 histories remain read-only.

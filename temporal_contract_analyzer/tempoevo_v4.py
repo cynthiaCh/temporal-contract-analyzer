@@ -14,10 +14,10 @@ from .candidate_files import capture, inventory, write_files
 from .core import EvidenceError, canonical, sha
 from ._session_runtime.model_settings import resolve_profile, identity
 
-VERSION = 'tempoevo-trajectory-v9'
+VERSION = 'tempoevo-trajectory-v11'
 MODEL = identity(resolve_profile())
 CONDITIONS = ('baseline', 'contract', 'bm25', 'structured', 'fixed_contract')
-LIMITS = dict(routing=dict(requests=12, seconds=600), contract=dict(requests=12, seconds=600), action=dict(requests=24, seconds=600),
+LIMITS = dict(selection=dict(requests=12, seconds=600), routing=dict(requests=12, seconds=600), contract=dict(requests=12, seconds=600), action=dict(requests=24, seconds=600),
               diagnosis=dict(requests=12, seconds=600), extract=dict(requests=12, seconds=600))
 TERMINAL = ('passed', 'repair_exhausted', 'execution_invalid', 'awaiting_expert_summary', 'awaiting_content_review', 'cancelled')
 CONTRACT_FIELDS = ('scope', 'triggers', 'ordering_barriers', 'lifecycle_identity',
@@ -102,6 +102,9 @@ class Trajectory:
         for key in ('task','candidate','store','mode','condition','visible_evaluator'):
             if key not in cfg:raise EvidenceError('Missing '+key)
         if cfg['mode'] not in ('learning','testing') or cfg['condition'] not in CONDITIONS:raise EvidenceError('Invalid mode/condition')
+        from .evaluation_split import enforce
+        split=enforce(cfg)
+        if split:cfg['evaluation_split']=split
         from .training_acceptance import validate_mapping
         if cfg['mode']=='learning' and not cfg.get('training_evaluator'):raise EvidenceError('Learning requires training_evaluator; public PASS is not acceptance')
         if cfg['mode']=='testing' and (cfg.get('training_evaluator') or cfg.get('training_feedback')):raise EvidenceError('Testing cannot use training acceptance feedback')
@@ -174,6 +177,13 @@ class Trajectory:
         uses_contract=cfg['condition']!='baseline'
         total=attempts*limits['action']['requests']+((attempts-1)*limits['diagnosis']['requests']+limits['contract']['requests'] if uses_contract else 0)+(limits['extract']['requests'] if cfg['mode']=='learning' else 0)
         if cfg['condition'] in ('structured','fixed_contract') and not cfg.get('routing_analysis'):total+=limits['routing']['requests']
+        if cfg['condition'] in ('structured','fixed_contract'):
+            total+=(attempts if cfg['condition']=='structured' else 1)*limits['selection']['requests']
+        from . import semantic_retrieval
+        cfg['retrieval_policy']=(dict(version=semantic_retrieval.VERSION,max_candidates=semantic_retrieval.MAX_CANDIDATES,
+            max_experiences=semantic_retrieval.MAX_EXPERIENCES,max_characters=semantic_retrieval.MAX_CHARACTERS)
+            if cfg['condition'] in ('structured','fixed_contract') else
+            dict(version='bm25-v1' if cfg['condition']=='bm25' else 'no-memory',max_experiences=5 if cfg['condition']=='bm25' else 0))
         cfg.update(schema_version=VERSION,model=identity(settings),memory_snapshot=bank,max_attempts=attempts,limits=limits,total_request_cap=total,
             store=str(store),original_inventory=inventory(files),feedback_fields=['observations','regressions','unknowns'],
             required_visible_checks=cfg.get('required_visible_checks',True),
@@ -186,12 +196,14 @@ class Trajectory:
         self.save('binding.json',dict(protocol=sha((self.root/'protocol.json').read_bytes()),
             bank=sha((self.root/'memory-snapshot.json').read_bytes()),ast=sha((self.root/'ast-evidence.json').read_bytes()),
             implementation=sha(Path(__file__).read_bytes()),evaluators=evaluator_hashes,
-            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name('online_memory.py'),Path(__file__).with_name('experience_reflection.py'),Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
+            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name(name) for name in ('semantic_retrieval.py','experience_routing.py','experience_memory.py','experience_updates.py','compact_experience.py','taxonomy.py','contract-taxonomy.json')]+[Path(__file__).with_name('evaluation_split.py'),Path(__file__).resolve().parents[1]/'experiments/evaluation-splits.json',Path(__file__).with_name('online_memory.py'),Path(__file__).with_name('experience_reflection.py'),Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
         self.report();return self.state()
 
     def verify(self):
         p=read(self.root/'protocol.json')
-        if p.get('schema_version')!=VERSION:raise EvidenceError('Historical protocol is read-only; prepare a new V9 root')
+        if p.get('schema_version')!=VERSION:raise EvidenceError('Historical protocol is read-only; prepare a new V11 root')
+        from .evaluation_split import enforce
+        enforce(p)
         binding=read(self.root/'binding.json')
         for name,key in [('protocol.json','protocol'),('memory-snapshot.json','bank'),('ast-evidence.json','ast')]:
             if sha((self.root/name).read_bytes())!=binding[key]:raise EvidenceError('Frozen V4 input drift')
@@ -212,7 +224,7 @@ class Trajectory:
         if read(self.root/'protocol.json').get('schema_version')!=VERSION:raise EvidenceError('Historical protocol is read-only')
         return self.status('cancelled',cancelled=True,stop_reason='cancelled')
 
-    def retrieve(self,p):
+    def retrieve(self,p,backend=None,selection_key='selection-1'):
         bank=p['memory_snapshot'];bundles=[e['bundle'] for e in bank['entries']]
         condition=p['condition'];result=dict(selected_sha256s=[],experience_text=None,reason='condition_has_no_memory')
         if condition=='bm25':
@@ -220,11 +232,17 @@ class Trajectory:
             selected=[next(b for b in bundles if b['sha256']==h['sha256']) for h in hits]
             result=dict(selected_sha256s=[b['sha256'] for b in selected],experience_text=memory.delivery_text(selected),reason='bm25_frozen_bank')
         elif condition in ('structured','fixed_contract'):
-            from . import experience_routing as routing,experience_updates as updates
+            from . import semantic_retrieval as retrieval
             sources={k:v.decode() for k,v in capture(self.root/'original')[0].items()};a=p['routing_analysis']
-            review=dict(input_sha256=routing.input_digest(a,p['task'],sources),reviewer='unreviewed_model_analysis',approved=False,
-                blocking_issues=[],scope_unknowns=[],evidence=[],reason='Prepared source-bound routing metadata')
-            result=updates.route_view(dict(task=p['task'],sources=sources,analysis=a,review=review),bundles)
+            recalled=retrieval.recall(p['task'],sources,a,bundles)
+            self.save('retrieval/'+selection_key+'-recall.json',recalled)
+            if recalled['candidates']:
+                if backend is None:raise EvidenceError('Structured delivery requires explicit semantic assessment execution')
+                assessment=self._step(p,backend,selection_key,'selection',
+                    retrieval.payload(p['task'],sources,read(self.root/'ast-evidence.json'),a,recalled))['output']
+                result=retrieval.select(assessment,recalled,a,p['task'],sources,bundles)
+            else:
+                result=dict(selected_sha256s=[],experience_text=None,reason='no_mechanism_eligible_experience',route=recalled['mechanism_route'])
         online={r['bundle']['sha256'] for r in read(self.root/'online-snapshot.json')['entries']} if p.get('learning_policy')=='online' else set()
         result['provisional_sha256s']=[c for c in result.get('selected_sha256s',[]) if c in online]
         if result['provisional_sha256s']:result['experience_text']='TRAINING ONLY: includes unreviewed provisional guidance with unknown effectiveness. Check against public task/source evidence.\n'+result['experience_text']
@@ -335,7 +353,7 @@ class Trajectory:
                 from ._session_runtime.schema_validator import validate
                 validate(proposal,taxonomy.analysis_schema())
                 p=deepcopy(p);p['routing_analysis']=proposal;self.save('routing-analysis.json',proposal)
-            delivery=read(self.root/'delivery.json') if (self.root/'delivery.json').exists() else self.retrieve(p)
+            delivery=read(self.root/'delivery.json') if (self.root/'delivery.json').exists() else self.retrieve(p,backend)
             if p['condition']!='baseline' and state['contract'] is None:
                 result=self._step(p,backend,'contract','contract',dict(public,experience=delivery['experience_text'],schema=CONTRACT_SCHEMA))
                 check_contract(result['output'],p['task'],sources);state=self.state();state['contract']=result['output'];self.save('initial-contract.json',result['output']);self.save('state.json',state)
@@ -365,7 +383,7 @@ class Trajectory:
                             from .experience_routing import validate_analysis
                             validate_analysis(diagnostic['routing_analysis'],p['task'],sources,text_grounding=True)
                             routed=deepcopy(p);routed['routing_analysis']=diagnostic['routing_analysis']
-                            delivery=self.retrieve(routed)
+                            delivery=self.retrieve(routed,backend,'selection-'+str(number))
                             self.save('revisions/'+str(number)+'-delivery.json',delivery)
                 state=self.state();base=self.root/'original' if number==1 else self.root/'attempts'/str(number-1)/'candidate'
                 self.status('action_running',current_attempt=number)
@@ -520,7 +538,7 @@ class Trajectory:
             path=self.root/'stages'/row['key']/'result.json'
             if path.exists() and 'requests' not in row:
                 result=read(path);row['measured_requests']=result.get('requests');row['measured_tokens']=result.get('tokens')
-        result=dict(protocol=p['schema_version'],learning_policy=p['learning_policy'],online_snapshot_sha256=state.get('online_snapshot_sha256'),model=p['model'],model_profile=p['model_profile'],mode=p['mode'],condition=p['condition'],status=state['status'],
+        result=dict(protocol=p['schema_version'],evaluation_split=p.get('evaluation_split'),learning_policy=p['learning_policy'],online_snapshot_sha256=state.get('online_snapshot_sha256'),model=p['model'],model_profile=p['model_profile'],mode=p['mode'],condition=p['condition'],status=state['status'],
             reflection_updates=[dict(name=name,update=read(self.root/'candidate-pool'/(name+'.json')).get('reflection_update'),
                 publication_kind=read(self.root/'candidate-pool'/(name+'.json')).get('publication_kind')) for name in ('success','expert') if (self.root/'candidate-pool'/(name+'.json')).exists()],
             transport_executions=sum(len(s.get('executions',[])) for s in state['stages']),

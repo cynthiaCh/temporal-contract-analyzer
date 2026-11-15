@@ -1,4 +1,4 @@
-# V9 Docker training
+# V11 Docker training
 
 New live `tempoevo run --execute` runs require Docker. The host schedules bounded
 stages and preserves archives; AST extraction, every model role and both
@@ -86,3 +86,7 @@ batches and candidates are retained unchanged; no automatic replay or acceptance
 Online sequential training adds `--learning-policy online --online-memory /new/batch/provisional` with `--condition structured`. Keep the provisional pool outside each candidate/trajectory and the long-term store. Trajectories capture its current entries only when they start, so preparing all cases first does not freeze out later learning. Default `frozen` remains suitable for ablations/testing. See [V8 policy and examples](TEMPOEVO_V8.md).
 
 V9 additionally forwards cumulative task-local diagnoses into Action 2/3, independently of the online pool. See [within-task reflection delivery](TEMPOEVO_V9.md).
+
+[Public test adapters](PUBLIC_TEST_ADAPTERS.md) cover ranks 26–50 across all six task families. Test preparation executes public checks only, with frozen frontend-loader inputs; Gold stays final-only.
+
+V11 structured runs add a separately budgeted semantic-selection stage, using the same isolated Docker backend and frozen model profile. See [retrieval, budgets and historical continuation](TEMPOEVO_V11.md). Default reviewed store: `experience-memory/library`; use `--store` for an explicit alternative.
