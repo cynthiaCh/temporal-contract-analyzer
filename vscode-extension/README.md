@@ -1,18 +1,18 @@
-# Temporal Contracts
+# TempoEvo: Temporal Contract Analyzer
 
 在 VS Code 中审查 Vue、JavaScript、TypeScript 和 Python 的时序源码线索。
 
 ## 安装与日常使用
 
 1. VS Code 扩展面板右上角 `…` → **Install from VSIX… / 从 VSIX 安装…**，选择 `temporal-contract-analyzer-0.2.0.vsix`。
-2. 本机需要 **Python 3.9+**。插件自动查找，也可以在设置中搜索 `Temporal Contracts` 并填写 **Python Path**。分析器、Babel 和 Vue 解析器已内置，无需 pip、npm 或单独安装 Node。
-3. 打开并信任你的项目，编辑 Vue 文件后保存，即可自动扫描。也可在命令面板执行 **Temporal Contracts: 扫描当前文件**，分析未保存的编辑内容。
-4. 在 **Problems / 问题** 或资源管理器的 **Temporal Contracts** 侧栏查看提示。展开提示查看相关证据，点击跳转到源码。悬停提示可查看成立条件和核查问题。
-5. 需要包含其他文件时，右键项目目录 → **Temporal Contracts: 扫描目录…**。目录扫描纳入已打开文件的未保存内容；单文件扫描只分析当前文件。
+2. 本机需要 **Python 3.9+**。插件自动查找，也可以在设置中搜索 `TempoEvo` 并填写 **Python Path**。分析器、Babel 和 Vue 解析器已内置，无需 pip、npm 或单独安装 Node。
+3. 打开并信任你的项目，编辑 Vue 文件后保存，即可自动扫描。也可在命令面板执行 **TempoEvo: 扫描当前文件**，分析未保存的编辑内容。
+4. 在 **Problems / 问题** 或资源管理器的 **TempoEvo** 侧栏查看提示。展开提示查看相关证据，点击跳转到源码。悬停提示可查看成立条件和核查问题。
+5. 需要包含其他文件时，右键项目目录 → **TempoEvo: 扫描目录…**。目录扫描纳入已打开文件的未保存内容；单文件扫描只分析当前文件。
 
 每次扫描会替换编辑器中的上一次提示，并默认将报告和实际源码快照归档。源码修改后，旧定位立即清除；重新保存或手动扫描以更新。侧栏的报告按钮可打开最近一次完整 Markdown 报告，它是只读快照，不会向项目写入文件。历史报告会明确标记为过期。
 
-命令面板中的 **Temporal Contracts: 打开统一报告库** 可查看历史证据、源码快照、人工核查和前后对比；**复制最近报告 ID** 可将同一份报告交给 Codex。CLI、插件和 Codex MCP 使用同一全局配置，完整说明见源码仓库的 `docs/REPORT_CENTER.md`。清除编辑器结果不会删除归档。
+命令面板中的 **TempoEvo: 打开统一报告库** 可查看历史证据、源码快照、人工核查和前后对比；**复制最近报告 ID** 可将同一份报告交给 Codex。CLI、插件和 Codex MCP 使用同一全局配置，完整说明见源码仓库的 `docs/REPORT_CENTER.md`。清除编辑器结果不会删除归档。
 
 支持多根工作区中的单文件和选定目录；远程开发时，Python 需要安装在运行此插件的远程主机。网页版 VS Code 和虚拟文件系统不支持。
 
@@ -26,7 +26,7 @@
 | `temporalContracts.reportStore` | 全局配置 | 统一归档目录；应位于被扫描工程之外 |
 | `temporalContracts.timeoutSeconds` | `90` | 分析超时时间 |
 
-`Temporal Contracts: 查看运行日志` 可查看状态和错误；没有弹窗的自动扫描失败也会显示在侧栏和状态栏。
+`TempoEvo: 查看运行日志` 可查看状态和错误；没有弹窗的自动扫描失败也会显示在侧栏和状态栏。
 
 ## 结果意味着什么
 

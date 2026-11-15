@@ -12,7 +12,7 @@ async function waitFor(predicate, message) {
   }
   throw new Error('Timeout: ' + message);
 }
-function hints(uri) { return vscode.languages.getDiagnostics(uri).filter(d => d.source === 'Temporal Contracts'); }
+function hints(uri) { return vscode.languages.getDiagnostics(uri).filter(d => d.source === 'TempoEvo'); }
 async function replace(document, text) {
   const edit = new vscode.WorkspaceEdit();
   edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), text);

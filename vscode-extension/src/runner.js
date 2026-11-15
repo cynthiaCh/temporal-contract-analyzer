@@ -67,7 +67,7 @@ async function findPython(configured, options = {}) {
       if (error instanceof Cancelled) throw error;
     }
   }
-  throw new Error('找不到 Python 3.9+。请在设置 Temporal Contracts: Python Path 中填写 Python 可执行文件路径。');
+  throw new Error('找不到 Python 3.9+。请在设置 TempoEvo: Python Path 中填写 Python 可执行文件路径。');
 }
 
 async function invoke(extensionPath, request, {pythonPath = '', timeout, signal, node = process.execPath} = {}) {
@@ -76,7 +76,7 @@ async function invoke(extensionPath, request, {pythonPath = '', timeout, signal,
     [...python.prefix, '-I', '-S', '-B', '-X', 'utf8', path.join(extensionPath, 'python/bridge.py')],
     {cwd: extensionPath, signal, timeout, input: JSON.stringify({...request, node})});
   let parsed;
-  try { parsed = JSON.parse(result); } catch { throw new Error('分析器未返回有效 JSON；请查看 Temporal Contracts 日志。'); }
+  try { parsed = JSON.parse(result); } catch { throw new Error('分析器未返回有效 JSON；请查看 TempoEvo 日志。'); }
   return parsed;
 }
 

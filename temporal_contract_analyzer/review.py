@@ -140,13 +140,13 @@ def focused_review(report):
 
 def focused_markdown(report):
     if report['schema_version'] == 'temporal-contract-analysis-comparison-1':
-        return '\n'.join(['# 时序关系对照（低噪声）', '', report['interpretation'],
+        return '\n'.join(['# TempoEvo · 时序关系对照（低噪声）', '', report['interpretation'],
             '可比解析：' + str(report['comparable']), '变化文件：' + ', '.join(report['changed_files']),
             '两侧分别筛选；卡片减少不等于已修复。', '', '## 修改前', focused_markdown(report['before']),
             '', '## 修改后', focused_markdown(report['after'])])
     review = focused_review(report)
     summary = review['summary']
-    lines = ['# 时序关系核查（低噪声）', '', review['notice'], '',
+    lines = ['# TempoEvo · 时序关系核查（低噪声）', '', review['notice'], '',
         '解析状态：' + review['status'] + '；工具版本：' + review['tool_version'],
         '输入 SHA-256：' + review['input_sha256'], '工具 SHA-256：' + review['tool_sha256'],
         '原始提示 %d 条；展示 %d 张卡；隐藏 %d 条；合并 %d 条。' % (

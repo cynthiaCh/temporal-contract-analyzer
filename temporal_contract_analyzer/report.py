@@ -10,7 +10,7 @@ def markdown(report, view="focused"):
         from .review import focused_markdown
         return focused_markdown(report)
     if report['schema_version']=='temporal-contract-analysis-comparison-1':
-        lines=['# 时序源码证据：修改前后对照','',report['interpretation'],'','对照状态：'+report['delta_status'],'',
+        lines=['# TempoEvo · 时序源码证据：修改前后对照','',report['interpretation'],'','对照状态：'+report['delta_status'],'',
                '同工具/解析器且两侧均解析完整：'+str(report['comparable']),'',
                '变化文件：'+', '.join(report['changed_files']),'',
                '新增提示：'+', '.join(x['rule']+' · '+x['path'] for x in report['added_hints']),
@@ -18,7 +18,7 @@ def markdown(report, view="focused"):
                '## 修改前','',markdown(report['before'], view=view),'','## 修改后','',markdown(report['after'], view=view)]
         return '\n'.join(lines)
     events={e['id']:e for f in report['files'] for e in f['events']}
-    lines=['# 时序源码证据索引','',
+    lines=['# TempoEvo · 时序源码证据索引','',
            '**工具生成的待核查线索，不是 Oracle、缺陷结论或难度分。**','',
            '状态：`'+report['status']+'`；工具版本：`'+report['tool_version']+'`。',
            '输入摘要：`'+report['input_sha256']+'`。',
@@ -90,4 +90,4 @@ def html_report(report, view="focused"):
     elif report['schema_version']=='temporal-contract-analysis-comparison-1':
         content='<p>对照状态：'+esc(report['delta_status'])+'</p><p>'+esc(report['interpretation'])+'</p><p>可比解析：'+esc(report['comparable'])+'</p><p>新增模式：'+esc(', '.join(x['rule'] for x in report['added_hints']))+'</p><p>消失模式：'+esc(', '.join(x['rule'] for x in report['removed_hints']))+'</p><h2>修改前</h2>'+card(report['before'])+'<h2>修改后</h2>'+card(report['after'])
     else:content=card(report)
-    return '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; base-uri \'none\'; form-action \'none\'"><title>时序源码证据索引</title><style>body{margin:0;background:#f7f8f3;color:#20372c;font:15px/1.8 system-ui,sans-serif}main{max-width:1000px;margin:auto;padding:36px 22px}h1{font-size:30px}h2{margin-top:36px;font-size:22px}details{padding:18px;margin:16px 0;background:white;border:1px solid #d8dfd3}summary{cursor:pointer;font-weight:600;overflow-wrap:anywhere}pre{padding:16px;background:#f0f3ed;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}code{overflow-wrap:anywhere;font-size:12px}.muted,.digest{color:#5d6e61}.digest{overflow-wrap:anywhere;font-size:11px}table{border-collapse:collapse;width:100%;font-size:12px}td,th{border-bottom:1px solid #d8dfd3;text-align:left;padding:10px;overflow-wrap:anywhere}.notice{border-left:4px solid #8e7139;padding:12px 18px;background:#faf1df}</style><main><h1>时序源码证据索引</h1><p class="notice">确定性语法分析 · 工具线索需复核 · 不执行候选代码 · 不提供缺陷或难度评分</p>'+content+'</main></html>'
+    return '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; base-uri \'none\'; form-action \'none\'"><title>TempoEvo · 时序源码证据索引</title><style>body{margin:0;background:#f7f8f3;color:#20372c;font:15px/1.8 system-ui,sans-serif}main{max-width:1000px;margin:auto;padding:36px 22px}h1{font-size:30px}h2{margin-top:36px;font-size:22px}details{padding:18px;margin:16px 0;background:white;border:1px solid #d8dfd3}summary{cursor:pointer;font-weight:600;overflow-wrap:anywhere}pre{padding:16px;background:#f0f3ed;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}code{overflow-wrap:anywhere;font-size:12px}.muted,.digest{color:#5d6e61}.digest{overflow-wrap:anywhere;font-size:11px}table{border-collapse:collapse;width:100%;font-size:12px}td,th{border-bottom:1px solid #d8dfd3;text-align:left;padding:10px;overflow-wrap:anywhere}.notice{border-left:4px solid #8e7139;padding:12px 18px;background:#faf1df}</style><main><h1>TempoEvo · 时序源码证据索引</h1><p class="notice">确定性语法分析 · 工具线索需复核 · 不执行候选代码 · 不提供缺陷或难度评分</p>'+content+'</main></html>'
