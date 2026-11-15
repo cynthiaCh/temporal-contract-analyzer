@@ -36,22 +36,42 @@ The baseline, contract-only and BM25 ablations retain their respective retrieval
 
 ## Calls and budget
 
-All stages use the frozen model profile (default gpt-6.1-sol / medium). Selection
-has at most 12 requests and 600 seconds per invocation, with transport retries sharing
-those caps. Structured trajectories reserve up to three selections: initial, plus
-one after each possible Contract revision. Fixed-contract reserves one. No candidate
+New contract-enabled testing roots use
+`contract_review_policy=public_contract_review_3_versions_v1`. Before repair,
+the draft is reviewed for source grounding, coverage, overconstraint, consistency
+and explicit unknowns. Public-source investigation and cited corrections may
+produce at most three Contract versions (the draft and two revisions). Each
+version can be reviewed once; the third cannot be revised. Categories may be
+multiple or unresolved; they do not mandate all category checks. Experience suggests
+checks, while the current request/source establishes requirements. Unsupported
+draft obligations may be removed or rewritten with a reason and public evidence
+for each affected ID. Original task requirements must remain preserved; schema
+and citation validation do not establish semantic correctness.
+
+Reviews stop as `ready` (no supported actionable issue), `unresolved`, or
+`budget_exhausted`; none is an execution PASS. Draft, reviews and final Contract
+are archived separately. Unknowns and review outcomes accompany the single repair
+Action. Changed classification/premises trigger retrieval from the same frozen
+snapshot. If the shared selection budget is exhausted, old guidance is withdrawn.
+No Gold output or generated patch enters this pre-repair review. Training and the
+no-Contract baseline retain their existing flow.
+
+All stages use the frozen model profile (default gpt-6.1-sol / medium). Learning
+selection has at most 12 requests and 600 seconds per invocation, including transport
+retries. Structured learning reserves up to three selections: initial, plus
+one after each possible Contract revision. Fixed-contract learning reserves one. No candidate
 means no selection model call, although the maximum budget remains reserved.
 
 For default single-submission structured testing:
 
 - routing: 12 requests;
-- selection: 12;
-- initial Contract: 12;
+- selection/reselection: 12 shared requests and 600 seconds;
+- Contract draft and up to three reviews: 12 shared requests and 600 seconds;
 - Action: 24, including public test execution and any code revisions within the session;
 - no outer diagnosis or additional Action;
-- total maximum: **60 requests** across four LLM invocations (routing, selection,
-  initial Contract and Action). Each invocation has its own 600-second maximum,
-  for a 2,400-second total stage maximum. Learning retains up to three Actions,
+- total maximum: **60 requests** across routing, shared selection, shared Contract
+  construction/review and Action budgets, with a 2,400-second total stage maximum.
+  Reviewing does not multiply these budgets. Learning retains up to three Actions,
   two diagnoses and three selections, plus extraction, for **168 requests**.
 
 Unused stages are not called or billed. Gold/public evaluations have separate
@@ -74,6 +94,10 @@ Earlier V11 testing roots using `oracle_pass_or_action_budget_exhausted` are his
 and read-only, as are older public-check-controlled retry protocols. The mode-specific
 acceptance policy distinguishes them without rewriting their summaries or outcomes.
 See [feedback policy](PUBLIC_TEST_ADAPTERS.md).
+
+Testing roots without the current `contract_review_policy` are also read-only.
+Their saved summaries and outcomes remain unchanged; new executions require fresh
+roots rather than silently adding review to an existing frozen experiment.
 Runtime bindings now also cover semantic retrieval, routing, memory conversion and
 ranking code, so a changed retriever cannot silently affect an existing frozen root.
 

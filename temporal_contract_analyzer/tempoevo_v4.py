@@ -13,6 +13,7 @@ from . import archive, experience_approval as approval, experience_memory as mem
 from .candidate_files import capture, inventory, write_files
 from .core import EvidenceError, canonical, sha
 from ._session_runtime.model_settings import resolve_profile, identity
+from . import contract_review
 
 VERSION = 'tempoevo-trajectory-v11'
 ACCEPTANCE_POLICIES = dict(learning='oracle_pass_or_action_budget_exhausted',
@@ -33,7 +34,9 @@ def read(path):
 def current_protocol(protocol):
     return (protocol.get('schema_version')==VERSION and protocol.get('mode') in ACCEPTANCE_POLICIES
             and protocol.get('acceptance_policy')==ACCEPTANCE_POLICIES[protocol['mode']]
-            and (protocol['mode']!='testing' or protocol.get('max_attempts')==1))
+            and (protocol['mode']!='testing' or (protocol.get('max_attempts')==1
+                 and (protocol.get('condition')=='baseline' or
+                      protocol.get('contract_review_policy')==contract_review.POLICY))))
 
 
 def visible_verdict(attempts):
@@ -138,6 +141,8 @@ class Trajectory:
         attempts=cfg.get('max_attempts',1 if cfg['mode']=='testing' else 3)
         if type(attempts) is not int or not 1<=attempts<=3:raise EvidenceError('At most three Actions total')
         if cfg['mode']=='testing' and attempts!=1:raise EvidenceError('Testing requires exactly one bounded Action and one final submission')
+        review_policy=contract_review.POLICY if cfg['mode']=='testing' and cfg['condition']!='baseline' else None
+        if cfg.get('contract_review_policy',review_policy)!=review_policy:raise EvidenceError('Historical Contract review policy is read-only')
         try:settings=resolve_profile(cfg.get('model_profile'),cfg.get('model_config'))
         except (ValueError,TypeError,OSError) as error:raise EvidenceError('Invalid model configuration: '+str(error)) from error
         if cfg.get('model',identity(settings))!=identity(settings):raise EvidenceError('Model must match the selected profile')
@@ -207,6 +212,7 @@ class Trajectory:
             if cfg['condition'] in ('structured','fixed_contract') else
             dict(version='bm25-v1' if cfg['condition']=='bm25' else 'no-memory',max_experiences=5 if cfg['condition']=='bm25' else 0))
         cfg.update(schema_version=VERSION,model=identity(settings),memory_snapshot=bank,max_attempts=attempts,limits=limits,total_request_cap=total,
+            contract_review_policy=review_policy,
             store=str(store),original_inventory=inventory(files),feedback_fields=['observations','regressions','unknowns'],
             required_visible_checks=False,acceptance_policy=acceptance,
             evaluation_budget=dict(visible=attempts if cfg.get('visible_evaluator') else 0,oracle=attempts if cfg['mode']=='learning' else 0,gold=1 if cfg['mode']=='testing' else 0),
@@ -217,7 +223,7 @@ class Trajectory:
         self.save('binding.json',dict(protocol=sha((self.root/'protocol.json').read_bytes()),
             bank=sha((self.root/'memory-snapshot.json').read_bytes()),ast=sha((self.root/'ast-evidence.json').read_bytes()),
             implementation=sha(Path(__file__).read_bytes()),evaluators=evaluator_hashes,
-            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name(name) for name in ('semantic_retrieval.py','experience_routing.py','experience_memory.py','experience_updates.py','compact_experience.py','taxonomy.py','contract-taxonomy.json')]+[Path(__file__).with_name('evaluation_split.py'),Path(__file__).resolve().parents[1]/'experiments/evaluation-splits.json',Path(__file__).with_name('online_memory.py'),Path(__file__).with_name('experience_reflection.py'),Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
+            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name(name) for name in ('contract_review.py','semantic_retrieval.py','experience_routing.py','experience_memory.py','experience_updates.py','compact_experience.py','taxonomy.py','contract-taxonomy.json')]+[Path(__file__).with_name('evaluation_split.py'),Path(__file__).resolve().parents[1]/'experiments/evaluation-splits.json',Path(__file__).with_name('online_memory.py'),Path(__file__).with_name('experience_reflection.py'),Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
         self.report();return self.state()
 
     def verify(self):
@@ -278,7 +284,7 @@ class Trajectory:
                 return read(directory/'result.json')
             raise EvidenceError('Partially started stage cannot be replayed')
         if state['cancelled']:raise EvidenceError('Cancelled')
-        limit=p['limits'].get(kind,dict(requests=0,seconds=600))
+        limit=self._remaining_limit(p,kind)
         if kind in p['limits']:
             used=sum(s.get('requests',0) for s in state['stages'])
             if used+limit['requests']>p['total_request_cap']:raise EvidenceError('Request budget exhausted')
@@ -311,6 +317,54 @@ class Trajectory:
         if kind in p['limits'] and result.get('model')!=p['model']:raise EvidenceError('Actual model settings mismatch')
         row['status']='complete';self.save('state.json',state)
         return result
+
+    def _remaining_limit(self,p,kind):
+        limit=dict(p['limits'].get(kind,dict(requests=0,seconds=600)))
+        if p.get('contract_review_policy') and kind in ('contract','selection'):
+            stages=[s for s in self.state()['stages'] if s['kind']==kind]
+            limit['requests']-=sum(s.get('requests',0) for s in stages)
+            limit['seconds']-=sum(s.get('seconds',0) for s in stages)
+        return limit
+
+    def _review_contract(self,p,backend,public,delivery):
+        state=self.state()
+        review=state.get('contract_review') or dict(version=1,reviews=[],stop_reason=None)
+        p=deepcopy(p)
+        if review.get('analysis') is not None:p['routing_analysis']=review['analysis']
+        while not review['stop_reason']:
+            version=review['version'];key='contract-review-'+str(version)
+            cached=any(s['key']==key and s['status']=='complete' for s in self.state()['stages'])
+            limit=self._remaining_limit(p,'contract')
+            if not cached and (limit['requests']<1 or limit['seconds']<=0):
+                review['stop_reason']='budget_exhausted';break
+            before=deepcopy(self.state()['contract'])
+            payload=dict(public,contract_before=before,experience=delivery['experience_text'],
+                routing_analysis=p.get('routing_analysis'),taxonomy=taxonomy.definition(),
+                version=version,previous_reviews=review['reviews'],
+                instruction=contract_review.instruction(version),schema=contract_review.schema(CONTRACT_SCHEMA))
+            result=self._step(p,backend,key,'contract',payload)['output']
+            changed=contract_review.validate_review(result,before,p['task'],public['sources'],version)
+            analysis=result['analysis']
+            if analysis!=p.get('routing_analysis') and p['condition'] in ('structured','fixed_contract'):
+                p['routing_analysis']=analysis
+                selection_key='contract-review-selection-'+str(version)
+                cached_selection=any(s['key']==selection_key and s['status']=='complete' for s in self.state()['stages'])
+                selection_limit=self._remaining_limit(p,'selection')
+                if cached_selection or (selection_limit['requests']>=1 and selection_limit['seconds']>0):
+                    delivery=self.retrieve(p,backend,selection_key)
+                else:
+                    delivery=dict(selected_sha256s=[],experience_text=None,provisional_sha256s=[],reason='contract_review_selection_budget_exhausted')
+                    self.save('delivery.json',delivery)
+            p['routing_analysis']=analysis
+            review['analysis']=analysis
+            review['reviews'].append(dict(version=version,**result))
+            review['version']+=int(changed)
+            if not changed:review['stop_reason']=result['decision']
+            state=self.state();state['contract']=result['contract_after'];state['contract_review']=review
+            self.save('state.json',state);self.save('contract-review.json',review)
+        state=self.state();state['contract_review']=review;self.save('state.json',state)
+        self.save('contract-review.json',review);self.save('final-contract.json',state['contract'])
+        return p,delivery
 
     def _execute_stage(self,p,backend,key,kind,payload,limit,directory):
         from .stage_retry import aggregate
@@ -379,6 +433,8 @@ class Trajectory:
             if p['condition']!='baseline' and state['contract'] is None:
                 result=self._step(p,backend,'contract','contract',dict(public,experience=delivery['experience_text'],schema=CONTRACT_SCHEMA))
                 check_contract(result['output'],p['task'],sources);state=self.state();state['contract']=result['output'];self.save('initial-contract.json',result['output']);self.save('state.json',state)
+            if p.get('contract_review_policy'):
+                p,delivery=self._review_contract(p,backend,public,delivery)
             self.status('contract_ready');state=self.state()
             for number in range(1,p['max_attempts']+1):
                 if state['attempts']:
@@ -421,6 +477,7 @@ class Trajectory:
                     instruction='Repair the supplied current candidate. Use cumulative within_task_reflections from the actual preceding failed candidates, including when Contract is unchanged or no cross-task experience matched. Treat their explanations as fallible hypotheses: retain unknowns, check against public task/source and observations, and do not turn inferred causes or checks into new business requirements. Preserve original task obligations and correct behavior. No scorer, reference, gold patch or hidden tests are available.')
                 if p['mode']=='testing':
                     payload['instruction']+=' This is the only testing Action. You may run available public project tests and revise code within this session budget. Submit one final candidate; no Gold verdict or later repair Action will be available.'
+                    payload['contract_review']=state.get('contract_review')
                 result=self._step(p,backend,'action-'+str(number),'action',payload)
                 candidate=result['candidate_sources']
                 if not isinstance(candidate,dict) or any(not isinstance(v,str) for v in candidate.values()):raise EvidenceError('Invalid candidate output')
@@ -603,6 +660,7 @@ class Trajectory:
             held_out_eligible=p.get('held_out_eligible',False),split_status=p.get('split_status','unverified'),
             gold_result=state.get('gold_result'),attempts_started=sum(s['kind']=='action' for s in state['stages']),valid_attempts=len(attempts),
             contract_changes=sum(d['contract_changed'] for d in state['diagnoses']),
+            contract_review_policy=p.get('contract_review_policy'),contract_review=state.get('contract_review'),
             diagnoses=[d['diagnosis'] for d in state['diagnoses']],requests=sum(s['requests'] for s in state['stages'] if type(s.get('requests')) is int),
             unknown_request_stages=[s['key'] for s in state['stages'] if s['kind'] in LIMITS and type(s.get('requests')) is not int],
             cumulative_action_request_cap=p['limits']['action']['requests']*p['max_attempts'],
