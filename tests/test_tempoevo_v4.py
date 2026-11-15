@@ -89,7 +89,7 @@ class V4Tests(unittest.TestCase):
         from temporal_contract_analyzer import experience_approval as approval
         loop=self.prepare(mode='testing',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
         backend=Backend(2);before=list(self.store.rglob('*'));state=loop.run(backend,execute=True)
-        self.assertEqual(state['status'],'passed',state.get('error'));self.assertTrue(state['gold_result']['passed'])
+        self.assertEqual(state['status'],'scored',state.get('error'));self.assertFalse(state['gold_result']['passed'])
         self.assertNotIn('extract',[r[0] for r in backend.calls]);self.assertEqual(before,list(self.store.rglob('*')))
         for _,payload,_,_ in backend.calls:
             self.assertNotIn('SECRET',json.dumps(payload))

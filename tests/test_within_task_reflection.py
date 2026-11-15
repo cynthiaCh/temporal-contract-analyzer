@@ -37,10 +37,12 @@ class WithinTaskReflectionTests(unittest.TestCase):
         r=action['within_task_reflections'][0];self.assertEqual(r['diagnosis'],'unknown')
         self.assertEqual(r['remaining_unknowns'],['No event trace yet.']);self.assertIn('Cause is unknown',r['explanation'])
 
-    def test_testing_uses_public_diagnosis_without_leaking_gold(self):
+    def test_testing_has_no_outer_diagnosis_or_gold_feedback(self):
         loop=self.prepare(mode='testing',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
-        b=fixtures.Backend(passes=2);state=loop.run(b,execute=True);self.assertEqual(state['status'],'passed',state.get('error'))
-        actions=[p for kind,p,_,_ in b.calls if kind=='action'];self.assertEqual(len(actions[1]['within_task_reflections']),1)
+        b=fixtures.Backend(passes=2);state=loop.run(b,execute=True);self.assertEqual(state['status'],'scored',state.get('error'))
+        actions=[p for kind,p,_,_ in b.calls if kind=='action'];self.assertEqual(len(actions),1)
+        self.assertEqual(actions[0]['within_task_reflections'],[])
+        self.assertNotIn('diagnosis',[c[0] for c in b.calls])
         import json
         self.assertNotIn('SECRET_GOLD',json.dumps(actions));self.assertNotIn('extract',[c[0] for c in b.calls])
         self.assertEqual(approval.freeze(self.store)['entries'],[])

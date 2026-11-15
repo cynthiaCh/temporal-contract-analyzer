@@ -1,4 +1,4 @@
-"""Reserved test IDs, Oracle retries and no learning; models/scorers simulated."""
+"""Reserved test IDs, independent final scoring and no learning; synthetic models."""
 import json,runpy,sys
 from pathlib import Path
 import unittest
@@ -22,15 +22,17 @@ class SplitTests(unittest.TestCase):
         self.assertEqual(assignment(TEST)['role'],'testing')
         self.assertTrue(assignment(TEST)['independence']['historical_outcome_selected'])
 
-    def test_real_reserved_id_uses_oracle_each_round_without_learning(self):
+    def test_real_reserved_id_is_scored_only_after_submission_without_learning(self):
         loop=self.prepare(task_id=TEST,mode='testing',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
         class Backend(fixtures.Backend):
             def evaluate(inner,kind,payload,directory):
-                if kind=='gold':self.assertIn(len([c for c in inner.calls if c[0]=='action']),(1,2))
+                if kind=='gold':
+                    self.assertEqual(len([c for c in inner.calls if c[0]=='action']),1)
+                    self.assertEqual(loop.state()['status'],'submitted')
                 return super().evaluate(kind,payload,directory)
         b=Backend(passes=2);state=loop.run(b,execute=True)
-        self.assertEqual(len(state['attempts']),2);self.assertEqual(state['status'],'passed');self.assertTrue(state['gold_result']['passed'])
-        self.assertEqual(len([s for s in state['stages'] if s['kind']=='gold']),2)
+        self.assertEqual(len(state['attempts']),1);self.assertEqual(state['status'],'scored');self.assertFalse(state['gold_result']['passed'])
+        self.assertEqual(len([s for s in state['stages'] if s['kind']=='gold']),1)
         self.assertFalse((loop.root/'candidate-pool').exists());self.assertFalse((loop.root/'expert-summary-task.json').exists())
         self.assertFalse(read(loop.root/'protocol.json')['held_out_eligible'])
         self.assertEqual(read(loop.root/'protocol.json')['evaluation_split']['role'],'testing')
@@ -45,6 +47,7 @@ class SplitTests(unittest.TestCase):
             runpy.run_path(str(script),run_name='__main__')
         ev.assert_not_called()
         cfg=prepared.call_args[0][0];self.assertEqual(cfg['mode'],'testing');self.assertIn('gold_evaluator',cfg)
+        self.assertEqual(cfg['max_attempts'],1)
         self.assertNotIn('public_checks',cfg);self.assertFalse(cfg.get('required_visible_checks'))
         self.assertNotIn('visible_evaluator',cfg)
         self.assertEqual(Path(cfg['store']),script.parents[2]/'experience-memory/library')
@@ -53,3 +56,19 @@ class SplitTests(unittest.TestCase):
         self.assertFalse(list((self.root/'prepared').rglob('VISIBLE_CHECKS.md')))
         progress=json.loads((self.root/'prepared/progress.json').read_text())
         self.assertEqual(progress[0]['controls'],[])
+
+    def test_batch_rejects_gold_guided_testing_before_writing_or_launching(self):
+        loop=self.prepare(mode='testing',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
+        protocol=read(loop.root/'protocol.json')
+        protocol.update(acceptance_policy='oracle_pass_or_action_budget_exhausted',max_attempts=3)
+        loop.save('protocol.json',protocol)
+        progress=self.root/'progress.json'
+        progress.write_text(json.dumps([dict(case_id=TEST,rank=26,root=str(self.root),status='prepared')]))
+        # The batch launcher expects the trajectory under each case directory.
+        trajectory=self.root/'trajectory';loop.root.rename(trajectory)
+        before={str(p):p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        script=Path(__file__).resolve().parents[1]/'tools/tempoevo-docker/run_selected.py'
+        with patch.object(sys,'argv',[str(script),'--root',str(self.root),'--execute']),patch('subprocess.run') as launch:
+            with self.assertRaises(SystemExit) as error:runpy.run_path(str(script),run_name='__main__')
+        self.assertEqual(error.exception.code,2);launch.assert_not_called()
+        self.assertEqual(before,{str(p):p.read_bytes() for p in self.root.rglob('*') if p.is_file()})

@@ -2,7 +2,7 @@
 import csv,json,os,sys,shutil,datetime
 from pathlib import Path
 import argparse
-parser=argparse.ArgumentParser(description='Prepare frozen Oracle-guided training/testing trajectories; no model calls')
+parser=argparse.ArgumentParser(description='Prepare training or single-submission testing trajectories; no model calls')
 parser.add_argument('--root',type=Path,required=True);parser.add_argument('--solver-image',required=True);parser.add_argument('--grader-image',required=True);parser.add_argument('--limit',type=int,default=10)
 parser.add_argument('--start-rank',type=int,default=1,help='First one-based CSV rank to prepare')
 parser.add_argument('--training-feedback',type=Path,help='Explicit public feedback mapping JSON, frozen in every trajectory')
@@ -76,7 +76,7 @@ for row in rows:
   config.update(model=identity(settings),model_profile=settings['profile'],condition=args.condition,training_feedback=family_feedback.get(family,feedback))
   config['learning_policy']=args.learning_policy
   if args.mode=='testing':
-   config.update(mode='testing',gold_evaluator=config.pop('training_evaluator'))
+   config.update(mode='testing',max_attempts=1,gold_evaluator=config.pop('training_evaluator'))
    config.pop('training_feedback',None)
   if args.online_memory:config['online_memory']=str(args.online_memory.resolve())
   if args.model_config:config['model_config']=str(args.model_config.resolve())

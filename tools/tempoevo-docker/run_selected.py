@@ -4,10 +4,10 @@ from pathlib import Path
 p=argparse.ArgumentParser();p.add_argument('--root',type=Path,required=True);p.add_argument('--execute',action='store_true');a=p.parse_args()
 if not a.execute:p.error('--execute is required for explicitly authorized paid training')
 repo=Path(__file__).resolve().parents[2];sys.path.insert(0,str(repo))
-from temporal_contract_analyzer.tempoevo_v4 import VERSION
+from temporal_contract_analyzer.tempoevo_v4 import VERSION,current_protocol
 root=a.root.resolve();items=json.loads((root/'progress.json').read_text());results=[]
 for item in items:
- if item['status']=='prepared' and json.loads((Path(item['root'])/'trajectory/protocol.json').read_text()).get('schema_version')!=VERSION:
+ if item['status']=='prepared' and not current_protocol(json.loads((Path(item['root'])/'trajectory/protocol.json').read_text())):
   p.error('Historical batch is read-only; prepare a new root under '+VERSION)
 for item in items:
  trajectory=Path(item['root'])/'trajectory';row=dict(case_id=item['case_id'],rank=item['rank'])

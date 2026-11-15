@@ -77,11 +77,14 @@ This is a prepared source tree, not a published release. The owner has not selec
 
 ## TempoEvo V11
 
-Task-local diagnoses are passed explicitly and cumulatively to subsequent Actions, even when the Contract remains unchanged; see [V9](docs/TEMPOEVO_V9.md). The new `tempoevo` CLI runs up to **three Actions per independent trajectory**,
-with deterministic feedback and optional Contract revision. Learning evaluates the
-training Gold after every Action and stops only when Gold and required public
-checks pass. Three effective failures request a real human summary. Testing uses
-public feedback only, with one final independent Gold and no learning.
+Training task-local diagnoses are passed explicitly and cumulatively to subsequent
+Actions, even when the Contract remains unchanged; see [V9](docs/TEMPOEVO_V9.md).
+The `tempoevo` CLI allows up to **three Actions in learning**, evaluating training
+Gold after every Action and stopping on Gold acceptance. Public checks are auxiliary.
+Three effective training failures request a real human summary. **Testing uses one
+bounded Action and one final submission**, with frozen memory and no learning.
+The model may run available project tests and revise code within its Action budget.
+Gold scores the submitted patch once afterward; its result never feeds back into repair.
 [Online training](docs/TEMPOEVO_V8.md) can immediately use new unreviewed candidates through a separate provisional pool; frozen ablations/testing keep fixed approved snapshots. Long-term publication still requires human acceptance. Successful reflection now proposes evidence supplements, revisions, merges or new guidance against a frozen related shortlist; every change still needs human review. See [V7 reflection](docs/TEMPOEVO_V7.md). All LLM stages share one frozen model profile, defaulting to `gpt-6.1-sol / medium`. Transient connection failures allow at most two stage restarts within the original request/time caps. Configure model, reasoning effort and provider in [model-profiles.json](temporal_contract_analyzer/_session_runtime/model-profiles.json). Historical V1–V3 data remain readable; their execution engines are removed. See [V6 configuration, retries and budgets](docs/TEMPOEVO_V6.md),
 [learning configuration](examples/tempoevo-v4/learning.json), and
 [testing configuration](examples/tempoevo-v4/testing.json).

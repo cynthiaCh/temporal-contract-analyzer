@@ -6,9 +6,10 @@ The only model-execution protocol is `tempoevo-trajectory-v11`. Failed-attempt d
 Public task/source → deterministic AST → approved mechanism/BM25 recall → source-grounded semantic selection
 → initial Auto-Contract → Action → visible + training Gold assessment
                   ↑ diagnosis/revision ← failure, at most three Actions total
-Gold PASS + required public PASS → compare frozen related guidance → evidence/revise/merge/new proposal → unapproved candidate pool → named human content review → long-term bank
+Training Gold PASS → compare frozen related guidance → evidence/revise/merge/new proposal → unapproved candidate pool → named human content review → long-term bank
 Three effective training nonacceptances → real expert summary task → candidate pool
-Testing → same bounded repair, frozen memory, separate final gold, no learning
+Testing → frozen memory → one bounded Action (public tools/tests and code revisions)
+        → final submission → independent Gold once → recorded score, no feedback or learning
 ```
 
 | Responsibility | Modules / commands |

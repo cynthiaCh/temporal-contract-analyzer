@@ -12,7 +12,7 @@ Backend=fixtures.Backend
 from temporal_contract_analyzer.tempoevo_v4 import read
 from temporal_contract_analyzer.training_acceptance import normalize
 from temporal_contract_analyzer.core import EvidenceError
-from temporal_contract_analyzer import experience_approval as approval, compact_experience as compact, experience_memory as memory
+from temporal_contract_analyzer import experience_approval as approval, compact_experience as compact, experience_memory as memory, taxonomy
 from temporal_contract_analyzer.tempoevo_docker import evaluate
 
 
@@ -88,13 +88,13 @@ class NormalizationTests(unittest.TestCase):
 class BoundaryTests(unittest.TestCase):
  setUp=fixtures.V4Tests.setUp
  prepare=fixtures.V4Tests.prepare
- def test_testing_retries_with_verdict_feedback_without_learning(self):
+ def test_testing_scores_one_submission_without_learning(self):
   from temporal_contract_analyzer import experience_approval as approval
   loop=self.prepare(mode='testing',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
   b=AcceptanceBackend(gold_at=99,visible_at=2);before={str(p):p.read_bytes() for p in self.store.rglob('*') if p.is_file()}
   state=loop.run(b,execute=True)
-  self.assertEqual([k for k,_ in b.evaluations],['visible','gold']*3);self.assertEqual(len(state['attempts']),3);self.assertFalse(state['gold_result']['passed'])
-  self.assertEqual(state['status'],'repair_exhausted')
+  self.assertEqual([k for k,_ in b.evaluations],['visible','gold']);self.assertEqual(len(state['attempts']),1);self.assertFalse(state['gold_result']['passed'])
+  self.assertEqual(state['status'],'scored')
   self.assertFalse((loop.root/'candidate-pool').exists());self.assertFalse((loop.root/'expert-summary-task.json').exists());self.assertNotIn('extract',[x[0] for x in b.calls])
   self.assertEqual(before,{str(p):p.read_bytes() for p in self.store.rglob('*') if p.is_file()})
   self.assertTrue(all('training_acceptance' not in json.dumps(x[1]) and 'SECRET' not in json.dumps(x[1]) for x in b.calls))
@@ -144,14 +144,14 @@ class BoundaryTests(unittest.TestCase):
     self.assertIs(result['valid'],valid)
     if valid:self.assertIsNone(result['passed'])
 
- def test_testing_oracle_accepts_the_scorer_failure_exit_code(self):
+ def test_final_gold_accepts_the_scorer_failure_exit_code(self):
   candidate=self.root/'candidate';candidate.mkdir()
   with patch('temporal_contract_analyzer.tempoevo_docker.image_identity'),patch('temporal_contract_analyzer.tempoevo_docker.subprocess.run',return_value=SimpleNamespace(returncode=1,stdout='{"passed": false}',stderr='')),patch('temporal_contract_analyzer._session_runtime.docker_transport.stop'):
-   result=evaluate(dict(candidate=str(candidate),purpose='testing_acceptance',evaluator=dict(image='sha256:'+'a'*64,command=['python3','/checks/gold.py'])),self.root)
+   result=evaluate(dict(candidate=str(candidate),purpose='final_scoring',evaluator=dict(image='sha256:'+'a'*64,command=['python3','/checks/gold.py'])),self.root)
   self.assertTrue(result['valid']);self.assertFalse(result['passed'])
 
 
-class OracleRetryTests(unittest.TestCase):
+class IndependentTestingTests(unittest.TestCase):
     setUp=fixtures.V4Tests.setUp
 
     def prepare(self, **changes):
@@ -160,55 +160,88 @@ class OracleRetryTests(unittest.TestCase):
         return fixtures.V4Tests.prepare(self,**config)
 
 
-    def test_no_public_checker_still_retries_on_oracle_failure(self):
+    def test_no_public_checker_submits_once_even_when_gold_fails(self):
         loop=self.prepare(visible_evaluator=None)
         backend=AcceptanceBackend(gold_at=2);state=loop.run(backend,execute=True)
-        self.assertEqual(state['status'],'passed',state.get('error'))
-        self.assertEqual(len(state['attempts']),2)
-        self.assertEqual([k for k,_ in backend.evaluations],['gold','gold'])
-        action2=[p for kind,p,_,_ in backend.calls if kind=='action'][1]
-        self.assertFalse(action2['feedback']['oracle_acceptance']['passed'])
-        self.assertNotIn('No external behavioral verdict is available',action2['instruction'])
+        self.assertEqual(state['status'],'scored',state.get('error'))
+        self.assertFalse(state['gold_result']['passed'])
+        self.assertEqual(len(state['attempts']),1)
+        self.assertEqual([k for k,_ in backend.evaluations],['gold'])
+        self.assertEqual([k for k,_,_,_ in backend.calls],['contract','action'])
+        self.assertIsNone(state['attempts'][0]['visible_passed'])
+        self.assertNotIn('oracle_acceptance',state['attempts'][0]['feedback'])
+        self.assertNotIn('feedback',state['gold_result'])
 
 
     def test_legacy_summary_remains_read_only(self):
         loop=self.prepare();summary=(loop.root/'summary.json').read_bytes()
-        protocol=read(loop.root/'protocol.json');protocol['acceptance_policy']='visible_stop_then_independent_gold';loop.save('protocol.json',protocol)
+        protocol=read(loop.root/'protocol.json');protocol['acceptance_policy']='oracle_pass_or_action_budget_exhausted';loop.save('protocol.json',protocol)
         self.assertEqual(loop.report(),json.loads(summary))
         self.assertEqual((loop.root/'summary.json').read_bytes(),summary)
+        backend=AcceptanceBackend()
+        with self.assertRaisesRegex(EvidenceError,'read-only'):loop.run(backend,execute=True)
+        with self.assertRaisesRegex(EvidenceError,'read-only'):loop.cancel()
+        self.assertFalse(backend.calls);self.assertFalse(backend.evaluations)
 
-    def test_training_and_testing_have_identical_repair_actions_and_feedback(self):
-        for gold_at in (1,2,3,99):
-            for public in (True,False,None):
-                with self.subTest(gold_at=gold_at,public=public):
+    def test_gold_and_public_verdicts_cannot_change_testing_submission(self):
+        for condition in ('baseline','contract','bm25','structured','fixed_contract'):
+            submissions=[]
+            for gold_at,public in ((1,True),(99,True),(1,False),(99,False),(99,None)):
+                with self.subTest(condition=condition,gold_at=gold_at,public=public):
+                    loop=self.prepare(condition=condition,routing_analysis=dict(
+                        taxonomy_version=taxonomy.VERSION,
+                        contract='Preserve accepted work.',obligation_labels=[],facts=[],unknowns=[]))
                     class Backend(AcceptanceBackend):
+                        def execute(inner,*args):
+                            self.assertFalse(any(k=='gold' for k,_ in inner.evaluations))
+                            return super().execute(*args)
                         def evaluate(inner,kind,payload,directory):
+                            if kind=='gold':
+                                self.assertEqual(loop.state()['status'],'submitted')
+                                self.assertEqual(len(loop.state()['attempts']),1)
+                                self.assertEqual(payload['purpose'],'final_scoring')
                             value=super().evaluate(kind,payload,directory)
                             if kind=='visible':value['passed']=public
                             return value
-                    runs=[]
-                    for mode in ('learning','testing'):
-                        loop=self.prepare(mode=mode);backend=Backend(gold_at=gold_at)
-                        state=loop.run(backend,execute=True)
-                        self.assertNotEqual(state['status'],'execution_invalid',state.get('error'))
-                        self.assertEqual(len(state['attempts']),min(gold_at,3))
-                        self.assertEqual(state['gold_result']['passed'],gold_at<=3)
-                        self.assertNotIn('SECRET',json.dumps(backend.calls))
-                        actions=[(kind,payload,model,limits['requests']) for kind,payload,model,limits in backend.calls if kind in ('contract','diagnosis','action')]
-                        self.assertTrue(all(0<limits['seconds']<=600 for kind,_,_,limits in backend.calls if kind in ('contract','diagnosis','action')))
-                        runs.append((state,actions,read(loop.root/'protocol.json')))
-                        self.assertEqual(len([k for k,_ in backend.evaluations if k=='gold']),min(gold_at,3))
-                        if mode=='testing':
-                            self.assertFalse((loop.root/'candidate-pool').exists())
-                            self.assertFalse((loop.root/'expert-summary-task.json').exists())
-                    train,test=runs
-                    self.assertEqual(train[1],test[1])
-                    self.assertEqual(train[0]['repair_stop_reason'],test[0]['repair_stop_reason'])
-                    self.assertEqual([a['acceptance_passed'] for a in train[0]['attempts']],[a['acceptance_passed'] for a in test[0]['attempts']])
-                    for key in ('acceptance_policy','max_attempts','evaluation_budget'):
-                        self.assertEqual(train[2][key],test[2][key])
-                    for kind in ('contract','diagnosis','action'):
-                        self.assertEqual(train[2]['limits'][kind],test[2]['limits'][kind])
+                    backend=Backend(gold_at=gold_at);state=loop.run(backend,execute=True)
+                    self.assertEqual(state['status'],'scored',state.get('error'))
+                    self.assertEqual(state['gold_result']['passed'],gold_at==1)
+                    self.assertEqual(state['stop_reason'],'single_submission')
+                    self.assertEqual(len(state['attempts']),1)
+                    self.assertEqual([k for k,_ in backend.evaluations],['visible','gold'])
+                    self.assertNotIn('SECRET',json.dumps(backend.calls))
+                    self.assertFalse(any(k in ('diagnosis','extract') for k,_,_,_ in backend.calls))
+                    self.assertIsNone(state['attempts'][0]['acceptance_passed'])
+                    self.assertIsNone(state['attempts'][0]['oracle_result'])
+                    self.assertFalse((loop.root/'candidate-pool').exists())
+                    self.assertFalse((loop.root/'expert-summary-task.json').exists())
+                    submissions.append(([(kind,payload,model,limits['requests']) for kind,payload,model,limits in backend.calls],
+                        state['attempts'][0]['candidate_sources']))
+                    summary=read(loop.root/'summary.json')
+                    self.assertIsNone(summary['final_acceptance']);self.assertIsNone(summary['first_pass_attempt'])
+                    self.assertEqual(summary['per_attempt_oracle'],[None])
+                    self.assertEqual(loop.verify()['evaluation_budget'],dict(visible=1,oracle=0,gold=1))
+                    before=(deepcopy(backend.calls),deepcopy(backend.evaluations))
+                    loop.run(backend,execute=True)
+                    self.assertEqual((backend.calls,backend.evaluations),before)
+            self.assertTrue(all(s==submissions[0] for s in submissions))
+
+    def test_invalid_final_score_never_restarts_solving(self):
+        loop=self.prepare();backend=AcceptanceBackend(invalid=True)
+        state=loop.run(backend,execute=True)
+        self.assertEqual(state['status'],'execution_invalid')
+        self.assertEqual(state['repair_stop_reason'],'single_submission')
+        self.assertEqual(len(state['attempts']),1)
+        self.assertEqual([k for k,_,_,_ in backend.calls],['contract','action'])
+        self.assertIsNone(read(loop.root/'summary.json')['gold_result'])
+        before=(deepcopy(backend.calls),deepcopy(backend.evaluations))
+        loop.run(backend,execute=True)
+        self.assertEqual((backend.calls,backend.evaluations),before)
+
+    def test_testing_rejects_multiple_submissions_before_creating_a_root(self):
+        for attempts in (2,3):
+            with self.assertRaisesRegex(EvidenceError,'exactly one'):self.prepare(max_attempts=attempts)
+        self.assertFalse(list(self.root.glob('run-*')))
 
     def test_new_runs_reject_legacy_stop_policies_in_either_mode(self):
         for mode in ('learning','testing'):

@@ -42,17 +42,17 @@ those caps. Structured trajectories reserve up to three selections: initial, plu
 one after each possible Contract revision. Fixed-contract reserves one. No candidate
 means no selection model call, although the maximum budget remains reserved.
 
-For default three-Action structured testing:
+For default single-submission structured testing:
 
 - routing: 12 requests;
-- selection: 3 x 12;
+- selection: 12;
 - initial Contract: 12;
-- Actions: 3 x 24;
-- diagnoses: 2 x 12;
-- total maximum: **156 requests**; learning optionally adds 12 extraction requests
-  for **168**. Each invocation has its own 600-second maximum. At most 10 testing
-  LLM invocations are budgeted (routing + three selections + Contract + three Actions
-  + two diagnoses = 10 invocations, with 6,000 seconds total stage maximum).
+- Action: 24, including public test execution and any code revisions within the session;
+- no outer diagnosis or additional Action;
+- total maximum: **60 requests** across four LLM invocations (routing, selection,
+  initial Contract and Action). Each invocation has its own 600-second maximum,
+  for a 2,400-second total stage maximum. Learning retains up to three Actions,
+  two diagnoses and three selections, plus extraction, for **168 requests**.
 
 Unused stages are not called or billed. Gold/public evaluations have separate
 budgets. A selection failure is execution-invalid, not a behavioral repair attempt.
@@ -60,23 +60,27 @@ Actual requests, tokens, time, stage retries and missing usage remain reported.
 
 ## Testing boundary and continuation
 
-Training and testing share `oracle_retry`: each generated patch is evaluated by
-the Oracle, FAIL triggers another Action and PASS stops, within three total Actions.
-Public checks are auxiliary and cannot override the Oracle. Only its pass/fail
-boolean enters repair feedback; reference patches and hidden assertion details do
-not. This is Oracle-assisted testing, not a final-only blind score. Testing still
-uses frozen memory and never learns or publishes experience. The former one-Gold,
-public-feedback-only protocol is historical and read-only; its results are not
-relabeled and new configurations cannot select it. See [feedback policy](PUBLIC_TEST_ADAPTERS.md).
+Training evaluates each patch with its training Oracle, retries on failure and stops
+on acceptance, within three Actions. Public checks remain auxiliary. Testing instead
+uses `single_submission_then_independent_gold`: one bounded Action submits its final
+patch, then Gold scores it once. No Gold result reaches any model call, controls
+another attempt or selects between candidates. Testing ends as `scored` regardless
+of the score, with `repair_stop_reason=single_submission` and a separate `gold_result`.
+The model can run project tests and revise code within its Action budget. There is
+no required per-case checker or human intervention. Experience remains frozen and
+read-only, with no extraction, expert summary or publication.
+
+Earlier V11 testing roots using `oracle_pass_or_action_budget_exhausted` are historical
+and read-only, as are older public-check-controlled retry protocols. The mode-specific
+acceptance policy distinguishes them without rewriting their summaries or outcomes.
+See [feedback policy](PUBLIC_TEST_ADAPTERS.md).
 Runtime bindings now also cover semantic retrieval, routing, memory conversion and
 ranking code, so a changed retriever cannot silently affect an existing frozen root.
 
-The interrupted November 15 V10 queue is preserved. Its completed ranks 26–46 are
-not rerun. Rank 47 was explicitly cancelled mid-Action and starts a new V11 trajectory
-from original public code; its interrupted cost remains in the old archive. Unstarted
-ranks 48–50 also use new V11 roots. These four executions are a continuation, not a
-homogeneous 25-case V11 efficacy experiment. Earlier invalid executions are not silently
-retried. A clean paired comparison needs separately authorized runs.
+The interrupted November 15 queues and their costs remain preserved. Previously
+recorded scores are not rerun or relabeled by this correction. Any run that used Gold
+feedback during repair must be reported as Gold-assisted, rather than blind testing.
+New runs require fresh roots; no paid benchmark run is launched by this correction.
 
 ## Verification and limits
 
@@ -84,7 +88,8 @@ Offline synthetic tests cover unsupported domain premises despite label matches,
 unknown/weak/contradicted relevance, source-backed transfer, forged citations,
 missing/duplicate assessments, duplicate text, character/entry/recall bounds,
 unapproved exclusion, model profile/budget, historical read-only boundaries and
-shared Oracle retry/no-learning isolation. No benchmark Gold failure details are used to
+single-submission testing, Gold-verdict-independent model inputs, one final scoring
+call, training retries and no-learning isolation. No benchmark Gold failure details are used to
 tune retrieval. Model applicability judgments remain fallible; Python validates their
 structure and citations, not the truth of every semantic inference. Lexical recall
 can miss useful cross-domain candidates and token-set deduplication is conservative.

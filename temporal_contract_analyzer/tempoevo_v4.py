@@ -15,17 +15,25 @@ from .core import EvidenceError, canonical, sha
 from ._session_runtime.model_settings import resolve_profile, identity
 
 VERSION = 'tempoevo-trajectory-v11'
+ACCEPTANCE_POLICIES = dict(learning='oracle_pass_or_action_budget_exhausted',
+                           testing='single_submission_then_independent_gold')
 MODEL = identity(resolve_profile())
 CONDITIONS = ('baseline', 'contract', 'bm25', 'structured', 'fixed_contract')
 LIMITS = dict(selection=dict(requests=12, seconds=600), routing=dict(requests=12, seconds=600), contract=dict(requests=12, seconds=600), action=dict(requests=24, seconds=600),
               diagnosis=dict(requests=12, seconds=600), extract=dict(requests=12, seconds=600))
-TERMINAL = ('passed', 'repair_exhausted', 'execution_invalid', 'awaiting_expert_summary', 'awaiting_content_review', 'cancelled')
+TERMINAL = ('passed', 'scored', 'repair_exhausted', 'execution_invalid', 'awaiting_expert_summary', 'awaiting_content_review', 'cancelled')
 CONTRACT_FIELDS = ('scope', 'triggers', 'ordering_barriers', 'lifecycle_identity',
                    'preservation', 'forbidden_effects', 'checkpoints', 'unknowns')
 
 
 def read(path):
     return json.loads(Path(path).read_text())
+
+
+def current_protocol(protocol):
+    return (protocol.get('schema_version')==VERSION and protocol.get('mode') in ACCEPTANCE_POLICIES
+            and protocol.get('acceptance_policy')==ACCEPTANCE_POLICIES[protocol['mode']]
+            and (protocol['mode']!='testing' or protocol.get('max_attempts')==1))
 
 
 def visible_verdict(attempts):
@@ -109,8 +117,9 @@ class Trajectory:
             if key not in cfg:raise EvidenceError('Missing '+key)
         if cfg['mode'] not in ('learning','testing') or cfg['condition'] not in CONDITIONS:raise EvidenceError('Invalid mode/condition')
         if any(key in cfg for key in ('public_checks','repair_policy','testing_policy')):
-            raise EvidenceError('Repair strategy switches were removed; training and testing always use Oracle acceptance')
-        if cfg.get('acceptance_policy','oracle_pass_or_action_budget_exhausted')!='oracle_pass_or_action_budget_exhausted':
+            raise EvidenceError('Repair strategy switches were removed; testing submits once before independent Gold scoring')
+        acceptance=ACCEPTANCE_POLICIES[cfg['mode']]
+        if cfg.get('acceptance_policy',acceptance)!=acceptance:
             raise EvidenceError('Historical protocol is read-only; prepare a new trajectory')
         if cfg.get('required_visible_checks'):
             raise EvidenceError('Training and testing use public checks as advisory feedback only')
@@ -126,8 +135,9 @@ class Trajectory:
         if cfg['mode']=='testing':
             registry=Path(__file__).resolve().parents[1]/'experiments/training-cases.json'
             if registry.exists() and cfg.get('task_id') in {r['id'] for r in read(registry)['cases']}:raise EvidenceError('Known exposed development case cannot be an independent test')
-        attempts=cfg.get('max_attempts',3)
+        attempts=cfg.get('max_attempts',1 if cfg['mode']=='testing' else 3)
         if type(attempts) is not int or not 1<=attempts<=3:raise EvidenceError('At most three Actions total')
+        if cfg['mode']=='testing' and attempts!=1:raise EvidenceError('Testing requires exactly one bounded Action and one final submission')
         try:settings=resolve_profile(cfg.get('model_profile'),cfg.get('model_config'))
         except (ValueError,TypeError,OSError) as error:raise EvidenceError('Invalid model configuration: '+str(error)) from error
         if cfg.get('model',identity(settings))!=identity(settings):raise EvidenceError('Model must match the selected profile')
@@ -198,9 +208,9 @@ class Trajectory:
             dict(version='bm25-v1' if cfg['condition']=='bm25' else 'no-memory',max_experiences=5 if cfg['condition']=='bm25' else 0))
         cfg.update(schema_version=VERSION,model=identity(settings),memory_snapshot=bank,max_attempts=attempts,limits=limits,total_request_cap=total,
             store=str(store),original_inventory=inventory(files),feedback_fields=['observations','regressions','unknowns'],
-            required_visible_checks=False,acceptance_policy='oracle_pass_or_action_budget_exhausted',
-            evaluation_budget=dict(visible=attempts if cfg.get('visible_evaluator') else 0,oracle=attempts),
-            held_out_eligible=False,split_status='oracle_verdict_feedback_testing' if cfg['mode']=='testing' else 'unverified_no_independent_split_evidence',
+            required_visible_checks=False,acceptance_policy=acceptance,
+            evaluation_budget=dict(visible=attempts if cfg.get('visible_evaluator') else 0,oracle=attempts if cfg['mode']=='learning' else 0,gold=1 if cfg['mode']=='testing' else 0),
+            held_out_eligible=False,split_status='final_only_gold_testing' if cfg['mode']=='testing' else 'unverified_no_independent_split_evidence',
             memory_snapshot_sha256=bank['sha256'],source_sha256=sha(canonical(sources).encode()))
         self.save('protocol.json',cfg);self.save('state.json',dict(status='prepared',attempts=[],stages=[],contract=None,diagnoses=[],cancelled=False))
         # Freeze executables and their static inputs; no evaluator output enters model context here.
@@ -212,7 +222,7 @@ class Trajectory:
 
     def verify(self):
         p=read(self.root/'protocol.json')
-        if p.get('schema_version')!=VERSION or p.get('acceptance_policy')!='oracle_pass_or_action_budget_exhausted':raise EvidenceError('Historical protocol is read-only; prepare a new V11 root')
+        if not current_protocol(p):raise EvidenceError('Historical protocol is read-only; prepare a new V11 root')
         from .evaluation_split import enforce
         enforce(p)
         binding=read(self.root/'binding.json')
@@ -232,7 +242,7 @@ class Trajectory:
         return p
 
     def cancel(self):
-        if read(self.root/'protocol.json').get('schema_version')!=VERSION:raise EvidenceError('Historical protocol is read-only')
+        if not current_protocol(read(self.root/'protocol.json')):raise EvidenceError('Historical protocol is read-only')
         return self.status('cancelled',cancelled=True,stop_reason='cancelled')
 
     def retrieve(self,p,backend=None,selection_key='selection-1'):
@@ -284,6 +294,7 @@ class Trajectory:
             self.save(directory.relative_to(self.root)/'raw-result.json',result)
             from .training_acceptance import normalize
             result=normalize(result,p.get('training_feedback',{}) if p['mode']=='learning' else {})
+            if p['mode']=='testing':result.pop('feedback',None)
         self.save(directory.relative_to(self.root)/'result.json',result)
         state=self.state()
         row=next(s for s in state['stages'] if s['key']==key)
@@ -408,6 +419,8 @@ class Trajectory:
                         status='unverified_task_local_reflection',**{k:deepcopy(d[k]) for k in ('diagnosis','explanation','structured_delta','supporting_evidence','remaining_unknowns','contract_changed')})
                         for d in state['diagnoses'] if d['attempt']<=number],
                     instruction='Repair the supplied current candidate. Use cumulative within_task_reflections from the actual preceding failed candidates, including when Contract is unchanged or no cross-task experience matched. Treat their explanations as fallible hypotheses: retain unknowns, check against public task/source and observations, and do not turn inferred causes or checks into new business requirements. Preserve original task obligations and correct behavior. No scorer, reference, gold patch or hidden tests are available.')
+                if p['mode']=='testing':
+                    payload['instruction']+=' This is the only testing Action. You may run available public project tests and revise code within this session budget. Submit one final candidate; no Gold verdict or later repair Action will be available.'
                 result=self._step(p,backend,'action-'+str(number),'action',payload)
                 candidate=result['candidate_sources']
                 if not isinstance(candidate,dict) or any(not isinstance(v,str) for v in candidate.values()):raise EvidenceError('Invalid candidate output')
@@ -430,20 +443,20 @@ class Trajectory:
                 feedback={k:deepcopy(evaluation[k]) for k in p['feedback_fields'] if k in evaluation}
                 if set(feedback)!=set(p['feedback_fields']):raise EvidenceError('Visible evaluator must return complete observations/regressions/unknowns')
                 learning=p['mode']=='learning'
-                evaluator=p['training_evaluator'] if learning else p['gold_evaluator']
-                key=('acceptance-' if learning else 'oracle-')+str(number)
-                result=self._step(p,backend,key,'gold',dict(candidate=str(directory),evaluator=evaluator,
-                    purpose='training_acceptance' if learning else 'testing_acceptance'))
-                if inventory(capture(directory)[0])!=inventory({k:v.encode() for k,v in candidate.items()}):raise EvidenceError('Oracle evaluator mutated candidate')
-                accepted=result['passed']
-                feedback['oracle_acceptance']=deepcopy(result['feedback'])
-                if p['mode']=='learning':
+                result=None;accepted=None
+                if learning:
+                    result=self._step(p,backend,'acceptance-'+str(number),'gold',dict(candidate=str(directory),
+                        evaluator=p['training_evaluator'],purpose='training_acceptance'))
+                    if inventory(capture(directory)[0])!=inventory({k:v.encode() for k,v in candidate.items()}):raise EvidenceError('Oracle evaluator mutated candidate')
+                    accepted=result['passed']
+                    feedback['oracle_acceptance']=deepcopy(result['feedback'])
                     self.save('training-exposure.json',dict(task_id=p.get('task_id'),source_sha256=p['source_sha256'],training_feedback_used=True,eligible_for_independent_testing=False))
                 state=self.state();state['attempts'].append(dict(number=number,visible_passed=evaluation['passed'],
                     delivered_sha256s=delivery.get('selected_sha256s',[]),
                     acceptance_passed=accepted,training_result=result if learning else None,oracle_result=result,
                     feedback=feedback,candidate_sources=candidate,candidate_inventory=inventory(capture(directory)[0])))
                 self.save('state.json',state)
+                if not learning:break
                 if p['learning_policy']=='online':
                     from .online_memory import usage
                     usage(Path(p['online_memory']),self.root,number,delivery.get('provisional_sha256s',[]),accepted)
@@ -451,10 +464,18 @@ class Trajectory:
                 self.status('revision_pending');state=self.state()
             state=self.state();last=state['attempts'][-1]
             passed=last['acceptance_passed']
-            reason='oracle_accepted' if passed else 'action_budget_exhausted'
-            final_status='passed' if passed else 'repair_exhausted'
-            self.status(final_status,repair_stop_reason=reason,first_pass_attempt=len(state['attempts']) if passed else None,stop_reason=reason,
-                training_accepted=passed if p['mode']=='learning' else None,final_acceptance=last['oracle_result'],gold_result=last['oracle_result'])
+            if p['mode']=='testing':
+                self.status('submitted',repair_stop_reason='single_submission',stop_reason='single_submission')
+                directory=self.root/'attempts'/str(last['number'])/'candidate'
+                result=self._step(p,backend,'final-gold','gold',dict(candidate=str(directory),
+                    evaluator=p['gold_evaluator'],purpose='final_scoring'))
+                if inventory(capture(directory)[0])!=last['candidate_inventory']:raise EvidenceError('Gold evaluator mutated submitted candidate')
+                self.status('scored',gold_result=result)
+            else:
+                reason='oracle_accepted' if passed else 'action_budget_exhausted'
+                final_status='passed' if passed else 'repair_exhausted'
+                self.status(final_status,repair_stop_reason=reason,first_pass_attempt=len(state['attempts']) if passed else None,stop_reason=reason,
+                    training_accepted=passed,final_acceptance=last['oracle_result'],gold_result=last['oracle_result'])
             if p['mode']=='learning':
                 from . import experience_reflection as reflection
                 used=list(dict.fromkeys(delivery.get('selected_sha256s',[])+[code for a in self.state()['attempts'] for code in a.get('delivered_sha256s',[])]))
@@ -480,7 +501,7 @@ class Trajectory:
                     self.status('awaiting_expert_summary')
         except (Exception,KeyboardInterrupt) as error:
             if self.state()['status']!='cancelled':self.status('execution_invalid',error=repr(error),stop_reason='execution_invalid',training_accepted=self.state().get('training_accepted'))
-        if self.state()['status'] in ('passed','awaiting_expert_summary','repair_exhausted'):self.status(self.state()['status'],finalized=True)
+        if self.state()['status'] in ('passed','scored','awaiting_expert_summary','repair_exhausted'):self.status(self.state()['status'],finalized=True)
         self.report();return self.state()
 
     def submit_expert(self, summary):
@@ -553,7 +574,7 @@ class Trajectory:
 
     def report(self):
         state=self.state();attempts=state['attempts'];p=read(self.root/'protocol.json')
-        if p.get('schema_version')!=VERSION or p.get('acceptance_policy')!='oracle_pass_or_action_budget_exhausted':return read(self.root/'summary.json')
+        if not current_protocol(p):return read(self.root/'summary.json')
         for row in state['stages']:
             path=self.root/'stages'/row['key']/'result.json'
             if path.exists() and 'requests' not in row:

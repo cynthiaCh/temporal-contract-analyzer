@@ -48,12 +48,14 @@ applicability before any approved experience is delivered.
 The first twenty historical selections are registered through
 `experiments/training-cases.json`. Registration does not certify runtime readiness:
 perform original/reference/negative control calibration first. The original Gold
-probe evaluates each generated patch in both learning and testing. Hidden Gold
+probe evaluates each generated training patch and only the final testing submission. Hidden Gold
 code is never mounted into the model's solver workspace. Public project tests are
 optional auxiliary feedback; no task-family behavioral suite is generated.
 
-Each trajectory uses at most three Actions, one frozen model profile and Oracle
-acceptance to decide retries. Training alone extracts candidates for review;
+Training uses at most three Actions and Oracle acceptance to decide retries.
+Testing uses one bounded Action, then one independent Gold score with no feedback.
+The model can run public project tests and revise code inside that Action. All stages
+use one frozen model profile. Training alone extracts candidates for review;
 testing cannot learn. Transient connection failures permit at most two archived
 stage restarts within the original request/time caps. Other invalid executions stop.
 
@@ -88,6 +90,8 @@ Online sequential training adds `--learning-policy online --online-memory /new/b
 
 V9 additionally forwards cumulative task-local diagnoses into Action 2/3, independently of the online pool. See [within-task reflection delivery](TEMPOEVO_V9.md).
 
-[Public test adapters](PUBLIC_TEST_ADAPTERS.md) cover ranks 26–50 across all six task families. Test preparation executes public checks only, with frozen frontend-loader inputs; Gold stays final-only.
+No task-family adapters are required. An existing project evaluator is optional;
+test preparation never runs Gold or reads reference implementations. See
+[feedback boundaries](PUBLIC_TEST_ADAPTERS.md). Gold stays final-only in testing.
 
 V11 structured runs add a separately budgeted semantic-selection stage, using the same isolated Docker backend and frozen model profile. See [retrieval, budgets and historical continuation](TEMPOEVO_V11.md). Default reviewed store: `experience-memory/library`; use `--store` for an explicit alternative.

@@ -48,7 +48,7 @@ def evaluate(payload,directory):
             (directory/'stdout.log').write_text(process.stdout);(directory/'stderr.log').write_text(process.stderr)
             value=json.loads(process.stdout)
             if isinstance(value,dict) and value.get('valid') is False:return value
-            gold=payload.get('purpose') in ('training_acceptance','testing_acceptance')
+            gold=payload.get('purpose') in ('training_acceptance','final_scoring')
             if process.returncode not in ((0,1) if gold else (0,)) or not isinstance(value,dict) or (not gold and ('passed' not in value or (value['passed'] is not None and type(value['passed']) is not bool))) or (process.returncode==1 and (value.get('passed') is True or value.get('verdict')=='PASS' or (isinstance(value.get('full_score'),dict) and value['full_score'].get('verdict')=='PASS'))):
                 raise ValueError('Invalid Docker evaluator result')
             return dict(value,valid=True)
