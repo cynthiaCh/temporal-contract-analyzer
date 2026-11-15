@@ -1,6 +1,6 @@
-# Temporal Contract Analyzer
+# TempoEvo
 
-Source-derived temporal evidence for JavaScript, TypeScript, Vue and Python. The analyzer extracts syntax facts, source locations and conservative review hints. A parsed report is not a proof of a defect or of safety.
+TempoEvo combines temporal-contract analysis, contract-guided repair and reusable experience. Its Temporal Contract Analyzer component extracts syntax facts, source locations and conservative review hints for JavaScript, TypeScript, Vue and Python. A parsed report is not a proof of a defect or of safety.
 
 ## Tool layout
 

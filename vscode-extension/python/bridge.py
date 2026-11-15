@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 
 if sys.version_info < (3, 9):
-    sys.exit('Temporal Contracts requires Python 3.9+')
+    sys.exit('TempoEvo requires Python 3.9+')
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'runtime'))
 from temporal_contract_analyzer.core import EvidenceError, MAX_TOTAL, analyze_sources  # noqa: E402

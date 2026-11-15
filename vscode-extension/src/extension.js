@@ -58,7 +58,7 @@ function presentation(result, root) {
       const message = file.error?.message || adapter?.reason || file.status;
       const errorRange = new vscode.Range(Math.max(0, (file.error?.line || 1) - 1), 0, Math.max(0, (file.error?.line || 1) - 1), 1);
       const diagnostic = new vscode.Diagnostic(errorRange, `分析未完成：${message}`, vscode.DiagnosticSeverity.Warning);
-      diagnostic.source = 'Temporal Contracts';
+      diagnostic.source = 'TempoEvo';
       diagnostic.code = 'incomplete-analysis';
       items.push(diagnostic);
       row.children.push(notice('分析未完成', message));
@@ -70,7 +70,7 @@ function presentation(result, root) {
       const selected = range(result.ranges[first.id]);
       const message = `待核查：${finding.message}\n条件：${finding.condition}\n核查：${finding.review_question}`;
       const diagnostic = new vscode.Diagnostic(selected, message, vscode.DiagnosticSeverity.Information);
-      diagnostic.source = 'Temporal Contracts';
+      diagnostic.source = 'TempoEvo';
       diagnostic.code = finding.rule;
       diagnostic.relatedInformation = evidence.map(e => new vscode.DiagnosticRelatedInformation(
         new vscode.Location(uri, range(result.ranges[e.id])), `${e.kind} · ${e.text.slice(0, 220)}`));
@@ -99,14 +99,14 @@ function presentation(result, root) {
 }
 
 function activate(context) {
-  const output = vscode.window.createOutputChannel('Temporal Contracts');
+  const output = vscode.window.createOutputChannel('TempoEvo');
   const diagnostics = vscode.languages.createDiagnosticCollection('temporal-contracts');
   const tree = new FindingsTree();
   const view = vscode.window.createTreeView('temporalContracts.findings', {treeDataProvider: tree, showCollapseAll: true});
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 20);
-  status.name = 'Temporal Contracts';
+  status.name = 'TempoEvo';
   status.command = 'temporalContracts.scanFile';
-  status.text = '$(inspect) Temporal';
+  status.text = '$(inspect) TempoEvo';
   status.tooltip = '扫描当前文件的时序线索';
   status.show();
   const reports = new Map();
@@ -133,7 +133,7 @@ function activate(context) {
     diagnostics.clear();
     tree.set([]);
     view.message = undefined;
-    status.text = '$(inspect) Temporal';
+    status.text = '$(inspect) TempoEvo';
     status.tooltip = '扫描当前文件的时序线索';
   }
   function invalidate(uri) {
@@ -148,15 +148,15 @@ function activate(context) {
       diagnostics.clear();
       tree.set([notice('源码已修改，请重新扫描', '保存可自动扫描当前文件')]);
       view.message = '旧结果已失效，避免跳转到错误位置。';
-      status.text = '$(history) Temporal';
+      status.text = '$(history) TempoEvo';
       status.tooltip = '源码已修改；点击重新扫描当前文件';
     } else if (!active) {
-      status.text = '$(inspect) Temporal';
+      status.text = '$(inspect) TempoEvo';
     }
   }
 
   async function run(request, root, filePath, quiet) {
-    if (!vscode.workspace.isTrusted) throw new Error('请先信任工作区，再运行 Temporal Contracts。');
+    if (!vscode.workspace.isTrusted) throw new Error('请先信任工作区，再运行 TempoEvo。');
     clearTimeout(timer);
     cancel();
     const id = sequence;
@@ -167,7 +167,7 @@ function activate(context) {
     latest = undefined;
     diagnostics.clear();
     tree.set([notice('正在分析…')]);
-    status.text = '$(sync~spin) Temporal';
+    status.text = '$(sync~spin) TempoEvo';
     view.message = request.mode === 'file' ? '当前文件扫描 · 使用编辑器中的内容' : '目录扫描 · 包含已打开文件的未保存内容';
     const started = Date.now();
     try {
@@ -186,7 +186,7 @@ function activate(context) {
       tree.set(shown.rows);
       const summary = result.report.summary;
       const incomplete = result.report.status !== 'parsed';
-      status.text = `$(inspect) Temporal: ${summary.review_hints}${incomplete ? ' · 未完整' : ''}`;
+      status.text = `$(inspect) TempoEvo: ${summary.review_hints}${incomplete ? ' · 未完整' : ''}`;
       status.tooltip = `${summary.parsed_files}/${summary.files} 个文件解析完成，${summary.review_hints} 条待核查。点击扫描当前文件。`;
       view.message = `${request.mode === 'file' ? '当前文件' : '目录'} · ${summary.parsed_files}/${summary.files} 个文件 · ${summary.review_hints} 条待核查${incomplete ? ' · 分析未完整' : ''}。提示不是缺陷判决。`;
       output.appendLine(`${new Date().toISOString()} ${request.mode}: ${filePath || root} — ${result.report.status}, ${summary.review_hints} hints, ${Date.now() - started} ms`);
@@ -199,12 +199,12 @@ function activate(context) {
       lastArchive = error.archive;
       diagnostics.clear();
       tree.set([notice('分析未完成', error.message)]);
-      status.text = '$(warning) Temporal';
+      status.text = '$(warning) TempoEvo';
       status.tooltip = error.message;
       view.message = '分析未完成；运行日志中可查看原因。';
       output.appendLine(`ERROR: ${error.message}`);
       if (!quiet) {
-        vscode.window.showErrorMessage(`Temporal Contracts：${error.message}`, '打开设置', '查看日志').then(choice => {
+        vscode.window.showErrorMessage(`TempoEvo：${error.message}`, '打开设置', '查看日志').then(choice => {
           if (choice === '打开设置') vscode.commands.executeCommand('workbench.action.openSettings', 'temporalContracts');
           if (choice === '查看日志') output.show(true);
         });
@@ -286,7 +286,7 @@ function activate(context) {
 
   const command = (name, callback) => vscode.commands.registerCommand(name, async (...args) => {
     try { return await callback(...args); }
-    catch (error) { output.appendLine(`ERROR: ${error.message}`); vscode.window.showErrorMessage(`Temporal Contracts：${error.message}`); }
+    catch (error) { output.appendLine(`ERROR: ${error.message}`); vscode.window.showErrorMessage(`TempoEvo：${error.message}`); }
   });
   const watcher = vscode.workspace.createFileSystemWatcher(SOURCE_GLOB);
   context.subscriptions.push(output, diagnostics, tree, view, status, watcher, reportChanged,

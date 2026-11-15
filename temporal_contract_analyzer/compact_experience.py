@@ -273,9 +273,9 @@ def page(path):
                      '<button type="submit">保存审核</button></form></article>')
     html = ('<!doctype html><html lang="zh-CN"><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            '<title>经验审核</title><link rel="stylesheet" href="/memory-review.css">'
+            '<title>TempoEvo · 经验审核</title><link rel="stylesheet" href="/memory-review.css">'
             '<script src="/compact-review.js" defer></script><body class="compact-review"><main><section>'
-            f'<h1>经验库 · {len(cards)} 条</h1><p id="compact-counts"></p>'
+            f'<h1>TempoEvo · 经验库 · {len(cards)} 条</h1><p id="compact-counts"></p>'
             f'<p>经验位置：<code>{escape(str(path))}</code></p>'
             '<p>阅读经验及适用边界后填写审核结论。结果写回对应分类文件，不生成独立审核文件。</p>'
             '<label>分类<select id="compact-category"><option value="">全部分类</option>'
