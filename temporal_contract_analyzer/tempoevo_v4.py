@@ -57,7 +57,7 @@ def current_protocol(protocol):
             and protocol.get('acceptance_policy')==expected
             and (protocol['mode']!='testing' or (protocol.get('max_attempts')==1
                  and (protocol.get('condition')=='baseline' or
-                      protocol.get('contract_review_policy')==contract_review.POLICY))))
+                      protocol.get('contract_review_policy')==(None if protocol.get('retrieval_profile')=='business-source-v1' else contract_review.POLICY)))))
 
 
 def visible_verdict(attempts):
@@ -217,11 +217,12 @@ class Trajectory:
         if recipe not in (None,V8_TRAINING_RECIPE):raise EvidenceError('Unknown training recipe')
         if recipe and (cfg['mode']!='learning' or not cfg.get('visible_evaluator')):raise EvidenceError('V8 training requires learning mode and a public evaluator')
         retrieval_profile=cfg.get('retrieval_profile','source-bound-v8' if recipe else 'semantic-v11')
-        if retrieval_profile not in ('semantic-v11','source-bound-v8'):raise EvidenceError('Unknown retrieval profile')
+        if retrieval_profile not in ('semantic-v11','source-bound-v8','business-source-v1'):raise EvidenceError('Unknown retrieval profile')
         if recipe and retrieval_profile!='source-bound-v8':raise EvidenceError('V8 training requires source-bound retrieval')
         if retrieval_profile=='source-bound-v8' and cfg['condition'] not in ('structured','fixed_contract') and not recipe:raise EvidenceError('Source-bound retrieval requires structured memory')
         if cfg.get('preparation_validation_policy',preparation.POLICY)!=preparation.POLICY:raise EvidenceError('Historical validation policy is read-only; prepare a new trajectory')
         cfg['preparation_validation_policy']=preparation.POLICY
+        if retrieval_profile=='business-source-v1' and (cfg['mode']!='testing' or cfg['condition']!='structured' or policy!='frozen'):raise EvidenceError('Business retrieval requires frozen structured testing')
         cfg['retrieval_profile']=retrieval_profile
         acceptance='training_gold_and_required_visible' if recipe else ACCEPTANCE_POLICIES[cfg['mode']]
         if cfg.get('acceptance_policy',acceptance)!=acceptance:
@@ -243,7 +244,7 @@ class Trajectory:
         attempts=cfg.get('max_attempts',1 if cfg['mode']=='testing' else 3)
         if type(attempts) is not int or not 1<=attempts<=3:raise EvidenceError('At most three Actions total')
         if cfg['mode']=='testing' and attempts!=1:raise EvidenceError('Testing requires exactly one bounded Action and one final submission')
-        review_policy=contract_review.POLICY if cfg['mode']=='testing' and cfg['condition']!='baseline' else None
+        review_policy=contract_review.POLICY if cfg['mode']=='testing' and cfg['condition']!='baseline' and retrieval_profile!='business-source-v1' else None
         if cfg.get('contract_review_policy',review_policy)!=review_policy:raise EvidenceError('Historical Contract review policy is read-only')
         try:settings=resolve_profile(cfg.get('model_profile'),cfg.get('model_config'))
         except (ValueError,TypeError,OSError) as error:raise EvidenceError('Invalid model configuration: '+str(error)) from error
@@ -318,7 +319,7 @@ class Trajectory:
                 raise EvidenceError('Invalid stage limits')
         uses_contract=cfg['condition']!='baseline'
         total=attempts*limits['action']['requests']+((attempts-1)*limits['diagnosis']['requests']+limits['contract']['requests'] if uses_contract else 0)+(limits['extract']['requests'] if cfg['mode']=='learning' else 0)
-        if cfg['condition'] in ('structured','fixed_contract') and not cfg.get('routing_analysis'):total+=limits['routing']['requests']
+        if cfg['condition'] in ('structured','fixed_contract') and not cfg.get('routing_analysis') and retrieval_profile!='business-source-v1':total+=limits['routing']['requests']
         if cfg['condition'] in ('structured','fixed_contract') and retrieval_profile!='source-bound-v8':
             total+=(attempts if cfg['condition']=='structured' else 1)*limits['selection']['requests']
         from . import semantic_retrieval
@@ -327,6 +328,9 @@ class Trajectory:
             if cfg['condition'] in ('structured','fixed_contract') else
             dict(version='bm25-v1' if cfg['condition']=='bm25' else 'no-memory',max_experiences=5 if cfg['condition']=='bm25' else 0))
         if retrieval_profile=='source-bound-v8':cfg['retrieval_policy']=dict(version='source-bound-routing-v8',max_experiences=5)
+        if retrieval_profile=='business-source-v1':
+            from . import business_retrieval
+            cfg['retrieval_policy']=dict(version=business_retrieval.VERSION,max_candidates=business_retrieval.MAX_CANDIDATES,max_experiences=business_retrieval.MAX_EXPERIENCES,max_characters=business_retrieval.MAX_CHARACTERS)
         cfg.update(schema_version=VERSION,model=identity(settings),memory_snapshot=bank,max_attempts=attempts,limits=limits,total_request_cap=total,
             contract_review_policy=review_policy,
             store=str(store),original_inventory=inventory(files),feedback_fields=['observations','regressions','unknowns'],
@@ -339,7 +343,7 @@ class Trajectory:
         self.save('binding.json',dict(protocol=sha((self.root/'protocol.json').read_bytes()),
             bank=sha((self.root/'memory-snapshot.json').read_bytes()),ast=sha((self.root/'ast-evidence.json').read_bytes()),
             implementation=sha(Path(__file__).read_bytes()),evaluators=evaluator_hashes,
-            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name(name) for name in ('contract_review.py','preparation_validation.py','semantic_retrieval.py','experience_routing.py','experience_memory.py','experience_updates.py','compact_experience.py','taxonomy.py','contract-taxonomy.json')]+[Path(__file__).with_name('evaluation_split.py'),Path(__file__).resolve().parents[1]/'experiments/evaluation-splits.json',Path(__file__).with_name('online_memory.py'),Path(__file__).with_name('experience_reflection.py'),Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
+            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name(name) for name in ('contract_review.py','business_retrieval.py','preparation_validation.py','semantic_retrieval.py','experience_routing.py','experience_memory.py','experience_updates.py','compact_experience.py','taxonomy.py','contract-taxonomy.json')]+[Path(__file__).with_name('evaluation_split.py'),Path(__file__).resolve().parents[1]/'experiments/evaluation-splits.json',Path(__file__).with_name('online_memory.py'),Path(__file__).with_name('experience_reflection.py'),Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
         self.report();return self.state()
 
     def verify(self):
@@ -380,6 +384,17 @@ class Trajectory:
             review=dict(input_sha256=routing.input_digest(a,p['task'],sources),reviewer='unreviewed_model_analysis',approved=False,
                 blocking_issues=[],scope_unknowns=[],evidence=[],reason='V8-compatible source-bound routing')
             result=updates.route_view(dict(task=p['task'],sources=sources,analysis=a,review=review),bundles)
+        elif condition=='structured' and p.get('retrieval_profile')=='business-source-v1':
+            from . import business_retrieval as retrieval
+            sources={k:v.decode() for k,v in capture(self.root/'original')[0].items()}
+            recalled=retrieval.recall(p['task'],sources,bundles)
+            self.save('retrieval/'+selection_key+'-recall.json',recalled)
+            if recalled['candidates']:
+                if backend is None:raise EvidenceError('Business delivery requires explicit public-source applicability assessment')
+                result=self._preparation_output(p,backend,selection_key,'selection',retrieval.payload(p['task'],sources,read(self.root/'ast-evidence.json'),recalled),
+                    lambda output:retrieval.select(output,recalled,p['task'],sources,bundles))
+                if result is None:result=dict(selected_sha256s=[],experience_text=None,reason='invalid_business_selection_discarded')
+            else:result=dict(selected_sha256s=[],experience_text=None,reason='empty_approved_bank')
         elif condition in ('structured','fixed_contract'):
             from . import semantic_retrieval as retrieval
             sources={k:v.decode() for k,v in capture(self.root/'original')[0].items()};a=p['routing_analysis']
@@ -624,7 +639,7 @@ class Trajectory:
                     snapshot=online_memory.validate_snapshot(read(path))
                     if self.state().get('online_snapshot_sha256')!=snapshot['sha256']:raise EvidenceError('Unbound online snapshot')
                 p=deepcopy(p);p['memory_snapshot']['entries']+=snapshot['entries']
-            if not (self.root/'delivery.json').exists() and p['condition'] in ('structured','fixed_contract'):
+            if not (self.root/'delivery.json').exists() and p['condition'] in ('structured','fixed_contract') and p.get('retrieval_profile')!='business-source-v1':
                 from . import experience_routing as routing
                 if not p.get('routing_analysis'):
                     proposal=self._preparation_output(p,backend,'routing','routing',dict(public,schema=taxonomy.analysis_schema(),
@@ -641,7 +656,7 @@ class Trajectory:
                 def validate_draft(output):
                     check_contract(output,p['task'],sources)
                     return deepcopy(output)
-                draft=self._preparation_output(p,backend,'contract','contract',dict(public,experience=delivery['experience_text'],schema=CONTRACT_SCHEMA),validate_draft)
+                draft=self._preparation_output(p,backend,'contract','contract',dict(public,experience=delivery['experience_text'],business_obligations=delivery.get('business_obligations',[]),instruction='Draft a fallible Contract from the original task and public sources. Check proposed business obligations against those originals. When preservation is requested, inspect existing observable behavior and callback-capable boundaries; absence of an explicit prose deadline does not authorize weakening existing behavior. Do not infer requirements from experience alone.',schema=CONTRACT_SCHEMA),validate_draft)
                 state=self.state();state.update(contract=draft,contract_preparation_complete=True)
                 self.save('initial-contract.json',draft);self.save('state.json',state)
             if p.get('contract_review_policy'):

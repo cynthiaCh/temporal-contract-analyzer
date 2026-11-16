@@ -1,0 +1,146 @@
+{
+  "schema_version": "experience-library-single-file-v1",
+  "category": "Shared work and cancellation",
+  "experiences": [
+    {
+      "id": "cache-offline-departure",
+      "title": "Prevent invalid reconnect entry after final-observer offline departure",
+      "labels": [
+        "L",
+        "R"
+      ],
+      "requires": [
+        "shared_lifetime",
+        "observer_lifetime",
+        "attempt_resource",
+        "async_resume"
+      ],
+      "excludes": [],
+      "applicability": "A fresh online-mode query remains offline from mount through unmount, has not entered execution and has lost its final observer.",
+      "event_relation": "Under the current cancellation contract, prevent reconnect from entering that attempt's query function with a still-live cancellation signal. Cover future scheduling and already-queued continuation callbacks.",
+      "preservation": "This target obligation is independent of refetchOnReconnect. Preserve other legitimate execution, settlement and state restoration.",
+      "exclusion": "Not every paused, unobserved or not-yet-entered query should be canceled. Cached background continuation and different network modes require separate decisions.",
+      "verification": "Reconnect after departure, depart after continuation is queued and vary refetchOnReconnect. Check zero entry or entry with an already-canceled signal as the contract permits, rather than only final flags.",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "cache-consumption-ownership",
+      "title": "Separate actual signal-consumption records from attempt resources",
+      "labels": [
+        "L"
+      ],
+      "requires": [
+        "shared_lifetime",
+        "attempt_resource",
+        "lazy_consumption"
+      ],
+      "excludes": [],
+      "applicability": "Accessing cancellation capability records actual consumption synchronously. The query shares that record, while each attempt owns its controller and completion identity.",
+      "event_relation": "Preserve lazy consumption on actual access and manage the shared record under the existing ownership contract. Additional attempt state does not justify moving or resetting shared consumption bookkeeping.",
+      "preservation": "Preserve the semantics of repeated actual access, independent attempt cancellation resources and deferred completion closures.",
+      "exclusion": "Do not invent consumption from observer departure, paused status or an attempt object's existence. This policy does not apply when the target lacks the lazy shared mechanism.",
+      "verification": "Check consumption records and controller ownership before access, on later and repeated access, across attempt replacement and during observer reuse.",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "cache-shared-observers",
+      "title": "Preserve shared observers and restoration after consumed-work cancellation",
+      "labels": [
+        "L",
+        "A"
+      ],
+      "requires": [
+        "shared_lifetime",
+        "observer_lifetime",
+        "attempt_resource"
+      ],
+      "excludes": [],
+      "applicability": "Multiple observers share work. Canceling consumed work physically terminates it and restores previous query state.",
+      "event_relation": "Observer departure changes that observer's lifetime; remaining observers continue sharing. Cancellation settles the originating attempt and restores prior data and status under the contract. Unknown departures remain inert.",
+      "preservation": "Preserve physical abort, prior-state restoration, originating-attempt settlement, later subscription reuse and repeated invalid unsubscription behavior.",
+      "exclusion": "One departure must not terminate shared work still needed by others. An unknown unsubscription must not be treated as final-observer departure.",
+      "verification": "Remove one observer while another remains, repeat departures and unsubscribe unknown observers, then cancel consumed work and resubscribe. Check shared invocation counts, physical termination and restored data/status.",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "cache-background-policy",
+      "title": "Distinguish unconsumed background work from abandoned offline work",
+      "labels": [
+        "L"
+      ],
+      "requires": [
+        "shared_lifetime",
+        "lazy_consumption",
+        "async_resume"
+      ],
+      "excludes": [],
+      "applicability": "The system permits entered work that has not accessed cancellation capability to finish into cache after its view leaves. It may also support paused background continuation backed by successful cache data.",
+      "event_relation": "Distinguish execution entry, actual signal consumption, cache availability and network mode before deciding to cancel or continue.",
+      "preservation": "Preserve legitimate unconsumed background completion, cached background continuation and cancellation after later consumption.",
+      "exclusion": "Do not decide from paused, observerless or never-entered alone. Supported background retention must not authorize the target abandoned fresh offline attempt.",
+      "verification": "Separately test entered-but-unconsumed work, later consumption, cached paused work and uncached never-entered work, including each path's permitted effects after departure.",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "cache-entry-scheduling",
+      "title": "Preserve distinct readiness rules for initial entry and asynchronous continuation",
+      "labels": [
+        "R",
+        "O"
+      ],
+      "requires": [
+        "async_resume"
+      ],
+      "excludes": [],
+      "applicability": "The current interface specifies synchronous initial online entry, asynchronous completion and paused continuation, and different readiness conditions for initial and resumed execution.",
+      "event_relation": "Preserve the initial network-mode check, network and focus gates for continuation, explicit retry handles, and Promise-turn or native-equivalent asynchronous timing.",
+      "preservation": "Where these modes exist, always permits offline execution; offlineFirst permits initial offline entry but retries may pause. Preserve supported interfaces, dependencies and build/test configuration.",
+      "exclusion": "Do not repair departure cancellation by delaying every initial entry, resuming paused tasks synchronously or conflating retry and initial-entry gates. Do not invent these APIs for systems that lack the modes.",
+      "verification": "Check synchronous online entry, asynchronous completion, connectivity without focus, focus restoration, always/offlineFirst, explicit retry cancellation and already-queued continuation separately.",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "cache-attempt-isolation",
+      "title": "Prevent late old attempts from settling or overwriting replacements",
+      "labels": [
+        "I",
+        "L"
+      ],
+      "requires": [
+        "attempt_resource",
+        "async_resume"
+      ],
+      "excludes": [],
+      "applicability": "A shared query can start a replacement attempt while deferred results or retry callbacks from an old attempt may still arrive.",
+      "event_relation": "On continuation and completion, check actual attempt identity and settlement state. Cancellation and completion belong to the originating attempt; an old callback must not become the replacement's data or settlement.",
+      "preservation": "Preserve cancellation restoration, legitimate current results and later observer reuse. Keep the repair within product source and existing public behavior.",
+      "exclusion": "Equal query keys do not isolate attempts. Do not suppress the current attempt or permitted background cache updates merely to block stale completion.",
+      "verification": "Release an old completion after replacement or cancellation, and interleave old/new retries and reconnect. Check exactly-once originating-attempt settlement and data from the current attempt.",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    }
+  ]
+}

@@ -62,3 +62,33 @@ original public inputs and model review output for three observed V11 refusals.
 They contain no Gold output, oracle schedules or reference implementation. Replay
 uses synthetic scoring to check continuation and rejection of invalid revisions,
 not to claim that any product repair is correct.
+
+## Business applicability testing profile
+
+New single-group testing uses `business-source-v1`: business selection (12 requests),
+initial Contract (12), one Action (24), then one final Gold evaluation. There is no
+separate taxonomy routing stage or Contract review. Existing profiles retain their
+historical review policy; prepare a fresh root to use this profile.
+
+All approved entries form the candidate pool (39 in this run). A bounded text recall
+orders at most64 candidates without rejecting unknown predicates or filtering labels.
+The selector reads full applicability/exclusions and the current original task/source,
+records concrete business obligations, and assesses every candidate. Admission requires
+source-supported material prerequisites, every required predicate supported, every
+exclusion contradicted, and a concrete operation/owner mapping. Unknown is never false.
+These are fallible model judgments, not a proof that conditions are semantically complete.
+
+Greedy selection prioritizes newly covered business obligations, then direct relevance
+and text score, with at most5 entries/16000 characters; redundant coverage can leave
+fewer than5 entries. Original behavior at callback-capable boundaries must be considered
+when preservation is requested. No explicit prose deadline does not itself authorize
+removing existing persistence or publication. Requirements still come from original
+public inputs, not prior cases or Gold. No extra review can delete a Contract obligation
+in this profile; Action must check the draft against the original inputs.
+
+`retrieval/selection-recall.json` archives the candidate pool, and `delivery.json`
+records assessments, selection reasons and covered/uncovered obligations. Preparation
+validation keeps its existing one-correction budget and discard-guidance fallback.
+The same historically exposed test10, immutable images and approved experience bank
+are retained for diagnostic comparison; outcome changes cannot isolate selection from
+the removal of extra Contract review.

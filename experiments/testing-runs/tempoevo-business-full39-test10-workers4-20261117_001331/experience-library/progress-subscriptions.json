@@ -1,0 +1,187 @@
+{
+  "schema_version": "experience-library-single-file-v1",
+  "category": "Progress and subscriptions",
+  "experiences": [
+    {
+      "id": "progress-bootstrap",
+      "title": "Use distinct subscription ordering for bootstrap state and diagnostic deltas",
+      "labels": [
+        "O"
+      ],
+      "requires": [
+        "inline_reentry"
+      ],
+      "excludes": [],
+      "applicability": "Startup may synchronously emit cached state. The panel requires that state, while a diagnostic consumer counts only later deltas.",
+      "event_relation": "Consumers that require bootstrap register before startup. Consumers of live deltas register under their own contract. Establish the receiving visit when establishing reception.",
+      "preservation": "Preserve ordinary streaming, deferred startup, diagnostic output, and public startup and cleanup interfaces.",
+      "exclusion": "Do not copy this ordering to subscribe-starts-work APIs, automatic replay or consumers that do not require bootstrap. Do not modify every consumer to repair one panel.",
+      "verification": "Check synchronous bootstrap, deferred bootstrap, later updates and the diagnostic consumer's delta count separately.",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "progress-admission-window",
+      "title": "Stop retired-visit admission before startup returns its cleanup handle",
+      "labels": [
+        "L",
+        "I",
+        "A"
+      ],
+      "requires": [
+        "inline_reentry"
+      ],
+      "excludes": [],
+      "applicability": "One startup may emit multiple packets synchronously. Handling the first may hide the panel or open another visit before startup returns physical cleanup capability.",
+      "event_relation": "Check the originating visit and attempt before each packet enters decoding. Retirement immediately revokes later admission without waiting for physical listener removal.",
+      "preservation": "Previously admitted packets settle under their separate audit and display contracts. The new visit receives bootstrap and later updates normally.",
+      "exclusion": "Zero listeners after cleanup does not establish correctness during startup. Do not confuse previously admitted work with packets arriving after retirement.",
+      "verification": "Hide, switch and reopen the same source from the first synchronous callback. Emit more packets before outer startup returns, and independently check rejection of new packets and settlement of admitted packets.",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "progress-audit-publication",
+      "title": "Authorize delayed history recording and panel publication separately",
+      "labels": [
+        "L",
+        "I",
+        "A"
+      ],
+      "requires": [
+        "async_resume",
+        "effect_lifetimes"
+      ],
+      "excludes": [],
+      "applicability": "The current contract retains history for admitted progress, while UI updates belong to the originating visit. Decoding may complete immediately or later.",
+      "event_relation": "Bind decoding to the visit and attempt that admitted it. On completion, retain the required number of history effects, then recheck visit validity before painting. History callbacks may also navigate, requiring another validity check.",
+      "preservation": "Retain admitted audit effects and valid progress for the new visit. Listener removal alone does not cancel decoding already started.",
+      "exclusion": "Do not use one early validity check to control both auditing and display. Follow another task's explicit discard policy if it revokes the history obligation.",
+      "verification": "Complete decoding across hide, switch, retry and same-source reopening. Check history cardinality, no retired-panel painting and display permission after navigation in a history callback.",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "progress-full-frame-order",
+      "title": "Prevent full-frame rollback using arrival versions",
+      "labels": [
+        "F"
+      ],
+      "requires": [
+        "async_resume"
+      ],
+      "excludes": [],
+      "applicability": "Packets decode to complete replacement frames, completion may reverse arrival order, and the current protocol defines freshness by arrival.",
+      "event_relation": "Assign arrival order before decoding. Paint only frames newer than the display owner's published order. Commit that order before invoking a paint callback that may reenter.",
+      "preservation": "Older frames cannot overwrite newer display, but admitted audit effects remain under their contract. Later loaded values may decrease or reset.",
+      "exclusion": "Do not compare byte counts to determine freshness. Historical cases describe both attempt-local and visit-local ordering; determine the cross-retry scope from the current protocol. Resetting order must not admit stale attempt results. Do not apply full-frame dropping to required delta events.",
+      "verification": "Reverse decode completion, decrease the newer frame's value and emit another packet synchronously during painting. Check version scope across retry and visit replacement.",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "progress-cleanup-reentry",
+      "title": "Protect new resources during startup and listener-removal reentry",
+      "labels": [
+        "O",
+        "L",
+        "I"
+      ],
+      "requires": [
+        "inline_reentry",
+        "attempt_resource"
+      ],
+      "excludes": [],
+      "applicability": "Startup, cancellation or listener removal may synchronously navigate. An old startup may return after a new visit has installed resources.",
+      "event_relation": "Establish provisional cleanup ownership before callbacks are possible. Remove old resources from current ownership before cancellation. Recheck ownership when the real handle returns; a retired outer startup must not overwrite the new visit's handle.",
+      "preservation": "Clean captured old resources while preserving new ones. Keep repeated cancellation and removal inert, and preserve the host's removal-before-callback contract.",
+      "exclusion": "Do not assign the handle only after startup or let old cleanup unconditionally clear the current handle. Preserve public construction and cancellation interfaces.",
+      "verification": "Hide, switch and dispose inside startup and unlisten callbacks. Check the current visit, later updates, listener ownership, physical cancellation and final cleanup.",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "progress-retry-entry",
+      "title": "Do not rewrite accepted retry commands during cancellation callbacks",
+      "labels": [
+        "I",
+        "A"
+      ],
+      "requires": [
+        "entry_snapshot",
+        "inline_reentry"
+      ],
+      "excludes": [],
+      "applicability": "The current contract accepts one command for the originating visit at retry entry. Retry replaces a physical attempt without opening a new visit.",
+      "event_relation": "Capture the originating visit, file and record ownership. Preserve the accepted command and entry-bound record even if cancellation navigates. Independently determine whether the new attempt may attach to the current visit.",
+      "preservation": "Preserve command cardinality, queue records, return values, cancellation notices and the new visit's resources. Do not redirect record ownership to the selection established by a callback.",
+      "exclusion": "Navigation does not universally require retry to continue. If the target contract revokes the command, follow that policy rather than importing historical retention.",
+      "verification": "Switch or hide during cancellation. Check exactly one entry-bound command, its original record ownership, cancellation of invalid handles and protection of the new visit.",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "progress-record-contract",
+      "title": "Keep queue records and notices outside a display repair's scope",
+      "labels": [
+        "I",
+        "A"
+      ],
+      "requires": [
+        "entry_snapshot"
+      ],
+      "excludes": [],
+      "applicability": "The repair targets panel progress, while queue records, queued notices and public transfer behavior must remain unchanged.",
+      "event_relation": "Keep records and notices bound to the entry file, attempt, visit and command kind. Display changes must not alter their fields or cardinality.",
+      "preservation": "Historical transfer records are {fileId, attemptId, visitId, kind}. These fields belong to those cases' contracts, not a default API for new systems.",
+      "exclusion": "Without separate authorization, do not add byteCount or infer new business records from file.size. Passing display checks does not establish queue preservation. Automatic Contracts, AST hints and evaluation observations are not new business requirements. Do not modify implementation during analysis or replace the current contract with hidden scores or reference patches.",
+      "verification": "Compare record shape, cardinality, queued notices and returned handles across selection, retry, cancellation and navigation reentry.",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    },
+    {
+      "id": "progress-visit-isolation",
+      "title": "Distinguish source reuse from visit identity",
+      "labels": [
+        "L",
+        "I"
+      ],
+      "requires": [
+        "shared_lifetime",
+        "async_resume"
+      ],
+      "excludes": [],
+      "applicability": "A source may be reused across visits, attempts or selections of the same file object. Each opening has its own UI lifetime.",
+      "event_relation": "Control effects with actual visit or attempt identity, not equality of files, channels or transport objects. Later visits obtain their own bootstrap and streaming updates.",
+      "preservation": "Preserve shared-source reuse, independent workspaces, subsequent valid uses and existing attempt management.",
+      "exclusion": "Do not permanently stop a shared source to suppress old results or let reopening the same object revive a retired visit's publication permission.",
+      "verification": "Reopen the same object and channel, complete old decoding late and interleave two independent workspaces. Check isolation of old effects and continued operation of the new visit.",
+      "review": {
+        "reviewer": "Iris",
+        "decision": "accept",
+        "at": "2026-11-14T16:02:24.406618Z"
+      }
+    }
+  ]
+}
