@@ -54,8 +54,11 @@ original/reference/negative controls are archived alongside independent Gold
 controls, and the reference must pass both evaluators. Default V11 behavior is
 unchanged. Testing rejects this recipe and training-only check descriptions.
 
-The paired train10/test10 plan and the distinction between historical seed
-experiences and newly learned experiences are documented in
+The current train10/test10 plan runs only the full approved experience group
+(16 seed entries plus two reviewed additions), with no A/B or no-memory control.
+Full-bank availability still uses applicability filtering rather than injecting
+every entry. The case pairing describes the task selection, not two testing arms.
+The single-group plan and the retained historical A/B run are documented in
 [the V8 protocol](../../examples/tempoevo-v4/case-selections/swe-tempoc-paired10-sol6-20261116/V8_TRAIN_AND_TEST.md).
 
 Training artifacts written outside the Git worktree must not be the only copy of
