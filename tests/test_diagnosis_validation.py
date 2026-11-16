@@ -161,14 +161,15 @@ class DiagnosisValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(EvidenceError, 'weaken'):
             self.check(value)
 
-    def test_invalid_revision_is_not_committed_before_routing_validation(self):
+    def test_invalid_revision_is_discarded_without_committing_behavior_change(self):
         loop = self.fixture.prepare(condition='structured', routing_analysis=analysis())
         state = loop.run(fixtures.Backend(2, diagnosis='contract_gap', revise=True), execute=True)
-        self.assertEqual(state['status'], 'execution_invalid')
-        self.assertIn('routing recheck', state['error'])
+        self.assertEqual(state['status'], 'passed', state.get('error'))
+        self.assertTrue(any('routing recheck' in (w.get('error') or '') for w in state['preparation_warnings']))
         self.assertEqual(state['contract'], fixtures.contract())
-        self.assertEqual(state['diagnoses'], [])
-        self.assertFalse((loop.root/'revisions/2.json').exists())
+        self.assertTrue(state['diagnoses'][0]['diagnostic_fallback'])
+        self.assertFalse(state['diagnoses'][0]['contract_changed'])
+        self.assertEqual(fixtures.read(loop.root/'revisions/2.json')['contract_after'], fixtures.contract())
 
     def test_failed_reselection_does_not_commit_revision(self):
         class RevisingBackend(fixtures.Backend):

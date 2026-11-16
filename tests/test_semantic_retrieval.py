@@ -115,7 +115,7 @@ class RetrievalTrajectoryTests(unittest.TestCase):
         self.assertEqual(p['retrieval_policy']['max_experiences'],5)
         p['schema_version']='tempoevo-trajectory-v10';loop.save('protocol.json',p)
         with self.assertRaisesRegex(EvidenceError,'Historical'):loop.verify()
-        self.assertEqual(VERSION,'tempoevo-trajectory-v11')
+        self.assertEqual(VERSION,'tempoevo-trajectory-v12')
 
     def test_contract_revision_reassesses_and_completed_stages_are_not_rebilled(self):
         from temporal_contract_analyzer.tempoevo_v4 import read

@@ -178,7 +178,8 @@ class V4Tests(unittest.TestCase):
         self.assertEqual(state['status'],'passed',state.get('error'));self.assertEqual(len(state['diagnoses']),1)
         revision=read(loop.root/'revisions/2.json');self.assertEqual(revision['contract_before']['obligations'],revision['contract_after']['obligations'])
         bad=self.prepare();state=bad.run(Backend(2,'both',delete=True),execute=True)
-        self.assertEqual(state['status'],'execution_invalid');self.assertEqual(len(state['attempts']),1)
+        self.assertEqual(state['status'],'passed');self.assertEqual(len(state['attempts']),2)
+        self.assertEqual(state['contract'],contract());self.assertTrue(state['preparation_warnings'])
     def test_testing_gold_separation_and_no_memory_writes(self):
         from temporal_contract_analyzer import experience_approval as approval
         loop=self.prepare(mode='testing',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
@@ -281,7 +282,7 @@ class V4Tests(unittest.TestCase):
         with patch('temporal_contract_analyzer.execution_backend.NativeBackend.execute',return_value=fake) as call:
             result=adapter.execute('diagnosis',payload,MODEL,dict(requests=12,seconds=600),directory)
         self.assertTrue(result['valid']);self.assertEqual(call.call_args[0][1],'analysis')
-        self.assertEqual(call.call_args[0][0]['execution_policy'],'tempoevo-trajectory-v11')
+        self.assertEqual(call.call_args[0][0]['execution_policy'],'tempoevo-trajectory-v12')
         self.assertEqual(result['requests'],1)
 
     def test_action_adapter_accepts_complete_candidate_without_read_audit(self):
@@ -485,7 +486,7 @@ class ContractReviewTests(unittest.TestCase):
         self.assertEqual([o['id'] for o in state['contract']['obligations']],['preserve'])
         self.assertEqual(state['contract_review']['version'],2)
 
-    def test_uncited_or_unexplained_revisions_never_reach_repair(self):
+    def test_invalid_review_changes_are_discarded_while_repair_continues(self):
         for invalid in ('citation','deletion','ready_issue','duplicate_criterion','fourth_version'):
             with self.subTest(invalid=invalid):
                 class BadReview(Backend):
@@ -506,11 +507,14 @@ class ContractReviewTests(unittest.TestCase):
                                 review['changes']=[dict(reason='Synthetic issue.',evidence=[dict(file='TASK',quote='Preserve accepted work.')])]
                         return result
                 loop=self.prepare();backend=BadReview();state=loop.run(backend,execute=True)
-                self.assertEqual(state['status'],'execution_invalid')
-                self.assertNotIn('action',[c[0] for c in backend.calls])
-                self.assertFalse(any(s['kind']=='gold' for s in state['stages']))
+                self.assertEqual(state['status'],'scored',state.get('error'))
+                self.assertEqual([c[0] for c in backend.calls].count('action'),1)
+                self.assertEqual(sum(s['kind']=='gold' for s in state['stages']),1)
+                self.assertEqual(state['contract_review']['stop_reason'],'invalid_review_discarded')
+                self.assertEqual(state['contract']['obligations'],contract()['obligations'])
                 if invalid=='fourth_version':
-                    self.assertEqual([c[1]['version'] for c in backend.calls if 'version' in c[1]],[1,2,3])
+                    self.assertEqual([c[1]['version'] for c in backend.calls if 'version' in c[1]],[1,2,3,3])
+                else:self.assertEqual(state['contract'],contract())
 
     def test_contract_budget_exhaustion_submits_without_claiming_review_success(self):
         class Exhausting(Backend):
@@ -571,7 +575,7 @@ class ContractReviewTests(unittest.TestCase):
                 return result
         loop=self.prepare(condition='structured',routing_analysis=initial)
         remaining=loop._remaining_limit
-        def budget(p,kind):
+        def budget(p,kind,budget_group=None):
             if kind=='selection':return dict(requests=0,seconds=0)
             return remaining(p,kind)
         with patch.object(loop,'_remaining_limit',side_effect=budget):

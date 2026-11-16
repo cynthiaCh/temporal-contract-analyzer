@@ -1,4 +1,4 @@
-"""History is data-only; V4 is the sole public model execution entrypoint."""
+"""Historical protocols are data-only; only current sessions may execute."""
 from pathlib import Path
 import tempfile
 import unittest
@@ -34,6 +34,8 @@ class HistoryTests(unittest.TestCase):
     def test_old_modules_are_removed_and_shared_bridge_rejects_old_protocols(self):
         for name in ('experience_workflow','experience_development','experience_evaluation','experience_evolution','experience_candidate_handoff','evolution_cli','evolution_backend'):
             self.assertIsNone(importlib.util.find_spec('temporal_contract_analyzer.'+name))
-        for version in (1,2,3):
-            with self.assertRaisesRegex(EvidenceError,'only V4'):
-                NativeBackend().execute(dict(execution_policy=f'experience-development-v{version}'),'repair','',None,Path('/never-created'))
+        policies=[f'experience-development-v{version}' for version in (1,2,3)]
+        policies += [f'tempoevo-trajectory-v{version}' for version in range(4,12)]
+        for policy in policies:
+            with self.subTest(policy=policy),self.assertRaisesRegex(EvidenceError,'only V12'):
+                NativeBackend().execute(dict(execution_policy=policy),'repair','',None,Path('/never-created'))

@@ -25,7 +25,7 @@ archives the actual selected CSV and source digest. It validates unique ranks
 and case IDs, existing split restrictions, public source identity and the current
 protocol. Failed preparation remains explicit in `progress.json`.
 
-Current V11 testing uses Auto-Contract and, for `structured`, a frozen approved
+Current V12 testing uses Auto-Contract and, for `structured`, a frozen approved
 experience snapshot. It permits one bounded Action, then one independent Gold
 evaluation. Gold does not enter model feedback or retry decisions. Testing does
 not extract or publish experiences. Historical difficulty-based selection is
@@ -51,8 +51,8 @@ the non-cumulative Action feedback format. It requires `--public-checks-docs`
 `--memory-snapshot` with its retained approved history in `--store`. The public
 evaluator runs outside the solver; only descriptions enter the candidate. Its
 original/reference/negative controls are archived alongside independent Gold
-controls, and the reference must pass both evaluators. Default V11 behavior is
-unchanged. Testing rejects this recipe and training-only check descriptions.
+controls, and the reference must pass both evaluators. Default retrieval and acceptance settings are
+unchanged; V12 uses advisory preparation validation. Testing rejects this recipe and training-only check descriptions.
 
 The paired train10/test10 plan and the distinction between historical seed
 experiences and newly learned experiences are documented in
@@ -72,3 +72,10 @@ reviewed additions from another store, provide both `--approved-supplement-store
 and `--approved-supplement-snapshot`. Every supplemental entry must validate
 against its actual retained approval; pending guidance and duplicates are rejected.
 The combined bank is frozen and hashed in each trajectory; no approval is synthesized.
+
+V12 preparation validation is advisory: missing mechanism evidence becomes unknown,
+and unusable model guidance gets one correction sharing its original request/time
+budget. Failed correction discards the guidance and continues to the sole testing
+Action; it does not relax tool permissions, approved-memory checks or Gold isolation.
+Use a new output root; historical V11 bindings and results remain read-only.
+See [the V12 policy](../../docs/TEMPOEVO_V12.md).

@@ -40,7 +40,7 @@ class BackendTests(unittest.TestCase):
                 verdict=verdict,origin='synthetic_fixture_not_real_calibration')))
             evidence[role]=dict(path=str(source),sha256=sha(source.read_bytes()))
         scoring=scoring_inputs(record)
-        self.protocol=dict(execution_policy='tempoevo-trajectory-v11',case=record,binary=sys.executable,
+        self.protocol=dict(execution_policy='tempoevo-trajectory-v12',case=record,binary=sys.executable,
             node=shutil.which('node') or sys.executable,scoring_inputs=scoring,candidate_sha256='a'*64,
             calibration=dict(case_id='development',candidate_sha256='a'*64,
                 scoring_inputs_sha256=sha(canonical(scoring).encode()),runtime=native_runtime,evidence=evidence),
