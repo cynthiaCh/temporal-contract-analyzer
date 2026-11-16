@@ -1,0 +1,76 @@
+{
+  "schema_version": "experience-library-single-file-v1",
+  "category": "Candidate experiences",
+  "experiences": [
+    {
+      "id": "candidate-c0da785a3d7ea483aa0ecc0bf3b47c22",
+      "title": "Candidate: Apply when a reusable progress source serves distinct visits and attempts, startup can emit synchronously, decoding can ",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "requires": [
+        "shared_lifetime",
+        "attempt_resource",
+        "entry_snapshot",
+        "inline_reentry",
+        "effect_lifetimes",
+        "async_resume"
+      ],
+      "excludes": [],
+      "applicability": "Apply when a reusable progress source serves distinct visits and attempts, startup can emit synchronously, decoding can finish later, and retained audit differs from visible presentation. README.md: \"The same file and source can be reused\\nby multiple panel visits. Each selected or retried attempt starts one subscription.\" Confirm these premises in each target system.",
+      "event_relation": "Register reception before starting the source, preserving subsequent streaming and public interfaces. Original src/workflow.py invokes \"        env.call('start',file['token'])\\n        subscription=env.call('listen',file['token'],callback)\". README.md states: \"Starting a view of the stream may synchronously\\nemit its cached progress event; further progress events arrive on the same target.\"\n\nCheck originating subscription and visit eligibility before decoding each packet. Retirement immediately prevents subsequent admission, including additional packets emitted before startup returns; do not depend solely on physical listener removal. README.md: \"A retired visit\\naccepts no new progress events.\"",
+      "preservation": "Separate admission, retained audit and visible publication. Record each admitted event exactly once when decoding completes, including after retirement or disposal; check originating visit validity before visible publication. README.md: \"Every accepted progress event is recorded exactly once when decoding\\nfinishes, including work accepted before the visit closes.\" It also states: \"Removing a listener does not retract a decode\\nthat already started. Closing or replacing the visit stops visible progress;\\nnew visits remain live.\" Reopening the identical file creates a distinct visit.\n\nCoordinate cleanup and ownership across callback-capable startup and cancellation. Retire old ownership before cleanup can reenter navigation; when an older operation resumes, prevent it from overwriting newer ownership and clean up its retired resources. Preserve idempotent cancellation and disposal. README.md: \"Selection and hiding may themselves cancel an old handle and synchronously\\nreceive newer navigation; the newer navigation keeps ownership.\" Also: \"Disposal removes subscriptions and cancels transfers; work already accepted\\nfor audit remains retained.\" A provisional cleanup handle is an implementation option, not a mandated public interface.\n\nKeep accepted retries bound to their entry file and visit. Cancel the prior transfer before enqueueing, preserve exactly one accepted command and record across cancellation navigation, cancel the resulting transfer if its visit ended, and suppress retired queued notices. README.md: \"The accepted old retry must still enqueue and record once after such navigation.\\nIts newly created transfer is canceled immediately if its visit has ended; this\\ndoes not remove its retained queue record.\" Also: \"Queued notices are visible output: a notice\\nfrom a retired visit must not be sent, including after reopening the same file.\" Preserve independent workspace counters and cancellation.",
+      "exclusion": "Keep the repair within reception and necessary lifecycle coordination. Preserve queue and notice shapes and adapter interfaces. README.md: \"Every queue record remains exactly `{fileId, attemptId, visitId, kind}`;\" and \"Notices remain\\n`{fileId, attemptId, visitId, status: \\\"queued\\\"}`.\" Do not introduce decode freshness suppression without a target-specific requirement: VISIBLE_CHECKS.md states, \"These maintenance examples do not impose composition-specific out-of-order display rules.\" Do not transfer unrelated diagnostic-consumer policies into this repair.\n\nCandidate limitations:\n- Evidence is the supplied original TASK and public documents/code; automatic contracts, experience text and evaluation observations do not establish requirements.\n- TASK: \"Restore the initial update while preserving the existing transfer, retry, navigation, cleanup and audit behavior, ordinary streaming and subsequent uses. The queue-record format is outside this fix.\"\n- VISIBLE_CHECKS.md: \"These maintenance examples do not impose composition-specific out-of-order display rules.\" No arrival-order suppression or numeric monotonicity requirement is established.\n- Decoder failures, adapter exceptions and visibility of already accepted decoding from a canceled attempt whose visit remains current are unspecified.\n- Attempt 1 supports the reflection context but its passing examples do not establish complete correctness, causality or cross-task benefit. No implementation failure is established.\n- Diagnostic-consumer requirements from other experiences are not established for this public source. No files were modified.",
+      "verification": "Verify cached startup and later streaming, immediate and deferred decoding, retained audit after hide/disposal, and new delivery after same-file reopening. Exercise synchronous hide, switch and reopening during startup, with subsequent packets before the outer startup returns: retired listeners must reject new admission while previously admitted decoding retains audit. Separately verify newer ownership after cancellation reentry, accepted entry-bound retry recording and cancellation, current queued notices, repeated cleanup, workspace independence and unchanged record shapes. These checkpoints follow README.md's documented lifecycle; they do not prescribe an order among independently completing decodes.",
+      "proposal": {
+        "operation": "revise",
+        "target_ids": [
+          "v5-2776429f192bf1df-success"
+        ]
+      },
+      "review": {
+        "reviewer": null,
+        "decision": "pending",
+        "at": null
+      }
+    },
+    {
+      "id": "candidate-bd964b4046d4d594cb4429e07b9c7747",
+      "title": "Candidate: Apply when immediate document persistence is replaced with reusable trailing work, document buffers and view subscriptio",
+      "labels": [
+        "O",
+        "B",
+        "L",
+        "I"
+      ],
+      "requires": [
+        "boundary_persistence",
+        "deferred_batch",
+        "inline_reentry"
+      ],
+      "excludes": [
+        "discard_boundary_policy",
+        "different_ownership_policy"
+      ],
+      "applicability": "Apply when immediate document persistence is replaced with reusable trailing work, document buffers and view subscriptions have separate responsibilities, and synchronous save callbacks can navigate. Confirm the departure policy from the task and public sources. TASK states: \"Preserve the workspace's existing navigation and persistence behavior.\" README.md states: \"Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive.\"",
+      "event_relation": "Bind each accepted edit to its originating document. Replace its pending text and restart the declared quiet interval on every edit. Save only the latest text after that interval, preserving subsequent bursts, valid empty text and the no-current-view edit guard. TASK states: \"after 120 ms without another edit, save\\nonly its latest text. Reuse the existing trailing-task utility where appropriate.\" src/workflow.py binds the existing buffer callback with \"Trailing(env,120,lambda text:env.write(key,text))\".\n\nConsume and clear a completed batch before invoking callback-capable save work. A synchronous callback may enqueue fresh work; the outer flush must neither repeat the consumed batch nor erase that new work. Preserve the ordering in src/workflow.py: \"        value = self.pending\\n        self.handle = self.pending = None\\n        if value is not None:\\n            self.work(value)\". docs/host-api.md states: \"Store reads values and synchronously notifies saved integrations.\"\n\nPublish retirement state before callback-capable departure work. After a save can synchronously navigate, check that the initiating request still owns navigation before installing its destination. Apply the ownership check at both editor selection and workspace projection boundaries: an older select must not commit its projection after a nested select, and an older close must not clear a nested selection. Preserve fresh edits queued during save callbacks. VISIBLE_CHECKS.md states: \"synchronous save callbacks may navigate and their selected document remains authoritative\".",
+      "preservation": "Keep persistent document buffers separate from departing status subscriptions. Retire the captured departing subscription before flushing its document-bound pending text, and complete outgoing persistence before switching, closing or disposal returns. Detaching feedback must not discard accepted document text. Preserve same-document reopening. VISIBLE_CHECKS.md states: \"persist pending text before departure returns\"; src/workflow.py defines subscription cleanup as \"def detach(self):self.env.store.stop(self.token)\".\n\nPreserve public interfaces, document identities, visit identifiers, status/event payloads and the copied projection breadcrumb archive. Navigation ownership checks must protect current presentation without deleting retained history. docs/host-api.md states: \"Workspace exposes select(id), edit(text), close(), selection(), dispose(). Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail.\" src/workflow.py implements archive copying with \"def commit(self,v):self.selected=dict(v);self.trail.append(dict(v));self.publish()\".",
+      "exclusion": "Do not transfer persistent-document departure rules to transient preview work. Preserve its existing 40 ms interval, cancellation on hide and later reuse. TASK states: \"Keep\\nsearch preview behavior unchanged; its timing is outside this maintenance task.\" src/workflow.py contains \"Trailing(env,40,lambda query:env.output('preview',dict(query=query)))\" and \"def hide(self):self.task.cancel()\". Do not introduce review-submission behavior from related experience.\n\nCandidate limitations:\n- Supported by TASK and the supplied public sources for this workspace. Other systems require confirming their own persistence, ownership and navigation policies.\n- Only attempt 1 was supplied. Its reported passing observations do not prove causality, exhaustive correctness or cross-task benefit.\n- No implementation failure is established by the supplied trajectory; this revision improves explicit projection preservation checks.\n- Scheduler behavior beyond cancellable handles, save-failure recovery and edits after disposal remain unspecified.\n- The original task establishes no review-submission API. VISIBLE_CHECKS.md references review submission, but that reference does not establish a requirement absent from TASK and the supplied implementation.\n- No files were modified, and no scorer, reference implementation or hidden tests were accessed.",
+      "verification": "Use controlled clocks and synchronous callbacks to check no early write, deadline restart, latest-value delivery, subsequent bursts, empty text, original-document binding, switch/close/dispose persistence, same-document reopening and departing status cleanup. Exercise nested select and close during a save; check both editor selection and projection, including visit identifiers and retained copied breadcrumbs. Check that callback-created edits remain pending as fresh work. Verify unchanged preview timing, hide cancellation and reuse. These checks derive from the cited task and public behavior; reported passes are observations, not additional requirements or proof of effectiveness.",
+      "proposal": {
+        "operation": "revise",
+        "target_ids": [
+          "v5-465578687a8544eb-success"
+        ]
+      },
+      "review": {
+        "reviewer": null,
+        "decision": "pending",
+        "at": null
+      }
+    }
+  ]
+}

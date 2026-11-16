@@ -57,3 +57,10 @@ unchanged. Testing rejects this recipe and training-only check descriptions.
 The paired train10/test10 plan and the distinction between historical seed
 experiences and newly learned experiences are documented in
 [the V8 protocol](../../examples/tempoevo-v4/case-selections/swe-tempoc-paired10-sol6-20261116/V8_TRAIN_AND_TEST.md).
+
+Training artifacts written outside the Git worktree must not be the only copy of
+learned guidance. After a batch, archive provisional entries, candidate reflections
+and evidence proposals under `experience-memory/training-runs/<run-id>/`, preserving
+original bytes, source paths and SHA-256 hashes, and commit them to Git. Stage content
+candidates in the categorized library as pending for review. Committing candidates
+does not approve them or change an already frozen retrieval snapshot.

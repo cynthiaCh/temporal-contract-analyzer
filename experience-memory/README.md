@@ -38,3 +38,7 @@ python3 -B -m temporal_contract_analyzer experience-memory freeze --store experi
 
 旧 `records/`、`sources/` 等仅为原有历史资料，不参与当前分类库读取。
 旧单文件 `experiences.json` 已移除，避免出现两个现行入口。
+
+## 训练候选的 Git 保存
+
+未审核、被拒绝和仅补充证据的候选也应进入 Git。外部实验目录不受本仓库 Git 管理，不能作为唯一保存位置。每轮训练结束时，将临时经验、候选反思和证据提案按原始内容归档至 `training-runs/<run-id>/`，附文件哈希和来源清单，并提交 Git。内容修订另以 pending 状态发布到 `library/candidates.json` 供审核；归档目录不作为分类库或默认检索输入。Git 提交不代表审核通过，不得因此修改冻结快照或自动激活经验。

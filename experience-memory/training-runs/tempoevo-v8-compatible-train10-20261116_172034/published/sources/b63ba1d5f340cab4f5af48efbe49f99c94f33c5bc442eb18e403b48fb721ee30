@@ -1,0 +1,1601 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/workflow.py\n+++ candidate/src/workflow.py\n@@ -2,17 +2,24 @@\n     @staticmethod\n     def attach(env,file,active,audit,view):\n         if not file['feed']:return lambda:None\n+        stopped=False\n         def listener(packet):\n-            pass\n+            if stopped or not active():return\n             def deliver(frame):\n-                pass\n-                audit(frame);view(frame)\n+                audit(frame)\n+                if active():view(frame)\n             value=env.call('decode',file['token'],packet,env.bind(deliver))\n             if not value['deferred']:deliver(value['frame'])\n         callback=env.bind(listener)\n+        subscription=env.call('listen',file['token'],callback)\n+        def stop():\n+            nonlocal stopped\n+            if stopped:return\n+            stopped=True\n+            env.call('unlisten',file['token'],subscription)\n         env.call('start',file['token'])\n-        subscription=env.call('listen',file['token'],callback)\n-        return lambda:env.call('unlisten',file['token'],subscription)\n+        if not active():stop()\n+        return stop\n # A session owns visits, while attempt closures own source and decode callbacks.\n class Visit:\n     def __init__(self, number, file):self.id=number;self.file=file;self.handle=None\n",
+        "from_previous": "--- previous/src/workflow.py\n+++ candidate/src/workflow.py\n@@ -2,17 +2,24 @@\n     @staticmethod\n     def attach(env,file,active,audit,view):\n         if not file['feed']:return lambda:None\n+        stopped=False\n         def listener(packet):\n-            pass\n+            if stopped or not active():return\n             def deliver(frame):\n-                pass\n-                audit(frame);view(frame)\n+                audit(frame)\n+                if active():view(frame)\n             value=env.call('decode',file['token'],packet,env.bind(deliver))\n             if not value['deferred']:deliver(value['frame'])\n         callback=env.bind(listener)\n+        subscription=env.call('listen',file['token'],callback)\n+        def stop():\n+            nonlocal stopped\n+            if stopped:return\n+            stopped=True\n+            env.call('unlisten',file['token'],subscription)\n         env.call('start',file['token'])\n-        subscription=env.call('listen',file['token'],callback)\n-        return lambda:env.call('unlisten',file['token'],subscription)\n+        if not active():stop()\n+        return stop\n # A session owns visits, while attempt closures own source and decode callbacks.\n class Visit:\n     def __init__(self, number, file):self.id=number;self.file=file;self.handle=None\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [],
+        "coverage": [
+          {
+            "path": "src/workflow.py",
+            "status": "parsed"
+          }
+        ],
+        "events": [],
+        "findings": [],
+        "limitations": [
+          "结果是语法事实、静态候选调用关系与待核查模式，不是已证明的时序契约、缺陷、严重度或难度分。",
+          "同名 API 只作为线索；不做全程序类型/别名/控制流证明。动态派发、对象工厂、函数参数传递的完整目标保持未知。",
+          "局部先后表示同一语法块中位置先后；条件、异常、循环、短路及调用是否实际执行仍需核查。",
+          "await 是潜在暂停点，并非必然切换；取消请求不等于工作与清理完成；移除监听不保证既有异步工作取消。",
+          "语法中的 if/try/finally 不等于已证明保护充分；无模式命中不等于程序安全。",
+          "未读取隐藏评分器、参考补丁、模型结果或人工 profile；分析根由操作者提供，文件内容的来源仍需核实。"
+        ],
+        "relations": [],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "parsed",
+        "target_definitions": []
+      },
+      "sources": {
+        "README.md": "# Museum image ingestion\n\nThis frontend workspace selects files, starts transfers, and shows queued status.\nSee the pinned dependencies and session API in src. Session class owns visit state; Python closures capture per-attempt admission and retained decode continuations. Each\nworkspace has independent visit and attempt counters. A `select(file)` call\nopens a new visit, including when the exact same file object is selected again.\n`retry()` accepts one retry for the current visit; `hide()` closes its panel;\n`dispose()` ends the workspace. `snapshot()` exposes current ownership.\n\nRetry already cancels the previous transfer before enqueueing an accepted retry. Preserve that behavior during progress maintenance.\nAn accepted retry always belongs to the file and visit present at entry, creates\nexactly one new attempt, and remains in the queue record even if cancellation\ncauses navigation. Attempt IDs increase once per enqueued command within each\nworkspace; navigation must not retarget an accepted retry to the newly selected\nfile or drop its command. Queueing and recording are synchronous.\n\nCancellation is owned by an idempotent native attempt method. The injected\nadapter marks the physical signal aborted and synchronously calls the host's\n`onCancel` observer before returning, ahead of passive observers registered\nby transport. That observer may select another\nfile, hide the panel, or hide and reopen the identical file object. New selection\nimmediately starts its own transfer. The newer visit must retain its view and\nhandle when the older retry resumes. Queued notices are visible output: a notice\nfrom a retired visit must not be sent, including after reopening the same file.\nNormal retries in a current visit still issue one queued notice each.\n\nThe accepted old retry must still enqueue and record once after such navigation.\nIts newly created transfer is canceled immediately if its visit has ended; this\ndoes not remove its retained queue record. There must be no remaining active\ntransfer from that old visit. The new visit remains able to retry and hide;\nhiding cancels its owned handle and repeated cancellation is idempotent.\nSelection and hiding may themselves cancel an old handle and synchronously\nreceive newer navigation; the newer navigation keeps ownership. A hidden panel\naccepts no retry. Workspace disposal cancels every remaining transfer and is\nidempotent. Disposing one workspace cannot affect another.\n\n`transport({file, attemptId, signal})` starts a pending physical transfer and\nobserves the native signal. `record` and `showQueued` are passive synchronous\nsinks. Every queue record remains exactly `{fileId, attemptId, visitId, kind}`;\n`kind` is `select` or `retry`. Adding `byteCount` from `file.size` is an adjacent\nrecord-format extension requiring separate authorization. Notices remain\n`{fileId, attemptId, visitId, status: \"queued\"}`. Preserve these public interfaces.\n\n## Transfer progress\n\nA file may supply a shared `progressFeed` with a native EventTarget `target`,\n`start()`, and `decode(packet)`. Starting a view of the stream may synchronously\nemit its cached progress event; further progress events arrive on the same target.\nEvents are named `progress` and their detail is decoded to `{seq, loaded}`.\nDecoding may return a value or a Promise. The same file and source can be reused\nby multiple panel visits. Each selected or retried attempt starts one subscription.\n\nThe workspace accepts `recordProgress({fileId, attemptId, frame})` and\n`showProgress({fileId, attemptId, frame})`. The former is a passive retained audit\nsink. Every accepted progress event is recorded exactly once when decoding\nfinishes, including work accepted before the visit closes. A retired visit\naccepts no new progress events. Removing a listener does not retract a decode\nthat already started. Closing or replacing the visit stops visible progress;\nnew visits remain live. `showProgress` may synchronously select or hide through\nthe workspace, and normal current progress must remain visible. Progress does\nnot change queue records, native transfer cancellation, or accepted retry policy.\nDisposal removes subscriptions and cancels transfers; work already accepted\nfor audit remains retained. Preserve these adapter interfaces.\n\nNative embedding API: an Environment provides synchronous call(method, args)\nand bind(callback) registration. call emits transport, cancel, record,\nshowQueued, recordProgress, showProgress, listen/unlisten, start and decode.\nFile objects are stable within an embedding and expose id, size, token and feed.\nlisten(file token, callback token) returns a subscription; start may invoke it\nbefore returning. decode(file token, packet, completion token) returns\n{deferred:false,frame} or {deferred:true}; deferred completion invokes its bound\ncallback on a later explicit host event turn. The host never handles visit or\nattempt ownership. Cancellation publishes an idempotent synchronous observer;\nthe native port owns its cancellation state (Go uses context cancellation), and\nthe embedding exposes the corresponding physical signal to the transport.\nThere is no native DOM/AbortController claim in these languages. The trusted\nwire adapter interns input files by token, preserving repeated object identity.\n\nPublic embedding ABI: Session(env) with select/retry/hide/dispose/snapshot. Standalone Attempt(env,file,number,active,audit,view) exposes number and cancel. Environment supplies call and bind.\n",
+        "VISIBLE_CHECKS.md": "# Public examples\nExternal deterministic examples use the declared public workspace/stream API. Starting a subscription must show synchronously emitted cached progress. Closing a view stops visible progress, while a decode accepted before closure still records its retained audit result. Queue records retain exactly fileId, attemptId, visitId and kind; do not add byteCount. Preserve all original retry/cancellation/navigation requirements. These maintenance examples do not impose composition-specific out-of-order display rules. Independent Gold scoring also applies.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"CPython 3.8.10\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true,\n  \"runtime_artifacts\": [],\n  \"host_binary\": {\n    \"path_observed\": \"/usr/bin/python3.8\",\n    \"sha256\": \"298a9e830ed52f36c299427565485d717d1ce0179c0597cc16560513eb780b06\"\n  },\n  \"bootstrap_lock_sha256\": \"fdfaea057ebf9cb9f8e44f99591c0da4292f4a7a6a138c9fe479abf725128c25\"\n}\n",
+        "src/workflow.py": "class Subscription:\n    @staticmethod\n    def attach(env,file,active,audit,view):\n        if not file['feed']:return lambda:None\n        def listener(packet):\n            pass\n            def deliver(frame):\n                pass\n                audit(frame);view(frame)\n            value=env.call('decode',file['token'],packet,env.bind(deliver))\n            if not value['deferred']:deliver(value['frame'])\n        callback=env.bind(listener)\n        env.call('start',file['token'])\n        subscription=env.call('listen',file['token'],callback)\n        return lambda:env.call('unlisten',file['token'],subscription)\n# A session owns visits, while attempt closures own source and decode callbacks.\nclass Visit:\n    def __init__(self, number, file):self.id=number;self.file=file;self.handle=None\nclass Attempt:\n    def __init__(self, env, file, number, active=lambda:True, audit=lambda f:None, view=lambda f:None):\n        self.env=env;self.file=file;self.number=number;self.aborted=False;self.stop=lambda:None\n        env.call('transport',file['token'],number)\n        self.stop=Subscription.attach(env,file,active,audit,view)\n        if self.aborted:self.stop()\n    def cancel(self):\n        if self.aborted:return\n        self.aborted=True;self.stop();self.env.call('cancel',self.file['token'],self.number)\nclass Session:\n    def __init__(self,env):self.env=env;self.visit=None;self.serial=0;self.attempts=0;self.tasks=[];self.disposed=False\n    def current(self,v):return self.visit is v\n    def enqueue(self,v,kind):\n        self.attempts+=1;n=self.attempts\n        entry=dict(fileId=v.file['id'],attemptId=n,visitId=v.id,kind=kind)\n        pass\n        self.env.call('record',entry)\n        def audit(frame):self.env.call('recordProgress',dict(fileId=v.file['id'],attemptId=n,frame=frame))\n        def view(frame):\n            if self.current(v):self.env.call('showProgress',dict(fileId=v.file['id'],attemptId=n,frame=frame))\n        h=Attempt(self.env,v.file,n,lambda:self.current(v),audit,view);self.tasks.append(h);return h\n    def notice(self,v,h):\n        pass\n        self.env.call('showQueued',dict(fileId=v.file['id'],attemptId=h.number,visitId=v.id,status='queued'))\n    def release(self,v):\n        h=v.handle;v.handle=None\n        if h:h.cancel()\n    def select(self,file):\n        if self.disposed:return None\n        self.serial+=1;request=self.serial;old=self.visit;self.visit=None\n        if old:self.release(old)\n        if self.disposed or self.serial!=request:return None\n        v=Visit(request,file);self.visit=v;h=self.enqueue(v,'select')\n        if self.current(v):v.handle=h;self.notice(v,h)\n        else:h.cancel()\n        return h\n    def retry(self):\n        v=self.visit\n        if not v or not v.handle or self.disposed:return None\n        v.handle.cancel()\n        accepted=v\n        h=self.enqueue(accepted,'retry')\n        if self.current(accepted):accepted.handle=h\n        else:h.cancel()\n        if self.current(accepted):self.notice(accepted,h)\n        return h\n    def hide(self):\n        self.serial+=1;old=self.visit;self.visit=None\n        if old:self.release(old)\n    def dispose(self):\n        if self.disposed:return\n        self.disposed=True;self.hide()\n        for h in self.tasks:h.cancel()\n    def snapshot(self):\n        v=self.visit\n        return dict(visitId=v.id if v else None,fileId=v.file['id'] if v else None,attemptId=v.handle.number if v and v.handle else None,disposed=self.disposed,attempts=self.attempts)\n"
+      },
+      "task": "A warm progress source in the museum image ingestion shows no initial progress until a later packet arrives. Restore the initial update while preserving the existing transfer, retry, navigation, cleanup and audit behavior, ordinary streaming and subsequent uses. The queue-record format is outside this fix.\n"
+    },
+    "source_sha256": "d4c057340ee9c82dbdb64e81eabbbc460efff7b0b890f0ba059d88dc5f912345",
+    "task_id": "transfer-progress-maintenance-v2-python3"
+  },
+  "experience": {
+    "excludes": [],
+    "labels": [
+      "O",
+      "L",
+      "I",
+      "A"
+    ],
+    "limitations": [
+      "Evidence is the supplied original TASK and public documents/code; automatic contracts, experience text and evaluation observations do not establish requirements.",
+      "TASK: \"Restore the initial update while preserving the existing transfer, retry, navigation, cleanup and audit behavior, ordinary streaming and subsequent uses. The queue-record format is outside this fix.\"",
+      "VISIBLE_CHECKS.md: \"These maintenance examples do not impose composition-specific out-of-order display rules.\" No arrival-order suppression or numeric monotonicity requirement is established.",
+      "Decoder failures, adapter exceptions and visibility of already accepted decoding from a canceled attempt whose visit remains current are unspecified.",
+      "Attempt 1 supports the reflection context but its passing examples do not establish complete correctness, causality or cross-task benefit. No implementation failure is established.",
+      "Diagnostic-consumer requirements from other experiences are not established for this public source. No files were modified."
+    ],
+    "requires": [
+      "shared_lifetime",
+      "attempt_resource",
+      "entry_snapshot",
+      "inline_reentry",
+      "effect_lifetimes",
+      "async_resume"
+    ],
+    "rules": [
+      {
+        "body": "Apply when a reusable progress source serves distinct visits and attempts, startup can emit synchronously, decoding can finish later, and retained audit differs from visible presentation. README.md: \"The same file and source can be reused\\nby multiple panel visits. Each selected or retried attempt starts one subscription.\" Confirm these premises in each target system.",
+        "category": "applicability"
+      },
+      {
+        "body": "Register reception before starting the source, preserving subsequent streaming and public interfaces. Original src/workflow.py invokes \"        env.call('start',file['token'])\\n        subscription=env.call('listen',file['token'],callback)\". README.md states: \"Starting a view of the stream may synchronously\\nemit its cached progress event; further progress events arrive on the same target.\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "Check originating subscription and visit eligibility before decoding each packet. Retirement immediately prevents subsequent admission, including additional packets emitted before startup returns; do not depend solely on physical listener removal. README.md: \"A retired visit\\naccepts no new progress events.\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "Separate admission, retained audit and visible publication. Record each admitted event exactly once when decoding completes, including after retirement or disposal; check originating visit validity before visible publication. README.md: \"Every accepted progress event is recorded exactly once when decoding\\nfinishes, including work accepted before the visit closes.\" It also states: \"Removing a listener does not retract a decode\\nthat already started. Closing or replacing the visit stops visible progress;\\nnew visits remain live.\" Reopening the identical file creates a distinct visit.",
+        "category": "preservation"
+      },
+      {
+        "body": "Coordinate cleanup and ownership across callback-capable startup and cancellation. Retire old ownership before cleanup can reenter navigation; when an older operation resumes, prevent it from overwriting newer ownership and clean up its retired resources. Preserve idempotent cancellation and disposal. README.md: \"Selection and hiding may themselves cancel an old handle and synchronously\\nreceive newer navigation; the newer navigation keeps ownership.\" Also: \"Disposal removes subscriptions and cancels transfers; work already accepted\\nfor audit remains retained.\" A provisional cleanup handle is an implementation option, not a mandated public interface.",
+        "category": "preservation"
+      },
+      {
+        "body": "Keep accepted retries bound to their entry file and visit. Cancel the prior transfer before enqueueing, preserve exactly one accepted command and record across cancellation navigation, cancel the resulting transfer if its visit ended, and suppress retired queued notices. README.md: \"The accepted old retry must still enqueue and record once after such navigation.\\nIts newly created transfer is canceled immediately if its visit has ended; this\\ndoes not remove its retained queue record.\" Also: \"Queued notices are visible output: a notice\\nfrom a retired visit must not be sent, including after reopening the same file.\" Preserve independent workspace counters and cancellation.",
+        "category": "preservation"
+      },
+      {
+        "body": "Keep the repair within reception and necessary lifecycle coordination. Preserve queue and notice shapes and adapter interfaces. README.md: \"Every queue record remains exactly `{fileId, attemptId, visitId, kind}`;\" and \"Notices remain\\n`{fileId, attemptId, visitId, status: \\\"queued\\\"}`.\" Do not introduce decode freshness suppression without a target-specific requirement: VISIBLE_CHECKS.md states, \"These maintenance examples do not impose composition-specific out-of-order display rules.\" Do not transfer unrelated diagnostic-consumer policies into this repair.",
+        "category": "exclusion"
+      },
+      {
+        "body": "Verify cached startup and later streaming, immediate and deferred decoding, retained audit after hide/disposal, and new delivery after same-file reopening. Exercise synchronous hide, switch and reopening during startup, with subsequent packets before the outer startup returns: retired listeners must reject new admission while previously admitted decoding retains audit. Separately verify newer ownership after cancellation reentry, accepted entry-bound retry recording and cancellation, current queued notices, repeated cleanup, workspace independence and unchanged record shapes. These checkpoints follow README.md's documented lifecycle; they do not prescribe an order among independently completing decodes.",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "A synchronously emitted cached progress event produces the initial visible update.",
+      "Later progress events remain visible for the current visit, including after reopening the same file and source.",
+      "After synchronous showProgress navigation retires a visit, that visit accepts no further events, including before start returns.",
+      "A decode accepted before retirement records its audit result exactly once but produces no visible progress after retirement.",
+      "Reentrant startup or cancellation cannot overwrite a newer visit's view or handle.",
+      "An accepted retry still enqueues and records exactly once for its entry visit after cancellation causes navigation; its transfer is canceled if that visit has ended.",
+      "Disposal removes subscriptions and cancels transfers while retaining already accepted audit work.",
+      "Queue records and notices retain their documented shapes."
+    ],
+    "forbidden_effects": [
+      "Adding byteCount or otherwise extending queue records.",
+      "Dropping or retargeting an accepted retry because cancellation navigates.",
+      "Publishing progress or queued notices from a retired visit.",
+      "Accepting new progress events for a retired visit.",
+      "Discarding audit results for progress accepted before retirement.",
+      "Allowing an older operation to take ownership from newer navigation.",
+      "Changing tests or configuration, accessing scorers, reference implementations or hidden tests, or treating experience and evaluation observations as requirements.",
+      "Modifying files during this requirements extraction."
+    ],
+    "lifecycle_identity": [
+      "Each select call creates a distinct visit, even for the identical file object and shared source.",
+      "Each selected or retried attempt starts its own subscription.",
+      "Visit and attempt counters belong to an individual workspace.",
+      "Accepted retry identity is fixed to the file and visit present at retry entry.",
+      "An accepted decode's retained audit lifetime extends beyond listener removal and visit retirement."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Restore initial progress reception by registering the subscription listener before invoking start, which may emit cached progress synchronously."
+      },
+      {
+        "id": "O2",
+        "text": "Admit progress only while its originating visit is live; retirement must prevent subsequent admission even when synchronous startup has not yet returned."
+      },
+      {
+        "id": "O3",
+        "text": "Record every accepted event exactly once when decoding finishes, including deferred completion after retirement or disposal."
+      },
+      {
+        "id": "O4",
+        "text": "Suppress visible completion after the originating visit closes or is replaced, while preserving normal current progress and later uses of the same source."
+      },
+      {
+        "id": "O5",
+        "text": "Coordinate startup and cleanup with synchronous navigation so older startup settlement cannot overwrite newer ownership or leave retired subscriptions active."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve accepted retry queueing, entry-bound identity, native cancellation, idempotent cleanup, workspace independence, and all documented adapter interfaces."
+      },
+      {
+        "id": "O7",
+        "text": "Keep queue records exactly {fileId, attemptId, visitId, kind} and notices exactly {fileId, attemptId, visitId, status: \"queued\"}."
+      }
+    ],
+    "ordering_barriers": [
+      "Install reception before start can synchronously emit cached progress.",
+      "Check admission before invoking decode; listener removal cannot retract decoding already started.",
+      "Retire the originating visit before cancellation or cleanup can synchronously cause newer navigation.",
+      "Recheck originating visit ownership before visible publication and before installing a handle returned after callback-capable startup.",
+      "Cancel the previous transfer before enqueueing an accepted retry, but preserve that accepted command across navigation caused by cancellation."
+    ],
+    "preservation": [
+      "Ordinary streaming and subsequent subscriptions to reused files and sources.",
+      "Both immediate and deferred decoding.",
+      "Exactly-once retained audit for accepted progress.",
+      "Existing transfer, retry, navigation, cleanup and cancellation behavior.",
+      "Newer navigation's view and handle ownership.",
+      "Independent workspaces and idempotent disposal.",
+      "Public Session, Attempt and Environment interfaces and existing record shapes."
+    ],
+    "scope": [
+      "Requirements extraction for the warm-progress repair in src/workflow.py.",
+      "Use only TASK and supplied public code and documents as normative evidence.",
+      "Repair subscription startup ordering and necessary lifecycle coordination without extending the queue-record format."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Restore the initial update while preserving the existing transfer, retry, navigation, cleanup and audit behavior, ordinary streaming and subsequent uses. The queue-record format is outside this fix."
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "        env.call('start',file['token'])\n        subscription=env.call('listen',file['token'],callback)"
+      },
+      {
+        "file": "README.md",
+        "quote": "Starting a view of the stream may synchronously\nemit its cached progress event; further progress events arrive on the same target."
+      },
+      {
+        "file": "README.md",
+        "quote": "Every accepted progress event is recorded exactly once when decoding\nfinishes, including work accepted before the visit closes. A retired visit\naccepts no new progress events. Removing a listener does not retract a decode\nthat already started."
+      },
+      {
+        "file": "README.md",
+        "quote": "Closing or replacing the visit stops visible progress;\nnew visits remain live. `showProgress` may synchronously select or hide through\nthe workspace, and normal current progress must remain visible."
+      },
+      {
+        "file": "README.md",
+        "quote": "A `select(file)` call\nopens a new visit, including when the exact same file object is selected again."
+      },
+      {
+        "file": "README.md",
+        "quote": "Each selected or retried attempt starts one subscription."
+      },
+      {
+        "file": "README.md",
+        "quote": "The newer visit must retain its view and\nhandle when the older retry resumes."
+      },
+      {
+        "file": "README.md",
+        "quote": "The accepted old retry must still enqueue and record once after such navigation.\nIts newly created transfer is canceled immediately if its visit has ended; this\ndoes not remove its retained queue record."
+      },
+      {
+        "file": "README.md",
+        "quote": "Selection and hiding may themselves cancel an old handle and synchronously\nreceive newer navigation; the newer navigation keeps ownership."
+      },
+      {
+        "file": "README.md",
+        "quote": "Disposal removes subscriptions and cancels transfers; work already accepted\nfor audit remains retained. Preserve these adapter interfaces."
+      },
+      {
+        "file": "README.md",
+        "quote": "Every queue record remains exactly `{fileId, attemptId, visitId, kind}`;\n`kind` is `select` or `retry`."
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "These maintenance examples do not impose composition-specific out-of-order display rules."
+      }
+    ],
+    "triggers": [
+      "Selecting or retrying a file with a warm progress source.",
+      "Synchronous cached events emitted during start.",
+      "Immediate or deferred decode completion.",
+      "Synchronous select or hide from showProgress.",
+      "Cancellation observers that select, hide, or reopen the same file.",
+      "Visit replacement, hiding, retry cancellation, and workspace disposal."
+    ],
+    "unknowns": [
+      "No supplied requirement establishes freshness ordering between out-of-order decode completions; do not import arrival-sequence suppression from experience.",
+      "Decode failures, malformed packets, and adapter exceptions have no specified handling policy.",
+      "The supplied documents do not explicitly settle whether an already accepted decode from a canceled attempt may remain visible while its originating visit is still current."
+    ]
+  },
+  "final_training_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Detach/hide checkpoint: removal commits before its synchronous host callback; preserve navigation and cleanup.",
+        "Detach/switch checkpoint: preserve the new visit when physical listener removal reenters selection.",
+        "Ordered-frame checkpoint: preserve ordinary complete-frame progress updates.",
+        "Reverse-completion checkpoint: older decode completion must not roll the current display backward.",
+        "Frame-value checkpoint: a full frame may decrease or reset loaded values; preserve arrival identity rather than imposing a monotone numeric value.",
+        "Retry/cancellation checkpoint: preserve synchronous navigation callbacks during cancellation.",
+        "Retry checkpoint: replace a physical attempt without opening another visit and preserve queue behavior.",
+        "Reopen checkpoint: selecting the same file again creates a new visit while reusing its shared source.",
+        "Startup/hide checkpoint: preserve visit-bound admission when a synchronous progress callback hides the visit before startup returns.",
+        "Startup/switch checkpoint: preserve visit-bound admission when a synchronous progress callback selects another visit before startup returns.",
+        "Telemetry cleanup checkpoint: preserve the diagnostic consumer after its stop capability is used.",
+        "Telemetry checkpoint: preserve the diagnostic consumer independently of panel policy.",
+        "Warm-start checkpoint: the panel receives initial cached progress and continues normal streaming."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "A synchronously emitted cached progress event produces the initial visible update.",
+      "Later progress events remain visible for the current visit, including after reopening the same file and source.",
+      "After synchronous showProgress navigation retires a visit, that visit accepts no further events, including before start returns.",
+      "A decode accepted before retirement records its audit result exactly once but produces no visible progress after retirement.",
+      "Reentrant startup or cancellation cannot overwrite a newer visit's view or handle.",
+      "An accepted retry still enqueues and records exactly once for its entry visit after cancellation causes navigation; its transfer is canceled if that visit has ended.",
+      "Disposal removes subscriptions and cancels transfers while retaining already accepted audit work.",
+      "Queue records and notices retain their documented shapes."
+    ],
+    "forbidden_effects": [
+      "Adding byteCount or otherwise extending queue records.",
+      "Dropping or retargeting an accepted retry because cancellation navigates.",
+      "Publishing progress or queued notices from a retired visit.",
+      "Accepting new progress events for a retired visit.",
+      "Discarding audit results for progress accepted before retirement.",
+      "Allowing an older operation to take ownership from newer navigation.",
+      "Changing tests or configuration, accessing scorers, reference implementations or hidden tests, or treating experience and evaluation observations as requirements.",
+      "Modifying files during this requirements extraction."
+    ],
+    "lifecycle_identity": [
+      "Each select call creates a distinct visit, even for the identical file object and shared source.",
+      "Each selected or retried attempt starts its own subscription.",
+      "Visit and attempt counters belong to an individual workspace.",
+      "Accepted retry identity is fixed to the file and visit present at retry entry.",
+      "An accepted decode's retained audit lifetime extends beyond listener removal and visit retirement."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Restore initial progress reception by registering the subscription listener before invoking start, which may emit cached progress synchronously."
+      },
+      {
+        "id": "O2",
+        "text": "Admit progress only while its originating visit is live; retirement must prevent subsequent admission even when synchronous startup has not yet returned."
+      },
+      {
+        "id": "O3",
+        "text": "Record every accepted event exactly once when decoding finishes, including deferred completion after retirement or disposal."
+      },
+      {
+        "id": "O4",
+        "text": "Suppress visible completion after the originating visit closes or is replaced, while preserving normal current progress and later uses of the same source."
+      },
+      {
+        "id": "O5",
+        "text": "Coordinate startup and cleanup with synchronous navigation so older startup settlement cannot overwrite newer ownership or leave retired subscriptions active."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve accepted retry queueing, entry-bound identity, native cancellation, idempotent cleanup, workspace independence, and all documented adapter interfaces."
+      },
+      {
+        "id": "O7",
+        "text": "Keep queue records exactly {fileId, attemptId, visitId, kind} and notices exactly {fileId, attemptId, visitId, status: \"queued\"}."
+      }
+    ],
+    "ordering_barriers": [
+      "Install reception before start can synchronously emit cached progress.",
+      "Check admission before invoking decode; listener removal cannot retract decoding already started.",
+      "Retire the originating visit before cancellation or cleanup can synchronously cause newer navigation.",
+      "Recheck originating visit ownership before visible publication and before installing a handle returned after callback-capable startup.",
+      "Cancel the previous transfer before enqueueing an accepted retry, but preserve that accepted command across navigation caused by cancellation."
+    ],
+    "preservation": [
+      "Ordinary streaming and subsequent subscriptions to reused files and sources.",
+      "Both immediate and deferred decoding.",
+      "Exactly-once retained audit for accepted progress.",
+      "Existing transfer, retry, navigation, cleanup and cancellation behavior.",
+      "Newer navigation's view and handle ownership.",
+      "Independent workspaces and idempotent disposal.",
+      "Public Session, Attempt and Environment interfaces and existing record shapes."
+    ],
+    "scope": [
+      "Requirements extraction for the warm-progress repair in src/workflow.py.",
+      "Use only TASK and supplied public code and documents as normative evidence.",
+      "Repair subscription startup ordering and necessary lifecycle coordination without extending the queue-record format."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Restore the initial update while preserving the existing transfer, retry, navigation, cleanup and audit behavior, ordinary streaming and subsequent uses. The queue-record format is outside this fix."
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "        env.call('start',file['token'])\n        subscription=env.call('listen',file['token'],callback)"
+      },
+      {
+        "file": "README.md",
+        "quote": "Starting a view of the stream may synchronously\nemit its cached progress event; further progress events arrive on the same target."
+      },
+      {
+        "file": "README.md",
+        "quote": "Every accepted progress event is recorded exactly once when decoding\nfinishes, including work accepted before the visit closes. A retired visit\naccepts no new progress events. Removing a listener does not retract a decode\nthat already started."
+      },
+      {
+        "file": "README.md",
+        "quote": "Closing or replacing the visit stops visible progress;\nnew visits remain live. `showProgress` may synchronously select or hide through\nthe workspace, and normal current progress must remain visible."
+      },
+      {
+        "file": "README.md",
+        "quote": "A `select(file)` call\nopens a new visit, including when the exact same file object is selected again."
+      },
+      {
+        "file": "README.md",
+        "quote": "Each selected or retried attempt starts one subscription."
+      },
+      {
+        "file": "README.md",
+        "quote": "The newer visit must retain its view and\nhandle when the older retry resumes."
+      },
+      {
+        "file": "README.md",
+        "quote": "The accepted old retry must still enqueue and record once after such navigation.\nIts newly created transfer is canceled immediately if its visit has ended; this\ndoes not remove its retained queue record."
+      },
+      {
+        "file": "README.md",
+        "quote": "Selection and hiding may themselves cancel an old handle and synchronously\nreceive newer navigation; the newer navigation keeps ownership."
+      },
+      {
+        "file": "README.md",
+        "quote": "Disposal removes subscriptions and cancels transfers; work already accepted\nfor audit remains retained. Preserve these adapter interfaces."
+      },
+      {
+        "file": "README.md",
+        "quote": "Every queue record remains exactly `{fileId, attemptId, visitId, kind}`;\n`kind` is `select` or `retry`."
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "These maintenance examples do not impose composition-specific out-of-order display rules."
+      }
+    ],
+    "triggers": [
+      "Selecting or retrying a file with a warm progress source.",
+      "Synchronous cached events emitted during start.",
+      "Immediate or deferred decode completion.",
+      "Synchronous select or hide from showProgress.",
+      "Cancellation observers that select, hide, or reopen the same file.",
+      "Visit replacement, hiding, retry cancellation, and workspace disposal."
+    ],
+    "unknowns": [
+      "No supplied requirement establishes freshness ordering between out-of-order decode completions; do not import arrival-sequence suppression from experience.",
+      "Decode failures, malformed packets, and adapter exceptions have no specified handling policy.",
+      "The supplied documents do not explicitly settle whether an already accepted decode from a canceled attempt may remain visible while its originating visit is still current."
+    ]
+  },
+  "origin": "success",
+  "reflection_update": {
+    "change_summary": [
+      "Remove unconditional arrival-order freshness suppression and its associated display assertions because the current public documents explicitly do not establish them.",
+      "Retain startup ordering, visit-bound admission, retained audit and reentrant ownership guidance shared with 6aff844ea0e7cbe53d548aba07e08b8edc807bd65820f909d02f14b735221189.",
+      "Make entry-bound retries, retired notices, disposal and exact record shapes explicit; exclude importing unrelated diagnostic-consumer policy."
+    ],
+    "failure_attribution": "experience_gap",
+    "operation": "revise",
+    "reason": "Revise the broader guidance's applicability boundary: 65638386e4ccee67e9f48851c6e75675dbb1b394ed1f2a1b0344c92aad0291e3 requires freshness ordering that TASK and the supplied public sources do not establish. This is a source-supported correction to transferred guidance, not attribution of an implementation failure. Attempt 1's observations do not create ordering requirements or prove effectiveness.",
+    "supporting_attempts": [
+      1
+    ],
+    "target_sha256s": [
+      "65638386e4ccee67e9f48851c6e75675dbb1b394ed1f2a1b0344c92aad0291e3"
+    ]
+  },
+  "related_experiences": [
+    {
+      "audit": {
+        "notes": [
+          "V3 reflection candidate; not human approval."
+        ],
+        "outcome_refs": [],
+        "rule_links": [
+          {
+            "pointer": "/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "f330f01f812ff34b382df3180e6038bceb68ac2de5005c9be629fade195d9ba6"
+          },
+          {
+            "pointer": "/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "a4bce729174a5633655e57685b4a8c0b757bc5cb1b147d836e782cb818899390"
+          },
+          {
+            "pointer": "/changes/0",
+            "rule_id": "R02",
+            "source_sha256": "78719358808e422cd8af13b7be458aeaec8b229acc3df16a36dd82611533b44a"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "f330f01f812ff34b382df3180e6038bceb68ac2de5005c9be629fade195d9ba6"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "a4bce729174a5633655e57685b4a8c0b757bc5cb1b147d836e782cb818899390"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R04",
+            "source_sha256": "f330f01f812ff34b382df3180e6038bceb68ac2de5005c9be629fade195d9ba6"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R04",
+            "source_sha256": "a4bce729174a5633655e57685b4a8c0b757bc5cb1b147d836e782cb818899390"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R05",
+            "source_sha256": "f330f01f812ff34b382df3180e6038bceb68ac2de5005c9be629fade195d9ba6"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R05",
+            "source_sha256": "a4bce729174a5633655e57685b4a8c0b757bc5cb1b147d836e782cb818899390"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "f330f01f812ff34b382df3180e6038bceb68ac2de5005c9be629fade195d9ba6"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "a4bce729174a5633655e57685b4a8c0b757bc5cb1b147d836e782cb818899390"
+          },
+          {
+            "pointer": "/rules/6",
+            "rule_id": "R07",
+            "source_sha256": "f330f01f812ff34b382df3180e6038bceb68ac2de5005c9be629fade195d9ba6"
+          },
+          {
+            "pointer": "/rules/6",
+            "rule_id": "R07",
+            "source_sha256": "a4bce729174a5633655e57685b4a8c0b757bc5cb1b147d836e782cb818899390"
+          }
+        ],
+        "sources": [
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/experience-toolflow-english-20261109_213420/frozen-library.json",
+            "sha256": "47129589444a180694cdd98cd17cf9797f83b8ee1e6607adb7ec28a2fa12cb6f"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/experience-toolflow-english-20261109_213420/experience/T1/translation-review.json",
+            "sha256": "f330f01f812ff34b382df3180e6038bceb68ac2de5005c9be629fade195d9ba6"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/experience-toolflow-english-20261109_213420/translation-lineage.json",
+            "sha256": "fc98c136aa962aa4d12a1917f01c31eb73b4e01bf1937cb1db4af20f99743fa4"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-progress-crosslang-test-20261109_110859/experience/experience-object.json",
+            "sha256": "9261858988aeda81d03acdfc023d8c44cfc6c50f9757af4a9a245f712083dffb"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-progress-crosslang-test-20261109_110859/experience/semantic-review.json",
+            "sha256": "c3be6b5d7f5cafa51dfd5188ae2efd4905c4296b81b905b6631c435fd84e6dcb"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/unified-seven-label-recoding-20261110_112750/subscription-retirement/label-review.json",
+            "sha256": "a4bce729174a5633655e57685b4a8c0b757bc5cb1b147d836e782cb818899390"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-progress-evolution-locked-applicability-20261109_102520/training/inputs/source/README.md",
+            "sha256": "176839cddbe14170b62bfac215547a7f47e5942331f17c95fac37a2c13362f69"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-progress-evolution-locked-applicability-20261109_102520/training/inputs/source/src/progress.js",
+            "sha256": "69812c6d3f111528ec61c6807c25d727ba291e93c1b19f2d9e6e978d08f35061"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-progress-evolution-locked-applicability-20261109_102520/training/inputs/source/src/queue.js",
+            "sha256": "7018d36249fb316c093c8fd992e8eabb1dc9a5ea82c054107120e007293bce4d"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-progress-evolution-locked-applicability-20261109_102520/training/inputs/source/src/transfer.js",
+            "sha256": "fd27be4d41174cd20fea6d50e5b6be08da089f46779823c699709b64846fc4f8"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-progress-evolution-locked-applicability-20261109_102520/training/inputs/task.md",
+            "sha256": "e12b81b374339567658df7bc8ebfff06ce27fc46cb124f5366b4bf684c373d52"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer-three-lowpass-training-20261112_172447/transfer-progress-maintenance-v2-vanilla/reflection-recovery/raw-reflection.json",
+            "sha256": "78719358808e422cd8af13b7be458aeaec8b229acc3df16a36dd82611533b44a"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer-three-lowpass-training-20261112_172447/transfer-progress-maintenance-v2-vanilla/reflection-recovery/reflection-input.json",
+            "sha256": "43360ea027756817b0d35c6cca93e7ac9eb2848d593de3355567cfaae727c663"
+          }
+        ]
+      },
+      "body_sha256": "78af858b75fa6958a170bde2b9af7ea1fe0cb6400cd164232f126c7a7ddf6466",
+      "excludes": [],
+      "id": "subscription-retirement",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": "5cabe14e287df04ac1a70a99662b41827c452fb8c62c846efc895d5585b0a17e",
+      "requires": [
+        "shared_lifetime",
+        "attempt_resource",
+        "entry_snapshot",
+        "inline_reentry",
+        "effect_lifetimes"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "AI evidence review not performed; pending human content review."
+        ],
+        "source_sha256": "78719358808e422cd8af13b7be458aeaec8b229acc3df16a36dd82611533b44a",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Applies when a shared source can be reused across visits, each attempt has an independent subscription, and visible feedback can synchronously reenter navigation. The same data object does not imply the same visit identity.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "For a source that may synchronously emit cached events during startup, register the listener before start(), and decide whether each event is admitted for its originating visit and attempt before decoding or recording it. If visible handling of an earlier startup event synchronously retires that visit, later startup events from that listener are not admitted even before listener cleanup is available; events already admitted retain the separate audit and visibility rules.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Once a visit retires, stop admitting subsequent events even if the cleanup or removal capability has not yet returned. This restriction must not depend on deferred physical cleanup.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "For an event admitted before retirement, retain its audit exactly once when decoding settles. That settlement must not authorize the retired visit to admit new events or produce visible progress.",
+          "category": "preservation",
+          "id": "R04"
+        },
+        {
+          "body": "After synchronous reentry, the new visit retains its own UI and cancellation resources. Subsequent settlement or cleanup of the old visit must not take ownership from the new one. Preserve existing retry, cancellation and entry-bound record semantics.",
+          "category": "preservation",
+          "id": "R05"
+        },
+        {
+          "body": "Test subsequent events from the same source after synchronous navigation and before the outer startup call returns. Cover hiding, switching and reopening the same source separately. Independently check rejection by the retired visit, delayed audit of previously admitted events, and valid visible progress for the current visit. Cleanup tests performed only after return do not cover this window.",
+          "category": "verification",
+          "id": "R06"
+        },
+        {
+          "body": "Limit this repair to progress-admission timing and lifecycle boundaries. Do not expand records or public interfaces, or change shared-source reuse, independent workspaces, retry, cancellation, navigation, resource ownership or the audit policy for already-admitted events.",
+          "category": "exclusion",
+          "id": "R07"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "6aff844ea0e7cbe53d548aba07e08b8edc807bd65820f909d02f14b735221189",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "dev-ffc1db027a0f441e-reflection-recovery"
+    },
+    {
+      "audit": {
+        "notes": [
+          "Karen-authorized assisted consolidation",
+          "Reflection operation: merge",
+          "Reflection targets: 14e13837e2663a4de293658527a99490d4db7bfcdbd813ecf73997ca3bb90628,0ca152a0bc2a51f01aa3c45cc4b5623fec41e5169d2f04264fa3d6bec718c3fd,2251411000873e1fef16bd9bc482729721d6aefb044d7a19130884b379cded01",
+          "All original decisions and frozen histories retained; no new efficacy claim."
+        ],
+        "outcome_refs": [],
+        "rule_links": [
+          {
+            "pointer": "/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R04",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R05",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/6",
+            "rule_id": "R07",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/7",
+            "rule_id": "R08",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/8",
+            "rule_id": "R09",
+            "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "pointer": "/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R02",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R02",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R03",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R03",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R04",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R04",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R04",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R05",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R05",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/6",
+            "rule_id": "R05",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R06",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/6",
+            "rule_id": "R06",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R07",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R07",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/6",
+            "rule_id": "R07",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/7",
+            "rule_id": "R08",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/8",
+            "rule_id": "R09",
+            "source_sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "pointer": "/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R02",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R03",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R04",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R04",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R05",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R05",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R05",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R06",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R06",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R07",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R07",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R07",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/6",
+            "rule_id": "R08",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/7",
+            "rule_id": "R09",
+            "source_sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "pointer": "/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R02",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R02",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R03",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R03",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R04",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R04",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R04",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R05",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R05",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R06",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R07",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R07",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/6",
+            "rule_id": "R08",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          },
+          {
+            "pointer": "/rules/7",
+            "rule_id": "R09",
+            "source_sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          }
+        ],
+        "sources": [
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/experience-memory/workflow/merges/9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba.json",
+            "sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/experience-memory/records/14e13837e2663a4de293658527a99490d4db7bfcdbd813ecf73997ca3bb90628.json",
+            "sha256": "918a45f7bde6aef22f6145ce5d783d11ed5e35836743f8ade9fc1550ad04a459"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/experience-memory/records/0ca152a0bc2a51f01aa3c45cc4b5623fec41e5169d2f04264fa3d6bec718c3fd.json",
+            "sha256": "396369a24ab868996dcb2b40289c60ca921c4cabcc28872d9e4a7fbe421b2712"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/experience-memory/records/2251411000873e1fef16bd9bc482729721d6aefb044d7a19130884b379cded01.json",
+            "sha256": "374b6f9d87d99d2cc893e9cd23c9be457e603b5bbac140b235e0acc232ceba3e"
+          }
+        ]
+      },
+      "body_sha256": "b892de98745da29e597ccd0807baa82582a058ae4992b80a60ae40a84b68b0e3",
+      "excludes": [],
+      "id": "v5-2776429f192bf1df-success",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": "14e13837e2663a4de293658527a99490d4db7bfcdbd813ecf73997ca3bb90628",
+      "requires": [
+        "async_resume",
+        "effect_lifetimes",
+        "inline_reentry",
+        "shared_lifetime"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Karen-authorized assisted content consolidation; no new behavioral replay or verified cross-task effectiveness."
+        ],
+        "source_sha256": "9e5796908166ef6bbfda4acc06f8b0c99f8a029be44a48d8a45a549ce826c6ba",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when one reusable progress source serves distinct visits and physical attempts, startup may emit cached state synchronously, decoding may complete later or out of order, and audit/history has a different lifetime from visible presentation.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Install the panel listener before starting a source that may emit cached progress synchronously. Preserve later streaming and the original startup and cleanup interfaces.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Decide packet admission for its originating visit/attempt before decoding, including while startup has not yet returned a cleanup capability. Retirement immediately revokes further admission; physical listener removal alone is not the logical lifetime boundary.",
+          "category": "event_relation",
+          "id": "R03"
+        },
+        {
+          "body": "Assign arrival identity before decoding, and publish only completions newer than the last displayed frame for that originating subscription/attempt. Commit freshness state before callback-capable painting. Compare arrival identity, not numeric loaded values: later full frames may legitimately decrease or reset.",
+          "category": "event_relation",
+          "id": "R04"
+        },
+        {
+          "body": "Separate admission, retained audit/history, and visible publication. Already-admitted decoding retains its audit/history after retirement or a newer visible frame, while painting must recheck the originating visit and freshness. Reopening the same source creates a distinct visit.",
+          "category": "preservation",
+          "id": "R05"
+        },
+        {
+          "body": "Establish cleanup ownership before synchronous startup can navigate. Retire old ownership before reentrant cleanup; recheck ownership before installing a returned handle. Never let an outer startup overwrite a newer visit resource. Preserve idempotent removal and cancellation.",
+          "category": "preservation",
+          "id": "R06"
+        },
+        {
+          "body": "Preserve accepted retry commands and their entry-bound queue records across cancellation callbacks, including navigation during cancellation. Do not add an early return that drops an accepted command merely because the callback navigates.",
+          "category": "preservation",
+          "id": "R07"
+        },
+        {
+          "body": "Keep the repair scoped to panel reception, admission, ordering and their necessary lifetime coordination. Preserve diagnostic/audit consumer policy and original queue-record shape; do not generalize panel visibility policy to independent consumers.",
+          "category": "exclusion",
+          "id": "R08"
+        },
+        {
+          "body": "Check warm cached bootstrap and later streaming, reversed decoding with every admitted audit retained, decreasing/reset frames, late completion after departure and same-file reopening. Exercise synchronous hide/switch/dispose during startup and cleanup, multiple startup packets, subsequent-packet rejection, retry cancellation navigation and diagnostic operation after stop.",
+          "category": "verification",
+          "id": "R09"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "65638386e4ccee67e9f48851c6e75675dbb1b394ed1f2a1b0344c92aad0291e3",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "karen-merge-9e5796908166"
+    },
+    {
+      "audit": {
+        "notes": [
+          "V3 reflection candidate; not human approval."
+        ],
+        "outcome_refs": [],
+        "rule_links": [
+          {
+            "pointer": "/changes/0",
+            "rule_id": "R01",
+            "source_sha256": "5bd92ddaf21788a0e3c0035b0e0c11461c556284f32530c0f6f33444779898e4"
+          }
+        ],
+        "sources": [
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer-three-lowpass-training-20261112_172447/listener-registration-order-vanilla/composition-recovery/raw-reflection.json",
+            "sha256": "5056bc4abc88c3020e4dfdd6055b950e6b197e43e772db64362d1f3ea931f8ee"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer-three-lowpass-training-20261112_172447/listener-registration-order-vanilla/composition-recovery/reflection-input.json",
+            "sha256": "fa9aace47e7f41d10198c392766b5bb4d54503ef58cbf0e084c7d9037795f63a"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer-matched-lowpass-training-20261112_214154/listener-registration-order-vanilla/reflection-completion/raw-reflection.json",
+            "sha256": "5bd92ddaf21788a0e3c0035b0e0c11461c556284f32530c0f6f33444779898e4"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer-matched-lowpass-training-20261112_214154/listener-registration-order-vanilla/reflection-completion/reflection-input.json",
+            "sha256": "c0806fb2ca559309fe912fd29de6de3c877f0e3c47458d38244b71c668269363"
+          }
+        ]
+      },
+      "body_sha256": "ace3820ae9f11925427cfdaf8d82d2a00a11335c399d870db0088bc1bd90d0f9",
+      "excludes": [],
+      "id": "dev-5bb2ae60564a4deb-composition-recovery",
+      "labels": [
+        "O",
+        "L",
+        "I"
+      ],
+      "parent_sha256": "58bb995b5cb6fd6e305600894801b7111874c35118f0e7088d3b969dcb3d699b",
+      "requires": [
+        "async_resume",
+        "inline_reentry"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "AI evidence review not performed; pending human content review."
+        ],
+        "source_sha256": "5bd92ddaf21788a0e3c0035b0e0c11461c556284f32530c0f6f33444779898e4",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "When a subscription can begin decoding before its listener is removed, bind both its cleanup handle and permission to publish a decoded value to the panel visit that started it. Install a provisional cleanup handle before startup; if synchronous publication hides or switches the panel, do not let the outer startup replace the newer visit’s handle. Listener removal stops new reception but does not itself decide whether an already-started decode may publish: after a switch, hide, or synchronous reentry retires the originating visit, its settlement must not update the panel. Preserve bootstrap and later updates for the current visit, including a later visit using the same channel. Verify synchronous bootstrap reentry plus delayed decode across close, switch, and same-channel reopening: retired visits produce no publication and the active visit still receives its bootstrap and later update.",
+          "category": "event_relation",
+          "id": "R01"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "e9888a2095efc6aa2731fd3b0490a93d6ccad456a01c559d90c8c08821faa1d4",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "dev-e6a6d89baacb4320-reflection-only"
+    },
+    {
+      "audit": {
+        "notes": [
+          "V4 origin: success",
+          "Not approved; visible success or expert summary does not verify effectiveness"
+        ],
+        "outcome_refs": [],
+        "rule_links": [
+          {
+            "pointer": "/experience/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5"
+          },
+          {
+            "pointer": "/experience/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5"
+          },
+          {
+            "pointer": "/experience/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5"
+          },
+          {
+            "pointer": "/experience/rules/3",
+            "rule_id": "R04",
+            "source_sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5"
+          },
+          {
+            "pointer": "/experience/rules/4",
+            "rule_id": "R05",
+            "source_sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5"
+          },
+          {
+            "pointer": "/experience/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5"
+          },
+          {
+            "pointer": "/experience/rules/6",
+            "rule_id": "R07",
+            "source_sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5"
+          }
+        ],
+        "sources": [
+          {
+            "path": "/home/sribd/Downloads/wangshu/tempoevo-v4-listener-training-20261113_084448/trajectory-final/candidate-pool/success-evidence.json",
+            "sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5"
+          }
+        ]
+      },
+      "body_sha256": "a62e87ed35a2a14d56e0876d562388a0da9e5d379dd6eb4582565342f7fb8d25",
+      "excludes": [],
+      "id": "v4-1b981c5bf6a37f7f-success",
+      "labels": [
+        "O",
+        "L",
+        "I"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "async_resume",
+        "inline_reentry"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "These rules are supported by the supplied task and public source for this lifecycle; applicability to other systems requires confirming their own delivery and navigation semantics.",
+          "Public source comments establish asynchronous decoding, synchronous navigation, and transport reuse. Visit-bound ownership follows from preserving those behaviors when repairing bootstrap delivery.",
+          "VISIBLE_CHECKS.md mentions a README that was not supplied; that reported README requirement is not independent evidence.",
+          "Visible checks provide examples, not an exhaustive specification. A passing run does not establish causality, complete correctness, or cross-task benefit.",
+          "Decoder rejection handling, connection failure policy, and ordering among independently completing decodes are unspecified.",
+          "AbortController is one possible implementation mechanism, not a source-required design.",
+          "AI-assisted format adaptation, pending human review: free-text labels mapped to source-routing O/L/I; requires constrained to known async_resume/inline_reentry; original applicability and exclusion text retained verbatim in rules. This is not human approval."
+        ],
+        "source_sha256": "7c56e3387ad68a381f76c6fe8be2005d595e435ab461070b16453c9c31c1b0f5",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Confirm whether subscription startup can emit synchronously and whether the consumer must receive that emission. Identify the consumer lifetime that owns delivery and cleanup, including synchronous callback reentry. Distinguish listener removal from completion of work already started. Confirm whether a transport can be reused across separate visits before using transport identity as a validity check.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "For a consumer that requires bootstrap state, register reception before invoking startup that can emit synchronously. src/channel.js emits bootstrap inline unless deferred, while src/subscription.js originally connects before registering. Check both bootstrap modes and later updates.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Bind permission to publish decoded values to the visit that received the frame. src/subscription.js permits Promise decoding and explicitly states that listener removal does not stop an existing decode. On close or replacement, retire that visit and check its permission immediately before publication. Check pending completion after close and switch while preserving active-visit delivery.",
+          "category": "event_relation",
+          "id": "R03"
+        },
+        {
+          "body": "Establish retirement and cleanup ownership before startup can publish. src/workspace-navigation.js explicitly permits publication to synchronously switch or hide the panel. An older startup returning afterward must not overwrite the resulting visit's cleanup ownership. Check inline switch and hide, subsequent updates, and eventual cleanup.",
+          "category": "event_relation",
+          "id": "R04"
+        },
+        {
+          "body": "Give each opening an independent lifetime even when it reuses the same transport. src/workspace-navigation.js explicitly supports transport reuse. Check that pending results from a retired opening remain suppressed while the later opening receives bootstrap and updates.",
+          "category": "event_relation",
+          "id": "R05"
+        },
+        {
+          "body": "Scope the ordering repair to the presence subscription. The task forbids changing the metrics consumer, and src/metrics-consumer.js deliberately relies on attaching after synchronous bootstrap to count deltas only. Check that presence gains bootstrap delivery while metrics retain their existing output.",
+          "category": "preservation",
+          "id": "R06"
+        },
+        {
+          "body": "Changing the metrics consumer or its intentional delta-only behavior. Treating automatic contracts, experience text, AST hints, or evaluation observations as business requirements. Accessing scorers, reference implementations, or hidden tests. Modifying files during this extraction stage.",
+          "category": "exclusion",
+          "id": "R07"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "97924a91ad16ed62aec6938381acda6dd8d8944a44cbbfe8f9264669958b0f92",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "v1"
+    },
+    {
+      "audit": {
+        "notes": [
+          "English translation, not newly trained or effect-validated wording.",
+          "Exact historical body and applicability retained; no new model output.",
+          "Explicit per-rule source-based seven-label recoding, not a T1-T4 lookup.",
+          "Rule text and applicability unchanged; labels and provenance are program-composed from an AI audit."
+        ],
+        "outcome_refs": [],
+        "rule_links": [
+          {
+            "pointer": "/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "f330f01f812ff34b382df3180e6038bceb68ac2de5005c9be629fade195d9ba6"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "f330f01f812ff34b382df3180e6038bceb68ac2de5005c9be629fade195d9ba6"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "f330f01f812ff34b382df3180e6038bceb68ac2de5005c9be629fade195d9ba6"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R04",
+            "source_sha256": "f330f01f812ff34b382df3180e6038bceb68ac2de5005c9be629fade195d9ba6"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R05",
+            "source_sha256": "f330f01f812ff34b382df3180e6038bceb68ac2de5005c9be629fade195d9ba6"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "f330f01f812ff34b382df3180e6038bceb68ac2de5005c9be629fade195d9ba6"
+          },
+          {
+            "pointer": "/rules/6",
+            "rule_id": "R07",
+            "source_sha256": "f330f01f812ff34b382df3180e6038bceb68ac2de5005c9be629fade195d9ba6"
+          },
+          {
+            "pointer": "/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "a4bce729174a5633655e57685b4a8c0b757bc5cb1b147d836e782cb818899390"
+          },
+          {
+            "pointer": "/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "a4bce729174a5633655e57685b4a8c0b757bc5cb1b147d836e782cb818899390"
+          },
+          {
+            "pointer": "/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "a4bce729174a5633655e57685b4a8c0b757bc5cb1b147d836e782cb818899390"
+          },
+          {
+            "pointer": "/rules/3",
+            "rule_id": "R04",
+            "source_sha256": "a4bce729174a5633655e57685b4a8c0b757bc5cb1b147d836e782cb818899390"
+          },
+          {
+            "pointer": "/rules/4",
+            "rule_id": "R05",
+            "source_sha256": "a4bce729174a5633655e57685b4a8c0b757bc5cb1b147d836e782cb818899390"
+          },
+          {
+            "pointer": "/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "a4bce729174a5633655e57685b4a8c0b757bc5cb1b147d836e782cb818899390"
+          },
+          {
+            "pointer": "/rules/6",
+            "rule_id": "R07",
+            "source_sha256": "a4bce729174a5633655e57685b4a8c0b757bc5cb1b147d836e782cb818899390"
+          }
+        ],
+        "sources": [
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/experience-toolflow-english-20261109_213420/frozen-library.json",
+            "sha256": "47129589444a180694cdd98cd17cf9797f83b8ee1e6607adb7ec28a2fa12cb6f"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/experience-toolflow-english-20261109_213420/experience/T1/translation-review.json",
+            "sha256": "f330f01f812ff34b382df3180e6038bceb68ac2de5005c9be629fade195d9ba6"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/experience-toolflow-english-20261109_213420/translation-lineage.json",
+            "sha256": "fc98c136aa962aa4d12a1917f01c31eb73b4e01bf1937cb1db4af20f99743fa4"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-progress-crosslang-test-20261109_110859/experience/experience-object.json",
+            "sha256": "9261858988aeda81d03acdfc023d8c44cfc6c50f9757af4a9a245f712083dffb"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-progress-crosslang-test-20261109_110859/experience/semantic-review.json",
+            "sha256": "c3be6b5d7f5cafa51dfd5188ae2efd4905c4296b81b905b6631c435fd84e6dcb"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/unified-seven-label-recoding-20261110_112750/subscription-retirement/label-review.json",
+            "sha256": "a4bce729174a5633655e57685b4a8c0b757bc5cb1b147d836e782cb818899390"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-progress-evolution-locked-applicability-20261109_102520/training/inputs/source/README.md",
+            "sha256": "176839cddbe14170b62bfac215547a7f47e5942331f17c95fac37a2c13362f69"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-progress-evolution-locked-applicability-20261109_102520/training/inputs/source/src/progress.js",
+            "sha256": "69812c6d3f111528ec61c6807c25d727ba291e93c1b19f2d9e6e978d08f35061"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-progress-evolution-locked-applicability-20261109_102520/training/inputs/source/src/queue.js",
+            "sha256": "7018d36249fb316c093c8fd992e8eabb1dc9a5ea82c054107120e007293bce4d"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-progress-evolution-locked-applicability-20261109_102520/training/inputs/source/src/transfer.js",
+            "sha256": "fd27be4d41174cd20fea6d50e5b6be08da089f46779823c699709b64846fc4f8"
+          },
+          {
+            "path": "/home/sribd/Downloads/wangshu/temporal-contract-analyzer/research/transfer-progress-evolution-locked-applicability-20261109_102520/training/inputs/task.md",
+            "sha256": "e12b81b374339567658df7bc8ebfff06ce27fc46cb124f5366b4bf684c373d52"
+          }
+        ]
+      },
+      "body_sha256": "ddf9d8fe43b79fdd07bd7e8d741e2d6f97abb3805bb3f2b35673f10b84af8ed4",
+      "excludes": [],
+      "id": "subscription-retirement",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": "bbd83db94e985da0e1ae126ab2c1b038474c8fac1ee6e2cbacbe1271df5d52e2",
+      "requires": [
+        "shared_lifetime",
+        "observer_lifetime",
+        "attempt_resource",
+        "entry_snapshot",
+        "inline_reentry",
+        "effect_lifetimes"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Historical review retained; import is not a fresh semantic review or production admission.",
+          "Legacy taxonomy is not automatically deliverable through the seven-label router.",
+          "English translation has no direct repair-effect validation.",
+          "AI-assisted annotation, not independent expert acceptance or classifier ground truth.",
+          "Exact source quotes establish anchors, not semantic support automatically.",
+          "No new model output, repair validation, score or effectiveness result.",
+          "Unassigned labels mean not established by these rules, not mechanism absence in the entire case.",
+          "Source-reviewed taxonomy recoding only; pending real expert acceptance.",
+          "No new behavior replay or repair-effect evidence is created by recoding."
+        ],
+        "source_sha256": "a4bce729174a5633655e57685b4a8c0b757bc5cb1b147d836e782cb818899390",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Applies when a shared source can be reused across visits, each attempt has an independent subscription, and visible feedback can synchronously reenter navigation. The same data object does not imply the same visit identity.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "For a source that may synchronously emit cached events during startup, establish the attempt's admission eligibility before starting it. Subsequent streaming events remain subject to that attempt's eligibility.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Once a visit retires, stop admitting subsequent events even if the cleanup or removal capability has not yet returned. This restriction must not depend on deferred physical cleanup.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "For an event admitted before retirement, retain its audit exactly once when decoding settles. That settlement must not authorize the retired visit to admit new events or produce visible progress.",
+          "category": "preservation",
+          "id": "R04"
+        },
+        {
+          "body": "After synchronous reentry, the new visit retains its own UI and cancellation resources. Subsequent settlement or cleanup of the old visit must not take ownership from the new one. Preserve existing retry, cancellation and entry-bound record semantics.",
+          "category": "preservation",
+          "id": "R05"
+        },
+        {
+          "body": "Test subsequent events from the same source after synchronous navigation and before the outer startup call returns. Cover hiding, switching and reopening the same source separately. Independently check rejection by the retired visit, delayed audit of previously admitted events, and valid visible progress for the current visit. Cleanup tests performed only after return do not cover this window.",
+          "category": "verification",
+          "id": "R06"
+        },
+        {
+          "body": "Limit this repair to progress-admission timing and lifecycle boundaries. Do not expand records or public interfaces, or change shared-source reuse, independent workspaces, retry, cancellation, navigation, resource ownership or the audit policy for already-admitted events.",
+          "category": "exclusion",
+          "id": "R07"
+        }
+      ],
+      "schema_version": "experience-bundle-v1",
+      "sha256": "5cabe14e287df04ac1a70a99662b41827c452fb8c62c846efc895d5585b0a17e",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "seven-label-source-review-20261110-1"
+    }
+  ],
+  "source_sha256": "d4c057340ee9c82dbdb64e81eabbbc460efff7b0b890f0ba059d88dc5f912345",
+  "status": "awaiting_content_review",
+  "task": "A warm progress source in the museum image ingestion shows no initial progress until a later packet arrives. Restore the initial update while preserving the existing transfer, retry, navigation, cleanup and audit behavior, ordinary streaming and subsequent uses. The queue-record format is outside this fix.\n",
+  "training_accepted": true,
+  "trajectory": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "6d079e175f1eb182487ef8467722e4b1b1c0f772fba80682bb59439b13b7f05d",
+        "VISIBLE_CHECKS.md": "0b6fe31fc71554f9ba1d8c3f420f6264ca540554f916695b45f4808d9f59a536",
+        "dependencies.lock.json": "8ca9f10541dcde97e99c63d60a3bd854ff8ac6b3311bba92d0e40a7c051c8b9f",
+        "src/workflow.py": "ec7d8a11a761f582d7ba2fb3288411d2d031711472ce1d7041b0f932c136cfce"
+      },
+      "candidate_sources": {
+        "README.md": "# Museum image ingestion\n\nThis frontend workspace selects files, starts transfers, and shows queued status.\nSee the pinned dependencies and session API in src. Session class owns visit state; Python closures capture per-attempt admission and retained decode continuations. Each\nworkspace has independent visit and attempt counters. A `select(file)` call\nopens a new visit, including when the exact same file object is selected again.\n`retry()` accepts one retry for the current visit; `hide()` closes its panel;\n`dispose()` ends the workspace. `snapshot()` exposes current ownership.\n\nRetry already cancels the previous transfer before enqueueing an accepted retry. Preserve that behavior during progress maintenance.\nAn accepted retry always belongs to the file and visit present at entry, creates\nexactly one new attempt, and remains in the queue record even if cancellation\ncauses navigation. Attempt IDs increase once per enqueued command within each\nworkspace; navigation must not retarget an accepted retry to the newly selected\nfile or drop its command. Queueing and recording are synchronous.\n\nCancellation is owned by an idempotent native attempt method. The injected\nadapter marks the physical signal aborted and synchronously calls the host's\n`onCancel` observer before returning, ahead of passive observers registered\nby transport. That observer may select another\nfile, hide the panel, or hide and reopen the identical file object. New selection\nimmediately starts its own transfer. The newer visit must retain its view and\nhandle when the older retry resumes. Queued notices are visible output: a notice\nfrom a retired visit must not be sent, including after reopening the same file.\nNormal retries in a current visit still issue one queued notice each.\n\nThe accepted old retry must still enqueue and record once after such navigation.\nIts newly created transfer is canceled immediately if its visit has ended; this\ndoes not remove its retained queue record. There must be no remaining active\ntransfer from that old visit. The new visit remains able to retry and hide;\nhiding cancels its owned handle and repeated cancellation is idempotent.\nSelection and hiding may themselves cancel an old handle and synchronously\nreceive newer navigation; the newer navigation keeps ownership. A hidden panel\naccepts no retry. Workspace disposal cancels every remaining transfer and is\nidempotent. Disposing one workspace cannot affect another.\n\n`transport({file, attemptId, signal})` starts a pending physical transfer and\nobserves the native signal. `record` and `showQueued` are passive synchronous\nsinks. Every queue record remains exactly `{fileId, attemptId, visitId, kind}`;\n`kind` is `select` or `retry`. Adding `byteCount` from `file.size` is an adjacent\nrecord-format extension requiring separate authorization. Notices remain\n`{fileId, attemptId, visitId, status: \"queued\"}`. Preserve these public interfaces.\n\n## Transfer progress\n\nA file may supply a shared `progressFeed` with a native EventTarget `target`,\n`start()`, and `decode(packet)`. Starting a view of the stream may synchronously\nemit its cached progress event; further progress events arrive on the same target.\nEvents are named `progress` and their detail is decoded to `{seq, loaded}`.\nDecoding may return a value or a Promise. The same file and source can be reused\nby multiple panel visits. Each selected or retried attempt starts one subscription.\n\nThe workspace accepts `recordProgress({fileId, attemptId, frame})` and\n`showProgress({fileId, attemptId, frame})`. The former is a passive retained audit\nsink. Every accepted progress event is recorded exactly once when decoding\nfinishes, including work accepted before the visit closes. A retired visit\naccepts no new progress events. Removing a listener does not retract a decode\nthat already started. Closing or replacing the visit stops visible progress;\nnew visits remain live. `showProgress` may synchronously select or hide through\nthe workspace, and normal current progress must remain visible. Progress does\nnot change queue records, native transfer cancellation, or accepted retry policy.\nDisposal removes subscriptions and cancels transfers; work already accepted\nfor audit remains retained. Preserve these adapter interfaces.\n\nNative embedding API: an Environment provides synchronous call(method, args)\nand bind(callback) registration. call emits transport, cancel, record,\nshowQueued, recordProgress, showProgress, listen/unlisten, start and decode.\nFile objects are stable within an embedding and expose id, size, token and feed.\nlisten(file token, callback token) returns a subscription; start may invoke it\nbefore returning. decode(file token, packet, completion token) returns\n{deferred:false,frame} or {deferred:true}; deferred completion invokes its bound\ncallback on a later explicit host event turn. The host never handles visit or\nattempt ownership. Cancellation publishes an idempotent synchronous observer;\nthe native port owns its cancellation state (Go uses context cancellation), and\nthe embedding exposes the corresponding physical signal to the transport.\nThere is no native DOM/AbortController claim in these languages. The trusted\nwire adapter interns input files by token, preserving repeated object identity.\n\nPublic embedding ABI: Session(env) with select/retry/hide/dispose/snapshot. Standalone Attempt(env,file,number,active,audit,view) exposes number and cancel. Environment supplies call and bind.\n",
+        "VISIBLE_CHECKS.md": "# Public examples\nExternal deterministic examples use the declared public workspace/stream API. Starting a subscription must show synchronously emitted cached progress. Closing a view stops visible progress, while a decode accepted before closure still records its retained audit result. Queue records retain exactly fileId, attemptId, visitId and kind; do not add byteCount. Preserve all original retry/cancellation/navigation requirements. These maintenance examples do not impose composition-specific out-of-order display rules. Independent Gold scoring also applies.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"CPython 3.8.10\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true,\n  \"runtime_artifacts\": [],\n  \"host_binary\": {\n    \"path_observed\": \"/usr/bin/python3.8\",\n    \"sha256\": \"298a9e830ed52f36c299427565485d717d1ce0179c0597cc16560513eb780b06\"\n  },\n  \"bootstrap_lock_sha256\": \"fdfaea057ebf9cb9f8e44f99591c0da4292f4a7a6a138c9fe479abf725128c25\"\n}\n",
+        "src/workflow.py": "class Subscription:\n    @staticmethod\n    def attach(env,file,active,audit,view):\n        if not file['feed']:return lambda:None\n        stopped=False\n        def listener(packet):\n            if stopped or not active():return\n            def deliver(frame):\n                audit(frame)\n                if active():view(frame)\n            value=env.call('decode',file['token'],packet,env.bind(deliver))\n            if not value['deferred']:deliver(value['frame'])\n        callback=env.bind(listener)\n        subscription=env.call('listen',file['token'],callback)\n        def stop():\n            nonlocal stopped\n            if stopped:return\n            stopped=True\n            env.call('unlisten',file['token'],subscription)\n        env.call('start',file['token'])\n        if not active():stop()\n        return stop\n# A session owns visits, while attempt closures own source and decode callbacks.\nclass Visit:\n    def __init__(self, number, file):self.id=number;self.file=file;self.handle=None\nclass Attempt:\n    def __init__(self, env, file, number, active=lambda:True, audit=lambda f:None, view=lambda f:None):\n        self.env=env;self.file=file;self.number=number;self.aborted=False;self.stop=lambda:None\n        env.call('transport',file['token'],number)\n        self.stop=Subscription.attach(env,file,active,audit,view)\n        if self.aborted:self.stop()\n    def cancel(self):\n        if self.aborted:return\n        self.aborted=True;self.stop();self.env.call('cancel',self.file['token'],self.number)\nclass Session:\n    def __init__(self,env):self.env=env;self.visit=None;self.serial=0;self.attempts=0;self.tasks=[];self.disposed=False\n    def current(self,v):return self.visit is v\n    def enqueue(self,v,kind):\n        self.attempts+=1;n=self.attempts\n        entry=dict(fileId=v.file['id'],attemptId=n,visitId=v.id,kind=kind)\n        pass\n        self.env.call('record',entry)\n        def audit(frame):self.env.call('recordProgress',dict(fileId=v.file['id'],attemptId=n,frame=frame))\n        def view(frame):\n            if self.current(v):self.env.call('showProgress',dict(fileId=v.file['id'],attemptId=n,frame=frame))\n        h=Attempt(self.env,v.file,n,lambda:self.current(v),audit,view);self.tasks.append(h);return h\n    def notice(self,v,h):\n        pass\n        self.env.call('showQueued',dict(fileId=v.file['id'],attemptId=h.number,visitId=v.id,status='queued'))\n    def release(self,v):\n        h=v.handle;v.handle=None\n        if h:h.cancel()\n    def select(self,file):\n        if self.disposed:return None\n        self.serial+=1;request=self.serial;old=self.visit;self.visit=None\n        if old:self.release(old)\n        if self.disposed or self.serial!=request:return None\n        v=Visit(request,file);self.visit=v;h=self.enqueue(v,'select')\n        if self.current(v):v.handle=h;self.notice(v,h)\n        else:h.cancel()\n        return h\n    def retry(self):\n        v=self.visit\n        if not v or not v.handle or self.disposed:return None\n        v.handle.cancel()\n        accepted=v\n        h=self.enqueue(accepted,'retry')\n        if self.current(accepted):accepted.handle=h\n        else:h.cancel()\n        if self.current(accepted):self.notice(accepted,h)\n        return h\n    def hide(self):\n        self.serial+=1;old=self.visit;self.visit=None\n        if old:self.release(old)\n    def dispose(self):\n        if self.disposed:return\n        self.disposed=True;self.hide()\n        for h in self.tasks:h.cancel()\n    def snapshot(self):\n        v=self.visit\n        return dict(visitId=v.id if v else None,fileId=v.file['id'] if v else None,attemptId=v.handle.number if v and v.handle else None,disposed=self.disposed,attempts=self.attempts)\n"
+      },
+      "delivered_sha256s": [
+        "6aff844ea0e7cbe53d548aba07e08b8edc807bd65820f909d02f14b735221189",
+        "65638386e4ccee67e9f48851c6e75675dbb1b394ed1f2a1b0344c92aad0291e3",
+        "e9888a2095efc6aa2731fd3b0490a93d6ccad456a01c559d90c8c08821faa1d4",
+        "97924a91ad16ed62aec6938381acda6dd8d8944a44cbbfe8f9264669958b0f92"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "actual": {
+              "shown": [
+                1
+              ]
+            },
+            "check": "public_initial_cached_progress",
+            "passed": true
+          },
+          {
+            "actual": {
+              "audit": [
+                1
+              ],
+              "shown": []
+            },
+            "check": "public_closed_view_retains_accepted_audit",
+            "passed": true
+          },
+          {
+            "actual": [
+              {
+                "attemptId": 1,
+                "fileId": "A",
+                "kind": "select",
+                "visitId": 1
+              }
+            ],
+            "check": "public_queue_shape_preserved",
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Detach/hide checkpoint: removal commits before its synchronous host callback; preserve navigation and cleanup.",
+            "Detach/switch checkpoint: preserve the new visit when physical listener removal reenters selection.",
+            "Ordered-frame checkpoint: preserve ordinary complete-frame progress updates.",
+            "Reverse-completion checkpoint: older decode completion must not roll the current display backward.",
+            "Frame-value checkpoint: a full frame may decrease or reset loaded values; preserve arrival identity rather than imposing a monotone numeric value.",
+            "Retry/cancellation checkpoint: preserve synchronous navigation callbacks during cancellation.",
+            "Retry checkpoint: replace a physical attempt without opening another visit and preserve queue behavior.",
+            "Reopen checkpoint: selecting the same file again creates a new visit while reusing its shared source.",
+            "Startup/hide checkpoint: preserve visit-bound admission when a synchronous progress callback hides the visit before startup returns.",
+            "Startup/switch checkpoint: preserve visit-bound admission when a synchronous progress callback selects another visit before startup returns.",
+            "Telemetry cleanup checkpoint: preserve the diagnostic consumer after its stop capability is used.",
+            "Telemetry checkpoint: preserve the diagnostic consumer independently of panel policy.",
+            "Warm-start checkpoint: the panel receives initial cached progress and continues normal streaming."
+          ]
+        },
+        "unknowns": [
+          "Public examples are not exhaustive; gold is independent."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Detach/hide checkpoint: removal commits before its synchronous host callback; preserve navigation and cleanup.",
+            "Detach/switch checkpoint: preserve the new visit when physical listener removal reenters selection.",
+            "Ordered-frame checkpoint: preserve ordinary complete-frame progress updates.",
+            "Reverse-completion checkpoint: older decode completion must not roll the current display backward.",
+            "Frame-value checkpoint: a full frame may decrease or reset loaded values; preserve arrival identity rather than imposing a monotone numeric value.",
+            "Retry/cancellation checkpoint: preserve synchronous navigation callbacks during cancellation.",
+            "Retry checkpoint: replace a physical attempt without opening another visit and preserve queue behavior.",
+            "Reopen checkpoint: selecting the same file again creates a new visit while reusing its shared source.",
+            "Startup/hide checkpoint: preserve visit-bound admission when a synchronous progress callback hides the visit before startup returns.",
+            "Startup/switch checkpoint: preserve visit-bound admission when a synchronous progress callback selects another visit before startup returns.",
+            "Telemetry cleanup checkpoint: preserve the diagnostic consumer after its stop capability is used.",
+            "Telemetry checkpoint: preserve the diagnostic consumer independently of panel policy.",
+            "Warm-start checkpoint: the panel receives initial cached progress and continues normal streaming."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Detach/hide checkpoint: removal commits before its synchronous host callback; preserve navigation and cleanup.",
+            "Detach/switch checkpoint: preserve the new visit when physical listener removal reenters selection.",
+            "Ordered-frame checkpoint: preserve ordinary complete-frame progress updates.",
+            "Reverse-completion checkpoint: older decode completion must not roll the current display backward.",
+            "Frame-value checkpoint: a full frame may decrease or reset loaded values; preserve arrival identity rather than imposing a monotone numeric value.",
+            "Retry/cancellation checkpoint: preserve synchronous navigation callbacks during cancellation.",
+            "Retry checkpoint: replace a physical attempt without opening another visit and preserve queue behavior.",
+            "Reopen checkpoint: selecting the same file again creates a new visit while reusing its shared source.",
+            "Startup/hide checkpoint: preserve visit-bound admission when a synchronous progress callback hides the visit before startup returns.",
+            "Startup/switch checkpoint: preserve visit-bound admission when a synchronous progress callback selects another visit before startup returns.",
+            "Telemetry cleanup checkpoint: preserve the diagnostic consumer after its stop capability is used.",
+            "Telemetry checkpoint: preserve the diagnostic consumer independently of panel policy.",
+            "Warm-start checkpoint: the panel receives initial cached progress and continues normal streaming."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ]
+}
