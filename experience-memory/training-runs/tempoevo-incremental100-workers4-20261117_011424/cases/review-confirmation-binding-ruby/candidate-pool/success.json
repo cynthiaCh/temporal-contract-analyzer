@@ -1,0 +1,782 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/workflow.rb\n+++ candidate/src/workflow.rb\n@@ -65,7 +65,7 @@\n     @current = nil\n     @env.store.stop(leaving.token) if leaving\n     @env.output('document', nil)\n-    \n+    leaving.task.flush if leaving\n   end\n   def open(id)\n     id = id.dup.freeze\n@@ -73,7 +73,7 @@\n     @navigation += 1\n     request = @navigation\n     retire\n-    \n+    return unless request == @navigation\n     token = @env.store.subscribe { |event| @env.output('status', event) if event[:id] == id }\n     task = Trailing.new(@env, 120) { |text| @env.write(id, text) }\n     @current = CatalogVisit.new(id, @env.store.read(id), token, task)\n@@ -83,7 +83,7 @@\n     return unless @current\n     text = text.dup.freeze\n     @current.text = text\n-    @env.write(@current.id, text)\n+    @current.task.push(text)\n   end\n   def close\n     @env.output('notice', nil)\n@@ -95,12 +95,8 @@\n     visit = @current\n     return nil unless visit\n     snapshot = {id: visit.id, text: visit.text}\n-    \n-    \n-    \n-    \n+    visit.task.flush\n     receipt = @env.capture(snapshot)\n-    \n     confirmation.show(receipt)\n     receipt\n   end\n",
+        "from_previous": "--- previous/src/workflow.rb\n+++ candidate/src/workflow.rb\n@@ -65,7 +65,7 @@\n     @current = nil\n     @env.store.stop(leaving.token) if leaving\n     @env.output('document', nil)\n-    \n+    leaving.task.flush if leaving\n   end\n   def open(id)\n     id = id.dup.freeze\n@@ -73,7 +73,7 @@\n     @navigation += 1\n     request = @navigation\n     retire\n-    \n+    return unless request == @navigation\n     token = @env.store.subscribe { |event| @env.output('status', event) if event[:id] == id }\n     task = Trailing.new(@env, 120) { |text| @env.write(id, text) }\n     @current = CatalogVisit.new(id, @env.store.read(id), token, task)\n@@ -83,7 +83,7 @@\n     return unless @current\n     text = text.dup.freeze\n     @current.text = text\n-    @env.write(@current.id, text)\n+    @current.task.push(text)\n   end\n   def close\n     @env.output('notice', nil)\n@@ -95,12 +95,8 @@\n     visit = @current\n     return nil unless visit\n     snapshot = {id: visit.id, text: visit.text}\n-    \n-    \n-    \n-    \n+    visit.task.flush\n     receipt = @env.capture(snapshot)\n-    \n     confirmation.show(receipt)\n     receipt\n   end\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [],
+        "coverage": [
+          {
+            "path": "src/workflow.rb",
+            "status": "unsupported_language"
+          }
+        ],
+        "events": [],
+        "findings": [],
+        "limitations": [
+          "Syntax facts, candidate call links and review hints are not verified contracts, bugs, severity or difficulty scores.",
+          "API names are clues. Types, aliases, control flow, dynamic dispatch and callback targets are not fully resolved.",
+          "Local order is lexical order within a block; branches, exceptions, loops, short-circuiting and execution remain unchecked.",
+          "await may suspend; cancellation does not imply completed work or cleanup. Listener removal does not cancel work already started.",
+          "if/try/finally syntax does not prove adequate protection. The absence of hints does not imply safety.",
+          "No hidden scorers, reference patches, model results or human profiles are read. Operators must verify input provenance."
+        ],
+        "relations": [],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "partial",
+        "target_definitions": []
+      },
+      "sources": {
+        "README.md": "# Library acquisition review\n\n\nThe workspace edits persistent documents and submits snapshots to a review queue.\nThe public API is synchronous: open(id), edit(text), close(), submit(), dispose().\nReturning to a document creates a fresh editor visit and restores persisted text.\nThe adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable.\n\nThe coordinator owns editor visits; the acquired confirmation capability owns a view outlet. The document repository and durable queue are separate services. Component or native source defines the local service contracts.\nTheir local interface contracts define the behavior to preserve.\n\nThe injected store has read/write/subscribe, the queue has enqueue/list/subscribe,\nand timers have schedule(callback, delay)/cancel(handle). Render functions are\noutput sinks and do not call application code. Keep the workspace API and these\ninjected interfaces. A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace.\n\nStruct editor visit and block-driven batching; confirmation capability and receipt record separate view/resource ownership.\n\nAn outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity. Native RPC only adapts timer and passive output/integration resource calls; storage, queue delivery, acquired outlet and command state execute in the target runtime.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Ruby 2.7.0\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "src/workflow.rb": "# A catalog editing visit carries the block that owns its eventual write.\nclass Store\n  def initialize(records)\n    @records = records.each_with_object({}) { |(id, text), copy| copy[id.dup.freeze] = text.dup.freeze }\n    @listeners, @serial, @revision = {}, 0, 0\n  end\n  def read(id); @records.fetch(id, '').dup.freeze; end\n  def subscribe(&block)\n    @serial += 1\n    @listeners[@serial] = block\n    @serial\n  end\n  def stop(token); @listeners.delete(token); end\n  def write(id, text)\n    @records[id] = text.dup.freeze\n    @revision += 1\n    event = {id: id.dup.freeze, text: @records[id], revision: @revision}\n    @listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }\n    event\n  end\nend\nclass Archive\n  def initialize; @receipts = [];@listeners={};@serial=0;end\n  def capture(snapshot)\n    receipt = {id: snapshot['id'].dup.freeze, text: snapshot['text'].dup.freeze}.freeze\n    @receipts << receipt\n    @listeners.to_a.each{|token,fn|fn.call(receipt) if @listeners.key?(token)}\n    receipt\n  end\n  def subscribe(&fn);@serial+=1;@listeners[@serial]=fn;@serial;end\n  def stop(token);@listeners.delete(token);end\n  def list; @receipts.map(&:dup); end\nend\nclass Trailing\n  def initialize(env, delay, &work)\n    @env, @delay, @work = env, delay, work\n    @handle = @pending = nil\n  end\n  def push(value)\n    @env.cancel(@handle) unless @handle.nil?\n    @pending = value\n    @handle = @env.schedule(@delay) { flush }\n  end\n  def flush\n    @env.cancel(@handle) unless @handle.nil?\n    value = @pending\n    @handle = @pending = nil\n    @work.call(value) unless value.nil?\n  end\n  def cancel\n    @env.cancel(@handle) unless @handle.nil?\n    @handle = @pending = nil\n  end\nend\nclass Confirmation\n  def initialize(current,emit);@current,@emit=current,emit;@owner=current.call;end\n  def active;!@owner.nil?&&@owner.equal?(@current.call);end\n  def show(receipt);@emit.call(receipt) if active;end\nend\nCatalogVisit = Struct.new(:id, :text, :token, :task)\nclass Workspace\n  def initialize(env); @env, @current, @navigation = env, nil, 0; end\n  def retire\n    leaving = @current\n    @current = nil\n    @env.store.stop(leaving.token) if leaving\n    @env.output('document', nil)\n    \n  end\n  def open(id)\n    id = id.dup.freeze\n    @env.output('notice', nil)\n    @navigation += 1\n    request = @navigation\n    retire\n    \n    token = @env.store.subscribe { |event| @env.output('status', event) if event[:id] == id }\n    task = Trailing.new(@env, 120) { |text| @env.write(id, text) }\n    @current = CatalogVisit.new(id, @env.store.read(id), token, task)\n    @env.output('document', {id: id, text: @current.text})\n  end\n  def edit(text)\n    return unless @current\n    text = text.dup.freeze\n    @current.text = text\n    @env.write(@current.id, text)\n  end\n  def close\n    @env.output('notice', nil)\n    @navigation += 1\n    retire\n  end\n  def submit\n    confirmation=Confirmation.new(proc{@current},proc{|receipt|@env.output('notice',receipt)})\n    visit = @current\n    return nil unless visit\n    snapshot = {id: visit.id, text: visit.text}\n    \n    \n    \n    \n    receipt = @env.capture(snapshot)\n    \n    confirmation.show(receipt)\n    receipt\n  end\n  def dispose; close; end\nend\nclass Preview\n  def initialize(env)\n    @task = Trailing.new(env, 40) { |query| env.output('preview', {query: query}) }\n  end\n  def query(text); @task.push(text); end\n  def hide; @task.cancel; end\nend\n"
+      },
+      "task": "The library acquisition review editor currently writes on every keystroke. Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst. Subsequent bursts must continue to save. Preserve other supported behavior and the synchronous public interfaces. The adjacent search preview is outside this maintenance change.\n"
+    },
+    "source_sha256": "231bc80b0b647b3f45aaa77b848692e562d318f951ae1c9d669b09f1da1ebe49",
+    "task_id": "review-confirmation-binding-ruby"
+  },
+  "experience": {
+    "excludes": [
+      "discard_boundary_policy"
+    ],
+    "labels": [
+      "O",
+      "L",
+      "I",
+      "F",
+      "A"
+    ],
+    "limitations": [
+      "The supplied source does not expose integration detachment facilities. README.md states \"Dispose detaches integrations before closing the workspace.\" Preserve that ordering where those facilities exist; do not invent an adapter API.",
+      "Timer exception behavior and cancellation races are unspecified. The supplied Store.stop deletes a subscription without invoking application callbacks; callback-capable cleanup is not established here.",
+      "Attempt 1 passed the reported checks, but no behavioral observations were supplied. This does not establish causality, exhaustive correctness, or cross-task effectiveness."
+    ],
+    "requires": [
+      "deferred_batch",
+      "boundary_persistence",
+      "inline_reentry",
+      "entry_snapshot"
+    ],
+    "rules": [
+      {
+        "body": "Apply when introducing trailing persistence into a synchronous editor whose save listeners can navigate. TASK requires \"after a 120 ms quiet interval write only the latest text in that editing burst. Subsequent bursts must continue to save.\" README.md requires \"Returning to a document creates a fresh editor visit and restores persisted text.\" These requirements make persistence boundaries and visit identity part of preserving supported behavior.",
+        "category": "applicability"
+      },
+      {
+        "body": "Keep the visit's immutable in-memory text current immediately, then push it into that visit's reusable trailing task. Preserve pending edits at departure and before submission capture rather than canceling them. Preserve the utility's clearing of pending state before invoking work: src/workflow.rb contains \"    @handle = @pending = nil\\n    @work.call(value) unless value.nil?\" This allows edits admitted by a save callback to form an independent subsequent batch.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Capture the departing visit and remove its current ownership before flushing its pending save. Finish its passive clearing output before the flush, or guard remaining output after callbacks. Complete cleanup using the captured visit. After departure, an outer open must recheck its navigation request before installing its destination. Saving is callback-capable: src/workflow.rb states \"    @listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }\" Nested navigation, edits, subscriptions and rendering must remain authoritative.",
+        "category": "event_relation"
+      },
+      {
+        "body": "For submission, capture the selected visit, its snapshot and its confirmation capability before flushing pending persistence. Flush before archive capture, then return the receipt even if navigation suppresses its notice. Recheck the originating visit immediately before notice output, including after archive listeners run. README.md states \"An outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity.\" src/workflow.rb enforces identity with \"  def active;!@owner.nil?&&@owner.equal?(@current.call);end\".",
+        "category": "event_relation"
+      },
+      {
+        "body": "Preserve synchronous public interfaces, immutable text copies, subscription delivery and fresh visits, including reopening the same document ID. Preserve the null result when no editor is selected and receipt delivery independently of notice permission. Leave preview scheduling and cancellation unchanged: TASK states \"Preserve other supported behavior and the synchronous public interfaces. The adjacent search preview is outside this maintenance change.\"",
+        "category": "preservation"
+      },
+      {
+        "body": "Do not let a successful receipt authorize output for a retired visit, use document ID equality as visit identity, or assume that code after a save still owns navigation. A guard on final installation alone does not protect stale clearing output. Apply the current task's explicit boundary policy; this guidance does not require flushing work that another contract explicitly discards.",
+        "category": "exclusion"
+      },
+      {
+        "body": "Check several edits within 120 ms yield one latest-text write and a later burst saves again. Check close, switch, same-document reopening and disposal preserve pending text. During timer-driven, departure-driven and submission-driven saves, have a store listener open or close the workspace and edit the resulting visit; verify the outer continuation preserves that visit and its pending batch. During submission, navigate from both store and archive listeners; verify the original snapshot and returned receipt survive while stale notices are suppressed. Also check no-selection submission, subscription delivery, and the unchanged 40 ms preview and hide behavior.",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "Multiple edits within 120 ms produce one write containing the latest text; another burst produces another write.",
+      "Leaving and reopening a document preserves its latest edited text and creates a fresh visit.",
+      "Submission preserves the selected snapshot and returns its receipt, including when store or archive listeners synchronously navigate.",
+      "Navigation during a departure write cannot cause the outer navigation to replace or clear the newer visit.",
+      "Preview queries still publish after 40 ms, and hiding cancels unpublished preview work."
+    ],
+    "forbidden_effects": [
+      "Writing on each keystroke instead of coalescing the burst.",
+      "Losing pending edits on close, document switch, submission, or disposal.",
+      "Allowing an old visit's delayed work or continuation to overwrite ownership or output established by nested navigation.",
+      "Displaying a submission notice for a visit that is no longer current.",
+      "Changing preview behavior, public synchronous interfaces, tests, or configuration."
+    ],
+    "lifecycle_identity": [
+      "Each CatalogVisit instance represents a distinct editing visit, including reopening the same document ID.",
+      "A pending save belongs to the visit and document that admitted its edits.",
+      "Confirmation captures the current visit when constructed and permits display only while that identical visit remains current.",
+      "The existing navigation counter can distinguish an outer navigation request from a later reentrant request."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Route editor edits through the visit's 120 ms trailing task, keeping visit.text current immediately and writing only the latest text after the quiet interval."
+      },
+      {
+        "id": "O2",
+        "text": "Keep the trailing task reusable so subsequent editing bursts continue to save."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve persistence at existing synchronous boundaries: settle a departing visit's pending edits before departure completes, and settle selected pending edits before delivering its submission to archive listeners. Preserve latest text when returning to a document."
+      },
+      {
+        "id": "O4",
+        "text": "Treat store writes and archive capture as callback-capable boundaries. Preserve nested navigation and edits, clean up captured old resources, and recheck navigation authority before an outer open installs its destination."
+      },
+      {
+        "id": "O5",
+        "text": "Bind submission confirmation to the originating visit before callback-capable save or capture work. Return the archive receipt even if navigation suppresses its notice; return null when no visit is selected."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve store and archive subscription delivery, immutable text copies, fresh visits, documented disposal ordering, and the synchronous workspace API. Leave the adjacent preview outside the maintenance change."
+      }
+    ],
+    "ordering_barriers": [
+      "Update the selected visit's in-memory text before scheduling its save.",
+      "Settle pending selected text before archive capture invokes listeners, preserving the previously observable persisted state at submission.",
+      "Publish retirement of the old visit before callback-capable departure work; ensure remaining old-view output cannot clear a newer view installed by those callbacks.",
+      "After departure callbacks, verify that the outer open still owns its navigation request before installing a visit.",
+      "Check confirmation ownership after archive callbacks and immediately before notice output.",
+      "Preserve the documented requirement that disposal detaches integrations before closing."
+    ],
+    "preservation": [
+      "Previously, edit synchronously persisted text before returning; batching intentionally changes ordinary edit timing, but must preserve persisted text across departure, reopening, and submission.",
+      "Store.write and Archive.capture synchronously notify still-subscribed listeners. Those callbacks may reenter the public workspace API.",
+      "Trailing.flush clears its pending state before invoking work, allowing callback-generated subsequent work to remain independent.",
+      "Render functions are passive output sinks.",
+      "Preview retains its existing 40 ms scheduling and cancellation behavior."
+    ],
+    "scope": [
+      "Draft contract only; no file modifications.",
+      "Business change concerns Workspace editor batching and necessary lifecycle handling in src/workflow.rb.",
+      "Normative evidence is limited to TASK and the supplied public README and source."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst. Subsequent bursts must continue to save."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve other supported behavior and the synchronous public interfaces. The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "Returning to a document creates a fresh editor visit and restores persisted text."
+      },
+      {
+        "file": "README.md",
+        "quote": "A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace."
+      },
+      {
+        "file": "README.md",
+        "quote": "An outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity."
+      },
+      {
+        "file": "README.md",
+        "quote": "Render functions are\noutput sinks and do not call application code."
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "    @current.text = text\n    @env.write(@current.id, text)"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "    @listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "    @listeners.to_a.each{|token,fn|fn.call(receipt) if @listeners.key?(token)}"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "    @handle = @pending = nil\n    @work.call(value) unless value.nil?"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "  def active;!@owner.nil?&&@owner.equal?(@current.call);end\n  def show(receipt);@emit.call(receipt) if active;end"
+      }
+    ],
+    "triggers": [
+      "Editing a selected document.",
+      "Expiration of the 120 ms quiet interval.",
+      "Opening another document, reopening the same document, closing, or disposing with pending edits.",
+      "Submitting with or without a selected editor.",
+      "Synchronous reentry from store or archive listeners."
+    ],
+    "unknowns": [
+      "The supplied source does not define the environment adapter or integration-detachment facilities; their concrete implementation cannot be specified from this evidence.",
+      "Exception handling and timer cancellation behavior beyond the supplied interfaces are unspecified.",
+      "Workspace reads were blocked by the execution environment, so this contract uses the public source text supplied in the request."
+    ]
+  },
+  "final_training_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "Multiple edits within 120 ms produce one write containing the latest text; another burst produces another write.",
+      "Leaving and reopening a document preserves its latest edited text and creates a fresh visit.",
+      "Submission preserves the selected snapshot and returns its receipt, including when store or archive listeners synchronously navigate.",
+      "Navigation during a departure write cannot cause the outer navigation to replace or clear the newer visit.",
+      "Preview queries still publish after 40 ms, and hiding cancels unpublished preview work."
+    ],
+    "forbidden_effects": [
+      "Writing on each keystroke instead of coalescing the burst.",
+      "Losing pending edits on close, document switch, submission, or disposal.",
+      "Allowing an old visit's delayed work or continuation to overwrite ownership or output established by nested navigation.",
+      "Displaying a submission notice for a visit that is no longer current.",
+      "Changing preview behavior, public synchronous interfaces, tests, or configuration."
+    ],
+    "lifecycle_identity": [
+      "Each CatalogVisit instance represents a distinct editing visit, including reopening the same document ID.",
+      "A pending save belongs to the visit and document that admitted its edits.",
+      "Confirmation captures the current visit when constructed and permits display only while that identical visit remains current.",
+      "The existing navigation counter can distinguish an outer navigation request from a later reentrant request."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Route editor edits through the visit's 120 ms trailing task, keeping visit.text current immediately and writing only the latest text after the quiet interval."
+      },
+      {
+        "id": "O2",
+        "text": "Keep the trailing task reusable so subsequent editing bursts continue to save."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve persistence at existing synchronous boundaries: settle a departing visit's pending edits before departure completes, and settle selected pending edits before delivering its submission to archive listeners. Preserve latest text when returning to a document."
+      },
+      {
+        "id": "O4",
+        "text": "Treat store writes and archive capture as callback-capable boundaries. Preserve nested navigation and edits, clean up captured old resources, and recheck navigation authority before an outer open installs its destination."
+      },
+      {
+        "id": "O5",
+        "text": "Bind submission confirmation to the originating visit before callback-capable save or capture work. Return the archive receipt even if navigation suppresses its notice; return null when no visit is selected."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve store and archive subscription delivery, immutable text copies, fresh visits, documented disposal ordering, and the synchronous workspace API. Leave the adjacent preview outside the maintenance change."
+      }
+    ],
+    "ordering_barriers": [
+      "Update the selected visit's in-memory text before scheduling its save.",
+      "Settle pending selected text before archive capture invokes listeners, preserving the previously observable persisted state at submission.",
+      "Publish retirement of the old visit before callback-capable departure work; ensure remaining old-view output cannot clear a newer view installed by those callbacks.",
+      "After departure callbacks, verify that the outer open still owns its navigation request before installing a visit.",
+      "Check confirmation ownership after archive callbacks and immediately before notice output.",
+      "Preserve the documented requirement that disposal detaches integrations before closing."
+    ],
+    "preservation": [
+      "Previously, edit synchronously persisted text before returning; batching intentionally changes ordinary edit timing, but must preserve persisted text across departure, reopening, and submission.",
+      "Store.write and Archive.capture synchronously notify still-subscribed listeners. Those callbacks may reenter the public workspace API.",
+      "Trailing.flush clears its pending state before invoking work, allowing callback-generated subsequent work to remain independent.",
+      "Render functions are passive output sinks.",
+      "Preview retains its existing 40 ms scheduling and cancellation behavior."
+    ],
+    "scope": [
+      "Draft contract only; no file modifications.",
+      "Business change concerns Workspace editor batching and necessary lifecycle handling in src/workflow.rb.",
+      "Normative evidence is limited to TASK and the supplied public README and source."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst. Subsequent bursts must continue to save."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve other supported behavior and the synchronous public interfaces. The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "Returning to a document creates a fresh editor visit and restores persisted text."
+      },
+      {
+        "file": "README.md",
+        "quote": "A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace."
+      },
+      {
+        "file": "README.md",
+        "quote": "An outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity."
+      },
+      {
+        "file": "README.md",
+        "quote": "Render functions are\noutput sinks and do not call application code."
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "    @current.text = text\n    @env.write(@current.id, text)"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "    @listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "    @listeners.to_a.each{|token,fn|fn.call(receipt) if @listeners.key?(token)}"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "    @handle = @pending = nil\n    @work.call(value) unless value.nil?"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "  def active;!@owner.nil?&&@owner.equal?(@current.call);end\n  def show(receipt);@emit.call(receipt) if active;end"
+      }
+    ],
+    "triggers": [
+      "Editing a selected document.",
+      "Expiration of the 120 ms quiet interval.",
+      "Opening another document, reopening the same document, closing, or disposing with pending edits.",
+      "Submitting with or without a selected editor.",
+      "Synchronous reentry from store or archive listeners."
+    ],
+    "unknowns": [
+      "The supplied source does not define the environment adapter or integration-detachment facilities; their concrete implementation cannot be specified from this evidence.",
+      "Exception handling and timer cancellation behavior beyond the supplied interfaces are unspecified.",
+      "Workspace reads were blocked by the execution environment, so this contract uses the public source text supplied in the request."
+    ]
+  },
+  "origin": "success",
+  "reflection_update": {
+    "change_summary": [
+      "Extend editor navigation guidance with reusable trailing batches and synchronous persistence boundaries.",
+      "Add snapshot and confirmation acquisition before callback-capable submission flushing.",
+      "Narrow callback claims to source-established listener delivery and retain documented disposal ordering as an adapter limitation."
+    ],
+    "failure_attribution": "not_applicable",
+    "operation": "revise",
+    "reason": "Revise the editor-navigation experience because its retirement and navigation guards directly apply, but its rules do not fully specify the batching and submission checkpoints supported by TASK, README.md and src/workflow.rb. The progress-decoding and startup experiences concern mechanisms not established here, so they are not merged. Attempt 1 illustrates the added checkpoints and has a reported passing verdict; no implementation failure or contradictory guidance is established.",
+    "supporting_attempts": [
+      1
+    ],
+    "target_sha256s": [
+      "092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce"
+    ]
+  },
+  "related_experiences": [
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "progress-subscriptions.json",
+            "sha256": "b314d6685cbe1d087c8b10b3ae825609e392550b08e30f9853332961c2caf1d3"
+          }
+        ]
+      },
+      "body_sha256": "42f058a65aa51e175c051051c4e731747683514b49f3f9d80d7d847f747004b0",
+      "excludes": [],
+      "id": "progress-audit-publication",
+      "labels": [
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "async_resume",
+        "effect_lifetimes"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "b314d6685cbe1d087c8b10b3ae825609e392550b08e30f9853332961c2caf1d3",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "The current contract retains history for admitted progress, while UI updates belong to the originating visit. Decoding may complete immediately or later.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Bind decoding to the visit and attempt that admitted it. On completion, retain the required number of history effects, then recheck visit validity before painting. History callbacks may also navigate, requiring another validity check.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Retain admitted audit effects and valid progress for the new visit. Listener removal alone does not cancel decoding already started.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Do not use one early validity check to control both auditing and display. Follow another task's explicit discard policy if it revokes the history obligation.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Complete decoding across hide, switch, retry and same-source reopening. Check history cardinality, no retired-panel painting and display permission after navigation in a history callback.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "8408b3e61f568b3bf778cffba33202d9f0ab2814dee553358ebd9340c56c2bcc",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "deferred-persistence.json",
+            "sha256": "f067f05890f4f941383afff0c0212a3cdd1c2ed9d245b98f6937ce47c7b51d6c"
+          }
+        ]
+      },
+      "body_sha256": "287efcb13d653ec39ccf630087f881d75c6e2a4fed77688ecacf4546f4290bdf",
+      "excludes": [],
+      "id": "editor-navigation-reentry",
+      "labels": [
+        "O",
+        "L",
+        "I"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "inline_reentry"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "f067f05890f4f941383afff0c0212a3cdd1c2ed9d245b98f6937ce47c7b51d6c",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Saving or subscription cleanup synchronously calls host listeners that may open another document or close the workspace.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Capture the old view and remove its current ownership. Finish final old-view effects, such as clearing its display, before callback-capable saving, or check authority for effects remaining after callbacks. An outer open rechecks its request identity after retirement.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Nested open/close, nested editing and the new view's rendering remain authoritative. Disposal also cleans up captured resources rather than clearing objects installed by a callback.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Protecting only final view installation can still leave a later stale clearing render. Do not require every host to detach first; notification order follows the current contract.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Invoke open/close inside listeners for timer-driven and departure-driven saves. Check document output, subscriptions and nested edits after the outer call returns, through both direct calls and actual unmounting.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "mechanisms.json",
+            "sha256": "8c88c4e5df607d26b1c2e08b3ac1a86577db5af9d46f312709181b0c88225e90"
+          }
+        ]
+      },
+      "body_sha256": "8979e4c3b764a5e219452dc890da92800198804205fc05c311fd5c71e19c1ab8",
+      "excludes": [],
+      "id": "retained-effects",
+      "labels": [
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "async_resume",
+        "effect_lifetimes"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "8c88c4e5df607d26b1c2e08b3ac1a86577db5af9d46f312709181b0c88225e90",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "The current contract retains an admitted history or audit effect after navigation while UI feedback belongs to the originating visit.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Keep admission, retained settlement and visible publication separate. Preserve each admitted audit effect according to its cardinality contract, then recheck the originating visit immediately before painting.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "A newer display or removal of a listener does not erase independently retained audit obligations. Recheck UI permission after callback-capable auditing.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Do not impose audit retention on a task that explicitly discards that work, or allow retained audit to authorize stale UI effects.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Complete admitted decoding after hide, switch and same-source reopening; check retained audit, no retired-owner painting and continuing current-owner delivery.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "400bfb327e36377e58b69db7d553f41d86540aec9544af478822c6c71de3a6df",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "progress-subscriptions.json",
+            "sha256": "277eaf07023c1ca98d0e8a547c0d64b3d123dd7b39d4dd646219f461637ae98c"
+          }
+        ]
+      },
+      "body_sha256": "47404e677d2db74b89dde5241647ba681f2f787d42424c85bc0a3ccf51922471",
+      "excludes": [],
+      "id": "progress-admission-window",
+      "labels": [
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "inline_reentry"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "277eaf07023c1ca98d0e8a547c0d64b3d123dd7b39d4dd646219f461637ae98c",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "One startup may emit multiple packets synchronously. Handling the first may hide the panel or open another visit before startup returns physical cleanup capability.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Check the originating visit and attempt before each packet enters decoding. Retirement immediately revokes later admission without waiting for physical listener removal.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Previously admitted packets settle under their separate audit and display contracts. The new visit receives bootstrap and later updates normally.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Zero listeners after cleanup does not establish correctness during startup. Do not confuse previously admitted work with packets arriving after retirement.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Hide, switch and reopen the same source from the first synchronous callback. Emit more packets before outer startup returns, and independently check rejection of new packets and settlement of admitted packets.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "380be240ad7e3783cd1238f8cae0230da3f5990659e5d6970f1016ac95d7b602",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "mechanisms.json",
+            "sha256": "3979271d455febd868bfb9348bc366c2e51cd7902a2a68ea4bf921d5df16d0f7"
+          }
+        ]
+      },
+      "body_sha256": "597ff9c7ac3545705f1e3c72993e3cec1043b710e7b12a433342e650d54ff211",
+      "excludes": [],
+      "id": "reentrant-ownership",
+      "labels": [
+        "O",
+        "L",
+        "I"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "inline_reentry"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "3979271d455febd868bfb9348bc366c2e51cd7902a2a68ea4bf921d5df16d0f7",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Startup, cleanup, saving or publication can synchronously reenter navigation and install a new owner.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Capture old resources and publish retirement before callback-capable work. Establish provisional cleanup ownership before startup where needed. After callbacks, recheck request and owner identity before installing a returned handle or publishing a destination.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Complete cleanup for captured old resources without clearing or taking ownership of a newer visit. Preserve the documented idempotent cleanup behavior.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Do not assume code after a synchronous callback still owns the current view. Do not hard-code one cleanup ordering when the current API requires a different order; guard remaining effects.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Exercise hide, switch and dispose inside startup, detachment and saving; check both resulting view and resource ownership after the outer call returns.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "020a49e031c6debee42b6737e3b521faebbb5394e908c26ddf24d6e2fc2d9892",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    }
+  ],
+  "source_sha256": "231bc80b0b647b3f45aaa77b848692e562d318f951ae1c9d669b09f1da1ebe49",
+  "status": "awaiting_content_review",
+  "task": "The library acquisition review editor currently writes on every keystroke. Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst. Subsequent bursts must continue to save. Preserve other supported behavior and the synchronous public interfaces. The adjacent search preview is outside this maintenance change.\n",
+  "training_accepted": true,
+  "trajectory": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "6eda541e4df32fd59fc16aed401ccf7ade1de72c1c1e66dada3a2706a52ca535",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "aa6391f16160fc4b20ab448e43aaa4886c51eb3491fafe331187f10d9fa98167",
+        "src/workflow.rb": "ec86ebd39b52020e718e25a0b666e6fee6478bbe42cd83765b740b6671cec763"
+      },
+      "candidate_sources": {
+        "README.md": "# Library acquisition review\n\n\nThe workspace edits persistent documents and submits snapshots to a review queue.\nThe public API is synchronous: open(id), edit(text), close(), submit(), dispose().\nReturning to a document creates a fresh editor visit and restores persisted text.\nThe adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable.\n\nThe coordinator owns editor visits; the acquired confirmation capability owns a view outlet. The document repository and durable queue are separate services. Component or native source defines the local service contracts.\nTheir local interface contracts define the behavior to preserve.\n\nThe injected store has read/write/subscribe, the queue has enqueue/list/subscribe,\nand timers have schedule(callback, delay)/cancel(handle). Render functions are\noutput sinks and do not call application code. Keep the workspace API and these\ninjected interfaces. A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace.\n\nStruct editor visit and block-driven batching; confirmation capability and receipt record separate view/resource ownership.\n\nAn outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity. Native RPC only adapts timer and passive output/integration resource calls; storage, queue delivery, acquired outlet and command state execute in the target runtime.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Ruby 2.7.0\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "src/workflow.rb": "# A catalog editing visit carries the block that owns its eventual write.\nclass Store\n  def initialize(records)\n    @records = records.each_with_object({}) { |(id, text), copy| copy[id.dup.freeze] = text.dup.freeze }\n    @listeners, @serial, @revision = {}, 0, 0\n  end\n  def read(id); @records.fetch(id, '').dup.freeze; end\n  def subscribe(&block)\n    @serial += 1\n    @listeners[@serial] = block\n    @serial\n  end\n  def stop(token); @listeners.delete(token); end\n  def write(id, text)\n    @records[id] = text.dup.freeze\n    @revision += 1\n    event = {id: id.dup.freeze, text: @records[id], revision: @revision}\n    @listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }\n    event\n  end\nend\nclass Archive\n  def initialize; @receipts = [];@listeners={};@serial=0;end\n  def capture(snapshot)\n    receipt = {id: snapshot['id'].dup.freeze, text: snapshot['text'].dup.freeze}.freeze\n    @receipts << receipt\n    @listeners.to_a.each{|token,fn|fn.call(receipt) if @listeners.key?(token)}\n    receipt\n  end\n  def subscribe(&fn);@serial+=1;@listeners[@serial]=fn;@serial;end\n  def stop(token);@listeners.delete(token);end\n  def list; @receipts.map(&:dup); end\nend\nclass Trailing\n  def initialize(env, delay, &work)\n    @env, @delay, @work = env, delay, work\n    @handle = @pending = nil\n  end\n  def push(value)\n    @env.cancel(@handle) unless @handle.nil?\n    @pending = value\n    @handle = @env.schedule(@delay) { flush }\n  end\n  def flush\n    @env.cancel(@handle) unless @handle.nil?\n    value = @pending\n    @handle = @pending = nil\n    @work.call(value) unless value.nil?\n  end\n  def cancel\n    @env.cancel(@handle) unless @handle.nil?\n    @handle = @pending = nil\n  end\nend\nclass Confirmation\n  def initialize(current,emit);@current,@emit=current,emit;@owner=current.call;end\n  def active;!@owner.nil?&&@owner.equal?(@current.call);end\n  def show(receipt);@emit.call(receipt) if active;end\nend\nCatalogVisit = Struct.new(:id, :text, :token, :task)\nclass Workspace\n  def initialize(env); @env, @current, @navigation = env, nil, 0; end\n  def retire\n    leaving = @current\n    @current = nil\n    @env.store.stop(leaving.token) if leaving\n    @env.output('document', nil)\n    leaving.task.flush if leaving\n  end\n  def open(id)\n    id = id.dup.freeze\n    @env.output('notice', nil)\n    @navigation += 1\n    request = @navigation\n    retire\n    return unless request == @navigation\n    token = @env.store.subscribe { |event| @env.output('status', event) if event[:id] == id }\n    task = Trailing.new(@env, 120) { |text| @env.write(id, text) }\n    @current = CatalogVisit.new(id, @env.store.read(id), token, task)\n    @env.output('document', {id: id, text: @current.text})\n  end\n  def edit(text)\n    return unless @current\n    text = text.dup.freeze\n    @current.text = text\n    @current.task.push(text)\n  end\n  def close\n    @env.output('notice', nil)\n    @navigation += 1\n    retire\n  end\n  def submit\n    confirmation=Confirmation.new(proc{@current},proc{|receipt|@env.output('notice',receipt)})\n    visit = @current\n    return nil unless visit\n    snapshot = {id: visit.id, text: visit.text}\n    visit.task.flush\n    receipt = @env.capture(snapshot)\n    confirmation.show(receipt)\n    receipt\n  end\n  def dispose; close; end\nend\nclass Preview\n  def initialize(env)\n    @task = Trailing.new(env, 40) { |query| env.output('preview', {query: query}) }\n  end\n  def query(text); @task.push(text); end\n  def hide; @task.cancel; end\nend\n"
+      },
+      "delivered_sha256s": [
+        "8408b3e61f568b3bf778cffba33202d9f0ab2814dee553358ebd9340c56c2bcc",
+        "092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce",
+        "400bfb327e36377e58b69db7d553f41d86540aec9544af478822c6c71de3a6df",
+        "380be240ad7e3783cd1238f8cae0230da3f5990659e5d6970f1016ac95d7b602",
+        "020a49e031c6debee42b6737e3b521faebbb5394e908c26ddf24d6e2fc2d9892"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.rb",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ]
+}

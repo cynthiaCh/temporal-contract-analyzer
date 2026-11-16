@@ -1,0 +1,473 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "be22bf0658b0711e740a4d662bb258f2cfd0f532120a81d1a1ec85bcadcb1584",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "0e3fe395900ec1d94c72edfe530012809f20febeb4bca7b579118af288b2650c",
+        "src/Workflow.java": "e3438fba23fb2aa8f6207e59c9f321628d886d3b3b370f913527575dc9f23660"
+      },
+      "candidate_sources": {
+        "README.md": "# Medical referral review\n\n\nThe workspace edits persistent documents and submits snapshots to a review queue.\nThe public API is synchronous: open(id), edit(text), close(), submit(), dispose().\nReturning to a document creates a fresh editor visit and restores persisted text.\nThe adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable.\n\nThe coordinator owns editor visits; the acquired confirmation capability owns a view outlet. The document repository and durable queue are separate services. Component or native source defines the local service contracts.\nTheir local interface contracts define the behavior to preserve.\n\nThe injected store has read/write/subscribe, the queue has enqueue/list/subscribe,\nand timers have schedule(callback, delay)/cancel(handle). Render functions are\noutput sinks and do not call application code. Keep the workspace API and these\ninjected interfaces. A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace.\n\nTyped session coordinator and immutable receipt DTO; an acquired confirmation capability reads native visit identity.\n\nAn outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity. Native RPC only adapts timer and passive output/integration resource calls; storage, queue delivery, acquired outlet and command state execute in the target runtime.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"OpenJDK 11.0.27\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "src/Workflow.java": "import java.util.*;\nimport java.util.function.Consumer;\n\n/** Compliance dossier sessions have typed lifetime and value objects. */\npublic final class Workflow {\n    interface Environment {\n        Store store();\n        Object schedule(Runnable callback, int delay);\n        void cancel(Object handle);\n        void output(String kind, Object value);\n        void write(String id, String text);\n        Map<String,Object> capture(Map<String,Object> value);\n    }\n    static Map<String,Object> value(String id, String text) {\n        Map<String,Object> result=new LinkedHashMap<>(); result.put(\"id\",id); result.put(\"text\",text); return result;\n    }\n    static final class Store {\n        final Map<String,String> records=new LinkedHashMap<>();\n        final Map<Integer,Consumer<Map<String,Object>>> listeners=new LinkedHashMap<>();\n        int serial, revision;\n        Store(Map<String,Object> initial) { initial.forEach((k,v)->records.put(k,(String)v)); }\n        String read(String id) { return records.getOrDefault(id, \"\"); }\n        int subscribe(Consumer<Map<String,Object>> fn) { int token=++serial; listeners.put(token,fn); return token; }\n        void stop(int token) { listeners.remove(token); }\n        Map<String,Object> write(String id, String text) {\n            records.put(id,text); Map<String,Object> event=value(id,text); event.put(\"revision\",++revision);\n            for (int token:new ArrayList<>(listeners.keySet())) {\n                Consumer<Map<String,Object>> fn=listeners.get(token); if(fn!=null) fn.accept(event);\n            }\n            return event;\n        }\n    }\n    static final class Receipt {\n        final String id, text;\n        Receipt(Map<String,Object> snapshot) { id=(String)snapshot.get(\"id\"); text=(String)snapshot.get(\"text\"); }\n        Map<String,Object> copy() { return value(id,text); }\n    }\n    static final class Archive {\n        final List<Receipt> receipts=new ArrayList<>();final Map<Integer,Consumer<Map<String,Object>>> listeners=new LinkedHashMap<>();int serial;\n        int subscribe(Consumer<Map<String,Object>>fn){int token=++serial;listeners.put(token,fn);return token;}\n        void stop(int token){listeners.remove(token);}\n        Map<String,Object> capture(Map<String,Object> snapshot) { Receipt receipt=new Receipt(snapshot); receipts.add(receipt); Map<String,Object> event=Collections.unmodifiableMap(receipt.copy());for(int token:new ArrayList<>(listeners.keySet())){Consumer<Map<String,Object>>fn=listeners.get(token);if(fn!=null)fn.accept(event);}return event; }\n        List<Map<String,Object>> list() { List<Map<String,Object>> result=new ArrayList<>(); for(Receipt receipt:receipts) result.add(receipt.copy()); return result; }\n    }\n    static final class Trailing {\n        final Environment env; final int delay; final Consumer<String> work;\n        Object handle; String pending;\n        Trailing(Environment env,int delay,Consumer<String> work) { this.env=env;this.delay=delay;this.work=work; }\n        void push(String text) { if(handle!=null)env.cancel(handle); pending=text; handle=env.schedule(this::flush,delay); }\n        void flush() { if(handle!=null)env.cancel(handle); String text=pending; handle=null;pending=null; if(text!=null)work.accept(text); }\n        void cancel() { if(handle!=null)env.cancel(handle);handle=null;pending=null; }\n    }\n    static final class Session {\n        final String id; String text; final int token; final Trailing task;\n        Session(String id,String text,int token,Trailing task) { this.id=id;this.text=text;this.token=token;this.task=task; }\n    }\n    static final class Confirmation {\n        final java.util.function.Supplier<Session> current;final Consumer<Map<String,Object>> emit;final Session owner;\n        Confirmation(java.util.function.Supplier<Session> current,Consumer<Map<String,Object>> emit){this.current=current;this.emit=emit;owner=current.get();}\n        boolean active(){return owner!=null&&owner==current.get();}\n        void show(Map<String,Object> receipt){if(active())emit.accept(receipt);}\n    }\n    static final class Workspace {\n        final Environment env; Session current; long navigation;\n        Workspace(Environment env) { this.env=env; }\n        void retire() {\n            Session leaving=current; current=null;\n            if(leaving!=null)env.store().stop(leaving.token);\n            env.output(\"document\",null);\n            // Finish old-view effects before persistence can navigate again.\n            if(leaving!=null)leaving.task.flush();\n        }\n        void open(String id) {\n            env.output(\"notice\",null);long request=++navigation;retire();\n            if(request!=navigation)return;\n            int token=env.store().subscribe(event->{if(id.equals(event.get(\"id\")))env.output(\"status\",event);});\n            Trailing task=new Trailing(env,120,text->env.write(id,text));\n            current=new Session(id,env.store().read(id),token,task);\n            env.output(\"document\",value(id,current.text));\n        }\n        void edit(String text) { if(current==null)return; current.text=text; current.task.push(text); }\n        void close() { env.output(\"notice\",null);++navigation;retire(); }\n        Map<String,Object> submit() {\n            Confirmation confirmation=new Confirmation(()->current,receipt->env.output(\"notice\",receipt));\n            Session visit=current;if(visit==null)return null;\n            Map<String,Object> snapshot=value(visit.id,visit.text);\n            // The snapshot and confirmation belong to the visit at entry.\n            // flush consumes its pending work before store listeners run.\n            visit.task.flush();\n            Map<String,Object> receipt=env.capture(snapshot);\n            \n            confirmation.show(receipt);\n            return receipt;\n        }\n        void dispose() { close(); }\n    }\n    static final class Preview {\n        final Trailing task;\n        Preview(Environment env) { task=new Trailing(env,40,query->{Map<String,Object> value=new LinkedHashMap<>();value.put(\"query\",query);env.output(\"preview\",value);}); }\n        void query(String text) { task.push(text); }\n        void hide() { task.cancel(); }\n    }\n}\n"
+      },
+      "delivered_sha256s": [
+        "092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce",
+        "380be240ad7e3783cd1238f8cae0230da3f5990659e5d6970f1016ac95d7b602",
+        "020a49e031c6debee42b6737e3b521faebbb5394e908c26ddf24d6e2fc2d9892",
+        "f41a506d3bbf02c7525371e89a29acd61feec74f10a741a5742cb9de750db720",
+        "c663bf5de4a4125debe922e1b353af248b9d52f5686c435dbc281f672977d9c6"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "public_java_compile",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "Before 120 ms of quiet, edits update the selected session's text without writing each keystroke.",
+      "At the quiet-interval deadline, persist only the latest text from that burst; a later burst can schedule and complete another save.",
+      "On open or close, persist the departing visit's pending text so returning to the document restores it.",
+      "On submit, bind the visit, snapshot and confirmation capability before callback-capable persistence; persist accepted edits before queue delivery.",
+      "During synchronous store or queue callbacks, verify that nested navigation and edits retain their own ownership and state.",
+      "Verify that preview timing, hide cancellation and later-query usability remain unchanged."
+    ],
+    "forbidden_effects": [
+      "Continuing to write on every keystroke.",
+      "Losing pending accepted edits when a visit closes or another document opens.",
+      "Allowing an old visit's pending save to overwrite a later visit's newer persisted edits.",
+      "Letting an outer operation overwrite a visit installed by synchronous callback navigation.",
+      "Changing an accepted submission's document or text because a callback navigates or edits.",
+      "Showing a submission confirmation in a different editor visit, including a later visit to the same document.",
+      "Changing the adjacent search preview's behavior or the synchronous public interfaces."
+    ],
+    "lifecycle_identity": [
+      "Each opening creates a distinct Session identity, even when reopening the same document ID.",
+      "Pending editor persistence belongs to the Session and document that accepted the edits.",
+      "A submission snapshot belongs to the visit and text captured at submit entry.",
+      "Confirmation authority uses Session object identity, not document ID or receipt contents.",
+      "Navigation identity must distinguish an outer open from navigation performed by synchronous callbacks."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Use the existing trailing-task utility to coalesce editor edits: after 120 ms without another edit, write only the latest text in the burst."
+      },
+      {
+        "id": "O2",
+        "text": "Keep the session's in-memory text current immediately, and preserve the ability to save subsequent editing bursts after a prior trailing save completes."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve accepted edits across open, close and dispose. Complete a departing visit's pending persistence before a replacement visit reads persisted text, while protecting navigation performed by persistence callbacks."
+      },
+      {
+        "id": "O4",
+        "text": "Preserve submission behavior: return null with no selected editor; otherwise capture one entry-bound document/text snapshot, make its pending edits durable before queue delivery, return the queue receipt and keep callback-enqueued edits as later work."
+      },
+      {
+        "id": "O5",
+        "text": "Acquire confirmation authority for the entry visit before callback-capable work. Publish the receipt only while that exact visit remains current."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve synchronous listener delivery, receipt immutability, queue listing copies, subscription cleanup, output behavior and the documented disposal order."
+      },
+      {
+        "id": "O7",
+        "text": "Keep the public workspace and injected interfaces synchronous and unchanged. Leave the adjacent search preview outside the maintenance change."
+      }
+    ],
+    "ordering_barriers": [
+      "Update session text before scheduling persistence so submit observes the latest accepted edit.",
+      "Consume and clear the pending save before invoking callback-capable persistence, so reentrant edits remain separate pending work.",
+      "Retire old ownership and finish old-view clearing before a departure save can synchronously navigate; remaining outer navigation effects require a current-request check.",
+      "Finish pending departure persistence before reading the replacement document's stored text.",
+      "Capture submission identity, text and confirmation authority before flushing pending persistence; deliver the captured snapshot to the queue afterward.",
+      "Preserve the documented requirement that disposal detaches integrations before closing the workspace."
+    ],
+    "preservation": [
+      "The existing immediate-write implementation makes accepted edits durable before a subsequent open, close or submit; delayed persistence must retain these boundary guarantees.",
+      "Store writes notify subscribed listeners synchronously, so persistence is a reentrancy boundary.",
+      "Queue capture records an immutable receipt before synchronously notifying listeners.",
+      "Nested navigation remains authoritative, and cleanup acts on captured departing resources.",
+      "Returning to a document creates a fresh visit and restores persisted text.",
+      "Search preview retains its 40 ms trailing publication and cancellation behavior."
+    ],
+    "scope": [
+      "Draft contract for the editor persistence maintenance change in src/Workflow.java.",
+      "Normative evidence consists only of TASK and the supplied public README and source.",
+      "No source modifications are part of this contract stage."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst. Subsequent bursts must continue to save."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve other supported behavior and the synchronous public interfaces. The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "Returning to a document creates a fresh editor visit and restores persisted text."
+      },
+      {
+        "file": "README.md",
+        "quote": "A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace."
+      },
+      {
+        "file": "README.md",
+        "quote": "An outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity."
+      },
+      {
+        "file": "README.md",
+        "quote": "Render functions are\noutput sinks and do not call application code."
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "void edit(String text) { if(current==null)return; current.text=text; env.write(current.id,text); }"
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "void flush() { if(handle!=null)env.cancel(handle); String text=pending; handle=null;pending=null; if(text!=null)work.accept(text); }"
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "Consumer<Map<String,Object>> fn=listeners.get(token); if(fn!=null) fn.accept(event);"
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "boolean active(){return owner!=null&&owner==current.get();}"
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "Map<String,Object> snapshot=value(visit.id,visit.text);"
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "Map<String,Object> receipt=env.capture(snapshot);"
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "Map<String,Object> event=Collections.unmodifiableMap(receipt.copy());"
+      },
+      {
+        "file": "README.md",
+        "quote": "The adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable."
+      }
+    ],
+    "triggers": [
+      "Editing with or without a selected session.",
+      "Repeated edits within 120 ms and edits after a completed save.",
+      "Opening, reopening, closing or disposing with pending edits.",
+      "Submitting with pending edits or no selected editor.",
+      "Synchronous navigation or editing from store and queue listeners."
+    ],
+    "unknowns": [
+      "The supplied contracts do not specify recovery from storage, queue, timer or listener exceptions.",
+      "Null text input semantics and exact ordering of simultaneously due timer callbacks are unspecified.",
+      "Workspace reads could not execute because the sandbox failed to initialize; this draft uses the public source text supplied in the request."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 1,
+  "diagnoses": [],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "finalized": true,
+  "first_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "online_snapshot_sha256": "b306be091ae2c220617f65e2c56a4f16d528b821c6908533303aaebd2f6e563a",
+  "repair_stop_reason": "oracle_accepted",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "72fd9411c79e83774b8f7edea3904876ed452ca956efaeac06dd5c1d52b7d4e5",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9997286843136
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "7dfe39248fbf5aa212fc2eae95ee9a91556b49a5047cf3f7fdc9814b2fa3dda0",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9856,
+        "input_tokens": 18264,
+        "output_tokens": 2500,
+        "reasoning_output_tokens": 333,
+        "total_tokens": 20764
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "a9da3784d410d6a56824b88b29f0328c897d891229f7066b2cce958e6730c061",
+      "seconds": 48.96048448886722,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9856,
+        "input_tokens": 18264,
+        "output_tokens": 2500,
+        "reasoning_output_tokens": 333,
+        "total_tokens": 20764
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "30895e2f3e5ced3a372e720a519a20f56d0143a94360d7e9c4e09ceecabc5f45",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9998038373888
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "f5188baebaf11974ebc418bcdc2d0289f64572c90dfefda6d3c042bc36ddd344",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 16000,
+        "input_tokens": 32288,
+        "output_tokens": 1945,
+        "reasoning_output_tokens": 175,
+        "total_tokens": 34233
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "21053ba712aadfe10a5baf4edda932221bfba128068dba04c26250d69c5ea14f",
+      "seconds": 47.13367285579443,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 16000,
+        "input_tokens": 32288,
+        "output_tokens": 1945,
+        "reasoning_output_tokens": 175,
+        "total_tokens": 34233
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "532d674fdf3cdecde73b537aae52796a317e277fd46c70c26164608ca82510da",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.999576093629
+          },
+          "number": 1,
+          "requests": 5,
+          "restart_reason": "initial",
+          "result_sha256": "154a88850baf730aee8100749e975f29f422bab5bbb991ed45229096d0ef6c03",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 80640,
+        "input_tokens": 101967,
+        "output_tokens": 1687,
+        "reasoning_output_tokens": 87,
+        "total_tokens": 103654
+      },
+      "requests": 5,
+      "reserved_requests": 24,
+      "result_sha256": "27473d6311cc2a6c32da96a1331831ba7b1d43002bd07f330f480e8fb92f36e2",
+      "seconds": 57.03250420000404,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 80640,
+        "input_tokens": 101967,
+        "output_tokens": 1687,
+        "reasoning_output_tokens": 87,
+        "total_tokens": 103654
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "29c92750831267ff53f8bf90ed65e98f60a01328d0201e634749736268d2bab8",
+      "seconds": 1.2263866094872355,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 16.552616385743022,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "0052e71dc680716cb8246d6d64a339ee5f1c5d1b74f651855805fcbd134e79ea",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9984326055273
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "a07e6f73a9dbb4cf2704e082cf33f4b6673ec0738732677cab625c4211a976ad",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 0,
+        "input_tokens": 28245,
+        "output_tokens": 1480,
+        "reasoning_output_tokens": 177,
+        "total_tokens": 29725
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "065f727d43a404fa1645c7170812dd9310cd7bf9b96f41218b16545ad8cfbd60",
+      "seconds": 37.44089912623167,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 0,
+        "input_tokens": 28245,
+        "output_tokens": 1480,
+        "reasoning_output_tokens": 177,
+        "total_tokens": 29725
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "training_accepted": true
+}

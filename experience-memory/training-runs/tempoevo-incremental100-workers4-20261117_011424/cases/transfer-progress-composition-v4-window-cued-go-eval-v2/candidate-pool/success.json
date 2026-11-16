@@ -1,0 +1,828 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/workflow.go\n+++ candidate/src/workflow.go\n@@ -1,32 +1,216 @@\n package main\n+\n import \"context\"\n+\n // A typed visit owns its view; each attempt owns cancellation and source callbacks.\n-type Environment interface {Call(string,...interface{}) interface{};Bind(func(interface{})) int}\n-type File struct {ID string;Token,Size int;Feed bool}\n-type Visit struct {ID int;File *File;Handle *Attempt}\n-type Attempt struct {File *File;Number int;Ctx context.Context;CancelContext context.CancelFunc;Env Environment;Stop func()}\n-func NewAttempt(env Environment,file *File,n int,active func()int,audit func(interface{}),view func(interface{},int))*Attempt {\n- ctx,cancel:=context.WithCancel(context.Background());h:=&Attempt{File:file,Number:n,Ctx:ctx,CancelContext:cancel,Env:env,Stop:func(){}};env.Call(\"transport\",file.Token,n)\n- if file.Feed {callback:=env.Bind(func(packet interface{}) { order:=active();\n-  deliver:=func(frame interface{}){;audit(frame);view(frame,order)}\n-  value:=env.Call(\"decode\",file.Token,packet,env.Bind(deliver)).(map[string]interface{});if !value[\"deferred\"].(bool){deliver(value[\"frame\"])}\n- });var subscription interface{};env.Call(\"start\",file.Token);subscription=env.Call(\"listen\",file.Token,callback);h.Stop=func(){env.Call(\"unlisten\",file.Token,subscription)};if h.Ctx.Err()!=nil{h.Stop()}}\n- return h\n-}\n-func(h *Attempt)Cancel(){if h.Ctx.Err()!=nil{return};h.CancelContext();h.Stop();h.Env.Call(\"cancel\",h.File.Token,h.Number)}\n-type Client interface {Select(*File)*Attempt;Retry()*Attempt;Hide();Dispose();Snapshot()map[string]interface{}}\n-type Session struct {Env Environment;Visit *Visit;Serial,Attempts int;Tasks []*Attempt;Disposed bool}\n-func NewSession(env Environment)Client{return &Session{Env:env}}\n-func(s *Session)current(v *Visit)bool{return s.Visit==v}\n-func(s *Session)enqueue(v *Visit,kind string)*Attempt {s.Attempts++;n:=s.Attempts;entry:=map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":n,\"visitId\":v.ID,\"kind\":kind};;s.Env.Call(\"record\",entry)\n- h:=NewAttempt(s.Env,v.File,n,func()int{return 0},func(frame interface{}){s.Env.Call(\"recordProgress\",map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":n,\"frame\":frame})},func(frame interface{},order int){if s.current(v){s.Env.Call(\"showProgress\",map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":n,\"frame\":frame})}});s.Tasks=append(s.Tasks,h);return h}\n-func(s *Session)notice(v *Visit,h *Attempt){;s.Env.Call(\"showQueued\",map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":h.Number,\"visitId\":v.ID,\"status\":\"queued\"})}\n-func(s *Session)release(v *Visit){h:=v.Handle;v.Handle=nil;if h!=nil{h.Cancel()}}\n-func(s *Session)Select(file *File)*Attempt {if s.Disposed{return nil};s.Serial++;request:=s.Serial;old:=s.Visit;s.Visit=nil;if old!=nil{s.release(old)};if s.Disposed||s.Serial!=request{return nil};v:=&Visit{ID:request,File:file};s.Visit=v;h:=s.enqueue(v,\"select\");if s.current(v){v.Handle=h;s.notice(v,h)}else{h.Cancel()};return h}\n-func(s *Session)Retry()*Attempt{v:=s.Visit;if v==nil||v.Handle==nil||s.Disposed{return nil};v.Handle.Cancel();accepted:=v;h:=s.enqueue(accepted,\"retry\");if s.current(accepted){accepted.Handle=h}else{h.Cancel()};if s.current(accepted){s.notice(accepted,h)};return h}\n-func(s *Session)Hide(){s.Serial++;old:=s.Visit;s.Visit=nil;if old!=nil{s.release(old)}}\n-func(s *Session)Dispose(){if s.Disposed{return};s.Disposed=true;s.Hide();for _,h:=range s.Tasks{h.Cancel()}}\n-func(s *Session)Snapshot()map[string]interface{}{var visit,file,attempt interface{};if s.Visit!=nil{visit=s.Visit.ID;file=s.Visit.File.ID;if s.Visit.Handle!=nil{attempt=s.Visit.Handle.Number}};return map[string]interface{}{\"visitId\":visit,\"fileId\":file,\"attemptId\":attempt,\"disposed\":s.Disposed,\"attempts\":s.Attempts}}\n-\n-type Telemetry struct {Stop func()}\n-func NewTelemetry(env Environment,file *File)*Telemetry {callback:=env.Bind(func(packet interface{}){deliver:=func(frame interface{}){env.Call(\"recordDelta\",frame)};value:=env.Call(\"decode\",file.Token,packet,env.Bind(deliver)).(map[string]interface{});if !value[\"deferred\"].(bool){deliver(value[\"frame\"])}});var subscription interface{};env.Call(\"start\",file.Token);subscription=env.Call(\"listen\",file.Token,callback);return &Telemetry{Stop:func(){env.Call(\"unlisten\",file.Token,subscription)}}}\n+type Environment interface {\n+\tCall(string, ...interface{}) interface{}\n+\tBind(func(interface{})) int\n+}\n+type File struct {\n+\tID          string\n+\tToken, Size int\n+\tFeed        bool\n+}\n+type Visit struct {\n+\tID                  int\n+\tFile                *File\n+\tHandle              *Attempt\n+\tReceived, Published int\n+}\n+type Attempt struct {\n+\tFile          *File\n+\tNumber        int\n+\tCtx           context.Context\n+\tCancelContext context.CancelFunc\n+\tEnv           Environment\n+\tStop          func()\n+}\n+\n+func NewAttempt(env Environment, file *File, n int, active func() int, audit func(interface{}), view func(interface{}, int)) *Attempt {\n+\treturn newAttempt(env, file, n, active, audit, view, func(*Attempt) {})\n+}\n+func newAttempt(env Environment, file *File, n int, active func() int, audit func(interface{}), view func(interface{}, int), ready func(*Attempt)) *Attempt {\n+\tctx, cancel := context.WithCancel(context.Background())\n+\th := &Attempt{File: file, Number: n, Ctx: ctx, CancelContext: cancel, Env: env, Stop: func() {}}\n+\tready(h)\n+\tenv.Call(\"transport\", file.Token, n)\n+\tif file.Feed && h.Ctx.Err() == nil {\n+\t\tcallback := env.Bind(func(packet interface{}) {\n+\t\t\tif h.Ctx.Err() != nil {\n+\t\t\t\treturn\n+\t\t\t}\n+\t\t\torder := active()\n+\t\t\tif order < 0 {\n+\t\t\t\treturn\n+\t\t\t}\n+\t\t\tdeliver := func(frame interface{}) { ; audit(frame); view(frame, order) }\n+\t\t\tvalue := env.Call(\"decode\", file.Token, packet, env.Bind(deliver)).(map[string]interface{})\n+\t\t\tif !value[\"deferred\"].(bool) {\n+\t\t\t\tdeliver(value[\"frame\"])\n+\t\t\t}\n+\t\t})\n+\t\tsubscription := env.Call(\"listen\", file.Token, callback)\n+\t\tstopped := false\n+\t\th.Stop = func() {\n+\t\t\tif stopped {\n+\t\t\t\treturn\n+\t\t\t}\n+\t\t\tstopped = true\n+\t\t\tenv.Call(\"unlisten\", file.Token, subscription)\n+\t\t}\n+\t\tif h.Ctx.Err() != nil {\n+\t\t\th.Stop()\n+\t\t} else {\n+\t\t\tenv.Call(\"start\", file.Token)\n+\t\t}\n+\t}\n+\treturn h\n+}\n+func (h *Attempt) Cancel() {\n+\tif h.Ctx.Err() != nil {\n+\t\treturn\n+\t}\n+\th.CancelContext()\n+\th.Stop()\n+\th.Env.Call(\"cancel\", h.File.Token, h.Number)\n+}\n+\n+type Client interface {\n+\tSelect(*File) *Attempt\n+\tRetry() *Attempt\n+\tHide()\n+\tDispose()\n+\tSnapshot() map[string]interface{}\n+}\n+type Session struct {\n+\tEnv              Environment\n+\tVisit            *Visit\n+\tSerial, Attempts int\n+\tTasks            []*Attempt\n+\tDisposed         bool\n+}\n+\n+func NewSession(env Environment) Client  { return &Session{Env: env} }\n+func (s *Session) current(v *Visit) bool { return s.Visit == v }\n+func (s *Session) enqueue(v *Visit, kind string) *Attempt {\n+\ts.Attempts++\n+\tn := s.Attempts\n+\tentry := map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"visitId\": v.ID, \"kind\": kind}\n+\ts.Env.Call(\"record\", entry)\n+\th := newAttempt(s.Env, v.File, n, func() int {\n+\t\tif !s.current(v) {\n+\t\t\treturn -1\n+\t\t}\n+\t\tv.Received++\n+\t\treturn v.Received\n+\t}, func(frame interface{}) {\n+\t\ts.Env.Call(\"recordProgress\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"frame\": frame})\n+\t}, func(frame interface{}, order int) {\n+\t\tif s.current(v) && order > v.Published {\n+\t\t\tv.Published = order\n+\t\t\ts.Env.Call(\"showProgress\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"frame\": frame})\n+\t\t}\n+\t}, func(h *Attempt) {\n+\t\ts.Tasks = append(s.Tasks, h)\n+\t\tif s.current(v) {\n+\t\t\tv.Handle = h\n+\t\t}\n+\t})\n+\treturn h\n+}\n+func (s *Session) notice(v *Visit, h *Attempt) {\n+\ts.Env.Call(\"showQueued\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": h.Number, \"visitId\": v.ID, \"status\": \"queued\"})\n+}\n+func (s *Session) release(v *Visit) {\n+\th := v.Handle\n+\tv.Handle = nil\n+\tif h != nil {\n+\t\th.Cancel()\n+\t}\n+}\n+func (s *Session) Select(file *File) *Attempt {\n+\tif s.Disposed {\n+\t\treturn nil\n+\t}\n+\ts.Serial++\n+\trequest := s.Serial\n+\told := s.Visit\n+\ts.Visit = nil\n+\tif old != nil {\n+\t\ts.release(old)\n+\t}\n+\tif s.Disposed || s.Serial != request {\n+\t\treturn nil\n+\t}\n+\tv := &Visit{ID: request, File: file}\n+\ts.Visit = v\n+\th := s.enqueue(v, \"select\")\n+\tif s.current(v) {\n+\t\ts.notice(v, h)\n+\t} else {\n+\t\th.Cancel()\n+\t}\n+\treturn h\n+}\n+func (s *Session) Retry() *Attempt {\n+\tv := s.Visit\n+\tif v == nil || v.Handle == nil || s.Disposed {\n+\t\treturn nil\n+\t}\n+\tv.Handle.Cancel()\n+\taccepted := v\n+\th := s.enqueue(accepted, \"retry\")\n+\tif !s.current(accepted) {\n+\t\th.Cancel()\n+\t}\n+\tif s.current(accepted) {\n+\t\ts.notice(accepted, h)\n+\t}\n+\treturn h\n+}\n+func (s *Session) Hide() {\n+\ts.Serial++\n+\told := s.Visit\n+\ts.Visit = nil\n+\tif old != nil {\n+\t\ts.release(old)\n+\t}\n+}\n+func (s *Session) Dispose() {\n+\tif s.Disposed {\n+\t\treturn\n+\t}\n+\ts.Disposed = true\n+\ts.Hide()\n+\tfor _, h := range s.Tasks {\n+\t\th.Cancel()\n+\t}\n+}\n+func (s *Session) Snapshot() map[string]interface{} {\n+\tvar visit, file, attempt interface{}\n+\tif s.Visit != nil {\n+\t\tvisit = s.Visit.ID\n+\t\tfile = s.Visit.File.ID\n+\t\tif s.Visit.Handle != nil {\n+\t\t\tattempt = s.Visit.Handle.Number\n+\t\t}\n+\t}\n+\treturn map[string]interface{}{\"visitId\": visit, \"fileId\": file, \"attemptId\": attempt, \"disposed\": s.Disposed, \"attempts\": s.Attempts}\n+}\n+\n+type Telemetry struct{ Stop func() }\n+\n+func NewTelemetry(env Environment, file *File) *Telemetry {\n+\tcallback := env.Bind(func(packet interface{}) {\n+\t\tdeliver := func(frame interface{}) { env.Call(\"recordDelta\", frame) }\n+\t\tvalue := env.Call(\"decode\", file.Token, packet, env.Bind(deliver)).(map[string]interface{})\n+\t\tif !value[\"deferred\"].(bool) {\n+\t\t\tdeliver(value[\"frame\"])\n+\t\t}\n+\t})\n+\tvar subscription interface{}\n+\tenv.Call(\"start\", file.Token)\n+\tsubscription = env.Call(\"listen\", file.Token, callback)\n+\treturn &Telemetry{Stop: func() { env.Call(\"unlisten\", file.Token, subscription) }}\n+}\n",
+        "from_previous": "--- previous/src/workflow.go\n+++ candidate/src/workflow.go\n@@ -1,32 +1,216 @@\n package main\n+\n import \"context\"\n+\n // A typed visit owns its view; each attempt owns cancellation and source callbacks.\n-type Environment interface {Call(string,...interface{}) interface{};Bind(func(interface{})) int}\n-type File struct {ID string;Token,Size int;Feed bool}\n-type Visit struct {ID int;File *File;Handle *Attempt}\n-type Attempt struct {File *File;Number int;Ctx context.Context;CancelContext context.CancelFunc;Env Environment;Stop func()}\n-func NewAttempt(env Environment,file *File,n int,active func()int,audit func(interface{}),view func(interface{},int))*Attempt {\n- ctx,cancel:=context.WithCancel(context.Background());h:=&Attempt{File:file,Number:n,Ctx:ctx,CancelContext:cancel,Env:env,Stop:func(){}};env.Call(\"transport\",file.Token,n)\n- if file.Feed {callback:=env.Bind(func(packet interface{}) { order:=active();\n-  deliver:=func(frame interface{}){;audit(frame);view(frame,order)}\n-  value:=env.Call(\"decode\",file.Token,packet,env.Bind(deliver)).(map[string]interface{});if !value[\"deferred\"].(bool){deliver(value[\"frame\"])}\n- });var subscription interface{};env.Call(\"start\",file.Token);subscription=env.Call(\"listen\",file.Token,callback);h.Stop=func(){env.Call(\"unlisten\",file.Token,subscription)};if h.Ctx.Err()!=nil{h.Stop()}}\n- return h\n-}\n-func(h *Attempt)Cancel(){if h.Ctx.Err()!=nil{return};h.CancelContext();h.Stop();h.Env.Call(\"cancel\",h.File.Token,h.Number)}\n-type Client interface {Select(*File)*Attempt;Retry()*Attempt;Hide();Dispose();Snapshot()map[string]interface{}}\n-type Session struct {Env Environment;Visit *Visit;Serial,Attempts int;Tasks []*Attempt;Disposed bool}\n-func NewSession(env Environment)Client{return &Session{Env:env}}\n-func(s *Session)current(v *Visit)bool{return s.Visit==v}\n-func(s *Session)enqueue(v *Visit,kind string)*Attempt {s.Attempts++;n:=s.Attempts;entry:=map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":n,\"visitId\":v.ID,\"kind\":kind};;s.Env.Call(\"record\",entry)\n- h:=NewAttempt(s.Env,v.File,n,func()int{return 0},func(frame interface{}){s.Env.Call(\"recordProgress\",map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":n,\"frame\":frame})},func(frame interface{},order int){if s.current(v){s.Env.Call(\"showProgress\",map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":n,\"frame\":frame})}});s.Tasks=append(s.Tasks,h);return h}\n-func(s *Session)notice(v *Visit,h *Attempt){;s.Env.Call(\"showQueued\",map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":h.Number,\"visitId\":v.ID,\"status\":\"queued\"})}\n-func(s *Session)release(v *Visit){h:=v.Handle;v.Handle=nil;if h!=nil{h.Cancel()}}\n-func(s *Session)Select(file *File)*Attempt {if s.Disposed{return nil};s.Serial++;request:=s.Serial;old:=s.Visit;s.Visit=nil;if old!=nil{s.release(old)};if s.Disposed||s.Serial!=request{return nil};v:=&Visit{ID:request,File:file};s.Visit=v;h:=s.enqueue(v,\"select\");if s.current(v){v.Handle=h;s.notice(v,h)}else{h.Cancel()};return h}\n-func(s *Session)Retry()*Attempt{v:=s.Visit;if v==nil||v.Handle==nil||s.Disposed{return nil};v.Handle.Cancel();accepted:=v;h:=s.enqueue(accepted,\"retry\");if s.current(accepted){accepted.Handle=h}else{h.Cancel()};if s.current(accepted){s.notice(accepted,h)};return h}\n-func(s *Session)Hide(){s.Serial++;old:=s.Visit;s.Visit=nil;if old!=nil{s.release(old)}}\n-func(s *Session)Dispose(){if s.Disposed{return};s.Disposed=true;s.Hide();for _,h:=range s.Tasks{h.Cancel()}}\n-func(s *Session)Snapshot()map[string]interface{}{var visit,file,attempt interface{};if s.Visit!=nil{visit=s.Visit.ID;file=s.Visit.File.ID;if s.Visit.Handle!=nil{attempt=s.Visit.Handle.Number}};return map[string]interface{}{\"visitId\":visit,\"fileId\":file,\"attemptId\":attempt,\"disposed\":s.Disposed,\"attempts\":s.Attempts}}\n-\n-type Telemetry struct {Stop func()}\n-func NewTelemetry(env Environment,file *File)*Telemetry {callback:=env.Bind(func(packet interface{}){deliver:=func(frame interface{}){env.Call(\"recordDelta\",frame)};value:=env.Call(\"decode\",file.Token,packet,env.Bind(deliver)).(map[string]interface{});if !value[\"deferred\"].(bool){deliver(value[\"frame\"])}});var subscription interface{};env.Call(\"start\",file.Token);subscription=env.Call(\"listen\",file.Token,callback);return &Telemetry{Stop:func(){env.Call(\"unlisten\",file.Token,subscription)}}}\n+type Environment interface {\n+\tCall(string, ...interface{}) interface{}\n+\tBind(func(interface{})) int\n+}\n+type File struct {\n+\tID          string\n+\tToken, Size int\n+\tFeed        bool\n+}\n+type Visit struct {\n+\tID                  int\n+\tFile                *File\n+\tHandle              *Attempt\n+\tReceived, Published int\n+}\n+type Attempt struct {\n+\tFile          *File\n+\tNumber        int\n+\tCtx           context.Context\n+\tCancelContext context.CancelFunc\n+\tEnv           Environment\n+\tStop          func()\n+}\n+\n+func NewAttempt(env Environment, file *File, n int, active func() int, audit func(interface{}), view func(interface{}, int)) *Attempt {\n+\treturn newAttempt(env, file, n, active, audit, view, func(*Attempt) {})\n+}\n+func newAttempt(env Environment, file *File, n int, active func() int, audit func(interface{}), view func(interface{}, int), ready func(*Attempt)) *Attempt {\n+\tctx, cancel := context.WithCancel(context.Background())\n+\th := &Attempt{File: file, Number: n, Ctx: ctx, CancelContext: cancel, Env: env, Stop: func() {}}\n+\tready(h)\n+\tenv.Call(\"transport\", file.Token, n)\n+\tif file.Feed && h.Ctx.Err() == nil {\n+\t\tcallback := env.Bind(func(packet interface{}) {\n+\t\t\tif h.Ctx.Err() != nil {\n+\t\t\t\treturn\n+\t\t\t}\n+\t\t\torder := active()\n+\t\t\tif order < 0 {\n+\t\t\t\treturn\n+\t\t\t}\n+\t\t\tdeliver := func(frame interface{}) { ; audit(frame); view(frame, order) }\n+\t\t\tvalue := env.Call(\"decode\", file.Token, packet, env.Bind(deliver)).(map[string]interface{})\n+\t\t\tif !value[\"deferred\"].(bool) {\n+\t\t\t\tdeliver(value[\"frame\"])\n+\t\t\t}\n+\t\t})\n+\t\tsubscription := env.Call(\"listen\", file.Token, callback)\n+\t\tstopped := false\n+\t\th.Stop = func() {\n+\t\t\tif stopped {\n+\t\t\t\treturn\n+\t\t\t}\n+\t\t\tstopped = true\n+\t\t\tenv.Call(\"unlisten\", file.Token, subscription)\n+\t\t}\n+\t\tif h.Ctx.Err() != nil {\n+\t\t\th.Stop()\n+\t\t} else {\n+\t\t\tenv.Call(\"start\", file.Token)\n+\t\t}\n+\t}\n+\treturn h\n+}\n+func (h *Attempt) Cancel() {\n+\tif h.Ctx.Err() != nil {\n+\t\treturn\n+\t}\n+\th.CancelContext()\n+\th.Stop()\n+\th.Env.Call(\"cancel\", h.File.Token, h.Number)\n+}\n+\n+type Client interface {\n+\tSelect(*File) *Attempt\n+\tRetry() *Attempt\n+\tHide()\n+\tDispose()\n+\tSnapshot() map[string]interface{}\n+}\n+type Session struct {\n+\tEnv              Environment\n+\tVisit            *Visit\n+\tSerial, Attempts int\n+\tTasks            []*Attempt\n+\tDisposed         bool\n+}\n+\n+func NewSession(env Environment) Client  { return &Session{Env: env} }\n+func (s *Session) current(v *Visit) bool { return s.Visit == v }\n+func (s *Session) enqueue(v *Visit, kind string) *Attempt {\n+\ts.Attempts++\n+\tn := s.Attempts\n+\tentry := map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"visitId\": v.ID, \"kind\": kind}\n+\ts.Env.Call(\"record\", entry)\n+\th := newAttempt(s.Env, v.File, n, func() int {\n+\t\tif !s.current(v) {\n+\t\t\treturn -1\n+\t\t}\n+\t\tv.Received++\n+\t\treturn v.Received\n+\t}, func(frame interface{}) {\n+\t\ts.Env.Call(\"recordProgress\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"frame\": frame})\n+\t}, func(frame interface{}, order int) {\n+\t\tif s.current(v) && order > v.Published {\n+\t\t\tv.Published = order\n+\t\t\ts.Env.Call(\"showProgress\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"frame\": frame})\n+\t\t}\n+\t}, func(h *Attempt) {\n+\t\ts.Tasks = append(s.Tasks, h)\n+\t\tif s.current(v) {\n+\t\t\tv.Handle = h\n+\t\t}\n+\t})\n+\treturn h\n+}\n+func (s *Session) notice(v *Visit, h *Attempt) {\n+\ts.Env.Call(\"showQueued\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": h.Number, \"visitId\": v.ID, \"status\": \"queued\"})\n+}\n+func (s *Session) release(v *Visit) {\n+\th := v.Handle\n+\tv.Handle = nil\n+\tif h != nil {\n+\t\th.Cancel()\n+\t}\n+}\n+func (s *Session) Select(file *File) *Attempt {\n+\tif s.Disposed {\n+\t\treturn nil\n+\t}\n+\ts.Serial++\n+\trequest := s.Serial\n+\told := s.Visit\n+\ts.Visit = nil\n+\tif old != nil {\n+\t\ts.release(old)\n+\t}\n+\tif s.Disposed || s.Serial != request {\n+\t\treturn nil\n+\t}\n+\tv := &Visit{ID: request, File: file}\n+\ts.Visit = v\n+\th := s.enqueue(v, \"select\")\n+\tif s.current(v) {\n+\t\ts.notice(v, h)\n+\t} else {\n+\t\th.Cancel()\n+\t}\n+\treturn h\n+}\n+func (s *Session) Retry() *Attempt {\n+\tv := s.Visit\n+\tif v == nil || v.Handle == nil || s.Disposed {\n+\t\treturn nil\n+\t}\n+\tv.Handle.Cancel()\n+\taccepted := v\n+\th := s.enqueue(accepted, \"retry\")\n+\tif !s.current(accepted) {\n+\t\th.Cancel()\n+\t}\n+\tif s.current(accepted) {\n+\t\ts.notice(accepted, h)\n+\t}\n+\treturn h\n+}\n+func (s *Session) Hide() {\n+\ts.Serial++\n+\told := s.Visit\n+\ts.Visit = nil\n+\tif old != nil {\n+\t\ts.release(old)\n+\t}\n+}\n+func (s *Session) Dispose() {\n+\tif s.Disposed {\n+\t\treturn\n+\t}\n+\ts.Disposed = true\n+\ts.Hide()\n+\tfor _, h := range s.Tasks {\n+\t\th.Cancel()\n+\t}\n+}\n+func (s *Session) Snapshot() map[string]interface{} {\n+\tvar visit, file, attempt interface{}\n+\tif s.Visit != nil {\n+\t\tvisit = s.Visit.ID\n+\t\tfile = s.Visit.File.ID\n+\t\tif s.Visit.Handle != nil {\n+\t\t\tattempt = s.Visit.Handle.Number\n+\t\t}\n+\t}\n+\treturn map[string]interface{}{\"visitId\": visit, \"fileId\": file, \"attemptId\": attempt, \"disposed\": s.Disposed, \"attempts\": s.Attempts}\n+}\n+\n+type Telemetry struct{ Stop func() }\n+\n+func NewTelemetry(env Environment, file *File) *Telemetry {\n+\tcallback := env.Bind(func(packet interface{}) {\n+\t\tdeliver := func(frame interface{}) { env.Call(\"recordDelta\", frame) }\n+\t\tvalue := env.Call(\"decode\", file.Token, packet, env.Bind(deliver)).(map[string]interface{})\n+\t\tif !value[\"deferred\"].(bool) {\n+\t\t\tdeliver(value[\"frame\"])\n+\t\t}\n+\t})\n+\tvar subscription interface{}\n+\tenv.Call(\"start\", file.Token)\n+\tsubscription = env.Call(\"listen\", file.Token, callback)\n+\treturn &Telemetry{Stop: func() { env.Call(\"unlisten\", file.Token, subscription) }}\n+}\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [],
+        "coverage": [
+          {
+            "path": "src/workflow.go",
+            "status": "unsupported_language"
+          }
+        ],
+        "events": [],
+        "findings": [],
+        "limitations": [
+          "Syntax facts, candidate call links and review hints are not verified contracts, bugs, severity or difficulty scores.",
+          "API names are clues. Types, aliases, control flow, dynamic dispatch and callback targets are not fully resolved.",
+          "Local order is lexical order within a block; branches, exceptions, loops, short-circuiting and execution remain unchecked.",
+          "await may suspend; cancellation does not imply completed work or cleanup. Listener removal does not cancel work already started.",
+          "if/try/finally syntax does not prove adequate protection. The absence of hints does not imply safety.",
+          "No hidden scorers, reference patches, model results or human profiles are read. Operators must verify input provenance."
+        ],
+        "relations": [],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "partial",
+        "target_definitions": []
+      },
+      "sources": {
+        "README.md": "# Harbor sonar inspection upload\n\nThis workspace selects payload files, starts transfers, records queue and\nprogress history, and paints progress for its open panel. Runtime: Go 1.13.8.\nDependencies: Go standard library. See src for the session/component entry API.\n\nSelecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit.\nThe source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order.\n\nrecordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size.\n\nOne startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle.\n\nThe same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance.\nRemoving a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred.\n\nFiles have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset.\nA decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime.\n\nEnvironment.call/bind provides a synchronous source embedding: listen(file\n token, callback token) returns a subscription, start can invoke it before\nreturning, and unlisten may reenter navigation. decode(file token, packet,\ncompletion token) returns {deferred:false,frame} or {deferred:true}. Deferred\ncompletion invokes the bound native closure on an explicit later host turn.\nTransport receives a physical cancellation observer corresponding to the\nnative attempt state; cancel is idempotent. The wire embedding interns file\nobjects and forwards source/sink calls. Go uses context cancellation; the other\nnative ports use object flags. No native DOM/Promise runtime is claimed.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Go 1.13.8\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true,\n  \"runtime_artifacts\": [\n    {\n      \"package\": \"golang-1.13-go\",\n      \"version\": \"1.13.8-1ubuntu1.2\",\n      \"filename\": \"golang-1.13-go_1.13.8-1ubuntu1.2_amd64.deb\",\n      \"sha256\": \"a7f2aa26c607fadcbb84bc9329f687a60cf6469cff9c6223ed7178d5afd85140\"\n    },\n    {\n      \"package\": \"golang-1.13-src\",\n      \"version\": \"1.13.8-1ubuntu1.2\",\n      \"filename\": \"golang-1.13-src_1.13.8-1ubuntu1.2_amd64.deb\",\n      \"sha256\": \"a31a2736a19535af9a2614417fa3286f660c9a3c8e759beea9bcb2cb2bdcd15a\"\n    }\n  ],\n  \"host_binary\": null,\n  \"bootstrap_lock_sha256\": \"fdfaea057ebf9cb9f8e44f99591c0da4292f4a7a6a138c9fe479abf725128c25\"\n}\n",
+        "src/workflow.go": "package main\nimport \"context\"\n// A typed visit owns its view; each attempt owns cancellation and source callbacks.\ntype Environment interface {Call(string,...interface{}) interface{};Bind(func(interface{})) int}\ntype File struct {ID string;Token,Size int;Feed bool}\ntype Visit struct {ID int;File *File;Handle *Attempt}\ntype Attempt struct {File *File;Number int;Ctx context.Context;CancelContext context.CancelFunc;Env Environment;Stop func()}\nfunc NewAttempt(env Environment,file *File,n int,active func()int,audit func(interface{}),view func(interface{},int))*Attempt {\n ctx,cancel:=context.WithCancel(context.Background());h:=&Attempt{File:file,Number:n,Ctx:ctx,CancelContext:cancel,Env:env,Stop:func(){}};env.Call(\"transport\",file.Token,n)\n if file.Feed {callback:=env.Bind(func(packet interface{}) { order:=active();\n  deliver:=func(frame interface{}){;audit(frame);view(frame,order)}\n  value:=env.Call(\"decode\",file.Token,packet,env.Bind(deliver)).(map[string]interface{});if !value[\"deferred\"].(bool){deliver(value[\"frame\"])}\n });var subscription interface{};env.Call(\"start\",file.Token);subscription=env.Call(\"listen\",file.Token,callback);h.Stop=func(){env.Call(\"unlisten\",file.Token,subscription)};if h.Ctx.Err()!=nil{h.Stop()}}\n return h\n}\nfunc(h *Attempt)Cancel(){if h.Ctx.Err()!=nil{return};h.CancelContext();h.Stop();h.Env.Call(\"cancel\",h.File.Token,h.Number)}\ntype Client interface {Select(*File)*Attempt;Retry()*Attempt;Hide();Dispose();Snapshot()map[string]interface{}}\ntype Session struct {Env Environment;Visit *Visit;Serial,Attempts int;Tasks []*Attempt;Disposed bool}\nfunc NewSession(env Environment)Client{return &Session{Env:env}}\nfunc(s *Session)current(v *Visit)bool{return s.Visit==v}\nfunc(s *Session)enqueue(v *Visit,kind string)*Attempt {s.Attempts++;n:=s.Attempts;entry:=map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":n,\"visitId\":v.ID,\"kind\":kind};;s.Env.Call(\"record\",entry)\n h:=NewAttempt(s.Env,v.File,n,func()int{return 0},func(frame interface{}){s.Env.Call(\"recordProgress\",map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":n,\"frame\":frame})},func(frame interface{},order int){if s.current(v){s.Env.Call(\"showProgress\",map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":n,\"frame\":frame})}});s.Tasks=append(s.Tasks,h);return h}\nfunc(s *Session)notice(v *Visit,h *Attempt){;s.Env.Call(\"showQueued\",map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":h.Number,\"visitId\":v.ID,\"status\":\"queued\"})}\nfunc(s *Session)release(v *Visit){h:=v.Handle;v.Handle=nil;if h!=nil{h.Cancel()}}\nfunc(s *Session)Select(file *File)*Attempt {if s.Disposed{return nil};s.Serial++;request:=s.Serial;old:=s.Visit;s.Visit=nil;if old!=nil{s.release(old)};if s.Disposed||s.Serial!=request{return nil};v:=&Visit{ID:request,File:file};s.Visit=v;h:=s.enqueue(v,\"select\");if s.current(v){v.Handle=h;s.notice(v,h)}else{h.Cancel()};return h}\nfunc(s *Session)Retry()*Attempt{v:=s.Visit;if v==nil||v.Handle==nil||s.Disposed{return nil};v.Handle.Cancel();accepted:=v;h:=s.enqueue(accepted,\"retry\");if s.current(accepted){accepted.Handle=h}else{h.Cancel()};if s.current(accepted){s.notice(accepted,h)};return h}\nfunc(s *Session)Hide(){s.Serial++;old:=s.Visit;s.Visit=nil;if old!=nil{s.release(old)}}\nfunc(s *Session)Dispose(){if s.Disposed{return};s.Disposed=true;s.Hide();for _,h:=range s.Tasks{h.Cancel()}}\nfunc(s *Session)Snapshot()map[string]interface{}{var visit,file,attempt interface{};if s.Visit!=nil{visit=s.Visit.ID;file=s.Visit.File.ID;if s.Visit.Handle!=nil{attempt=s.Visit.Handle.Number}};return map[string]interface{}{\"visitId\":visit,\"fileId\":file,\"attemptId\":attempt,\"disposed\":s.Disposed,\"attempts\":s.Attempts}}\n\ntype Telemetry struct {Stop func()}\nfunc NewTelemetry(env Environment,file *File)*Telemetry {callback:=env.Bind(func(packet interface{}){deliver:=func(frame interface{}){env.Call(\"recordDelta\",frame)};value:=env.Call(\"decode\",file.Token,packet,env.Bind(deliver)).(map[string]interface{});if !value[\"deferred\"].(bool){deliver(value[\"frame\"])}});var subscription interface{};env.Call(\"start\",file.Token);subscription=env.Call(\"listen\",file.Token,callback);return &Telemetry{Stop:func(){env.Call(\"unlisten\",file.Token,subscription)}}}\n"
+      },
+      "task": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives. Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior. Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward. Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses.\n"
+    },
+    "source_sha256": "82646897121dd6ea7b4d6ca95b41a6411915666504d24df7b21b021fb670b554",
+    "task_id": "transfer-progress-composition-v4-window-cued-go-eval-v2"
+  },
+  "experience": {
+    "excludes": [],
+    "labels": [
+      "O",
+      "L",
+      "I",
+      "A"
+    ],
+    "limitations": [
+      "Only TASK and the supplied public documents and source establish requirements. Automatic contracts, prior experiences and evaluation observations do not.",
+      "Attempt 1 reports passing syntax and acceptance checks, but supplies no behavioral observations establishing completeness, causality or cross-task benefit.",
+      "Rejected decoding, adapter exceptions and physical transfer completion are outside the documented model.",
+      "Cancellation does not establish a requirement to discard decoding already accepted by an older attempt while its visit remains current.",
+      "The earlier experience's lack of a freshness requirement applied to its earlier sources. This task explicitly requires freshness protection; that difference does not invalidate the earlier task's boundary.",
+      "No workspace files were modified and no scorer, reference implementation or hidden tests were accessed."
+    ],
+    "requires": [
+      "shared_lifetime",
+      "attempt_resource",
+      "entry_snapshot",
+      "inline_reentry",
+      "effect_lifetimes",
+      "async_resume"
+    ],
+    "rules": [
+      {
+        "body": "Apply when a shared progress source serves distinct visits and attempts, startup can emit synchronously, full-frame decoding may finish later, and history and presentation have different lifetimes. README.md: \"Selecting a file creates a visit. Retry replaces the physical attempt without\\nopening another visit. Selecting the same file object again opens a new visit.\" README.md: \"The source is shared by attempts and visits for that file. start may emit cached\\npackets synchronously; decoding yields a full frame, immediately or later.\\nDecode completion order can differ from packet arrival order.\" Confirm these premises and the target's display-order requirement before applying freshness suppression.",
+        "category": "applicability"
+      },
+      {
+        "body": "Register panel reception before invoking startup, preserving later streaming. Original src/workflow.go: \"env.Call(\\\"start\\\",file.Token);subscription=env.Call(\\\"listen\\\",file.Token,callback)\". TASK: \"Restore the initial progress update without changing the public\\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior.\" Make retirement effective during startup so subsequent packets cannot start new work through an obsolete subscription, even before the outer startup returns. Keep already admitted decoding separate from that admission decision.",
+        "category": "event_relation"
+      },
+      {
+        "body": "When the task requires full-frame freshness, assign ordering at packet reception before decoding or callback-capable work. Scope ordering to the display owner, including attempts sharing one visit. After a newer frame has been published, suppress older frames only from presentation. Recheck both visit authority and publication order after audit callbacks; commit the publication watermark before calling the display sink, which may reenter delivery. TASK: \"Full\\nprogress frames may decode out of order; do not allow an older frame to roll the\\ncurrent display backward.\" README.md: \"A full frame replaces displayed state; loaded values can decrease or reset.\" Reception order, rather than loaded magnitude or completion order, determines freshness. Buffering every result until arrival order can be reconstructed is not required.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Keep audit completion independent of display permission. Capture the originating file, attempt and visit; retain the existing audit effect for each admitted decode, including completion after hide, replacement, cancellation or disposal. Audit before deciding whether to paint, then recheck visit authority and freshness because audit may synchronously navigate or complete another decode. README.md: \"recordProgress appends transfer history; showProgress paints the open panel.\" Original src/workflow.go: \"deliver:=func(frame interface{}){;audit(frame);view(frame,order)}\". A stale display frame still retains its history effect.",
+        "category": "preservation"
+      },
+      {
+        "body": "Coordinate ownership across callback-capable startup and cleanup. Publish cleanup ownership before startup callbacks can navigate; reconcile the returned handle without overwriting resources installed by newer navigation. Remove old resources from current ownership before canceling them, and recheck the navigation request after cleanup returns. Cancel captured retired resources and preserve repeated cleanup behavior. README.md: \"One startup window is relevant to this maintenance request: start may emit\\nmore than one packet synchronously. A showProgress callback may select or hide\\nanother visit before start returns, while its caller has not yet received the\\nreturned cleanup handle.\" README.md: \"Removing a listener commits removal before calling the host detach callback;\\nthat callback may synchronously select, hide or dispose. Repeated removal is\\ninert. Host callbacks execute synchronously unless explicitly deferred.\" Preserve cancellation order from src/workflow.go: \"h.CancelContext();h.Stop();h.Env.Call(\\\"cancel\\\",h.File.Token,h.Number)\". A provisional handle is an implementation option, not a required public API.",
+        "category": "preservation"
+      },
+      {
+        "body": "Keep an accepted retry bound to its entry visit and file across cancellation reentry. Cancel the previous attempt before enqueueing, retain the accepted command's record and attempt creation, cancel its resulting attempt if its visit has ended, and publish its queued notice only while that visit remains current. Original src/workflow.go: \"v.Handle.Cancel();accepted:=v;h:=s.enqueue(accepted,\\\"retry\\\");if s.current(accepted){accepted.Handle=h}else{h.Cancel()};if s.current(accepted){s.notice(accepted,h)}\". Preserve record-before-transport ordering, independent session counters and disposal. Preserve the exact queue fields from src/workflow.go: \"entry:=map[string]interface{}{\\\"fileId\\\":v.File.ID,\\\"attemptId\\\":n,\\\"visitId\\\":v.ID,\\\"kind\\\":kind}\" and notice fields: \"map[string]interface{}{\\\"fileId\\\":v.File.ID,\\\"attemptId\\\":h.Number,\\\"visitId\\\":v.ID,\\\"status\\\":\\\"queued\\\"}\".",
+        "category": "preservation"
+      },
+      {
+        "body": "Do not generalize panel reception or freshness changes to diagnostic consumers, introduce numeric monotonicity, extend queue records, or discard required audit. README.md: \"The same source service also has a diagnostic consumer, Telemetry/\\ncollectProgressTelemetry, whose existing live delta observations are separate\\nfrom the panel. Keep its existing behavior during this maintenance.\" README.md: \"Queue records are {fileId, attemptId, visitId, kind}\\nunless a separate authorization adds byteCount from file.size.\" Conversely, do not transfer an earlier task's absence of out-of-order display requirements into a target whose TASK explicitly requires freshness protection.",
+        "category": "exclusion"
+      },
+      {
+        "body": "Check cached startup and later streaming; immediate and deferred decoding; newer-then-older completion with both audit effects retained; and later packets whose loaded values decrease. Exercise nested delivery from audit and display callbacks to verify authority checks and watermark commitment. Navigate during startup, emit another packet before startup returns, and verify retired admission, cleanup, newer ownership and subsequent delivery. Complete admitted decoding after hide, replacement and disposal; reopen the identical file as a new visit. Exercise navigation from unlisten and cancellation, accepted entry-bound retries, retired queued-notice suppression, repeated cleanup, independent sessions, unchanged payloads and unchanged telemetry. These checks follow TASK's preservation and freshness requirements and README.md's synchronous callback model. VISIBLE_CHECKS.md: \"These checks are required after an Action but do not test business behavior.\"",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "A warm panel source delivers cached startup progress, and later packets continue to update the panel.",
+      "Complete newer and then older full-frame decodes: both retain their audit effects, while the older frame cannot replace the newer displayed frame.",
+      "A later packet with a lower loaded value can replace an earlier frame; numeric magnitude does not determine freshness.",
+      "Navigate from showProgress during synchronous startup, then emit another packet before start returns; verify current ownership, cleanup, and subsequent delivery.",
+      "Navigate from recordProgress or unlisten; verify that resumed outer work does not paint or replace resources belonging to a newer visit.",
+      "Complete previously started decodes after hide, replacement, or disposal; retain audit and suppress retired-visit display.",
+      "Retry while cancellation reenters navigation; preserve the accepted retry's original file and visit, record it once, and cancel its resulting transfer if retired.",
+      "Verify same-file reopening, repeated cleanup, independent sessions, unchanged queue and notice shapes, and unchanged telemetry observations."
+    ],
+    "forbidden_effects": [
+      "Allow an older received full frame to overwrite a newer frame already displayed for the current visit.",
+      "Use loaded-value monotonicity to determine frame freshness.",
+      "Discard required progress history merely because a frame is stale for display or its visit has closed.",
+      "Allow a retired startup to overwrite newer navigation ownership or leave its resources uncanceled.",
+      "Add byteCount or otherwise change the queue-record format.",
+      "Apply the panel reception or freshness policy to diagnostic telemetry."
+    ],
+    "lifecycle_identity": [
+      "File objects have stable identity and immutable id and size.",
+      "Each selection creates a distinct visit, including selection of the same file object; retry retains the visit and creates another physical attempt.",
+      "Progress audit remains associated with the originating file and attempt; visible publication requires the originating visit to remain current.",
+      "Freshness must distinguish packet reception order from decode completion order and must remain valid across synchronous callback reentry.",
+      "Each session retains its own lifetime, attempt counters, task collection, and disposal state."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Establish panel reception before invoking start so synchronous cached progress reaches the panel, while preserving subsequent streaming."
+      },
+      {
+        "id": "O2",
+        "text": "Track frame freshness from packet reception rather than decode completion or loaded value. After a newer frame has been published, prevent an older frame from replacing it on the current display, including through reentrant callbacks."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve progress audit for every decode already started, including stale display frames and completion after navigation or disposal. Perform the existing audit before considering visible publication, and recheck current visit authority after callback-capable audit."
+      },
+      {
+        "id": "O4",
+        "text": "Coordinate startup and cancellation so navigation during synchronous startup or cleanup retains newer ownership, retires old resources, and prevents old visits from painting. Reopening the same file must remain functional."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve accepted retry behavior: cancel the prior attempt before enqueueing, retain the entry visit and file across cancellation reentry, record and create the accepted retry, cancel its resulting attempt if its visit ended, and show queued notices only while its visit remains current."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve public APIs, queue and notice payloads, synchronous observable recording order, idempotent cancellation and disposal, ordinary streaming, and the diagnostic consumer's existing behavior."
+      }
+    ],
+    "ordering_barriers": [
+      "Register the panel listener before start can synchronously emit cached packets.",
+      "Capture packet freshness before decoding can complete or invoke host callbacks.",
+      "Retain audit before visible publication; check current visit and freshness after audit returns.",
+      "Commit display freshness before showProgress can synchronously reenter delivery or navigation.",
+      "Remove old visit ownership before callback-capable cancellation; recheck navigation identity before installing a replacement visit.",
+      "Make cleanup ownership effective during startup, then reconcile the returned handle without replacing newer ownership.",
+      "Keep record before transport and startup, prior-attempt cancellation before retry enqueue, and queued notice after attempt creation and current-visit validation."
+    ],
+    "preservation": [
+      "Queue records remain {fileId, attemptId, visitId, kind}; notices remain {fileId, attemptId, visitId, status: \"queued\"}.",
+      "Existing progress history is recorded synchronously when immediate decoding completes and on the completion callback for deferred decoding.",
+      "Already started decoding remains capable of recording history after listener removal or cancellation.",
+      "Cancellation commits context cancellation before listener removal and physical cancellation; repeated cancellation remains inert.",
+      "Telemetry retains its existing live delta behavior and its separate subscription and decode path.",
+      "A full frame replaces displayed state, including legitimate decreases or resets in loaded values."
+    ],
+    "scope": [
+      "Draft contract only; no files modified.",
+      "Panel warm-start reception, display freshness, and lifecycle coordination necessary to preserve existing behavior in src/workflow.go.",
+      "Normative evidence is the original TASK and supplied public documents and source. Experience and evaluation observations supply no additional requirements."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior."
+      },
+      {
+        "file": "TASK",
+        "quote": "Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward. Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses."
+      },
+      {
+        "file": "README.md",
+        "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit."
+      },
+      {
+        "file": "README.md",
+        "quote": "The source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order."
+      },
+      {
+        "file": "README.md",
+        "quote": "One startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle."
+      },
+      {
+        "file": "README.md",
+        "quote": "Removing a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred."
+      },
+      {
+        "file": "README.md",
+        "quote": "A full frame replaces displayed state; loaded values can decrease or reset."
+      },
+      {
+        "file": "README.md",
+        "quote": "The same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance."
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "deliver:=func(frame interface{}){;audit(frame);view(frame,order)}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "env.Call(\"start\",file.Token);subscription=env.Call(\"listen\",file.Token,callback)"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(h *Attempt)Cancel(){if h.Ctx.Err()!=nil{return};h.CancelContext();h.Stop();h.Env.Call(\"cancel\",h.File.Token,h.Number)}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "v.Handle.Cancel();accepted:=v;h:=s.enqueue(accepted,\"retry\");if s.current(accepted){accepted.Handle=h}else{h.Cancel()};if s.current(accepted){s.notice(accepted,h)}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "entry:=map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":n,\"visitId\":v.ID,\"kind\":kind};;s.Env.Call(\"record\",entry)"
+      }
+    ],
+    "triggers": [
+      "Selecting a feed-enabled file whose source emits cached progress during start.",
+      "Multiple synchronous startup packets or deferred decodes completing out of reception order.",
+      "Synchronous navigation during progress publication, history recording, cancellation, or listener removal.",
+      "Retry, hide, replacement, disposal, and reopening the identical file."
+    ],
+    "unknowns": [
+      "Filesystem verification was unavailable because the command runner failed to create its sandbox namespace; evidence above uses the public source text supplied in the request.",
+      "Decoder rejection, adapter exceptions, and physical transfer completion are outside the documented model.",
+      "The sources do not require buffering all decodes until reception order can be reconstructed; a publication freshness guard can satisfy the stated display requirement.",
+      "Cancellation alone does not establish a new rule discarding already accepted progress from an older attempt whose visit remains current.",
+      "The task does not authorize queue-record extensions or changes to telemetry startup semantics."
+    ]
+  },
+  "final_training_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "A warm panel source delivers cached startup progress, and later packets continue to update the panel.",
+      "Complete newer and then older full-frame decodes: both retain their audit effects, while the older frame cannot replace the newer displayed frame.",
+      "A later packet with a lower loaded value can replace an earlier frame; numeric magnitude does not determine freshness.",
+      "Navigate from showProgress during synchronous startup, then emit another packet before start returns; verify current ownership, cleanup, and subsequent delivery.",
+      "Navigate from recordProgress or unlisten; verify that resumed outer work does not paint or replace resources belonging to a newer visit.",
+      "Complete previously started decodes after hide, replacement, or disposal; retain audit and suppress retired-visit display.",
+      "Retry while cancellation reenters navigation; preserve the accepted retry's original file and visit, record it once, and cancel its resulting transfer if retired.",
+      "Verify same-file reopening, repeated cleanup, independent sessions, unchanged queue and notice shapes, and unchanged telemetry observations."
+    ],
+    "forbidden_effects": [
+      "Allow an older received full frame to overwrite a newer frame already displayed for the current visit.",
+      "Use loaded-value monotonicity to determine frame freshness.",
+      "Discard required progress history merely because a frame is stale for display or its visit has closed.",
+      "Allow a retired startup to overwrite newer navigation ownership or leave its resources uncanceled.",
+      "Add byteCount or otherwise change the queue-record format.",
+      "Apply the panel reception or freshness policy to diagnostic telemetry."
+    ],
+    "lifecycle_identity": [
+      "File objects have stable identity and immutable id and size.",
+      "Each selection creates a distinct visit, including selection of the same file object; retry retains the visit and creates another physical attempt.",
+      "Progress audit remains associated with the originating file and attempt; visible publication requires the originating visit to remain current.",
+      "Freshness must distinguish packet reception order from decode completion order and must remain valid across synchronous callback reentry.",
+      "Each session retains its own lifetime, attempt counters, task collection, and disposal state."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Establish panel reception before invoking start so synchronous cached progress reaches the panel, while preserving subsequent streaming."
+      },
+      {
+        "id": "O2",
+        "text": "Track frame freshness from packet reception rather than decode completion or loaded value. After a newer frame has been published, prevent an older frame from replacing it on the current display, including through reentrant callbacks."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve progress audit for every decode already started, including stale display frames and completion after navigation or disposal. Perform the existing audit before considering visible publication, and recheck current visit authority after callback-capable audit."
+      },
+      {
+        "id": "O4",
+        "text": "Coordinate startup and cancellation so navigation during synchronous startup or cleanup retains newer ownership, retires old resources, and prevents old visits from painting. Reopening the same file must remain functional."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve accepted retry behavior: cancel the prior attempt before enqueueing, retain the entry visit and file across cancellation reentry, record and create the accepted retry, cancel its resulting attempt if its visit ended, and show queued notices only while its visit remains current."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve public APIs, queue and notice payloads, synchronous observable recording order, idempotent cancellation and disposal, ordinary streaming, and the diagnostic consumer's existing behavior."
+      }
+    ],
+    "ordering_barriers": [
+      "Register the panel listener before start can synchronously emit cached packets.",
+      "Capture packet freshness before decoding can complete or invoke host callbacks.",
+      "Retain audit before visible publication; check current visit and freshness after audit returns.",
+      "Commit display freshness before showProgress can synchronously reenter delivery or navigation.",
+      "Remove old visit ownership before callback-capable cancellation; recheck navigation identity before installing a replacement visit.",
+      "Make cleanup ownership effective during startup, then reconcile the returned handle without replacing newer ownership.",
+      "Keep record before transport and startup, prior-attempt cancellation before retry enqueue, and queued notice after attempt creation and current-visit validation."
+    ],
+    "preservation": [
+      "Queue records remain {fileId, attemptId, visitId, kind}; notices remain {fileId, attemptId, visitId, status: \"queued\"}.",
+      "Existing progress history is recorded synchronously when immediate decoding completes and on the completion callback for deferred decoding.",
+      "Already started decoding remains capable of recording history after listener removal or cancellation.",
+      "Cancellation commits context cancellation before listener removal and physical cancellation; repeated cancellation remains inert.",
+      "Telemetry retains its existing live delta behavior and its separate subscription and decode path.",
+      "A full frame replaces displayed state, including legitimate decreases or resets in loaded values."
+    ],
+    "scope": [
+      "Draft contract only; no files modified.",
+      "Panel warm-start reception, display freshness, and lifecycle coordination necessary to preserve existing behavior in src/workflow.go.",
+      "Normative evidence is the original TASK and supplied public documents and source. Experience and evaluation observations supply no additional requirements."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior."
+      },
+      {
+        "file": "TASK",
+        "quote": "Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward. Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses."
+      },
+      {
+        "file": "README.md",
+        "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit."
+      },
+      {
+        "file": "README.md",
+        "quote": "The source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order."
+      },
+      {
+        "file": "README.md",
+        "quote": "One startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle."
+      },
+      {
+        "file": "README.md",
+        "quote": "Removing a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred."
+      },
+      {
+        "file": "README.md",
+        "quote": "A full frame replaces displayed state; loaded values can decrease or reset."
+      },
+      {
+        "file": "README.md",
+        "quote": "The same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance."
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "deliver:=func(frame interface{}){;audit(frame);view(frame,order)}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "env.Call(\"start\",file.Token);subscription=env.Call(\"listen\",file.Token,callback)"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(h *Attempt)Cancel(){if h.Ctx.Err()!=nil{return};h.CancelContext();h.Stop();h.Env.Call(\"cancel\",h.File.Token,h.Number)}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "v.Handle.Cancel();accepted:=v;h:=s.enqueue(accepted,\"retry\");if s.current(accepted){accepted.Handle=h}else{h.Cancel()};if s.current(accepted){s.notice(accepted,h)}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "entry:=map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":n,\"visitId\":v.ID,\"kind\":kind};;s.Env.Call(\"record\",entry)"
+      }
+    ],
+    "triggers": [
+      "Selecting a feed-enabled file whose source emits cached progress during start.",
+      "Multiple synchronous startup packets or deferred decodes completing out of reception order.",
+      "Synchronous navigation during progress publication, history recording, cancellation, or listener removal.",
+      "Retry, hide, replacement, disposal, and reopening the identical file."
+    ],
+    "unknowns": [
+      "Filesystem verification was unavailable because the command runner failed to create its sandbox namespace; evidence above uses the public source text supplied in the request.",
+      "Decoder rejection, adapter exceptions, and physical transfer completion are outside the documented model.",
+      "The sources do not require buffering all decodes until reception order can be reconstructed; a publication freshness guard can satisfy the stated display requirement.",
+      "Cancellation alone does not establish a new rule discarding already accepted progress from an older attempt whose visit remains current.",
+      "The task does not authorize queue-record extensions or changes to telemetry startup semantics."
+    ]
+  },
+  "origin": "success",
+  "reflection_update": {
+    "change_summary": [
+      "Replace the earlier task-specific absence of freshness requirements with an explicit applicability boundary and source-supported reception-order protection.",
+      "Add checks for audit reentry, publication watermark commitment before display reentry, decreasing loaded values and freshness across attempts sharing a visit.",
+      "Retain lifecycle, retry, audit and payload preservation guidance using exact quotations from the current public sources.",
+      "Make preservation of diagnostic telemetry explicit without transferring panel policies to it."
+    ],
+    "failure_attribution": "experience_gap",
+    "operation": "revise",
+    "reason": "The primary experience already covers reception, retained audit, startup cleanup and accepted retries. Its freshness exclusion correctly asks for a target-specific requirement, but its concrete rules and checkpoints do not cover this TASK's explicit out-of-order full-frame requirement. This is a target-specific guidance extension, not evidence that the earlier guidance was wrong for its original sources. The complementary audit and cleanup experiences support the same mechanisms; persistent-document scheduling adds no requirement here, so a merge is unnecessary. Attempt 1 supplies reflection context and reported passing checks; no implementation failure or causal benefit is established.",
+    "supporting_attempts": [
+      1
+    ],
+    "target_sha256s": [
+      "6fcd6376641fabd68811e2b973e73444b5f602f80ab32d029097d93133147320"
+    ]
+  },
+  "related_experiences": [
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "fc27048c4e0a5a1c35ea5064e64ae22c82b93751a702b21ecb834d3892981bc1"
+          }
+        ]
+      },
+      "body_sha256": "04af1533e4fe1b7ad98030f1b892b16fe367863117df7282cb4e8e0538fe98cb",
+      "excludes": [],
+      "id": "candidate-c0da785a3d7ea483aa0ecc0bf3b47c22",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "shared_lifetime",
+        "attempt_resource",
+        "entry_snapshot",
+        "inline_reentry",
+        "effect_lifetimes",
+        "async_resume"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "fc27048c4e0a5a1c35ea5064e64ae22c82b93751a702b21ecb834d3892981bc1",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when a reusable progress source serves distinct visits and attempts, startup can emit synchronously, decoding can finish later, and retained audit differs from visible presentation. README.md: \"The same file and source can be reused\\nby multiple panel visits. Each selected or retried attempt starts one subscription.\" Confirm these premises in each target system.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Register reception before starting the source, preserving subsequent streaming and public interfaces. Original src/workflow.py invokes \"        env.call('start',file['token'])\\n        subscription=env.call('listen',file['token'],callback)\". README.md states: \"Starting a view of the stream may synchronously\\nemit its cached progress event; further progress events arrive on the same target.\"\n\nCheck originating subscription and visit eligibility before decoding each packet. Retirement immediately prevents subsequent admission, including additional packets emitted before startup returns; do not depend solely on physical listener removal. README.md: \"A retired visit\\naccepts no new progress events.\"",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Separate admission, retained audit and visible publication. Record each admitted event exactly once when decoding completes, including after retirement or disposal; check originating visit validity before visible publication. README.md: \"Every accepted progress event is recorded exactly once when decoding\\nfinishes, including work accepted before the visit closes.\" It also states: \"Removing a listener does not retract a decode\\nthat already started. Closing or replacing the visit stops visible progress;\\nnew visits remain live.\" Reopening the identical file creates a distinct visit.\n\nCoordinate cleanup and ownership across callback-capable startup and cancellation. Retire old ownership before cleanup can reenter navigation; when an older operation resumes, prevent it from overwriting newer ownership and clean up its retired resources. Preserve idempotent cancellation and disposal. README.md: \"Selection and hiding may themselves cancel an old handle and synchronously\\nreceive newer navigation; the newer navigation keeps ownership.\" Also: \"Disposal removes subscriptions and cancels transfers; work already accepted\\nfor audit remains retained.\" A provisional cleanup handle is an implementation option, not a mandated public interface.\n\nKeep accepted retries bound to their entry file and visit. Cancel the prior transfer before enqueueing, preserve exactly one accepted command and record across cancellation navigation, cancel the resulting transfer if its visit ended, and suppress retired queued notices. README.md: \"The accepted old retry must still enqueue and record once after such navigation.\\nIts newly created transfer is canceled immediately if its visit has ended; this\\ndoes not remove its retained queue record.\" Also: \"Queued notices are visible output: a notice\\nfrom a retired visit must not be sent, including after reopening the same file.\" Preserve independent workspace counters and cancellation.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Keep the repair within reception and necessary lifecycle coordination. Preserve queue and notice shapes and adapter interfaces. README.md: \"Every queue record remains exactly `{fileId, attemptId, visitId, kind}`;\" and \"Notices remain\\n`{fileId, attemptId, visitId, status: \\\"queued\\\"}`.\" Do not introduce decode freshness suppression without a target-specific requirement: VISIBLE_CHECKS.md states, \"These maintenance examples do not impose composition-specific out-of-order display rules.\" Do not transfer unrelated diagnostic-consumer policies into this repair.\n\nCandidate limitations:\n- Evidence is the supplied original TASK and public documents/code; automatic contracts, experience text and evaluation observations do not establish requirements.\n- TASK: \"Restore the initial update while preserving the existing transfer, retry, navigation, cleanup and audit behavior, ordinary streaming and subsequent uses. The queue-record format is outside this fix.\"\n- VISIBLE_CHECKS.md: \"These maintenance examples do not impose composition-specific out-of-order display rules.\" No arrival-order suppression or numeric monotonicity requirement is established.\n- Decoder failures, adapter exceptions and visibility of already accepted decoding from a canceled attempt whose visit remains current are unspecified.\n- Attempt 1 supports the reflection context but its passing examples do not establish complete correctness, causality or cross-task benefit. No implementation failure is established.\n- Diagnostic-consumer requirements from other experiences are not established for this public source. No files were modified.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Verify cached startup and later streaming, immediate and deferred decoding, retained audit after hide/disposal, and new delivery after same-file reopening. Exercise synchronous hide, switch and reopening during startup, with subsequent packets before the outer startup returns: retired listeners must reject new admission while previously admitted decoding retains audit. Separately verify newer ownership after cancellation reentry, accepted entry-bound retry recording and cancellation, current queued notices, repeated cleanup, workspace independence and unchanged record shapes. These checkpoints follow README.md's documented lifecycle; they do not prescribe an order among independently completing decodes.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "6fcd6376641fabd68811e2b973e73444b5f602f80ab32d029097d93133147320",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "progress-subscriptions.json",
+            "sha256": "b314d6685cbe1d087c8b10b3ae825609e392550b08e30f9853332961c2caf1d3"
+          }
+        ]
+      },
+      "body_sha256": "42f058a65aa51e175c051051c4e731747683514b49f3f9d80d7d847f747004b0",
+      "excludes": [],
+      "id": "progress-audit-publication",
+      "labels": [
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "async_resume",
+        "effect_lifetimes"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "b314d6685cbe1d087c8b10b3ae825609e392550b08e30f9853332961c2caf1d3",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "The current contract retains history for admitted progress, while UI updates belong to the originating visit. Decoding may complete immediately or later.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Bind decoding to the visit and attempt that admitted it. On completion, retain the required number of history effects, then recheck visit validity before painting. History callbacks may also navigate, requiring another validity check.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Retain admitted audit effects and valid progress for the new visit. Listener removal alone does not cancel decoding already started.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Do not use one early validity check to control both auditing and display. Follow another task's explicit discard policy if it revokes the history obligation.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Complete decoding across hide, switch, retry and same-source reopening. Check history cardinality, no retired-panel painting and display permission after navigation in a history callback.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "8408b3e61f568b3bf778cffba33202d9f0ab2814dee553358ebd9340c56c2bcc",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "mechanisms.json",
+            "sha256": "ef4b5aeba6b5f3f0cbfcedf819240d6bfecdbdb05bc05107360b22f1b716fdd1"
+          }
+        ]
+      },
+      "body_sha256": "0d62afa4535678eb7b21efdedd714e4ce8edc71767387b16988ada46bf8f036e",
+      "excludes": [],
+      "id": "persistent-owner",
+      "labels": [
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "shared_lifetime",
+        "effect_lifetimes"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "ef4b5aeba6b5f3f0cbfcedf819240d6bfecdbdb05bc05107360b22f1b716fdd1",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "A documented document buffer or other persistent owner outlives a view that owns only its live subscription.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Keep accepted persistent work associated with its original owner when the view detaches. Clean up the captured subscription without discarding or redirecting that work or destroying required reuse.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Keep current-view status filtering, document presentation and original identity/text/payload semantics. Reconcile departure scheduling using the current contract.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Persistent ownership alone does not establish a before-return persistence deadline. Do not transfer durable-work retention to transient preview work.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Switch, close, dispose and reopen while work is pending; check original-owner persistence, subscription cleanup, independent buffers and current-view output.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "984fb0d8e49c6024fa2f65d98389729e9a4bfb112c37d0d2b99fd37269bafafa",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "deferred-persistence.json",
+            "sha256": "f067f05890f4f941383afff0c0212a3cdd1c2ed9d245b98f6937ce47c7b51d6c"
+          }
+        ]
+      },
+      "body_sha256": "287efcb13d653ec39ccf630087f881d75c6e2a4fed77688ecacf4546f4290bdf",
+      "excludes": [],
+      "id": "editor-navigation-reentry",
+      "labels": [
+        "O",
+        "L",
+        "I"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "inline_reentry"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "f067f05890f4f941383afff0c0212a3cdd1c2ed9d245b98f6937ce47c7b51d6c",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Saving or subscription cleanup synchronously calls host listeners that may open another document or close the workspace.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Capture the old view and remove its current ownership. Finish final old-view effects, such as clearing its display, before callback-capable saving, or check authority for effects remaining after callbacks. An outer open rechecks its request identity after retirement.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Nested open/close, nested editing and the new view's rendering remain authoritative. Disposal also cleans up captured resources rather than clearing objects installed by a callback.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Protecting only final view installation can still leave a later stale clearing render. Do not require every host to detach first; notification order follows the current contract.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Invoke open/close inside listeners for timer-driven and departure-driven saves. Check document output, subscriptions and nested edits after the outer call returns, through both direct calls and actual unmounting.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "progress-subscriptions.json",
+            "sha256": "343b3e2617b11cbcfa53cb5e01a94409b9f1b8805030753430896d32de54fbfc"
+          }
+        ]
+      },
+      "body_sha256": "140346ee59196e068b2b531e7718d1257ed4a2d0a75b9071750459558b408883",
+      "excludes": [],
+      "id": "progress-cleanup-reentry",
+      "labels": [
+        "O",
+        "L",
+        "I"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "inline_reentry",
+        "attempt_resource"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "343b3e2617b11cbcfa53cb5e01a94409b9f1b8805030753430896d32de54fbfc",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Startup, cancellation or listener removal may synchronously navigate. An old startup may return after a new visit has installed resources.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Establish provisional cleanup ownership before callbacks are possible. Remove old resources from current ownership before cancellation. Recheck ownership when the real handle returns; a retired outer startup must not overwrite the new visit's handle.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Clean captured old resources while preserving new ones. Keep repeated cancellation and removal inert, and preserve the host's removal-before-callback contract.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Do not assign the handle only after startup or let old cleanup unconditionally clear the current handle. Preserve public construction and cancellation interfaces.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Hide, switch and dispose inside startup and unlisten callbacks. Check the current visit, later updates, listener ownership, physical cancellation and final cleanup.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "b53135c6d70ccfd182e8ede45edccf20afe9a634e53ce19ffa62e24496fedc0f",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    }
+  ],
+  "source_sha256": "82646897121dd6ea7b4d6ca95b41a6411915666504d24df7b21b021fb670b554",
+  "status": "awaiting_content_review",
+  "task": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives. Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior. Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward. Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses.\n",
+  "training_accepted": true,
+  "trajectory": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "86c2c7d354f0ab7e7a4d763d07299a66e683f4992df9e4f130903e6fff192c92",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "7b4b9efa2f3c9df4316d75bbd3a3bcbbf0f27cb85ef1d194b2d3aa79188d7647",
+        "src/workflow.go": "7921f7115d693ea5133df15443acf8e03534ddc636affff63dbcff826dc4d63e"
+      },
+      "candidate_sources": {
+        "README.md": "# Harbor sonar inspection upload\n\nThis workspace selects payload files, starts transfers, records queue and\nprogress history, and paints progress for its open panel. Runtime: Go 1.13.8.\nDependencies: Go standard library. See src for the session/component entry API.\n\nSelecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit.\nThe source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order.\n\nrecordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size.\n\nOne startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle.\n\nThe same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance.\nRemoving a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred.\n\nFiles have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset.\nA decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime.\n\nEnvironment.call/bind provides a synchronous source embedding: listen(file\n token, callback token) returns a subscription, start can invoke it before\nreturning, and unlisten may reenter navigation. decode(file token, packet,\ncompletion token) returns {deferred:false,frame} or {deferred:true}. Deferred\ncompletion invokes the bound native closure on an explicit later host turn.\nTransport receives a physical cancellation observer corresponding to the\nnative attempt state; cancel is idempotent. The wire embedding interns file\nobjects and forwards source/sink calls. Go uses context cancellation; the other\nnative ports use object flags. No native DOM/Promise runtime is claimed.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Go 1.13.8\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true,\n  \"runtime_artifacts\": [\n    {\n      \"package\": \"golang-1.13-go\",\n      \"version\": \"1.13.8-1ubuntu1.2\",\n      \"filename\": \"golang-1.13-go_1.13.8-1ubuntu1.2_amd64.deb\",\n      \"sha256\": \"a7f2aa26c607fadcbb84bc9329f687a60cf6469cff9c6223ed7178d5afd85140\"\n    },\n    {\n      \"package\": \"golang-1.13-src\",\n      \"version\": \"1.13.8-1ubuntu1.2\",\n      \"filename\": \"golang-1.13-src_1.13.8-1ubuntu1.2_amd64.deb\",\n      \"sha256\": \"a31a2736a19535af9a2614417fa3286f660c9a3c8e759beea9bcb2cb2bdcd15a\"\n    }\n  ],\n  \"host_binary\": null,\n  \"bootstrap_lock_sha256\": \"fdfaea057ebf9cb9f8e44f99591c0da4292f4a7a6a138c9fe479abf725128c25\"\n}\n",
+        "src/workflow.go": "package main\n\nimport \"context\"\n\n// A typed visit owns its view; each attempt owns cancellation and source callbacks.\ntype Environment interface {\n\tCall(string, ...interface{}) interface{}\n\tBind(func(interface{})) int\n}\ntype File struct {\n\tID          string\n\tToken, Size int\n\tFeed        bool\n}\ntype Visit struct {\n\tID                  int\n\tFile                *File\n\tHandle              *Attempt\n\tReceived, Published int\n}\ntype Attempt struct {\n\tFile          *File\n\tNumber        int\n\tCtx           context.Context\n\tCancelContext context.CancelFunc\n\tEnv           Environment\n\tStop          func()\n}\n\nfunc NewAttempt(env Environment, file *File, n int, active func() int, audit func(interface{}), view func(interface{}, int)) *Attempt {\n\treturn newAttempt(env, file, n, active, audit, view, func(*Attempt) {})\n}\nfunc newAttempt(env Environment, file *File, n int, active func() int, audit func(interface{}), view func(interface{}, int), ready func(*Attempt)) *Attempt {\n\tctx, cancel := context.WithCancel(context.Background())\n\th := &Attempt{File: file, Number: n, Ctx: ctx, CancelContext: cancel, Env: env, Stop: func() {}}\n\tready(h)\n\tenv.Call(\"transport\", file.Token, n)\n\tif file.Feed && h.Ctx.Err() == nil {\n\t\tcallback := env.Bind(func(packet interface{}) {\n\t\t\tif h.Ctx.Err() != nil {\n\t\t\t\treturn\n\t\t\t}\n\t\t\torder := active()\n\t\t\tif order < 0 {\n\t\t\t\treturn\n\t\t\t}\n\t\t\tdeliver := func(frame interface{}) { ; audit(frame); view(frame, order) }\n\t\t\tvalue := env.Call(\"decode\", file.Token, packet, env.Bind(deliver)).(map[string]interface{})\n\t\t\tif !value[\"deferred\"].(bool) {\n\t\t\t\tdeliver(value[\"frame\"])\n\t\t\t}\n\t\t})\n\t\tsubscription := env.Call(\"listen\", file.Token, callback)\n\t\tstopped := false\n\t\th.Stop = func() {\n\t\t\tif stopped {\n\t\t\t\treturn\n\t\t\t}\n\t\t\tstopped = true\n\t\t\tenv.Call(\"unlisten\", file.Token, subscription)\n\t\t}\n\t\tif h.Ctx.Err() != nil {\n\t\t\th.Stop()\n\t\t} else {\n\t\t\tenv.Call(\"start\", file.Token)\n\t\t}\n\t}\n\treturn h\n}\nfunc (h *Attempt) Cancel() {\n\tif h.Ctx.Err() != nil {\n\t\treturn\n\t}\n\th.CancelContext()\n\th.Stop()\n\th.Env.Call(\"cancel\", h.File.Token, h.Number)\n}\n\ntype Client interface {\n\tSelect(*File) *Attempt\n\tRetry() *Attempt\n\tHide()\n\tDispose()\n\tSnapshot() map[string]interface{}\n}\ntype Session struct {\n\tEnv              Environment\n\tVisit            *Visit\n\tSerial, Attempts int\n\tTasks            []*Attempt\n\tDisposed         bool\n}\n\nfunc NewSession(env Environment) Client  { return &Session{Env: env} }\nfunc (s *Session) current(v *Visit) bool { return s.Visit == v }\nfunc (s *Session) enqueue(v *Visit, kind string) *Attempt {\n\ts.Attempts++\n\tn := s.Attempts\n\tentry := map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"visitId\": v.ID, \"kind\": kind}\n\ts.Env.Call(\"record\", entry)\n\th := newAttempt(s.Env, v.File, n, func() int {\n\t\tif !s.current(v) {\n\t\t\treturn -1\n\t\t}\n\t\tv.Received++\n\t\treturn v.Received\n\t}, func(frame interface{}) {\n\t\ts.Env.Call(\"recordProgress\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"frame\": frame})\n\t}, func(frame interface{}, order int) {\n\t\tif s.current(v) && order > v.Published {\n\t\t\tv.Published = order\n\t\t\ts.Env.Call(\"showProgress\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"frame\": frame})\n\t\t}\n\t}, func(h *Attempt) {\n\t\ts.Tasks = append(s.Tasks, h)\n\t\tif s.current(v) {\n\t\t\tv.Handle = h\n\t\t}\n\t})\n\treturn h\n}\nfunc (s *Session) notice(v *Visit, h *Attempt) {\n\ts.Env.Call(\"showQueued\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": h.Number, \"visitId\": v.ID, \"status\": \"queued\"})\n}\nfunc (s *Session) release(v *Visit) {\n\th := v.Handle\n\tv.Handle = nil\n\tif h != nil {\n\t\th.Cancel()\n\t}\n}\nfunc (s *Session) Select(file *File) *Attempt {\n\tif s.Disposed {\n\t\treturn nil\n\t}\n\ts.Serial++\n\trequest := s.Serial\n\told := s.Visit\n\ts.Visit = nil\n\tif old != nil {\n\t\ts.release(old)\n\t}\n\tif s.Disposed || s.Serial != request {\n\t\treturn nil\n\t}\n\tv := &Visit{ID: request, File: file}\n\ts.Visit = v\n\th := s.enqueue(v, \"select\")\n\tif s.current(v) {\n\t\ts.notice(v, h)\n\t} else {\n\t\th.Cancel()\n\t}\n\treturn h\n}\nfunc (s *Session) Retry() *Attempt {\n\tv := s.Visit\n\tif v == nil || v.Handle == nil || s.Disposed {\n\t\treturn nil\n\t}\n\tv.Handle.Cancel()\n\taccepted := v\n\th := s.enqueue(accepted, \"retry\")\n\tif !s.current(accepted) {\n\t\th.Cancel()\n\t}\n\tif s.current(accepted) {\n\t\ts.notice(accepted, h)\n\t}\n\treturn h\n}\nfunc (s *Session) Hide() {\n\ts.Serial++\n\told := s.Visit\n\ts.Visit = nil\n\tif old != nil {\n\t\ts.release(old)\n\t}\n}\nfunc (s *Session) Dispose() {\n\tif s.Disposed {\n\t\treturn\n\t}\n\ts.Disposed = true\n\ts.Hide()\n\tfor _, h := range s.Tasks {\n\t\th.Cancel()\n\t}\n}\nfunc (s *Session) Snapshot() map[string]interface{} {\n\tvar visit, file, attempt interface{}\n\tif s.Visit != nil {\n\t\tvisit = s.Visit.ID\n\t\tfile = s.Visit.File.ID\n\t\tif s.Visit.Handle != nil {\n\t\t\tattempt = s.Visit.Handle.Number\n\t\t}\n\t}\n\treturn map[string]interface{}{\"visitId\": visit, \"fileId\": file, \"attemptId\": attempt, \"disposed\": s.Disposed, \"attempts\": s.Attempts}\n}\n\ntype Telemetry struct{ Stop func() }\n\nfunc NewTelemetry(env Environment, file *File) *Telemetry {\n\tcallback := env.Bind(func(packet interface{}) {\n\t\tdeliver := func(frame interface{}) { env.Call(\"recordDelta\", frame) }\n\t\tvalue := env.Call(\"decode\", file.Token, packet, env.Bind(deliver)).(map[string]interface{})\n\t\tif !value[\"deferred\"].(bool) {\n\t\t\tdeliver(value[\"frame\"])\n\t\t}\n\t})\n\tvar subscription interface{}\n\tenv.Call(\"start\", file.Token)\n\tsubscription = env.Call(\"listen\", file.Token, callback)\n\treturn &Telemetry{Stop: func() { env.Call(\"unlisten\", file.Token, subscription) }}\n}\n"
+      },
+      "delivered_sha256s": [
+        "6fcd6376641fabd68811e2b973e73444b5f602f80ab32d029097d93133147320",
+        "8408b3e61f568b3bf778cffba33202d9f0ab2814dee553358ebd9340c56c2bcc",
+        "984fb0d8e49c6024fa2f65d98389729e9a4bfb112c37d0d2b99fd37269bafafa",
+        "092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce",
+        "b53135c6d70ccfd182e8ede45edccf20afe9a634e53ce19ffa62e24496fedc0f"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.go",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ]
+}

@@ -1,0 +1,763 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/workflow.go\n+++ candidate/src/workflow.go\n@@ -52,26 +52,25 @@\n func(w *Workspace) retire() {\n     leaving:=w.current;w.current=nil\n     if leaving!=nil { w.env.Store().Stop(leaving.token) };w.env.Output(\"document\",nil)\n-    \n+    // Clear the old view before saving: write listeners may open a new visit.\n+    if leaving!=nil { leaving.task.Flush() }\n }\n func(w *Workspace) Open(id string) {\n     w.env.Output(\"notice\",nil);w.navigation++;request:=w.navigation;w.retire()\n-    _=request\n+    if request!=w.navigation { return }\n     token:=w.env.Store().Subscribe(func(event Value){if event[\"id\"]==id {w.env.Output(\"status\",event)}})\n     task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})\n     w.current=&Visit{id,w.env.Store().Read(id),token,task};w.env.Output(\"document\",Value{\"id\":id,\"text\":w.current.text})\n }\n-func(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.env.Write(w.current.id,text) }\n+func(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.current.task.Push(text) }\n func(w *Workspace) Close() { w.env.Output(\"notice\",nil);w.navigation++;w.retire() }\n func(w *Workspace) Submit() interface{} {\n     confirmation:=BindConfirmation(func()*Visit{return w.current},func(receipt interface{}){w.env.Output(\"notice\",receipt)})\n     visit:=w.current;if visit==nil {return nil};snapshot:=Value{\"id\":visit.id,\"text\":visit.text}\n-    \n-    \n-    \n-    \n+    // Flush consumes this burst before write listeners can accept another edit.\n+    // Keep the entry snapshot and acquired confirmation across those callbacks.\n+    visit.task.Flush()\n     receipt:=w.env.Capture(snapshot)\n-    \n     confirmation.Show(receipt)\n     return receipt\n }\n",
+        "from_previous": "--- previous/src/workflow.go\n+++ candidate/src/workflow.go\n@@ -52,26 +52,25 @@\n func(w *Workspace) retire() {\n     leaving:=w.current;w.current=nil\n     if leaving!=nil { w.env.Store().Stop(leaving.token) };w.env.Output(\"document\",nil)\n-    \n+    // Clear the old view before saving: write listeners may open a new visit.\n+    if leaving!=nil { leaving.task.Flush() }\n }\n func(w *Workspace) Open(id string) {\n     w.env.Output(\"notice\",nil);w.navigation++;request:=w.navigation;w.retire()\n-    _=request\n+    if request!=w.navigation { return }\n     token:=w.env.Store().Subscribe(func(event Value){if event[\"id\"]==id {w.env.Output(\"status\",event)}})\n     task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})\n     w.current=&Visit{id,w.env.Store().Read(id),token,task};w.env.Output(\"document\",Value{\"id\":id,\"text\":w.current.text})\n }\n-func(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.env.Write(w.current.id,text) }\n+func(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.current.task.Push(text) }\n func(w *Workspace) Close() { w.env.Output(\"notice\",nil);w.navigation++;w.retire() }\n func(w *Workspace) Submit() interface{} {\n     confirmation:=BindConfirmation(func()*Visit{return w.current},func(receipt interface{}){w.env.Output(\"notice\",receipt)})\n     visit:=w.current;if visit==nil {return nil};snapshot:=Value{\"id\":visit.id,\"text\":visit.text}\n-    \n-    \n-    \n-    \n+    // Flush consumes this burst before write listeners can accept another edit.\n+    // Keep the entry snapshot and acquired confirmation across those callbacks.\n+    visit.task.Flush()\n     receipt:=w.env.Capture(snapshot)\n-    \n     confirmation.Show(receipt)\n     return receipt\n }\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [],
+        "coverage": [
+          {
+            "path": "src/workflow.go",
+            "status": "unsupported_language"
+          }
+        ],
+        "events": [],
+        "findings": [],
+        "limitations": [
+          "Syntax facts, candidate call links and review hints are not verified contracts, bugs, severity or difficulty scores.",
+          "API names are clues. Types, aliases, control flow, dynamic dispatch and callback targets are not fully resolved.",
+          "Local order is lexical order within a block; branches, exceptions, loops, short-circuiting and execution remain unchecked.",
+          "await may suspend; cancellation does not imply completed work or cleanup. Listener removal does not cancel work already started.",
+          "if/try/finally syntax does not prove adequate protection. The absence of hints does not imply safety.",
+          "No hidden scorers, reference patches, model results or human profiles are read. Operators must verify input provenance."
+        ],
+        "relations": [],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "partial",
+        "target_definitions": []
+      },
+      "sources": {
+        "README.md": "# Harbor clearance review\n\n\nThe workspace edits persistent documents and submits snapshots to a review queue.\nThe public API is synchronous: open(id), edit(text), close(), submit(), dispose().\nReturning to a document creates a fresh editor visit and restores persisted text.\nThe adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable.\n\nThe coordinator owns editor visits; the acquired confirmation capability owns a view outlet. The document repository and durable queue are separate services. Component or native source defines the local service contracts.\nTheir local interface contracts define the behavior to preserve.\n\nThe injected store has read/write/subscribe, the queue has enqueue/list/subscribe,\nand timers have schedule(callback, delay)/cancel(handle). Render functions are\noutput sinks and do not call application code. Keep the workspace API and these\ninjected interfaces. A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace.\n\nTyped pointer visit and injected function callbacks; acquired capability uses pointer identity, never document-key equality.\n\nAn outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity. Native RPC only adapts timer and passive output/integration resource calls; storage, queue delivery, acquired outlet and command state execute in the target runtime.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Go 1.13.8\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "go.mod": "module synthetic/port-inspection\n\ngo 1.13\n",
+        "src/workflow.go": "package main\n\nimport \"sort\"\n\ntype Value map[string]interface{}\ntype Store struct { records map[string]string; listeners map[int]func(Value); serial, revision int }\nfunc NewStore(initial Value) *Store {\n    s:=&Store{records:map[string]string{},listeners:map[int]func(Value){}}\n    for id,text:=range initial { s.records[id]=text.(string) };return s\n}\nfunc(s *Store) Read(id string) string { return s.records[id] }\nfunc(s *Store) Subscribe(fn func(Value)) int { s.serial++;s.listeners[s.serial]=fn;return s.serial }\nfunc(s *Store) Stop(token int) { delete(s.listeners,token) }\nfunc(s *Store) Write(id,text string) Value {\n    s.records[id]=text;s.revision++;event:=Value{\"id\":id,\"text\":text,\"revision\":s.revision}\n    tokens:=[]int{};for token:=range s.listeners { tokens=append(tokens,token) };sort.Ints(tokens)\n    for _,token:=range tokens { if fn,ok:=s.listeners[token];ok { fn(event) } };return event\n}\ntype Receipt struct { ID string `json:\"id\"`; Text string `json:\"text\"` }\ntype Archive struct { receipts []Receipt;listeners map[int]func(Receipt);serial int }\nfunc(a *Archive) Subscribe(fn func(Receipt))int{if a.listeners==nil{a.listeners=map[int]func(Receipt){}};a.serial++;a.listeners[a.serial]=fn;return a.serial}\nfunc(a *Archive) Stop(token int){delete(a.listeners,token)}\nfunc(a *Archive) Capture(value Value) Receipt {\n    receipt:=Receipt{value[\"id\"].(string),value[\"text\"].(string)};a.receipts=append(a.receipts,receipt);tokens:=[]int{};for token:=range a.listeners{tokens=append(tokens,token)};sort.Ints(tokens);for _,token:=range tokens{if fn,ok:=a.listeners[token];ok{fn(receipt)}};return receipt\n}\nfunc(a *Archive) List() []Receipt { result:=[]Receipt{};return append(result,a.receipts...) }\ntype Environment interface {\n    Store() *Store\n    Schedule(func(),int) interface{}\n    Cancel(interface{})\n    Output(string,interface{})\n    Write(string,string)\n    Capture(Value) interface{}\n}\ntype Trailing struct { env Environment; delay int; work func(string); handle interface{}; pending *string }\nfunc NewTrailing(env Environment,delay int,work func(string)) *Trailing { return &Trailing{env:env,delay:delay,work:work} }\nfunc(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}\nfunc(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}\nfunc(t *Trailing) Cancel() { if t.handle!=nil {t.env.Cancel(t.handle)};t.handle=nil;t.pending=nil }\ntype Visit struct { id,text string; token int; task *Trailing }\ntype Confirmation struct{current func()*Visit;emit func(interface{});owner *Visit}\nfunc BindConfirmation(current func()*Visit,emit func(interface{}))*Confirmation{return &Confirmation{current,emit,current()}}\nfunc(c *Confirmation) Active()bool{return c.owner!=nil&&c.owner==c.current()}\nfunc(c *Confirmation) Show(receipt interface{}){if c.Active(){c.emit(receipt)}}\ntype Workspace struct { env Environment; current *Visit; navigation uint64 }\nfunc NewWorkspace(env Environment) *Workspace { return &Workspace{env:env} }\nfunc(w *Workspace) retire() {\n    leaving:=w.current;w.current=nil\n    if leaving!=nil { w.env.Store().Stop(leaving.token) };w.env.Output(\"document\",nil)\n    \n}\nfunc(w *Workspace) Open(id string) {\n    w.env.Output(\"notice\",nil);w.navigation++;request:=w.navigation;w.retire()\n    _=request\n    token:=w.env.Store().Subscribe(func(event Value){if event[\"id\"]==id {w.env.Output(\"status\",event)}})\n    task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})\n    w.current=&Visit{id,w.env.Store().Read(id),token,task};w.env.Output(\"document\",Value{\"id\":id,\"text\":w.current.text})\n}\nfunc(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.env.Write(w.current.id,text) }\nfunc(w *Workspace) Close() { w.env.Output(\"notice\",nil);w.navigation++;w.retire() }\nfunc(w *Workspace) Submit() interface{} {\n    confirmation:=BindConfirmation(func()*Visit{return w.current},func(receipt interface{}){w.env.Output(\"notice\",receipt)})\n    visit:=w.current;if visit==nil {return nil};snapshot:=Value{\"id\":visit.id,\"text\":visit.text}\n    \n    \n    \n    \n    receipt:=w.env.Capture(snapshot)\n    \n    confirmation.Show(receipt)\n    return receipt\n}\nfunc(w *Workspace) Dispose() { w.Close() }\ntype Preview struct { task *Trailing }\nfunc NewPreview(env Environment) *Preview {\n    return &Preview{NewTrailing(env,40,func(query string){env.Output(\"preview\",Value{\"query\":query})})}\n}\nfunc(p *Preview) Query(text string) { p.task.Push(text) }\nfunc(p *Preview) Hide() { p.task.Cancel() }\n"
+      },
+      "task": "The harbor clearance review editor currently writes on every keystroke. Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst. Subsequent bursts must continue to save. Preserve other supported behavior and the synchronous public interfaces. The adjacent search preview is outside this maintenance change.\n"
+    },
+    "source_sha256": "8e8778e8bd93d44b0d08e028a501c6538af9f068c34f38f07ae266eaf8d76eec",
+    "task_id": "review-confirmation-binding-go"
+  },
+  "experience": {
+    "excludes": [],
+    "labels": [
+      "O",
+      "L",
+      "I"
+    ],
+    "limitations": [
+      "Evidence is limited to the supplied public sources and attempt 1; acceptance does not establish causality or cross-task effectiveness.",
+      "TASK: \"Preserve other supported behavior and the synchronous public interfaces. The adjacent search preview is outside this maintenance change.\"",
+      "src/workflow.go: \"for _,token:=range tokens { if fn,ok:=s.listeners[token];ok { fn(event) } };return event\"",
+      "README.md: \"Render functions are\noutput sinks and do not call application code.\"",
+      "The supplied Store.Stop deletes a listener without invoking callbacks. Callback-capable subscription cleanup is a conditional applicability premise, not an observed property of this source.",
+      "This evidence does not establish a universal requirement to flush before departure returns; boundary timing must be supported separately by the current task and public sources."
+    ],
+    "requires": [
+      "inline_reentry"
+    ],
+    "rules": [
+      {
+        "body": "Saving or subscription cleanup synchronously calls host listeners that may open another document or close the workspace.",
+        "category": "applicability"
+      },
+      {
+        "body": "Capture the old view and remove its current ownership. Finish final old-view effects, such as clearing its display, before callback-capable saving, or check authority for effects remaining after callbacks. An outer open rechecks its request identity after retirement.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Nested open/close, nested editing and the new view's rendering remain authoritative. Disposal also cleans up captured resources rather than clearing objects installed by a callback.",
+        "category": "preservation"
+      },
+      {
+        "body": "Protecting only final view installation can still leave a later stale clearing render. Do not require every host to detach first; notification order follows the current contract.",
+        "category": "exclusion"
+      },
+      {
+        "body": "Invoke open/close inside listeners for timer-driven and departure-driven saves. Check document output, subscriptions and nested edits after the outer call returns, through both direct calls and actual unmounting.",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "Before 120 ms of quiet, a burst has not written; at the deadline, it writes its latest text once. A later burst saves normally.",
+      "Immediately after open or close returns, pending edits for the departing visit are persisted; advancing timers does not duplicate that save.",
+      "Submission saves its accepted snapshot before queue capture and returns that capture's receipt.",
+      "Exercise navigation and editing inside write and capture callbacks; verify saved text, receipts, current visit, confirmation output, and later saves.",
+      "Preview queries still publish after 40 ms; hiding cancels unpublished work and subsequent queries remain usable."
+    ],
+    "forbidden_effects": [
+      "Losing accepted edits when a visit departs or a submission occurs.",
+      "Saving an old visit's pending text under another document's ID.",
+      "Allowing stale outer navigation or cleanup to overwrite a visit installed by a synchronous callback.",
+      "Displaying a submission confirmation through a capability whose acquired visit is no longer current.",
+      "Changing preview behavior, public interfaces, tests, or configuration."
+    ],
+    "lifecycle_identity": [
+      "Each opening creates a distinct Visit pointer, including reopening the same document.",
+      "Pending save work belongs to its originating visit and document.",
+      "Confirmation authority uses the acquired Visit pointer rather than document-key equality.",
+      "Navigation request identity must be rechecked after callback-capable retirement before installing a destination."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Route edits through the visit's trailing task with a 120 ms delay. Each quiet interval writes only the latest text in its burst, and later bursts continue to save."
+      },
+      {
+        "id": "O2",
+        "text": "Preserve durable accepted edits across open, close, and dispose by flushing departing work synchronously and consuming its pending timer. This preserves the original boundary-visible persistence while introducing delayed keystroke saves."
+      },
+      {
+        "id": "O3",
+        "text": "Capture the selected visit and text at submission entry, ensure that accepted text is saved before capturing its queue snapshot, return the capture receipt, and return null when no visit is selected. Callback navigation must not substitute another document or text."
+      },
+      {
+        "id": "O4",
+        "text": "Consume pending work before invoking its write callback so reentrant edits remain separate work. Retire captured resources without clearing or replacing a newer visit created by callbacks."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve fresh-visit restoration, status subscriptions, pointer-bound confirmation behavior, synchronous APIs, and detachment before workspace closure during disposal."
+      },
+      {
+        "id": "O6",
+        "text": "Leave the adjacent search preview and its 40 ms trailing publication and cancellation behavior unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "Update the visit's in-memory text when accepting an edit, then schedule its trailing save.",
+      "Clear a consumed task's pending state and timer ownership before calling its write function.",
+      "Publish retirement and finish old-view clearing before callback-capable departure saving; after callbacks, an outer open must verify its navigation request still owns installation.",
+      "Save the submission's accepted text before queue capture; check acquired confirmation authority after capture callbacks.",
+      "Detach the departing visit's subscription before flushing it during disposal, preserving detachment before closure."
+    ],
+    "preservation": [
+      "The original Edit writes synchronously, so departure and submission previously observe accepted text already persisted. Coalescing must preserve that boundary behavior.",
+      "Store writes and archive captures synchronously notify listeners; navigation and editing during those callbacks must remain authoritative.",
+      "Returning to a document restores persisted text into a fresh visit.",
+      "Preview scheduling and cancellation remain outside this change."
+    ],
+    "scope": [
+      "Draft contract only; no files modified.",
+      "Business maintenance is limited to editor save coalescing and the lifecycle handling required to preserve supported behavior.",
+      "Normative evidence is the supplied original TASK, README.md, and src/workflow.go."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst. Subsequent bursts must continue to save."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve other supported behavior and the synchronous public interfaces. The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "Returning to a document creates a fresh editor visit and restores persisted text."
+      },
+      {
+        "file": "README.md",
+        "quote": "A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace."
+      },
+      {
+        "file": "README.md",
+        "quote": "Render functions are\noutput sinks and do not call application code."
+      },
+      {
+        "file": "README.md",
+        "quote": "An outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity."
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.env.Write(w.current.id,text) }"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "for _,token:=range tokens { if fn,ok:=s.listeners[token];ok { fn(event) } };return event"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "receipt:=Receipt{value[\"id\"].(string),value[\"text\"].(string)};a.receipts=append(a.receipts,receipt);tokens:=[]int{};for token:=range a.listeners{tokens=append(tokens,token)};sort.Ints(tokens);for _,token:=range tokens{if fn,ok:=a.listeners[token];ok{fn(receipt)}};return receipt"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(c *Confirmation) Active()bool{return c.owner!=nil&&c.owner==c.current()}"
+      }
+    ],
+    "triggers": [
+      "Editing while a visit is selected.",
+      "Expiration of a 120 ms quiet interval.",
+      "Opening another visit, closing, submitting, or disposing with pending edits.",
+      "Synchronous store or queue listeners navigating or editing during persistence and capture."
+    ],
+    "unknowns": [
+      "Workspace filesystem reading failed because the execution sandbox could not create a namespace; evidence above uses the public sources supplied in the prompt.",
+      "Concrete Environment implementations are not supplied. No additional failure, threading, or timer-reentrancy guarantees are inferred.",
+      "The departure and submission flush requirements are preservation conclusions from the original synchronous Edit behavior, rather than separately stated prose deadlines."
+    ]
+  },
+  "final_training_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "Before 120 ms of quiet, a burst has not written; at the deadline, it writes its latest text once. A later burst saves normally.",
+      "Immediately after open or close returns, pending edits for the departing visit are persisted; advancing timers does not duplicate that save.",
+      "Submission saves its accepted snapshot before queue capture and returns that capture's receipt.",
+      "Exercise navigation and editing inside write and capture callbacks; verify saved text, receipts, current visit, confirmation output, and later saves.",
+      "Preview queries still publish after 40 ms; hiding cancels unpublished work and subsequent queries remain usable."
+    ],
+    "forbidden_effects": [
+      "Losing accepted edits when a visit departs or a submission occurs.",
+      "Saving an old visit's pending text under another document's ID.",
+      "Allowing stale outer navigation or cleanup to overwrite a visit installed by a synchronous callback.",
+      "Displaying a submission confirmation through a capability whose acquired visit is no longer current.",
+      "Changing preview behavior, public interfaces, tests, or configuration."
+    ],
+    "lifecycle_identity": [
+      "Each opening creates a distinct Visit pointer, including reopening the same document.",
+      "Pending save work belongs to its originating visit and document.",
+      "Confirmation authority uses the acquired Visit pointer rather than document-key equality.",
+      "Navigation request identity must be rechecked after callback-capable retirement before installing a destination."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Route edits through the visit's trailing task with a 120 ms delay. Each quiet interval writes only the latest text in its burst, and later bursts continue to save."
+      },
+      {
+        "id": "O2",
+        "text": "Preserve durable accepted edits across open, close, and dispose by flushing departing work synchronously and consuming its pending timer. This preserves the original boundary-visible persistence while introducing delayed keystroke saves."
+      },
+      {
+        "id": "O3",
+        "text": "Capture the selected visit and text at submission entry, ensure that accepted text is saved before capturing its queue snapshot, return the capture receipt, and return null when no visit is selected. Callback navigation must not substitute another document or text."
+      },
+      {
+        "id": "O4",
+        "text": "Consume pending work before invoking its write callback so reentrant edits remain separate work. Retire captured resources without clearing or replacing a newer visit created by callbacks."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve fresh-visit restoration, status subscriptions, pointer-bound confirmation behavior, synchronous APIs, and detachment before workspace closure during disposal."
+      },
+      {
+        "id": "O6",
+        "text": "Leave the adjacent search preview and its 40 ms trailing publication and cancellation behavior unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "Update the visit's in-memory text when accepting an edit, then schedule its trailing save.",
+      "Clear a consumed task's pending state and timer ownership before calling its write function.",
+      "Publish retirement and finish old-view clearing before callback-capable departure saving; after callbacks, an outer open must verify its navigation request still owns installation.",
+      "Save the submission's accepted text before queue capture; check acquired confirmation authority after capture callbacks.",
+      "Detach the departing visit's subscription before flushing it during disposal, preserving detachment before closure."
+    ],
+    "preservation": [
+      "The original Edit writes synchronously, so departure and submission previously observe accepted text already persisted. Coalescing must preserve that boundary behavior.",
+      "Store writes and archive captures synchronously notify listeners; navigation and editing during those callbacks must remain authoritative.",
+      "Returning to a document restores persisted text into a fresh visit.",
+      "Preview scheduling and cancellation remain outside this change."
+    ],
+    "scope": [
+      "Draft contract only; no files modified.",
+      "Business maintenance is limited to editor save coalescing and the lifecycle handling required to preserve supported behavior.",
+      "Normative evidence is the supplied original TASK, README.md, and src/workflow.go."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst. Subsequent bursts must continue to save."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve other supported behavior and the synchronous public interfaces. The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "Returning to a document creates a fresh editor visit and restores persisted text."
+      },
+      {
+        "file": "README.md",
+        "quote": "A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace."
+      },
+      {
+        "file": "README.md",
+        "quote": "Render functions are\noutput sinks and do not call application code."
+      },
+      {
+        "file": "README.md",
+        "quote": "An outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity."
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.env.Write(w.current.id,text) }"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "for _,token:=range tokens { if fn,ok:=s.listeners[token];ok { fn(event) } };return event"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "receipt:=Receipt{value[\"id\"].(string),value[\"text\"].(string)};a.receipts=append(a.receipts,receipt);tokens:=[]int{};for token:=range a.listeners{tokens=append(tokens,token)};sort.Ints(tokens);for _,token:=range tokens{if fn,ok:=a.listeners[token];ok{fn(receipt)}};return receipt"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(c *Confirmation) Active()bool{return c.owner!=nil&&c.owner==c.current()}"
+      }
+    ],
+    "triggers": [
+      "Editing while a visit is selected.",
+      "Expiration of a 120 ms quiet interval.",
+      "Opening another visit, closing, submitting, or disposing with pending edits.",
+      "Synchronous store or queue listeners navigating or editing during persistence and capture."
+    ],
+    "unknowns": [
+      "Workspace filesystem reading failed because the execution sandbox could not create a namespace; evidence above uses the public sources supplied in the prompt.",
+      "Concrete Environment implementations are not supplied. No additional failure, threading, or timer-reentrancy guarantees are inferred.",
+      "The departure and submission flush requirements are preservation conclusions from the original synchronous Edit behavior, rather than separately stated prose deadlines."
+    ]
+  },
+  "origin": "success",
+  "reflection_update": {
+    "change_summary": [],
+    "deduplication": "exact_normalized_content",
+    "failure_attribution": "not_applicable",
+    "operation": "evidence",
+    "reason": "The supplied public source supports the existing reentrant-navigation guidance without a rule correction. Store.Write invokes listeners inline, while README.md states \"Returning to a document creates a fresh editor visit and restores persisted text.\" Attempt 1 captures and retires the old visit, clears its output before flushing, and checks navigation identity before installing a destination. Its reported acceptance is corroborating evidence only; no behavioral observations establish which guards caused that result. The submission, admission-window, and general ownership experiences do not require merging to preserve this focused guidance. The departure-deadline experience remains a separate boundary question; the automatic Contract does not resolve it.",
+    "supporting_attempts": [
+      1
+    ],
+    "target_sha256s": [
+      "092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce"
+    ]
+  },
+  "related_experiences": [
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "deferred-persistence.json",
+            "sha256": "f067f05890f4f941383afff0c0212a3cdd1c2ed9d245b98f6937ce47c7b51d6c"
+          }
+        ]
+      },
+      "body_sha256": "287efcb13d653ec39ccf630087f881d75c6e2a4fed77688ecacf4546f4290bdf",
+      "excludes": [],
+      "id": "editor-navigation-reentry",
+      "labels": [
+        "O",
+        "L",
+        "I"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "inline_reentry"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "f067f05890f4f941383afff0c0212a3cdd1c2ed9d245b98f6937ce47c7b51d6c",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Saving or subscription cleanup synchronously calls host listeners that may open another document or close the workspace.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Capture the old view and remove its current ownership. Finish final old-view effects, such as clearing its display, before callback-capable saving, or check authority for effects remaining after callbacks. An outer open rechecks its request identity after retirement.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Nested open/close, nested editing and the new view's rendering remain authoritative. Disposal also cleans up captured resources rather than clearing objects installed by a callback.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Protecting only final view installation can still leave a later stale clearing render. Do not require every host to detach first; notification order follows the current contract.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Invoke open/close inside listeners for timer-driven and departure-driven saves. Check document output, subscriptions and nested edits after the outer call returns, through both direct calls and actual unmounting.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "deferred-persistence.json",
+            "sha256": "59542c0bb02ebcb5c3217b06d2ab565bb8e4ff14aea5b783fec89e02d9836c3a"
+          }
+        ]
+      },
+      "body_sha256": "a8b1e577860ed2cffbcbfa098d5033086e98f35212b153bbe5abbc60206e8551",
+      "excludes": [],
+      "id": "editor-submit-entry",
+      "labels": [
+        "I",
+        "A",
+        "B"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "entry_snapshot",
+        "inline_reentry"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "59542c0bb02ebcb5c3217b06d2ab565bb8e4ff14aea5b783fec89e02d9836c3a",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Submission accepts a document and text at entry, and its contract requires that accepted text to become durable before recording the result.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Capture the document and text at submission entry. Complete the required save before recording and returning that submission's result. Navigation inside save or record callbacks must not rewrite the accepted submission.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Retain the durable result and return value bound to entry. Edits after callbacks form new work and must not be consumed by the earlier submission.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Do not transfer this retention policy to tasks where navigation may revoke submission. Do not substitute the latest current text for the result bound to entry text.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Navigate and edit inside save and record callbacks. Separately check the entry document's saved value, submission record, synchronous return value and successful persistence of later edits.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "7fa851131ed372a97655842995c1d3df3742b5e1276ff42a77b8d0d56da272ad",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "progress-subscriptions.json",
+            "sha256": "277eaf07023c1ca98d0e8a547c0d64b3d123dd7b39d4dd646219f461637ae98c"
+          }
+        ]
+      },
+      "body_sha256": "47404e677d2db74b89dde5241647ba681f2f787d42424c85bc0a3ccf51922471",
+      "excludes": [],
+      "id": "progress-admission-window",
+      "labels": [
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "inline_reentry"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "277eaf07023c1ca98d0e8a547c0d64b3d123dd7b39d4dd646219f461637ae98c",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "One startup may emit multiple packets synchronously. Handling the first may hide the panel or open another visit before startup returns physical cleanup capability.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Check the originating visit and attempt before each packet enters decoding. Retirement immediately revokes later admission without waiting for physical listener removal.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Previously admitted packets settle under their separate audit and display contracts. The new visit receives bootstrap and later updates normally.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Zero listeners after cleanup does not establish correctness during startup. Do not confuse previously admitted work with packets arriving after retirement.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Hide, switch and reopen the same source from the first synchronous callback. Emit more packets before outer startup returns, and independently check rejection of new packets and settlement of admitted packets.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "380be240ad7e3783cd1238f8cae0230da3f5990659e5d6970f1016ac95d7b602",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "deferred-persistence.json",
+            "sha256": "03fdf1d348260f736b049d16eb11ea5fe079a17e175fd31006752d3d2d4e2236"
+          }
+        ]
+      },
+      "body_sha256": "9f0d448cbee6005e8f368556c22ce077024f67a35b6de7ac66ca77d75032e232",
+      "excludes": [],
+      "id": "editor-departure-deadline",
+      "labels": [
+        "B",
+        "L",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "deferred_batch"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "03fdf1d348260f736b049d16eb11ea5fe079a17e175fd31006752d3d2d4e2236",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Historical guidance contains two boundary interpretations: completion before departure inferred from original synchronous writes and preservation, and buffer survival with the deadline requiring separate support.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Establish the current task's boundary semantics first. If completion before open/close/dispose or submission returns is explicitly required, flush the captured original document and consume its timer. If only retention is required, continue scheduling under that contract.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Neither branch may silently lose accepted text. An explicit deadline also requires preventing a later duplicate save.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "A synchronous API, persistent ownership, generic preservation wording or one passing test alone does not establish a before-return deadline. A later version's wording must not automatically overwrite an older branch that has supporting evidence.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "For an explicit deadline, read storage immediately after return and advance the clock to check for duplicates. For retention, check that work remains owned by the original document and completes at the specified time.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "d0a696c5fa7ba1a04c285b4ad851d5bbf43ac180802bc5497c9cf5350b576513",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "mechanisms.json",
+            "sha256": "3979271d455febd868bfb9348bc366c2e51cd7902a2a68ea4bf921d5df16d0f7"
+          }
+        ]
+      },
+      "body_sha256": "597ff9c7ac3545705f1e3c72993e3cec1043b710e7b12a433342e650d54ff211",
+      "excludes": [],
+      "id": "reentrant-ownership",
+      "labels": [
+        "O",
+        "L",
+        "I"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "inline_reentry"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "3979271d455febd868bfb9348bc366c2e51cd7902a2a68ea4bf921d5df16d0f7",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Startup, cleanup, saving or publication can synchronously reenter navigation and install a new owner.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Capture old resources and publish retirement before callback-capable work. Establish provisional cleanup ownership before startup where needed. After callbacks, recheck request and owner identity before installing a returned handle or publishing a destination.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Complete cleanup for captured old resources without clearing or taking ownership of a newer visit. Preserve the documented idempotent cleanup behavior.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Do not assume code after a synchronous callback still owns the current view. Do not hard-code one cleanup ordering when the current API requires a different order; guard remaining effects.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Exercise hide, switch and dispose inside startup, detachment and saving; check both resulting view and resource ownership after the outer call returns.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "020a49e031c6debee42b6737e3b521faebbb5394e908c26ddf24d6e2fc2d9892",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    }
+  ],
+  "source_sha256": "8e8778e8bd93d44b0d08e028a501c6538af9f068c34f38f07ae266eaf8d76eec",
+  "status": "awaiting_content_review",
+  "task": "The harbor clearance review editor currently writes on every keystroke. Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst. Subsequent bursts must continue to save. Preserve other supported behavior and the synchronous public interfaces. The adjacent search preview is outside this maintenance change.\n",
+  "training_accepted": true,
+  "trajectory": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "5f2cb6470c971b331e2bc2b351011bcbaf69cd0db27ad609b67a6fc753373438",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "4f6fd2b6ca636eae03099dbc7f195b0c74f48b5da4a5d7d2857289af395e7408",
+        "go.mod": "c401dcf1a00e2e75c0c64e0e240fa3b38d16779f8ef6dab9f351033c13cdc362",
+        "src/workflow.go": "6e042705012d02d935e4a63fa9633acb9e47c99c55257b7e4a2423e156643e68"
+      },
+      "candidate_sources": {
+        "README.md": "# Harbor clearance review\n\n\nThe workspace edits persistent documents and submits snapshots to a review queue.\nThe public API is synchronous: open(id), edit(text), close(), submit(), dispose().\nReturning to a document creates a fresh editor visit and restores persisted text.\nThe adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable.\n\nThe coordinator owns editor visits; the acquired confirmation capability owns a view outlet. The document repository and durable queue are separate services. Component or native source defines the local service contracts.\nTheir local interface contracts define the behavior to preserve.\n\nThe injected store has read/write/subscribe, the queue has enqueue/list/subscribe,\nand timers have schedule(callback, delay)/cancel(handle). Render functions are\noutput sinks and do not call application code. Keep the workspace API and these\ninjected interfaces. A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace.\n\nTyped pointer visit and injected function callbacks; acquired capability uses pointer identity, never document-key equality.\n\nAn outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity. Native RPC only adapts timer and passive output/integration resource calls; storage, queue delivery, acquired outlet and command state execute in the target runtime.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Go 1.13.8\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "go.mod": "module synthetic/port-inspection\n\ngo 1.13\n",
+        "src/workflow.go": "package main\n\nimport \"sort\"\n\ntype Value map[string]interface{}\ntype Store struct { records map[string]string; listeners map[int]func(Value); serial, revision int }\nfunc NewStore(initial Value) *Store {\n    s:=&Store{records:map[string]string{},listeners:map[int]func(Value){}}\n    for id,text:=range initial { s.records[id]=text.(string) };return s\n}\nfunc(s *Store) Read(id string) string { return s.records[id] }\nfunc(s *Store) Subscribe(fn func(Value)) int { s.serial++;s.listeners[s.serial]=fn;return s.serial }\nfunc(s *Store) Stop(token int) { delete(s.listeners,token) }\nfunc(s *Store) Write(id,text string) Value {\n    s.records[id]=text;s.revision++;event:=Value{\"id\":id,\"text\":text,\"revision\":s.revision}\n    tokens:=[]int{};for token:=range s.listeners { tokens=append(tokens,token) };sort.Ints(tokens)\n    for _,token:=range tokens { if fn,ok:=s.listeners[token];ok { fn(event) } };return event\n}\ntype Receipt struct { ID string `json:\"id\"`; Text string `json:\"text\"` }\ntype Archive struct { receipts []Receipt;listeners map[int]func(Receipt);serial int }\nfunc(a *Archive) Subscribe(fn func(Receipt))int{if a.listeners==nil{a.listeners=map[int]func(Receipt){}};a.serial++;a.listeners[a.serial]=fn;return a.serial}\nfunc(a *Archive) Stop(token int){delete(a.listeners,token)}\nfunc(a *Archive) Capture(value Value) Receipt {\n    receipt:=Receipt{value[\"id\"].(string),value[\"text\"].(string)};a.receipts=append(a.receipts,receipt);tokens:=[]int{};for token:=range a.listeners{tokens=append(tokens,token)};sort.Ints(tokens);for _,token:=range tokens{if fn,ok:=a.listeners[token];ok{fn(receipt)}};return receipt\n}\nfunc(a *Archive) List() []Receipt { result:=[]Receipt{};return append(result,a.receipts...) }\ntype Environment interface {\n    Store() *Store\n    Schedule(func(),int) interface{}\n    Cancel(interface{})\n    Output(string,interface{})\n    Write(string,string)\n    Capture(Value) interface{}\n}\ntype Trailing struct { env Environment; delay int; work func(string); handle interface{}; pending *string }\nfunc NewTrailing(env Environment,delay int,work func(string)) *Trailing { return &Trailing{env:env,delay:delay,work:work} }\nfunc(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}\nfunc(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}\nfunc(t *Trailing) Cancel() { if t.handle!=nil {t.env.Cancel(t.handle)};t.handle=nil;t.pending=nil }\ntype Visit struct { id,text string; token int; task *Trailing }\ntype Confirmation struct{current func()*Visit;emit func(interface{});owner *Visit}\nfunc BindConfirmation(current func()*Visit,emit func(interface{}))*Confirmation{return &Confirmation{current,emit,current()}}\nfunc(c *Confirmation) Active()bool{return c.owner!=nil&&c.owner==c.current()}\nfunc(c *Confirmation) Show(receipt interface{}){if c.Active(){c.emit(receipt)}}\ntype Workspace struct { env Environment; current *Visit; navigation uint64 }\nfunc NewWorkspace(env Environment) *Workspace { return &Workspace{env:env} }\nfunc(w *Workspace) retire() {\n    leaving:=w.current;w.current=nil\n    if leaving!=nil { w.env.Store().Stop(leaving.token) };w.env.Output(\"document\",nil)\n    // Clear the old view before saving: write listeners may open a new visit.\n    if leaving!=nil { leaving.task.Flush() }\n}\nfunc(w *Workspace) Open(id string) {\n    w.env.Output(\"notice\",nil);w.navigation++;request:=w.navigation;w.retire()\n    if request!=w.navigation { return }\n    token:=w.env.Store().Subscribe(func(event Value){if event[\"id\"]==id {w.env.Output(\"status\",event)}})\n    task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})\n    w.current=&Visit{id,w.env.Store().Read(id),token,task};w.env.Output(\"document\",Value{\"id\":id,\"text\":w.current.text})\n}\nfunc(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.current.task.Push(text) }\nfunc(w *Workspace) Close() { w.env.Output(\"notice\",nil);w.navigation++;w.retire() }\nfunc(w *Workspace) Submit() interface{} {\n    confirmation:=BindConfirmation(func()*Visit{return w.current},func(receipt interface{}){w.env.Output(\"notice\",receipt)})\n    visit:=w.current;if visit==nil {return nil};snapshot:=Value{\"id\":visit.id,\"text\":visit.text}\n    // Flush consumes this burst before write listeners can accept another edit.\n    // Keep the entry snapshot and acquired confirmation across those callbacks.\n    visit.task.Flush()\n    receipt:=w.env.Capture(snapshot)\n    confirmation.Show(receipt)\n    return receipt\n}\nfunc(w *Workspace) Dispose() { w.Close() }\ntype Preview struct { task *Trailing }\nfunc NewPreview(env Environment) *Preview {\n    return &Preview{NewTrailing(env,40,func(query string){env.Output(\"preview\",Value{\"query\":query})})}\n}\nfunc(p *Preview) Query(text string) { p.task.Push(text) }\nfunc(p *Preview) Hide() { p.task.Cancel() }\n"
+      },
+      "delivered_sha256s": [
+        "092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce",
+        "7fa851131ed372a97655842995c1d3df3742b5e1276ff42a77b8d0d56da272ad",
+        "380be240ad7e3783cd1238f8cae0230da3f5990659e5d6970f1016ac95d7b602",
+        "d0a696c5fa7ba1a04c285b4ad851d5bbf43ac180802bc5497c9cf5350b576513",
+        "020a49e031c6debee42b6737e3b521faebbb5394e908c26ddf24d6e2fc2d9892"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.go",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ]
+}
