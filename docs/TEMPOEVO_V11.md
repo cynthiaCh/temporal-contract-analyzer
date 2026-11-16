@@ -80,6 +80,25 @@ Actual requests, tokens, time, stage retries and missing usage remain reported.
 
 ## Testing boundary and continuation
 
+Learning diagnosis compares behavioral Contract fields separately from evidence
+and unknowns. Changes only to `supporting_evidence` or `unknowns` do not trigger a
+Contract delta or experience reselection. Behavioral changes still require a
+nonempty delta, preserve retained obligations, and require grounded routing in
+structured mode. Implementation-only and fixed-contract runs cannot revise
+behavioral requirements. Unused routing proposals from metadata-only diagnoses
+are archived as unused and cannot authorize experience delivery.
+
+Diagnostic evidence may cite either the original public inputs or the actual
+previous failed candidate. `PREVIOUS_CANDIDATE:<relative path>` explicitly selects
+the latter; legacy bare paths are resolved against both supplied source maps and
+their matched versions are recorded in `supporting_evidence_bindings`. Those
+bindings accompany the next Action's within-task reflections. Contract and
+routing evidence remain grounded only in original public inputs. All revision
+checks and any necessary reselection finish before the revised Contract or
+diagnosis is committed. Invalid revisions leave the prior Contract intact.
+These fixes change the frozen implementation binding; earlier trajectories stay
+read-only, and any new model execution requires a newly prepared root.
+
 Training evaluates each patch with its training Oracle, retries on failure and stops
 on acceptance, within three Actions. Public checks remain auxiliary. Testing instead
 uses `single_submission_then_independent_gold`: one bounded Action submits its final

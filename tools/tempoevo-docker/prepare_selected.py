@@ -5,6 +5,8 @@ import argparse
 parser=argparse.ArgumentParser(description='Prepare training or single-submission testing trajectories; no model calls')
 parser.add_argument('--root',type=Path,required=True);parser.add_argument('--solver-image',required=True);parser.add_argument('--grader-image',required=True);parser.add_argument('--limit',type=int,default=10)
 parser.add_argument('--start-rank',type=int,default=1,help='First one-based CSV rank to prepare')
+parser.add_argument('--selection-file',type=Path,help='Explicit ranked case CSV; defaults to the historical50 selection')
+parser.add_argument('--swe-tempoc-root',type=Path,help='Read public inputs from the frozen SWE-TempoC roster; regular cases support learning/testing')
 parser.add_argument('--training-feedback',type=Path,help='Explicit public feedback mapping JSON, frozen in every trajectory')
 parser.add_argument('--model-config',type=Path,help='Model profiles JSON file')
 parser.add_argument('--model-profile',help='Named model profile; defaults to the configuration default')
@@ -23,18 +25,30 @@ if args.mode=='testing' and (args.learning_policy!='frozen' or args.training_fee
 repo=Path(__file__).resolve().parents[2];sys.path.insert(0,str(repo))
 store=(args.store or repo/'experience-memory/library').resolve()
 from temporal_contract_analyzer.case_catalog import bench_root
-bench=bench_root()
+bench=args.swe_tempoc_root.resolve() if args.swe_tempoc_root else bench_root()
 from temporal_contract_analyzer.case_catalog import case_input
+if args.swe_tempoc_root:
+ from temporal_contract_analyzer.swe_tempoc_inputs import case_input as swe_case_input
+ def case_input(case_id):
+  from upstream_inputs import load
+  def upstream_loader(cid,root,row,mp,m):
+   if args.mode!='testing':raise ValueError('Upstream repository tasks currently support testing only; training controls are not implemented')
+   return load(cid,root,row,mp,m,args.grader_image,public_destination)
+  return swe_case_input(case_id,bench,upstream_loader=upstream_loader)
 from temporal_contract_analyzer.tempoevo_backend import NativeV4Backend
 from temporal_contract_analyzer import experience_approval as approval
 from temporal_contract_analyzer.tempoevo_v4 import Trajectory,MODEL
 from temporal_contract_analyzer._session_runtime.model_settings import resolve_profile,identity
 settings=resolve_profile(args.model_profile,args.model_config)
 from temporal_contract_analyzer.core import sha
-with (repo/'examples/tempoevo-v4/case-selections/gpt61-sol-medium-hardest50-20261029/selected_50_cases.csv').open(encoding='utf-8-sig') as selection_file:
+selection_path=(args.selection_file or repo/'examples/tempoevo-v4/case-selections/gpt61-sol-medium-hardest50-20261029/selected_50_cases.csv').resolve()
+with selection_path.open(encoding='utf-8-sig') as selection_file:
  all_rows=list(csv.DictReader(selection_file))
+if len({row['case_id'] for row in all_rows})!=len(all_rows) or len({int(row['rank']) for row in all_rows})!=len(all_rows):parser.error('Selection case IDs and ranks must be unique')
 rows=[row for row in all_rows if args.start_rank<=int(row['rank'])<args.start_rank+args.limit]
 if len(rows)!=args.limit:parser.error('Requested rank range is not fully present in the selection CSV')
+expected_split='training' if args.mode=='learning' else 'testing'
+if any(row.get('split',expected_split)!=expected_split for row in rows):parser.error('Selection CSV split does not match the requested mode')
 feedback=json.loads(args.training_feedback.read_text()) if args.training_feedback else {}
 family_feedback=json.loads(args.training_feedback_by_family.read_text()) if args.training_feedback_by_family else {}
 from temporal_contract_analyzer.training_acceptance import validate_mapping
@@ -44,6 +58,8 @@ visible_configs=json.loads(args.visible_evaluators.read_text()) if args.visible_
 from temporal_contract_analyzer.evaluation_split import enforce
 for row in rows:enforce(dict(task_id=row['case_id'],mode=args.mode))
 root=args.root.resolve();root.mkdir()
+shutil.copyfile(selection_path,root/'selection.csv')
+(root/'selection-source.json').write_text(json.dumps(dict(path=str(selection_path),sha256=sha(selection_path.read_bytes()),benchmark_root=str(bench),source='swe-tempoc' if args.swe_tempoc_root else 'registered-catalog'),indent=2)+'\n')
 if args.condition=='contract':
  bank=dict(schema_version='experience-active-snapshot-v1',scope='research_only',entries=[])
  from temporal_contract_analyzer.core import canonical
@@ -55,10 +71,15 @@ solver=args.solver_image;grader=args.grader_image
 for row in rows:
  cid=row['case_id'];r=root/cid;r.mkdir();entry=dict(case_id=cid,rank=int(row['rank']),root=str(r),status='preflight_running');out.append(entry);(root/'progress.json').write_text(json.dumps(out,indent=2)+'\n')
  try:
+  public_destination=r/'upstream-public'
   c=case_input(cid);m=json.loads((bench/c['case_record']['manifest']).read_text());family='query' if cid.startswith('query-') else 'transfer' if cid.startswith('transfer-') else 'autosave' if cid.startswith('draft-autosave-') else 'generator' if cid.startswith('async-generator-') else 'review' if cid.startswith('review-confirmation-') else 'subscription' if cid.startswith('subscription-lifetime-') else 'other'
-  cfg=dict(manifest=c['case_record']['manifest'],runtime=m['framework']['runtime'],family=family);(r/'case.json').write_text(json.dumps(cfg)+'\n');shutil.copytree(c['candidate'],r/'public')
+  cfg=dict(manifest=c['case_record']['manifest'],runtime=m.get('framework',{}).get('runtime',m.get('adapter')),family=family)
+  if c['case_record'].get('projection'):cfg.update(case_id=cid,projection=c['case_record']['projection'])
+  (r/'case.json').write_text(json.dumps(cfg)+'\n');shutil.copytree(c['candidate'],r/'public')
   visible=visible_configs.get(cid)
   gold=dict(image=grader,inputs={str(r/'case.json'):'/checks/case.json',str(repo/'tools/tempoevo-docker/gold.py'):'/checks/gold.py'},command=['/usr/bin/python3','/checks/gold.py'],seconds=180)
+  if cfg.get('projection'):
+   gold.update(inputs={str(r/'case.json'):'/checks/case.json',str(repo/'tools/tempoevo-docker/upstream_gold.py'):'/checks/gold.py'},seconds=300)
   controls=[]
   control_specs=([('original',None)] if visible else []) if args.mode=='testing' else [('original',None),('reference',m['references']['bounded']),('negative',m['mutants'][0])]
   for name,overlay in control_specs:
@@ -74,6 +95,7 @@ for row in rows:
   config=dict(task_id=cid,task=c['task'],candidate=str(r/'public'),store=str(store),mode='learning',condition='structured',max_attempts=3,model=MODEL,binary=shutil.which('codex'),backend=dict(kind='docker',solver_image=solver,grader_image=grader,solver_node='/runtime/node16/bin/node'),memory_snapshot=bank,training_evaluator=gold,training_feedback=feedback,protected_paths=['README.md'])
   if visible:config['visible_evaluator']=visible
   config.update(model=identity(settings),model_profile=settings['profile'],condition=args.condition,training_feedback=family_feedback.get(family,feedback))
+  config['public_case_record']=c['case_record']
   config['learning_policy']=args.learning_policy
   if args.mode=='testing':
    config.update(mode='testing',max_attempts=1,gold_evaluator=config.pop('training_evaluator'))
@@ -84,3 +106,4 @@ for row in rows:
  except Exception as e:entry.update(status='preflight_failed',error=repr(e))
  (root/'progress.json').write_text(json.dumps(out,indent=2)+'\n');print(json.dumps(entry),flush=True)
 print(root,flush=True)
+if any(row['status']!='prepared' for row in out):sys.exit(1)

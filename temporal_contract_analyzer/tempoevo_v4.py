@@ -25,6 +25,20 @@ LIMITS = dict(selection=dict(requests=12, seconds=600), routing=dict(requests=12
 TERMINAL = ('passed', 'scored', 'repair_exhausted', 'execution_invalid', 'awaiting_expert_summary', 'awaiting_content_review', 'cancelled')
 CONTRACT_FIELDS = ('scope', 'triggers', 'ordering_barriers', 'lifecycle_identity',
                    'preservation', 'forbidden_effects', 'checkpoints', 'unknowns')
+BEHAVIOR_FIELDS = tuple(k for k in CONTRACT_FIELDS if k != 'unknowns') + ('obligations',)
+DIAGNOSIS_INSTRUCTION = '''Classify implementation_gap/contract_gap/both/unknown. Preserve original obligations.
+Observations and a failed acceptance verdict are not new business requirements or proof of a failure cause.
+Compare behavioral fields (scope, triggers, ordering_barriers, lifecycle_identity, preservation,
+forbidden_effects, checkpoints, obligations) separately from supporting_evidence and unknowns.
+Evidence formatting and unknown updates alone are not behavioral Contract changes and need no delta.
+For implementation_gap or when contract_revision_allowed is false, keep behavioral fields unchanged.
+For a real behavioral revision, return a nonempty structured_delta; when routing_recheck_required,
+return complete routing_analysis grounded only in the original task/sources. Known/contradicted facts
+require literal source evidence; use unknown for unsupported premises. Otherwise return routing_analysis=null.
+contract_after.supporting_evidence must cite original task/sources. Diagnostic supporting_evidence may
+also cite the supplied previous_candidate: use file PREVIOUS_CANDIDATE:<relative path> for those quotes.
+Unprefixed files denote original sources; TASK denotes the original task. Quote literal public text.
+Do not use repaired candidate text as evidence for original business requirements.'''
 
 
 def read(path):
@@ -97,6 +111,53 @@ def check_contract(contract, task, sources, before=None):
     if len(obligations)!=len(contract['obligations']):raise EvidenceError('Duplicate obligation identity')
     if before and any(obligations.get(r['id'])!=r['text'] for r in before['obligations']):
         raise EvidenceError('Cannot delete or weaken retained obligations')
+
+
+def validate_diagnosis(diagnostic, before, task, sources, previous_candidate, condition):
+    """Validate before committing a revision; retain the source version of each anchor."""
+    from ._session_runtime.schema_validator import validate
+    validate(diagnostic, DIAGNOSIS_SCHEMA)
+    bindings = []
+    for row in diagnostic['supporting_evidence']:
+        prefix = 'PREVIOUS_CANDIDATE:'
+        if row['file'].startswith(prefix):
+            anchor = dict(row, file=row['file'][len(prefix):])
+            if anchor['file'] not in previous_candidate:
+                raise EvidenceError('Missing previous-candidate citation file')
+            evidence_valid([anchor], '', previous_candidate)
+            matched = ['previous_candidate']
+        else:
+            # Older responses used bare paths for the two source maps supplied in the
+            # diagnosis payload. Resolve literal matches without promoting them to
+            # Contract/routing evidence, and archive the actual matched version(s).
+            matched = []
+            for name, texts in [('original', sources), ('previous_candidate', previous_candidate)]:
+                if name == 'previous_candidate' and row['file'] not in texts:
+                    continue
+                try:
+                    evidence_valid([row], task if name == 'original' else '', texts)
+                except EvidenceError:
+                    continue
+                matched.append(name)
+            if not matched:
+                raise EvidenceError('Unsupported diagnostic public-source citation')
+        bindings.append(dict(file=row['file'], quote=row['quote'], source_versions=matched))
+    after = diagnostic['contract_after']
+    check_contract(after, task, sources, before)
+    changed = any(after[key] != before[key] for key in BEHAVIOR_FIELDS)
+    if changed and (diagnostic['diagnosis'] == 'implementation_gap' or condition == 'fixed_contract'):
+        raise EvidenceError('Implementation-only/fixed condition cannot change Contract')
+    if changed and not diagnostic['structured_delta']:
+        raise EvidenceError('Missing Contract delta')
+    if changed:
+        analysis = diagnostic['routing_analysis']
+        if condition == 'structured' and analysis is None:
+            raise EvidenceError('Changed structured Contract requires source-bound routing recheck')
+        if analysis is not None:
+            from .experience_routing import validate_analysis
+            validate_analysis(analysis, task, sources, text_grounding=True)
+    return dict(contract_changed=changed, supporting_evidence_bindings=bindings,
+                unused_routing_analysis=not changed and diagnostic['routing_analysis'] is not None)
 
 
 class Trajectory:
@@ -446,25 +507,19 @@ class Trajectory:
                     before=deepcopy(state['contract']);last=state['attempts'][-1]
                     diagnostic=self._step(p,backend,'diagnosis-'+str(number),'diagnosis',dict(public,
                         contract_before=before,contract_revision_allowed=p['condition']!='fixed_contract',routing_recheck_required=p['condition']=='structured',feedback=last['feedback'],previous_candidate=last['candidate_sources'],
-                        instruction='Classify implementation_gap/contract_gap/both/unknown. Preserve original obligations. Observations are not new business requirements. Cite original public sources. Return unchanged contract when sufficient.',schema=DIAGNOSIS_SCHEMA))['output']
-                    from ._session_runtime.schema_validator import validate
-                    validate(diagnostic,DIAGNOSIS_SCHEMA);evidence_valid(diagnostic['supporting_evidence'],p['task'],sources)
-                    after=diagnostic['contract_after'];check_contract(after,p['task'],sources,before)
-                    if (diagnostic['diagnosis']=='implementation_gap' or p['condition']=='fixed_contract') and after!=before:
-                        raise EvidenceError('Implementation-only/fixed condition cannot change Contract')
-                    if after!=before and not diagnostic['structured_delta']:raise EvidenceError('Missing Contract delta')
-                    self.save('revisions/'+str(number)+'.json',dict(contract_before=before,**diagnostic))
-                    state=self.state();state['contract']=after
-                    if not any(d['attempt']==number for d in state['diagnoses']):state['diagnoses'].append(dict(attempt=number,contract_changed=after!=before,**diagnostic))
-                    self.save('state.json',state)
-                    if after!=before:
-                        if p['condition']=='structured' and diagnostic.get('routing_analysis') is None:raise EvidenceError('Changed structured Contract requires source-bound routing recheck')
+                        instruction=DIAGNOSIS_INSTRUCTION,schema=DIAGNOSIS_SCHEMA))['output']
+                    checked=validate_diagnosis(diagnostic,before,p['task'],sources,last['candidate_sources'],p['condition'])
+                    after=diagnostic['contract_after']
+                    if checked['contract_changed']:
                         if diagnostic.get('routing_analysis') is not None:
-                            from .experience_routing import validate_analysis
-                            validate_analysis(diagnostic['routing_analysis'],p['task'],sources,text_grounding=True)
                             routed=deepcopy(p);routed['routing_analysis']=diagnostic['routing_analysis']
                             delivery=self.retrieve(routed,backend,'selection-'+str(number))
+                            p=routed
                             self.save('revisions/'+str(number)+'-delivery.json',delivery)
+                    self.save('revisions/'+str(number)+'.json',dict(contract_before=before,**diagnostic,**checked))
+                    state=self.state();state['contract']=after
+                    if not any(d['attempt']==number for d in state['diagnoses']):state['diagnoses'].append(dict(attempt=number,**diagnostic,**checked))
+                    self.save('state.json',state)
                 state=self.state();base=self.root/'original' if number==1 else self.root/'attempts'/str(number-1)/'candidate'
                 self.status('action_running',current_attempt=number)
                 payload=dict(public,contract=state['contract'],experience=delivery['experience_text'],
@@ -472,6 +527,7 @@ class Trajectory:
                     feedback=None if number==1 else state['attempts'][-1]['feedback'],
                     within_task_reflections=[dict(source_attempt=d['attempt']-1,for_action=d['attempt'],
                         observed_feedback=deepcopy(state['attempts'][d['attempt']-2]['feedback']),
+                        supporting_evidence_bindings=deepcopy(d.get('supporting_evidence_bindings',[])),
                         status='unverified_task_local_reflection',**{k:deepcopy(d[k]) for k in ('diagnosis','explanation','structured_delta','supporting_evidence','remaining_unknowns','contract_changed')})
                         for d in state['diagnoses'] if d['attempt']<=number],
                     instruction='Repair the supplied current candidate. Use cumulative within_task_reflections from the actual preceding failed candidates, including when Contract is unchanged or no cross-task experience matched. Treat their explanations as fallible hypotheses: retain unknowns, check against public task/source and observations, and do not turn inferred causes or checks into new business requirements. Preserve original task obligations and correct behavior. No scorer, reference, gold patch or hidden tests are available.')

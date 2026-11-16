@@ -26,6 +26,11 @@ class DockerV4Tests(unittest.TestCase):
   with patch('temporal_contract_analyzer.tempoevo_docker.image_identity'),patch('temporal_contract_analyzer.tempoevo_docker.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout='{"passed": false}',stderr='')) as run,patch('temporal_contract_analyzer._session_runtime.docker_transport.stop') as stop:
    result=evaluate(payload,self.root);self.assertTrue(result['valid']);self.assertFalse(result['passed']);self.assertEqual(stop.call_count,1)
   command=run.call_args[0][0];self.assertEqual(command[command.index('--network')+1],'none');self.assertIn('--read-only',command);self.assertEqual(command[-1],'/submission');self.assertNotIn('auth.json',' '.join(command))
+  temporary=[command[i+1].split(':',1)[0] for i,arg in enumerate(command) if arg=='--tmpfs']
+  runtime='/opt/swe-tempoc/results/transfer-v4-window-runtime'
+  self.assertNotIn(runtime,temporary,'Mounting the whole runtime hides installed JS dependencies')
+  self.assertIn(runtime+'/builds',temporary)
+  self.assertIn(runtime+'/native-launch-receipts',temporary)
  def test_stage_dispatches_to_existing_docker_runner(self):
   directory=self.root/'stage';directory.mkdir()
   backend=NativeV4Backend(dict(binary='/public/codex',backend=dict(kind='docker',solver_image=IMAGE)))
