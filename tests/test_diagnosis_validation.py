@@ -79,9 +79,23 @@ class DiagnosisValidationTests(unittest.TestCase):
         bindings = actions[1]['within_task_reflections'][0]['supporting_evidence_bindings']
         self.assertEqual(bindings[0]['source_versions'], ['previous_candidate'])
 
+    def test_explicit_candidate_version_mislabel_is_corrected_only_by_original_text(self):
+        value = diagnostic()
+        value['supporting_evidence'] = [dict(file='PREVIOUS_CANDIDATE:main.py', quote='value = 0')]
+        binding = self.check(value)['supporting_evidence_bindings'][0]
+        self.assertEqual(binding['source_versions'], ['original'])
+        self.assertTrue(binding['source_version_corrected'])
+        self.assertEqual(binding['claimed_source_version'], 'previous_candidate')
+
     def test_candidate_cannot_supply_original_contract_or_routing_evidence(self):
         value = diagnostic()
         value['contract_after']['supporting_evidence'] = [dict(file='main.py', quote='value = 1')]
+        checked = self.check(value)
+        self.assertTrue(checked['restored_original_contract_evidence'])
+        self.assertEqual(checked['contract_after'], fixtures.contract())
+        self.assertEqual(value['contract_after']['supporting_evidence'][0]['quote'], 'value = 1')
+        self.assertEqual(checked['candidate_only_contract_evidence'][0]['source_versions'], ['previous_candidate'])
+        value['contract_after']['checkpoints'] = ['A new requirement.']
         with self.assertRaisesRegex(EvidenceError, 'Unsupported public-source citation'):
             self.check(value)
         value = diagnostic()
@@ -92,6 +106,31 @@ class DiagnosisValidationTests(unittest.TestCase):
         value['routing_analysis']['facts'] = [dict(predicate='entry_snapshot', state='known', evidence=[])]
         with self.assertRaisesRegex(EvidenceError, 'facts\[0\].evidence'):
             self.check(value)
+
+    def test_candidate_only_contract_citations_do_not_stop_unchanged_diagnosis(self):
+        class CandidateContractBackend(fixtures.Backend):
+            def execute(inner, stage, payload, *args):
+                result = super().execute(stage, payload, *args)
+                if stage == 'diagnosis':
+                    result['output']['contract_after']['supporting_evidence'] = [dict(file='main.py', quote='value = 1')]
+                return result
+        loop = self.fixture.prepare()
+        state = loop.run(CandidateContractBackend(2), execute=True)
+        self.assertEqual(state['status'], 'passed', state.get('error'))
+        self.assertEqual(state['contract'], fixtures.contract())
+        self.assertTrue(state['diagnoses'][0]['restored_original_contract_evidence'])
+
+    def test_ungrounded_contract_citation_is_not_silently_discarded(self):
+        value = diagnostic()
+        value['contract_after']['supporting_evidence'] = [dict(file='main.py', quote='fabricated text')]
+        with self.assertRaisesRegex(EvidenceError, 'Unsupported public-source citation'):
+            self.check(value)
+
+    def test_stopped_execution_is_not_left_marked_as_running(self):
+        loop = self.fixture.prepare()
+        state = loop.run(fixtures.Backend(invalid='contract'), execute=True)
+        self.assertEqual(state['status'], 'execution_invalid')
+        self.assertEqual(state['stages'][0]['status'], 'invalid')
 
     def test_nonexistent_or_fabricated_diagnostic_quotes_are_rejected(self):
         for file, quote in [('main.py', 'value = 99'), ('missing.py', 'value = 1'),

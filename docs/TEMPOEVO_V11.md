@@ -99,6 +99,25 @@ diagnosis is committed. Invalid revisions leave the prior Contract intact.
 These fixes change the frozen implementation binding; earlier trajectories stay
 read-only, and any new model execution requires a newly prepared root.
 
+When the behavioral Contract is unchanged but a proposed Contract citation
+literally matches only the previous candidate, retain the prior original-source
+Contract evidence and record the candidate-only citations separately. The raw
+diagnostic output remains archived. Fabricated quotations and candidate-derived
+evidence for behavioral revisions are still rejected.
+If a diagnostic candidate-version prefix quotes only the original version of
+that same file, record the literal source match and an explicit version
+correction; do not change the quoted words or silently treat them as repaired
+code. A quote absent from both supplied versions remains invalid.
+
+Analysis's closed read grammar also permits exactly `git status --short` and
+`git --no-optional-locks status --short`, including sequences with allowed source
+readers. Other Git operations/options and paths outside the workspace remain
+denied. A hook-denied operation is reported as `tool_policy_denied` with the
+actual tool/command, retaining any secondary JSON parse error. Such denials
+cannot trigger transport retries. Failed stages are marked invalid rather than
+left marked as running. The public workspace need not be a Git repository;
+the stage prompt recommends direct source readers.
+
 Training evaluates each patch with its training Oracle, retries on failure and stops
 on acceptance, within three Actions. Public checks remain auxiliary. Testing instead
 uses `single_submission_then_independent_gold`: one bounded Action submits its final

@@ -8,7 +8,7 @@ import re
 import shlex
 from pathlib import Path
 
-READERS={'pwd','ls','rg','cat','nl','sed','head','tail','wc','echo','printf','true'}
+READERS={'pwd','ls','rg','cat','nl','sed','head','tail','wc','echo','printf','true','git'}
 CONTROL={';','&&','|','||'}
 
 def allowed(command, workspace='/workspace'):
@@ -50,6 +50,7 @@ def allowed(command, workspace='/workspace'):
   if any(t in ['&','||','>','>>','<','<<','<<<',';;'] for t in words):return False
   if any(not path_ok(t) for t in words[1:]):return False
   name=words[0]
+  if name=='git':return words in (['git','status','--short'],['git','--no-optional-locks','status','--short'])
   if name=='true':return len(words)==1
   if name=='rg' and any(t.startswith(('--pre','--hostname-bin','--files-from','--ignore-file')) for t in words[1:]):return False
   if name=='sed':

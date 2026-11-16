@@ -28,6 +28,8 @@ class NativeV4Backend:
             'For evidence cite the original task as file TASK; use exact public source paths and copy the quoted wording. '
             'For Action edit only business code in /workspace; preserve tests/configuration. '
             'Put compiled binaries/classes and caches in /tmp, not the submitted workspace. '
+            'Analysis tools permit workspace reads with cat, rg, nl, head, tail and sed -n N,Mp; '
+            'the public workspace may not be a Git repository, so prefer these readers to Git probes. '
             'Other stages return structured output without modifying files.\n'+canonical(payload))
         (directory/'native-stage').mkdir()
         backend=NativeBackend()
@@ -52,6 +54,19 @@ class NativeV4Backend:
                     event=events[-1]['event'];out['error']=event.get('message') or (event.get('error') or {}).get('message') or out['error']
             from .stage_retry import transient_transport
             if transient_transport(result,out['error']):out['failure_type']='transient_transport_error'
+            if (result.get('receipt') or {}).get('native',{}).get('blocked_tools',0):
+                out['failure_type']='tool_policy_denied'
+                out['output_parse_error']=result.get('output_parse_error')
+                out['error']='Tool policy denied an operation; session stopped before a final answer'
+                meter=directory/'native-stage/native/archive/meter/events.jsonl'
+                if meter.exists():
+                    denied=[json.loads(line) for line in meter.read_text().splitlines() if line.strip()]
+                    denied=[row for row in denied if row.get('denied') and row.get('event',{}).get('hook_event_name') in ('PreToolUse','PermissionRequest')]
+                    if denied:
+                        event=denied[-1]['event'];inp=event.get('tool_input') or {}
+                        out['policy_denial']=dict(tool_name=event.get('tool_name'),reason=denied[-1].get('reason'),
+                            command=inp.get('command',inp.get('cmd')) if isinstance(inp,dict) else None)
+                        out['error']+=': '+str(out['policy_denial']['command'] or out['policy_denial']['tool_name'])
         if kind=='action' and valid:
             if result.get('scoring_admissible') is not True:out.update(valid=False,error='Candidate or archive validation failed')
             out['candidate_sources']={k:v.decode() for k,v in capture(Path(result['final_candidate']))[0].items()}

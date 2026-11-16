@@ -120,12 +120,20 @@ def validate_diagnosis(diagnostic, before, task, sources, previous_candidate, co
     bindings = []
     for row in diagnostic['supporting_evidence']:
         prefix = 'PREVIOUS_CANDIDATE:'
+        version_correction = {}
         if row['file'].startswith(prefix):
             anchor = dict(row, file=row['file'][len(prefix):])
             if anchor['file'] not in previous_candidate:
                 raise EvidenceError('Missing previous-candidate citation file')
-            evidence_valid([anchor], '', previous_candidate)
-            matched = ['previous_candidate']
+            try:
+                evidence_valid([anchor], '', previous_candidate)
+                matched = ['previous_candidate']
+            except EvidenceError:
+                # Resolve a mislabeled version only by literal same-file evidence;
+                # retain the claimed scope and the correction for the next Action.
+                evidence_valid([anchor], task, sources)
+                matched = ['original']
+                version_correction = dict(claimed_source_version='previous_candidate', source_version_corrected=True)
         else:
             # Older responses used bare paths for the two source maps supplied in the
             # diagnosis payload. Resolve literal matches without promoting them to
@@ -141,10 +149,25 @@ def validate_diagnosis(diagnostic, before, task, sources, previous_candidate, co
                 matched.append(name)
             if not matched:
                 raise EvidenceError('Unsupported diagnostic public-source citation')
-        bindings.append(dict(file=row['file'], quote=row['quote'], source_versions=matched))
-    after = diagnostic['contract_after']
-    check_contract(after, task, sources, before)
+        bindings.append(dict(file=row['file'], quote=row['quote'], source_versions=matched, **version_correction))
+    after = deepcopy(diagnostic['contract_after'])
     changed = any(after[key] != before[key] for key in BEHAVIOR_FIELDS)
+    candidate_only = []
+    if not changed:
+        for anchor in after['supporting_evidence']:
+            try:
+                evidence_valid([anchor], task, sources)
+            except EvidenceError:
+                # A diagnostic may describe the edited implementation while keeping
+                # every requirement unchanged. Preserve the prior normative evidence
+                # instead of treating implementation text as a new requirement.
+                if anchor['file'] not in previous_candidate:
+                    raise
+                evidence_valid([anchor], '', previous_candidate)
+                candidate_only.append(dict(**anchor, source_versions=['previous_candidate']))
+        if candidate_only:
+            after['supporting_evidence'] = deepcopy(before['supporting_evidence'])
+    check_contract(after, task, sources, before)
     if changed and (diagnostic['diagnosis'] == 'implementation_gap' or condition == 'fixed_contract'):
         raise EvidenceError('Implementation-only/fixed condition cannot change Contract')
     if changed and not diagnostic['structured_delta']:
@@ -156,7 +179,8 @@ def validate_diagnosis(diagnostic, before, task, sources, previous_candidate, co
         if analysis is not None:
             from .experience_routing import validate_analysis
             validate_analysis(analysis, task, sources, text_grounding=True)
-    return dict(contract_changed=changed, supporting_evidence_bindings=bindings,
+    return dict(contract_after=after, contract_changed=changed, supporting_evidence_bindings=bindings,
+                restored_original_contract_evidence=bool(candidate_only), candidate_only_contract_evidence=candidate_only,
                 unused_routing_analysis=not changed and diagnostic['routing_analysis'] is not None)
 
 
@@ -372,7 +396,7 @@ class Trajectory:
         self.save('state.json',state)
         if self.state()['cancelled']:raise EvidenceError('Cancelled during stage')
         if result.get('valid') is not True:
-            row['failure_type']=result.get('failure_type','invalid_output');self.save('state.json',state)
+            row.update(status='invalid',failure_type=result.get('failure_type','invalid_output'));self.save('state.json',state)
             raise EvidenceError('Invalid '+kind+' execution: '+str(result.get('error')))
         if type(requests) is not int or requests<0 or requests>limit['requests']:raise EvidenceError('Invalid measured request count')
         if kind in p['limits'] and result.get('model')!=p['model']:raise EvidenceError('Actual model settings mismatch')
@@ -509,7 +533,8 @@ class Trajectory:
                         contract_before=before,contract_revision_allowed=p['condition']!='fixed_contract',routing_recheck_required=p['condition']=='structured',feedback=last['feedback'],previous_candidate=last['candidate_sources'],
                         instruction=DIAGNOSIS_INSTRUCTION,schema=DIAGNOSIS_SCHEMA))['output']
                     checked=validate_diagnosis(diagnostic,before,p['task'],sources,last['candidate_sources'],p['condition'])
-                    after=diagnostic['contract_after']
+                    after=checked.pop('contract_after')
+                    diagnostic=dict(diagnostic,contract_after=after)
                     if checked['contract_changed']:
                         if diagnostic.get('routing_analysis') is not None:
                             routed=deepcopy(p);routed['routing_analysis']=diagnostic['routing_analysis']
