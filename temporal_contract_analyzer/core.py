@@ -1,4 +1,7 @@
-"""Source facts and conservative syntax patterns. No benchmark/oracle imports."""
+"""Collect sources, extract syntax evidence, and compare review hints.
+
+No benchmark/oracle imports or candidate execution.
+"""
 import collections
 import hashlib
 import json
@@ -35,12 +38,12 @@ CALL_TAGS={
  'effect': {'publish','render','renderState','save','write','persist','commit','notify','download'},
 }
 LIMITS=[
- '结果是语法事实、静态候选调用关系与待核查模式，不是已证明的时序契约、缺陷、严重度或难度分。',
- '同名 API 只作为线索；不做全程序类型/别名/控制流证明。动态派发、对象工厂、函数参数传递的完整目标保持未知。',
- '局部先后表示同一语法块中位置先后；条件、异常、循环、短路及调用是否实际执行仍需核查。',
- 'await 是潜在暂停点，并非必然切换；取消请求不等于工作与清理完成；移除监听不保证既有异步工作取消。',
- '语法中的 if/try/finally 不等于已证明保护充分；无模式命中不等于程序安全。',
- '未读取隐藏评分器、参考补丁、模型结果或人工 profile；分析根由操作者提供，文件内容的来源仍需核实。',
+ 'Syntax facts, candidate call links and review hints are not verified contracts, bugs, severity or difficulty scores.',
+ 'API names are clues. Types, aliases, control flow, dynamic dispatch and callback targets are not fully resolved.',
+ 'Local order is lexical order within a block; branches, exceptions, loops, short-circuiting and execution remain unchecked.',
+ 'await may suspend; cancellation does not imply completed work or cleanup. Listener removal does not cancel work already started.',
+ 'if/try/finally syntax does not prove adequate protection. The absence of hints does not imply safety.',
+ 'No hidden scorers, reference patches, model results or human profiles are read. Operators must verify input provenance.',
 ]
 
 
@@ -53,10 +56,10 @@ def normalize(value):return re.sub(r'\s+',' ',value).strip()
 
 def collect(directory):
     root=Path(directory).expanduser()
-    if not root.is_dir() or root.is_symlink():raise EvidenceError('请指定真实的候选源码目录（不是符号链接）')
+    if not root.is_dir() or root.is_symlink():raise EvidenceError('Use a candidate source directory, not a symlink')
     root=root.resolve()
-    if root.name in EXCLUDED or any(part in {'oracle','reference','references','mutants','negative-controls'} for part in root.parts):raise EvidenceError('不能把评分器、结果、参考或依赖目录作为扫描根')
-    if (root/'case.json').is_file() or (root/'case-clusters').is_dir():raise EvidenceError('请指向候选工程 base/ 或独立补丁工程，不要扫描整个案例/研究仓库')
+    if root.name in EXCLUDED or any(part in {'oracle','reference','references','mutants','negative-controls'} for part in root.parts):raise EvidenceError('Scorers, results, references and dependencies cannot be scan roots')
+    if (root/'case.json').is_file() or (root/'case-clusters').is_dir():raise EvidenceError('Scan the candidate base/ or patched project, not the case or benchmark root')
     sources={};skipped=[];total=0
     for folder,dirs,files in os.walk(root,followlinks=False):
         keep=[]
@@ -73,7 +76,7 @@ def collect(directory):
             if path.suffix.lower() not in CODE_EXT:continue
             if path.stat().st_size>MAX_FILE:skipped.append(dict(path=rel,reason='file_size_limit'));continue
             total+=path.stat().st_size
-            if total>MAX_TOTAL or len(sources)>=1000:raise EvidenceError('候选源码超过本工具范围（1000 文件 / 25 MiB）')
+            if total>MAX_TOTAL or len(sources)>=1000:raise EvidenceError('Source limit exceeded: 1,000 files / 25 MiB')
             raw=path.read_bytes()
             try:sources[rel]=raw.decode('utf-8')
             except UnicodeDecodeError:skipped.append(dict(path=rel,reason='non_utf8_source'))
@@ -171,39 +174,39 @@ def patterns(files):
                     relations.append(dict(kind='lexical_before_same_block',before=first['id'],after=second['id'],qualification='Only if both statements execute on this path; not a whole-program happens-before proof.'))
                     early=first is listener
                     finding('listen-before-connect' if early else 'connect-before-listen',file,[first,second],
-                            '同一语法块中监听注册位于连接调用之前。' if early else '同一语法块中连接调用位于监听注册之前。',
-                            '接收者语法表达式相同；需确认对象类型、别名稳定性、同步通知与是否允许漏收。',
-                            '提前监听可能激活同步回调：归属/清理信息是否先建立？' if early else '若 connect 同步发消息，这个消费者是否应接收初始消息？统计消费者可能有意忽略它。')
+                            'Listener registration precedes connect in the same block.' if early else 'Connect precedes listener registration in the same block.',
+                            'Receiver expressions match; verify types, aliases, synchronous notifications and whether missed messages are allowed.',
+                            'If registration invokes a callback synchronously, are ownership and cleanup ready?' if early else 'Should this consumer receive synchronous initial messages from connect? Statistics consumers may intentionally skip them.')
             waits=[e for e in group if e['kind']=='await']
             effects=[e for e in group if e['kind']=='call' and 'effect' in e['tags']]
             for wait in waits:
                 after=next((e for e in effects if e['statement']>wait['statement']),None)
-                if after:finding('effect-after-await',file,[wait,after],'同一语法块中，潜在等待点之后出现效果名称线索。','只表示源码顺序；效果语义、是否真的暂停及中间保护需人工核查。','结果完成后对象仍有效吗？这个效果应继续完成还是应失效？')
+                if after:finding('effect-after-await',file,[wait,after],'An effect-like call follows await in the same block.','Lexical order only; verify effect semantics, suspension and intervening guards.','Is the owner still valid after completion? Should the effect proceed or be discarded?')
             for y in [e for e in group if e['kind']=='yield']:
                 commit=next((e for e in group if e['kind']=='call' and e['callee'].endswith('.commit') and e['statement']>y['statement']),None)
-                if commit:finding('commit-after-yield',file,[y,commit],'yield 之后的正常继续路径包含 commit 名称调用。','需确认生成器/上下文管理器协议和连接类型；异常路径不保证提交。','通知或外部副作用是否要求等事务提交成功？')
+                if commit:finding('commit-after-yield',file,[y,commit],'A commit-named call follows yield on normal continuation.','Verify generator/context-manager protocols and connection type; exceptional paths may not commit.','Must notifications or external effects wait for a successful commit?')
         for write in [e for e in es if e['kind']=='write' and e.get('rhs_callee') and e.get('operator')=='=']:
             nested=[e for e in calls if e['scope']==write['scope'] and e['callee']==write['rhs_callee'] and (e['line'],e['column'])>=(write['line'],write['column']) and (e['end_line'],e['end_column'])<=(write['end_line'],write['end_column'])]
             if not nested:continue
             call=nested[-1]
             relations.append(dict(kind='rhs_before_assignment',before=call['id'],after=write['id'],qualification='Assignment occurs after successful RHS evaluation; call return alone does not imply asynchronous work completion.'))
             if re.search(r'(release|cleanup|unsubscribe|dispose)',write['target'],re.I):
-                finding('cleanup-handle-after-call',file,[call,write],'清理句柄名称的赋值发生在右侧调用成功求值之后。','若调用内可能执行用户回调，须另查回调是否重入；本条不声称重入已发生。','回调先切换/关闭时，旧操作返回后会覆盖新清理句柄吗？')
+                finding('cleanup-handle-after-call',file,[call,write],'A cleanup-like handle is assigned after the right-hand call returns.','Check whether user callbacks can reenter the caller; reentry is not established.','If a callback switches or closes the owner, can the old return overwrite a newer cleanup handle?')
         continuations=[e for e in calls if 'continuation' in e['tags']]
         removals=[e for e in calls if e['callee'].endswith('.removeEventListener')]
         for continuation in continuations:
             removal=next((e for e in removals if file['language']!='vue' or e['scope'].split('/')[0]==continuation['scope'].split('/')[0]),None)
             if removal:
-                finding('continuation-and-listener-removal',file,[continuation,removal],'同一文件中同时存在完成回调登记和监听移除。','仅是共现线索；需追踪是否属于同一工作、同一生命周期。','若二者相关，移除监听后，已开始的工作完成时是否还有有效性检查？')
+                finding('continuation-and-listener-removal',file,[continuation,removal],'Completion callback registration and listener removal coexist in this file.','Co-occurrence only; verify that both concern the same work and lifecycle.','If related, is validity checked when in-flight work completes after listener removal?')
                 break
         for e in es:
             if e['kind']=='return' and any(c.startswith('AsyncFor path') for c in e['conditions']):
-                finding('early-return-from-async-iteration',file,[e],'异步迭代体内存在提前返回。','需确认迭代器所有权、上下文管理和调用者协议；不直接判断是否必须由此函数关闭。','若此函数拥有资源，提前返回前是否完成必要关闭？')
+                finding('early-return-from-async-iteration',file,[e],'An async iteration body returns early.','Verify iterator ownership and context/caller protocols before assigning cleanup responsibility.','If this function owns the resource, does early return perform the required close?')
         for e in calls:
             if any('finally path'==c for c in e['conditions']) and ('cleanup_or_cancel' in e['tags'] or e['callee'].endswith('.pop')):
-                finding('cleanup-in-finally',file,[e],'finally 路径包含清理名称线索。','不证明所有退出路径、清理完成时间或清理异常均正确。','该路径是否等待必要清理完成？清理中断时如何处理？')
+                finding('cleanup-in-finally',file,[e],'A cleanup-like call occurs in a finally path.','Exit coverage, cleanup completion and exception handling are not proven.','Does this path await required cleanup? What happens if cleanup is interrupted?')
             if e.get('import_name')=='asyncio.shield':
-                finding('asyncio-shield-call',file,[e],'存在通过导入名称定位的 asyncio.shield 调用。','基于导入绑定候选；未验证运行时替换或参数实际归属。','这里是否用于区分等待者取消与共享任务生命周期？')
+                finding('asyncio-shield-call',file,[e],'An import-bound candidate calls asyncio.shield.','Runtime replacement and argument ownership remain unchecked.','Does shielding separate waiter cancellation from the shared task lifecycle?')
     findings.extend(lifecycle_patterns(files))
     reentrant_findings, reentrant_relations = reentrancy_patterns(files)
     findings.extend(reentrant_findings)
@@ -219,8 +222,8 @@ def analyze_sources(sources,node=None,skipped=None):
     # This API also supports already-frozen candidate text. Refuse obvious evaluator paths.
     for path,text in sources.items():
         p=PurePosixPath(path)
-        if p.is_absolute() or '..' in p.parts or any(x in EXCLUDED or x.startswith('.') for x in p.parts):raise EvidenceError('禁止的输入路径: '+path)
-        if not isinstance(text,str):raise EvidenceError('源码必须是 UTF-8 文本')
+        if p.is_absolute() or '..' in p.parts or any(x in EXCLUDED or x.startswith('.') for x in p.parts):raise EvidenceError('Disallowed input path: '+path)
+        if not isinstance(text,str):raise EvidenceError('Source must be UTF-8 text')
     files=[];js={};adapters={'python':dict(parser='stdlib.ast',version=sys.version.split()[0])}
     for path,text in sorted(sources.items()):
         ext=PurePosixPath(path).suffix.lower()
@@ -243,7 +246,11 @@ def analyze_sources(sources,node=None,skipped=None):
                 status='partial' if incomplete else 'parsed' if files else 'empty',inputs=inputs,skipped=skipped or [],limitations=LIMITS,files=files,call_links=links,relations=relations,findings=findings,
                 summary=dict(files=len(files),parsed_files=sum(f['status']=='parsed' for f in files),events=sum(len(f['events']) for f in files),candidate_call_links=len(links),review_hints=len(findings)))
     if any(f['language']=='vue' for f in files):
-        report['limitations']=LIMITS+['Vue 仅分析内联 <script>/<script setup> 的 JS/TS/JSX/TSX 语法；不分析模板表达式、样式、自定义块转换、生成代码或 Vue 运行时调度。两个脚本块独立分析，跨块绑定与组件实例方法派发保持未知。parsed 表示上述范围内的解析完成，不是整个组件行为已被验证。']
+        report['limitations']=LIMITS+[
+            'Vue analysis covers inline <script>/<script setup> in JS/TS/JSX/TSX only. '
+            'Templates, styles, custom-block transforms, generated code and runtime scheduling are excluded. '
+            'Script blocks are independent; cross-block bindings and instance dispatch remain unresolved. '
+            'parsed means script parsing succeeded, not component behaviour was verified.']
     return report
 
 
@@ -276,5 +283,5 @@ def compare(before,after):
     return dict(schema_version='temporal-contract-analysis-comparison-1',before=before,after=after,
                 changed_files=[p for p in sorted(set(files_before)|set(files_after)) if files_before.get(p)!=files_after.get(p)],
                 added_hints=added if comparable else [],removed_hints=removed if comparable else [],delta_status='computed' if comparable else 'not_computed_due_to_incomplete_or_different_analysis',
-                interpretation='变化仅表示规则命中的语法结构变化；不是已验证的 bug 引入/修复，也不证明未变化路径安全。',
+                interpretation='Hint changes reflect matched syntax, not verified bug introductions or fixes; unchanged paths are not proven safe.',
                 comparable=comparable)
