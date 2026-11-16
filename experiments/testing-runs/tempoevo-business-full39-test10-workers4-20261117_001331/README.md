@@ -14,3 +14,5 @@ judgments and do not establish benchmark repair accuracy.
 
 The two workflow changes are bundled; score changes cannot identify their separate
 causal effects. This is diagnostic transfer on previously exposed same-core cases.
+
+Completed:8/10 passed,2 failed,0 execution-invalid,61 measured model requests,926.54 seconds. Prior run4/10:5 failures improved and1 pass regressed. See comparison.json and raw completion.json. All10 scored with one Action and one final Gold stage each.
