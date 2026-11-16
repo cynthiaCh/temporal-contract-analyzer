@@ -86,7 +86,7 @@ removing existing persistence or publication. Requirements still come from origi
 public inputs, not prior cases or Gold. No extra review can delete a Contract obligation
 in this profile; Action must check the draft against the original inputs.
 
-`retrieval/selection-recall.json` archives the candidate pool, and `delivery.json`
+`retrieval/selection-1-recall.json` archives the candidate pool, and `delivery.json`
 records assessments, selection reasons and covered/uncovered obligations. Preparation
 validation keeps its existing one-correction budget and discard-guidance fallback.
 The same historically exposed test10, immutable images and approved experience bank
