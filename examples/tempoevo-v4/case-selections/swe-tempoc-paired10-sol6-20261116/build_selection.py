@@ -144,7 +144,7 @@ def main():
         model_calls=0, scorer_executions=0, production_split_changed=False))
     lines = [
         '# SWE-TempoC：训练10 + 同机制测试10（2026-11-16）', '',
-        '推荐固定 **`gpt-6-sol / medium`**，训练对象为 temporal-contract-analyzer / TempoEvo 的工具与经验流程，不是模型权重微调。', '',
+        '本目录保留 **`gpt-6-sol / medium`** 的历史选例依据；当前执行模型为 `gpt-6.1-sol / medium`，流程见 [WORKFLOW.md](../../../../docs/WORKFLOW.md)。经验构建不更新模型权重。', '',
         '## 选择依据', '',
         '- 全部来自冻结242条 roster；每条都有精确 case、精确模型与力度的历史 L（latent-maintenance）有效记录，原始通过率均 ≤50%。',
         '- 只以 L 成绩判定难度；给定 Contract 和 Generic 成绩不参与筛选。异常、污染和未评分排除，不能计作失败。',
@@ -166,13 +166,13 @@ def main():
         lines.append(f"|{label}|10|{s['historical_passes']}/{s['historical_valid']} ({s['pooled_trial_pass_rate']:.1%})|{s['macro_case_pass_rate']:.1%}|")
     lines += ['',
         '累计是历史有效运行次数，不是新流程的成功率或pass@k。17条有3次有效记录，训练2条只有2次、测试1条只有1次，0/1不代表稳定0%。训练/测试各排除2次异常执行。', '',
-        '## 模型建议', '',
-        '本次推荐 gpt-6-sol / medium 是基于实验匹配：它在这20条上有完整的低L基线；gpt-6.1-sol / medium 在部分候选上缺L记录，另一些已高通过，不适合直接继承本清单的难度判断。',
-        '这不是声称旧型号总体优于新型号。OpenAI Docs 当前通用复杂工作推荐 GPT-6.1 Sol；本实验选择历史可比较的固定模型。模型支持与Responses工具调用参见 [OpenAI官方文档](https://developers.openai.com/api/docs/guides/latest-model)。账号实际可用性尚未通过模型请求验证。',
-        '`model-profiles.json` 已保存独立 sol6-medium 配置；后续准备时显式使用 `--model-config 本目录/model-profiles.json --model-profile sol6-medium`。', '',
+        '## 历史模型选择依据', '',
+        '选例时使用 gpt-6-sol / medium 是基于历史记录匹配：它在这20条上有完整的低L基线；gpt-6.1-sol / medium 在部分候选上缺L记录，另一些已高通过，不适合直接继承本清单的难度判断。',
+        '历史模型用于解释选例难度，不代表当前执行配置或模型优劣结论。当前模型设置以 [WORKFLOW.md](../../../../docs/WORKFLOW.md) 和实际冻结协议为准。',
+        '`model-profiles.json` 保留历史 sol6-medium 配置，仅用于重现选例依据；当前执行使用仓库 sol61-medium 配置。', '',
         '## 用于训练和测试', '',
         '使用本目录 training_10_cases.csv 和 testing_10_cases.csv；两份rank各为1–10，selected_20_cases.csv 中训练为1–10、测试为11–20。学习和测试都使用公开L任务与源码；当前系统生成自己的Auto-Contract，不能把历史给定Contract作为工具的输入或收益。',
-        '建议每个测试case固定比较「原始L」「Auto-Contract且无跨任务经验」「Auto-Contract+冻结训练经验」，保持模型、力度、预算、输入和评分器一致。测试期间不学习、不修改经验；测试Gold只用于最终计分。训练使用新的独立记忆目录，避免沿用已看过测试case的历史经验。',
+        '当前测试只使用完整已审核经验单组：业务适用性检索、Auto-Contract、一次 Action、最终独立 Gold；不执行 A/B 或无经验对照，不执行 Contract Review。固定流程见 [WORKFLOW.md](../../../../docs/WORKFLOW.md)。',
         '选例依据已知历史结果，且同源变体有意跨集合配对，所以只能报告同机制/跨表示迁移，不能报告未见来源泛化或独立盲测。训练流程最多3次Action，测试按当前实现1次Action/最终Gold；不要把二者的重试成功率直接相减。', '',
         '## 就绪程度与限制', '',
         '本次完成的是选例、原始回执核对、输入指纹冻结与模型配置，未启动训练或测试。额外的当前全库完整性检查和旧catalog接入检查见 benchmark-acceptance-check.json 与 catalog-readiness.json；这些是选例之外的运行前状态，不包含在 selection validation 的PASS内。',

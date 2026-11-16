@@ -18,7 +18,7 @@ parser.add_argument('--online-memory',type=Path,help='Training-only shared provi
 parser.add_argument('--mode',choices=['learning','testing'],default='learning')
 parser.add_argument('--visible-evaluators',type=Path,help='Optional existing project evaluator mapping; omitted by default')
 parser.add_argument('--training-recipe',choices=['v8-compatible-v1'],help='Restore V8 learning semantics with public checks and behavior feedback')
-parser.add_argument('--retrieval-profile',choices=['semantic-v11','source-bound-v8','business-source-v1'],help='Explicit memory router; source-bound-v8 is usable in single-submission testing')
+parser.add_argument('--retrieval-profile',choices=['semantic-v11','source-bound-v8','business-source-v1'],help='Memory router; structured testing defaults to business-source-v1, the V8 construction recipe to source-bound-v8')
 parser.add_argument('--approved-supplement-store',type=Path,help='Additional reviewed memory store for frozen testing only')
 parser.add_argument('--approved-supplement-snapshot',type=Path,help='Exact audited snapshot from the supplemental store')
 parser.add_argument('--memory-snapshot',type=Path,help='Exact audited approved snapshot; validated against --store')

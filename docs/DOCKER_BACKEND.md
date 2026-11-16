@@ -79,9 +79,9 @@ separate records. `calibration.json` binds source/scorer hashes, both image IDs,
 runtime paths/versions and evidence digests. Runtime errors are infrastructure
 errors. No model is called and no reference patch is sent to a solver.
 
-## V4 integration
+## Trajectory integration
 
-Use the [V4 configuration and CLI](TEMPOEVO_V4.md) for new learning and testing.
+Use the [current workflow and CLI](WORKFLOW.md) for new learning and testing.
 `tempoevo run --execute` is the only model-execution entrypoint. New live runs
 require `backend.kind=docker` and containerized visible/gold evaluators. All model
 roles use the shared Docker transport. AST extraction runs in a separate offline
@@ -131,11 +131,11 @@ does not establish live provider availability, repair benefit or generalization.
 
 ## Limits and evidence reads
 
-V4 freezes the original source, approved experience snapshot, evaluator inputs,
+The trajectory freezes the original source, approved experience snapshot, evaluator inputs,
 model configuration and stage limits when preparing each trajectory. Actions have
 at most 24 requests each; routing, Contract, diagnosis and success extraction have
 at most 12 requests each. Every model stage has a 600-second upper bound.
-The [V4 budget calculation](TEMPOEVO_V4.md#budgets-recovery-and-outputs) includes
+The [current budget description](WORKFLOW.md) includes
 all applicable stages; historical starting-repair and correction budgets do not apply.
 
 Contract analysis, diagnosis and extraction use independent read-only sessions;

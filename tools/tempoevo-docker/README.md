@@ -54,12 +54,11 @@ original/reference/negative controls are archived alongside independent Gold
 controls, and the reference must pass both evaluators. Default retrieval and acceptance settings are
 unchanged; V12 uses advisory preparation validation. Testing rejects this recipe and training-only check descriptions.
 
-The current train10/test10 plan runs only the full approved experience group
-(16 seed entries plus two reviewed additions), with no A/B or no-memory control.
-Full-bank availability still uses applicability filtering rather than injecting
-every entry. The case pairing describes the task selection, not two testing arms.
-The single-group plan and the retained historical A/B run are documented in
-[the V8 protocol](../../examples/tempoevo-v4/case-selections/swe-tempoc-paired10-sol6-20261116/V8_TRAIN_AND_TEST.md).
+The current test10 plan runs one group using the full approved library
+(39 entries in the completed run), with business applicability selection and no
+Contract Review or A/B control. The source-family case pairing describes selection,
+not two testing arms. See [the current workflow](../../docs/WORKFLOW.md) and
+[the exact batch configuration](../../examples/tempoevo-v4/case-selections/swe-tempoc-paired10-sol6-20261116/testing-protocol-business-full-memory.json).
 
 Training artifacts written outside the Git worktree must not be the only copy of
 learned guidance. After a batch, archive provisional entries, candidate reflections
@@ -68,20 +67,18 @@ original bytes, source paths and SHA-256 hashes, and commit them to Git. Stage c
 candidates in the categorized library as pending for review. Committing candidates
 does not approve them or change an already frozen retrieval snapshot.
 
-Testing may explicitly select `--retrieval-profile source-bound-v8` to reuse the
-V8 source-bound router without enabling its learning recipe. It still permits
-one Action and final-only Gold. To compare the historical approved bank with
-reviewed additions from another store, provide both `--approved-supplement-store`
-and `--approved-supplement-snapshot`. Every supplemental entry must validate
-against its actual retained approval; pending guidance and duplicates are rejected.
-The combined bank is frozen and hashed in each trajectory; no approval is synthesized.
+Testing defaults to `business-source-v1`: one applicability-selection stage,
+one Auto-Contract draft, one repair Action, then final-only Gold. All approved
+entries are available for retrieval, with at most five applicable entries delivered.
+No taxonomy-routing or Contract Review stage is added. Use `--memory-snapshot`
+to bind an exact approved bank; pending guidance cannot enter that bank.
 
 V12 preparation validation is advisory: missing mechanism evidence becomes unknown,
 and unusable model guidance gets one correction sharing its original request/time
 budget. Failed correction discards the guidance and continues to the sole testing
 Action; it does not relax tool permissions, approved-memory checks or Gold isolation.
 Use a new output root; historical V11 bindings and results remain read-only.
-See [the V12 policy](../../docs/TEMPOEVO_V12.md).
+See [the current workflow](../../docs/WORKFLOW.md).
 
 For a prepared single-group testing batch, `run_testing.py --root RUN_ROOT
 --workers 4 --execute` schedules at most four independent trajectories concurrently.

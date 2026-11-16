@@ -60,7 +60,7 @@ class AdvisoryTests(unittest.TestCase):
             self.assertTrue(action['preparation_warnings']);self.assertNotIn('SECRET_GOLD',json.dumps(backend.calls))
             self.assertEqual(sum(s['kind']=='gold' for s in state['stages']),1)
             self.assertEqual(loop.report()['preparation_corrections'],1)
-            if not correct:self.assertEqual(state['contract_review']['stop_reason'],'draft_unavailable')
+            self.assertNotIn('contract_review',state)
 
     def test_full_preparation_budget_does_not_spend_action_reserve_on_correction(self):
         class ExhaustedDraft(Backend):
@@ -100,31 +100,6 @@ class AdvisoryTests(unittest.TestCase):
             loop=self.prepare();state=loop.run(BadReceipt(),execute=True)
             self.assertEqual(state['status'],'execution_invalid');self.assertEqual(state['attempts'],[])
 
-    def test_real_preparation_failures_reach_one_action_without_accepting_invalid_revisions(self):
-        for file in sorted((Path(__file__).parent/'fixtures/preparation-validation').glob('*.json')):
-            with self.subTest(file=file.name):
-                example=json.loads(file.read_text());source=self.root/('source-'+file.stem);source.mkdir()
-                for name,text in example['sources'].items():
-                    p=source/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text)
-                class Replay:
-                    def __init__(inner):inner.calls=[];inner.scores=0
-                    def execute(inner,kind,payload,model,limits,directory):
-                        inner.calls.append((kind,deepcopy(payload),limits))
-                        if kind=='contract':output=example['review'] if 'version' in payload else example['before']
-                        else:return dict(valid=True,requests=1,model=model,candidate_sources=deepcopy(payload['candidate_sources']))
-                        return dict(valid=True,requests=1,model=model,output=deepcopy(output))
-                    def evaluate(inner,kind,payload,directory):
-                        inner.scores+=1;return dict(valid=True,passed=True)
-                loop=self.prepare(task=example['task'],candidate=str(source));backend=Replay();state=loop.run(backend,execute=True)
-                self.assertEqual(state['status'],'scored',state.get('error'));self.assertEqual(backend.scores,1)
-                self.assertEqual(len(state['attempts']),1);self.assertTrue(state['preparation_warnings'])
-                if file.stem=='missing-fact-evidence':
-                    facts=state['contract_review']['analysis']['facts']
-                    self.assertEqual(next(x['state'] for x in facts if x['predicate']=='no_lazy_shared_mechanism'),'unknown')
-                else:
-                    self.assertEqual(state['contract'],example['before'])
-                    self.assertEqual(state['contract_review']['stop_reason'],'invalid_review_discarded')
-
     def test_unusable_routing_output_falls_back_without_matching_experience(self):
         class NoRouting(Backend):
             def execute(inner,kind,payload,*args):
@@ -149,7 +124,7 @@ class AdvisoryTests(unittest.TestCase):
                 return result
         analysis=dict(taxonomy_version=taxonomy.VERSION,contract='Preserve accepted work.',obligation_labels=[],facts=[],unknowns=[])
         recalled=dict(candidates=[dict(sha256='a'*64,id='synthetic',text='Synthetic recalled entry')],mechanism_route={})
-        loop=self.prepare(condition='structured',routing_analysis=analysis);backend=NoSelection()
+        loop=self.prepare(condition='structured',retrieval_profile='semantic-v11',routing_analysis=analysis);backend=NoSelection()
         with patch('temporal_contract_analyzer.semantic_retrieval.recall',return_value=recalled):state=loop.run(backend,execute=True)
         self.assertEqual(state['status'],'scored',state.get('error'));self.assertEqual(len(state['attempts']),1)
         self.assertEqual([c[0] for c in backend.calls].count('selection'),2)

@@ -1,36 +1,40 @@
 # Architecture and source map
 
-The only model-execution protocol is `tempoevo-trajectory-v11`. Failed-attempt diagnoses and controlled observations are cumulative task-local working memory passed explicitly to the next Action, independently of cross-task matching. See [V9](TEMPOEVO_V9.md). [Online learning](TEMPOEVO_V8.md) adds a training-only provisional channel: generation → immediate eligibility in subsequent tasks → actual usage feedback, with human acceptance separately controlling the long-term library. Frozen experiments/testing never read this channel. Model/provider settings come from a frozen profile; transient stage restarts share the original request/time cap. See [V7 reflection](TEMPOEVO_V7.md) and [V6 profiles](TEMPOEVO_V6.md).
+The current protocol is `tempoevo-trajectory-v12`; see [WORKFLOW.md](WORKFLOW.md).
+The fixed construction and testing paths are:
 
 ```text
-Public task/source → deterministic AST → approved mechanism/BM25 recall → source-grounded semantic selection
-→ initial Auto-Contract → Action → visible + training Gold assessment
-                  ↑ diagnosis/revision ← failure, at most three Actions total
-Training Gold PASS → compare frozen related guidance → evidence/revise/merge/new proposal → unapproved candidate pool → named human content review → long-term bank
-Three effective training nonacceptances → real expert summary task → candidate pool
-Testing → frozen memory → one bounded Action (public tools/tests and code revisions)
-        → final submission → independent Gold once → recorded score, no feedback or learning
+Construction: public task/source -> AST evidence -> source-bound experience routing
+  -> Auto-Contract -> Action -> public + training Oracle acceptance
+  -> failure: diagnosis/revision -> next Action, at most three total
+  -> success: reflection -> candidate pool -> named content review -> approved bank
+  -> three effective failures: expert-summary task -> candidate pool
+
+Testing: original task/source + available AST -> business applicability selection
+  -> Auto-Contract draft -> one bounded Action -> final submission
+  -> Gold once -> recorded score, no solver feedback or learning
 ```
+
+There is no automatic Contract Review. Draft validation checks structure and
+quotations, with one bounded correction or a discard-guidance fallback. This is
+separate from human Experience Review, which controls long-term publication.
+Testing uses a frozen approved bank; provisional guidance is construction-only.
 
 | Responsibility | Modules / commands |
 |---|---|
-| V11 state machine | `tempoevo_v4.py`, `tempoevo_cli.py`, `tempoevo` |
-| V11 model/evaluator adapter | `tempoevo_backend.py` |
-| Shared isolated sessions | `execution_backend.py`, `_session_runtime/` |
-| Shared Docker/calibration/scoring | `docker_backend.py`, `case_evaluation.py` |
-| AST and public source evidence | `core.py`, `preanalysis.py`, `javascript/` |
-| Immutable experience/retrieval | `experience_memory.py`, `experience_routing.py`, `experience_updates.py` |
-| Named content review/versioning | `experience_approval.py`, `experience_lifecycle.py`, `memory_review.py` |
-| Read-only V1–V3 inspection | `history_cli.py`, `history status/report` |
+| Trajectory state machine | `tempoevo_v4.py`, `tempoevo_cli.py`, `tempoevo` |
+| Model/evaluator adapter | `tempoevo_backend.py` |
+| Isolated sessions | `execution_backend.py`, `_session_runtime/` |
+| Docker and scoring | `docker_backend.py`, `case_evaluation.py` |
+| AST evidence | `core.py`, `preanalysis.py`, `javascript/` |
+| Business applicability selection | `business_retrieval.py` |
+| Preparation validation/fallback | `preparation_validation.py` |
+| Source-bound construction routing | `experience_routing.py`, `experience_updates.py` |
+| Experience storage and review | `compact_experience.py`, `experience_memory.py`, `experience_approval.py`, `memory_review.py` |
+| Training acceptance projection | `training_acceptance.py` |
+| Historical inspection | `history_cli.py`, `history status/report` |
 
-No shared backend imports an old execution engine. Old metadata and evidence
-remain data: inspecting them never schedules a model, recomputes a report, applies
-a patch or modifies an approval. See [V6](TEMPOEVO_V6.md) and
-[legacy retirement](LEGACY_RETIREMENT.md).
-
-Training verdict normalization and controlled boolean behavior projection live in
-`training_acceptance.py`. Raw scorer results are separately archived. Testing has
-no training feedback, and scores its selected candidate once at the end. Existing
-exposed development records are not evidence of an independent test split.
-
-V11 retrieval stages, budgets and continuation boundaries: [semantic selection](TEMPOEVO_V11.md). The semantic model does not replace deterministic behavioral evaluators.
+Module filenames do not select a historical execution protocol. Old data are
+read-only; inspecting them does not schedule models, rewrite scores or approve
+experience. See [retirement boundaries](LEGACY_RETIREMENT.md) and
+[evaluation isolation](PUBLIC_TEST_ADAPTERS.md).

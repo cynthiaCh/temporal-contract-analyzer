@@ -1,6 +1,8 @@
 # Unified research experience library
 
-The local store is [`experience-memory/`](../experience-memory/README.md).
+The current categorized library is [`experience-memory/library/`](../experience-memory/README.md).
+Testing business selection and construction routing are described in [WORKFLOW.md](WORKFLOW.md);
+the bundle/discovery APIs below do not define a separate execution workflow.
 This feature stores and retrieves experience without models, network calls,
 dependencies, experiment execution or production-library updates.
 
@@ -257,11 +259,10 @@ versions. Rejection of the exact active version disables it without
 implicitly restoring an older version. Multiple eligible identities are delivered together, capped at five by default. Matching is based on labels and mechanism premises, not a numerical rank.
 
 The library itself does not launch models or evolve ranking, taxonomy or prompts.
-The separate [expert-gated controller](EXPERIENCE_EVOLUTION.md) automatically
-develops and AI-checks candidates, pauses for named content review, then validates
-accepted exact versions. It enables only when that human also authorized it.
-`research_admitted` metadata alone does not activate delivery. Research activation
-may be exploratory and is not production admission or proof of benefit.
+The [controller](WORKFLOW.md) reflects on accepted construction trajectories or
+stages expert failure summaries as candidates. Named acceptance makes exact
+versions eligible for later approved snapshots. Screening is optional evidence,
+not a prerequisite for delivery. Testing cannot produce or approve experience.
 
 To inspect or review an exact version without launching models:
 
@@ -309,7 +310,7 @@ necessary preservation/boundary/verification meaning must remain in the guidance
 A valid shape or category label is not a semantic approval. The single model rule
 body is still rendered deterministically; metadata and evidence IDs are not
 silently expanded into invented business rules. See the complete
-[development and evaluation protocol](EXPERIENCE_EVOLUTION.md).
+[development and evaluation protocol](WORKFLOW.md).
 
 ### Explicit active versions and migration
 

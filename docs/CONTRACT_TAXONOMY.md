@@ -1,6 +1,6 @@
 # 七类时序义务与经验路由
 
-当前开发／冻结测试入口为 `tempoevo` CLI，见 [进化流程](EXPERIENCE_EVOLUTION.md)。统一经验库通过 `experience-memory review` 打开审核页面；离线材料命令不调用模型。旧 Web v2、A/D 路由与单题失败学习入口已移除。
+当前开发／冻结测试入口为 `tempoevo` CLI，见 [进化流程](WORKFLOW.md)。统一经验库通过 `experience-memory review` 打开审核页面；离线材料命令不调用模型。旧 Web v2、A/D 路由与单题失败学习入口已移除。
 
 自 2026-11-09 起，当前工具接口统一采用 `temporal-obligation-taxonomy-7-v1`。它沿用 bench 论文覆盖审计的七类义务，作为分类、经验检索和展示的共同词汇。这里选择的是有既有定义与覆盖记录的工程口径，尚未比较不同分类方案的准确率或修复收益。
 
@@ -89,7 +89,7 @@ check before repairs. Supplied analyses receive the same check. No manual
 review-analysis step is needed in v3; that command remains a v2 compatibility
 entry point. The actual checker is recorded as model_evidence_check with current
 source citations, reasons, unknowns and blockers, not as human approval. See
-[the execution flow](EXPERIENCE_EVOLUTION.md).
+[the execution flow](WORKFLOW.md).
 
 模型分析对象必须包含 `taxonomy_version`、`contract`、`obligation_labels`、`facts`、`unknowns`。标签逐条包含 `code`、义务 `statement` 和 `evidence`；机制事实包含 `predicate`、`state` 和 `evidence`。状态为 `known`／`unknown`／`contradicted`。引用为 `{file, line, quote}`，行号从 1 开始，`TASK` 表示原任务；文本必须出现在该行。源码中的现象不自动成为应保留的政策，AST 也不证明完整可达性。
 
@@ -99,4 +99,4 @@ source citations, reasons, unknowns and blockers, not as human approval. See
 
 Python 调用者可用 `freeze_entry(text, obligation_labels, requires, excludes, version)` 生成完整性绑定对象，交给 `route(...)`；它不会批准或写入经验。使用 `maintenance_prompt(task, contract)` 构造 A，使用同一函数仅增加选中条目的 `text` 构造 B。该公共提示模板属于新版本，不能冒充旧实验 prompt 的逐字复现。
 
-当前流程入口为 [EXPERIENCE_EVOLUTION.md](EXPERIENCE_EVOLUTION.md)。旧方法说明位于 [研究归档](ARCHIVE.md)。经验重新标注、语义核查与行为接纳必须分别记录，不能靠修改类别名称跳过。
+当前流程入口为 [WORKFLOW.md](WORKFLOW.md)。旧方法说明位于 [研究归档](ARCHIVE.md)。经验重新标注、语义核查与行为接纳必须分别记录，不能靠修改类别名称跳过。

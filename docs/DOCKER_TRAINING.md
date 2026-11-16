@@ -1,4 +1,4 @@
-# V11 Docker training
+# Docker construction and testing
 
 New live `tempoevo run --execute` runs require Docker. The host schedules bounded
 stages and preserves archives; AST extraction, every model role and both
@@ -49,22 +49,27 @@ The first twenty historical selections are registered through
 `experiments/training-cases.json`. Registration does not certify runtime readiness:
 perform original/reference/negative control calibration first. The original Gold
 probe evaluates each generated training patch and only the final testing submission. Hidden Gold
-code is never mounted into the model's solver workspace. Public project tests are
-optional auxiliary feedback; no task-family behavioral suite is generated.
+code is never mounted into the model's solver workspace. The fixed construction
+recipe requires its declared public checks and training Oracle acceptance. Testing
+may use existing public tests without adding an outer repair loop.
 
-Training uses at most three Actions and Oracle acceptance to decide retries.
+Fixed construction uses at most three Actions and joint public/Oracle acceptance
+to decide retries.
 Testing uses one bounded Action, then one independent Gold score with no feedback.
 The model can run public project tests and revise code inside that Action. All stages
 use one frozen model profile. Training alone extracts candidates for review;
 testing cannot learn. Transient connection failures permit at most two archived
-stage restarts within the original request/time caps. Other invalid executions stop.
+stage restarts within the original request/time caps. Infrastructure and boundary
+failures stop; unusable preparation output follows the correction/fallback policy below.
 
-Prepare and run a selected rank range (preparation is zero-model):
+Prepare and run the fixed construction recipe (preparation is zero-model):
 
 ```sh
 TCA_BENCH_ROOT=/absolute/benchmark python3 -B tools/tempoevo-docker/prepare_selected.py \
   --root /new/batch --limit 10 --solver-image sha256:ACTUAL_SOLVER_ID \
-  --grader-image sha256:ACTUAL_GRADER_ID
+  --grader-image sha256:ACTUAL_GRADER_ID \
+  --mode learning --condition structured --training-recipe v8-compatible-v1 \
+  --public-checks-docs /absolute/path/to/public-check-descriptions.json
 python3 -B tools/tempoevo-docker/run_selected.py --root /new/batch --execute
 ```
 
@@ -77,21 +82,29 @@ trusted framework loader solely to mount candidate public APIs; hidden schedules
 and assertions remain separate in the unchanged Gold probe. All three calibration
 controls must complete before a case is prepared for paid execution.
 
-The launcher invokes the public V8 CLI serially. Partial started stages are never
+The launcher invokes the public `tempoevo` CLI serially. Partial started stages are never
 replayed. Every case has a separate archive; the batch shares one approved frozen
 snapshot and never approves its newly extracted candidates. Calibration failures
 remain `not_started`; execution failures retain their actual requests and errors.
 
 Learning configurations require `training_evaluator`, not only `gold_evaluator`.
-See [V8 feedback, stop and split boundaries](TEMPOEVO_V8.md). Historical Docker
-batches and candidates are retained unchanged; no automatic replay or acceptance.
+See [current feedback and workflow boundaries](WORKFLOW.md). Historical Docker
+runs, receipts, memory approvals and scores remain unchanged.
 
-Online sequential training adds `--learning-policy online --online-memory /new/batch/provisional` with `--condition structured`. Keep the provisional pool outside each candidate/trajectory and the long-term store. Trajectories capture its current entries only when they start, so preparing all cases first does not freeze out later learning. Default `frozen` remains suitable for ablations/testing. See [V8 policy and examples](TEMPOEVO_V8.md).
+Online construction uses `--learning-policy online --online-memory /new/batch/provisional`
+with `--condition structured`; testing never reads this provisional pool.
+The fixed experiment recipe additionally uses `--training-recipe v8-compatible-v1`
+and explicit `--public-checks-docs`, retaining source-bound routing and joint
+public/Gold acceptance. The review interface remains required for long-term publication.
 
-V9 additionally forwards cumulative task-local diagnoses into Action 2/3, independently of the online pool. See [within-task reflection delivery](TEMPOEVO_V9.md).
+Testing uses `--mode testing --condition structured`; its default retrieval profile
+is `business-source-v1`. All approved entries form the frozen candidate pool,
+then business applicability and obligation coverage select at most five entries.
+There is no separate taxonomy-routing or Contract Review stage. Preparation output
+gets at most one correction within its original budget, then invalid guidance is
+discarded without spending another repair Action. Gold remains final-only.
 
-No task-family adapters are required. An existing project evaluator is optional;
-test preparation never runs Gold or reads reference implementations. See
-[feedback boundaries](PUBLIC_TEST_ADAPTERS.md). Gold stays final-only in testing.
-
-V11 structured runs add a separately budgeted semantic-selection stage, using the same isolated Docker backend and frozen model profile. See [retrieval, budgets and historical continuation](TEMPOEVO_V11.md). Default reviewed store: `experience-memory/library`; use `--store` for an explicit alternative.
+For a prepared single-group root containing `plan.json` and `batch/progress.json`,
+run `tools/tempoevo-docker/run_testing.py --root RUN_ROOT --workers 4 --execute`.
+This schedules at most four different cases concurrently, not four attempts per
+case. Use a fresh root after code changes; old frozen bindings cannot be resumed.

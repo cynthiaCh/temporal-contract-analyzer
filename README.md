@@ -45,7 +45,7 @@ python3 -B -m temporal_contract_analyzer experience-memory verify --store /path/
 python3 -B -m temporal_contract_analyzer experience-memory review --store /path/to/memory
 ```
 
-[Architecture and source map](docs/ARCHITECTURE.md), [memory format and retrieval](docs/EXPERIENCE_MEMORY.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [TempoEvo V12](docs/TEMPOEVO_V12.md) document the interfaces. Experience Review accepts exact immutable candidate versions; edits require their own acceptance. Approved records, including historical records, are eligible for future frozen retrieval snapshots when public task/source evidence satisfies their applicability and exclusion predicates. Cross-case effect validation is not an eligibility gate. Success candidates and human failure summaries remain unapproved until reviewed. Opening or submitting the review page cannot start model execution. Held-out testing reads a frozen approved snapshot and cannot learn. No paid calls are authorized by reading this README.
+[Architecture and source map](docs/ARCHITECTURE.md), [memory format and retrieval](docs/EXPERIENCE_MEMORY.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [current workflow](docs/WORKFLOW.md) document the interfaces. Experience Review accepts exact immutable candidate versions; edits require their own acceptance. Approved records, including historical records, are eligible for future frozen retrieval snapshots when public task/source evidence satisfies their applicability and exclusion predicates. Cross-case effect validation is not an eligibility gate. Success candidates and human failure summaries remain unapproved until reviewed. Opening or submitting the review page cannot start model execution. Held-out testing reads a frozen approved snapshot and cannot learn. No paid calls are authorized by reading this README.
 
 ## Optional integrations
 
@@ -75,45 +75,22 @@ Tests use synthetic runners and fixtures. They do not establish repair benefit o
 
 This is a prepared source tree, not a published release. The owner has not selected a project license. Preserve upstream notices for any separately redistributed third-party code. No license grant or venue acceptance is implied. The exported source excludes exposed research memory, original experiment data, installed dependencies and Git history.
 
-## TempoEvo V12
+## Current construction and testing
 
-New trajectories use [advisory preparation validation](docs/TEMPOEVO_V12.md).
-Missing evidence becomes explicit uncertainty; invalid model preparation gets one
-correction within its original budget, then falls back to the previous draft or
-original inputs so Action can proceed. Authorization, budget, frozen inputs,
-protected files and final-only Gold isolation remain hard boundaries. V11 and
-older executions are read-only; prepare a new root for V12.
+See [WORKFLOW.md](docs/WORKFLOW.md) for the single current description of stages,
+feedback, budgets and memory review. The fixed construction recipe uses V8
+source-bound routing, up to three Actions, and public checks plus the training
+Oracle for acceptance. It updates external experience, not model weights.
 
-## TempoEvo V11
+Testing defaults to business applicability selection from the full frozen approved
+library, an Auto-Contract draft, one bounded repair Action and one independent
+final Gold score. There is no Contract Review, Gold-driven testing retry or
+automatic A/B run. Existing project tests may be run inside the Action budget.
+The [current test10 configuration](examples/tempoevo-v4/case-selections/swe-tempoc-paired10-sol6-20261116/testing-protocol-business-full-memory.json)
+records the completed 39-entry, four-worker diagnostic run.
 
-Training task-local diagnoses are passed explicitly and cumulatively to subsequent
-Actions, even when the Contract remains unchanged; see [V9](docs/TEMPOEVO_V9.md).
-The `tempoevo` CLI allows up to **three Actions in learning**, evaluating training
-Gold after every Action and stopping on Gold acceptance. Public checks are auxiliary.
-Three effective training failures request a real human summary. **Testing uses one
-bounded Action and one final submission**, with frozen memory and no learning.
-The model may run available project tests and revise code within its Action budget.
-Gold scores the submitted patch once afterward; its result never feeds back into repair.
-[Online training](docs/TEMPOEVO_V8.md) can immediately use new unreviewed candidates through a separate provisional pool; frozen ablations/testing keep fixed approved snapshots. Long-term publication still requires human acceptance. Successful reflection now proposes evidence supplements, revisions, merges or new guidance against a frozen related shortlist; every change still needs human review. See [V7 reflection](docs/TEMPOEVO_V7.md). All LLM stages share one frozen model profile, defaulting to `gpt-6.1-sol / medium`. Transient connection failures allow at most two stage restarts within the original request/time caps. Configure model, reasoning effort and provider in [model-profiles.json](temporal_contract_analyzer/_session_runtime/model-profiles.json). Historical V1–V3 data remain readable; their execution engines are removed. See [V6 configuration, retries and budgets](docs/TEMPOEVO_V6.md),
-[learning configuration](examples/tempoevo-v4/learning.json), and
-[testing configuration](examples/tempoevo-v4/testing.json).
-
-For development training selection, use the frozen
-[GPT-6.1 Sol medium hardest-50 index](examples/tempoevo-v4/case-selections/gpt61-sol-medium-hardest50-20261029/README.md).
-It retains historical counts and provenance; verify the case runtime, task condition
-and input version before preparing a new V12 trajectory. Record new results separately.
-
-V4 frozen trajectories remain read-only. Training acceptance feedback changes the
-protocol; do not resume old roots. Independent dataset isolation is unverified
-unless supported by split evidence; exposed training cases are not held-out tests.
-
-CSV ranks 1–25 are reserved for training and 26–50 for testing. Both modes share
-the same repair loop: at most three Oracle-guided attempts, retry on Oracle failure
-and stop on acceptance. Public checks are auxiliary. Testing exposes only the
-Oracle pass/fail verdict, keeps memory frozen and cannot learn.
-See the [current feedback policy](docs/PUBLIC_TEST_ADAPTERS.md); the former
-[V10 final-only scoring protocol](docs/TEMPOEVO_V10.md) remains historical.
-Reserved test IDs cannot run learning. Historical selection and shared task
-families mean this split is not certified unseen.
-
-Structured V11 delivery adds [source-grounded semantic applicability assessment](docs/TEMPOEVO_V11.md) after mechanism/BM25 recall; labels alone cannot authorize experience delivery. At most five nonredundant entries and 16,000 characters are injected. V10 histories remain read-only.
+New runs require fresh V12 roots. Historical results and decisions stay unchanged.
+CSV ranks 1–25 remain reserved for construction and 26–50 for testing; reserved
+test IDs cannot run learning. Historical outcome-based selection and shared source
+families mean this split is not certified unseen. Independent generalization
+requires separate evidence.

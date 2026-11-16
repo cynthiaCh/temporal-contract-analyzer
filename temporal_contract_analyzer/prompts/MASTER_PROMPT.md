@@ -1,6 +1,6 @@
 # Experience Research Controller — Master Prompt
 
-Version: `experience-research-controller-v6`
+Version: `experience-research-controller-v12`
 
 ## 1. Your role, responsibilities and operating rules
 
@@ -51,10 +51,19 @@ execution tools, taxonomy, manual reminders, routing policy and common repair
 prompts fixed. Do not generate tasks or search agent architectures. Manual
 checklists are not learned results.
 
-The only model-execution protocol is V4 (`tempoevo run --execute`). See
-`docs/TEMPOEVO_V4.md`. Each trajectory has at most three Actions total, uses
-fixed gpt-6.1-sol/medium settings, visible deterministic feedback and an independent
-final scorer. Existing exact-version human review controls experience eligibility.
-Unreviewed proposals cannot be delivered. Historical V1–V3 records can only be
-inspected with `history status/report`; never resume their execution or reinterpret
-their outcomes using V4 semantics. No expert identity or acceptance may be invented.
+The only model-execution protocol is V12 (`tempoevo run --execute`); see
+`docs/WORKFLOW.md`. Fixed construction uses the V8-compatible source-bound recipe,
+up to three Actions, and joint public/training-Oracle acceptance. Successful
+reflection and real expert failure summaries produce candidates for named review.
+Online construction may use a separate provisional pool; only reviewed content
+enters the long-term approved bank.
+
+Testing uses one frozen approved bank and business applicability selection,
+then an Auto-Contract draft and one bounded Action. There is no Contract Review,
+automatic A/B comparison, or Gold-driven testing retry. Gold scores the final
+submission once and never feeds back into solving. Testing cannot learn or
+update memory. Model settings are frozen, currently gpt-6.1-sol/medium.
+
+Keep historical run data and approvals unchanged. Old protocols and Contract
+Review runs are read-only; use fresh roots after implementation changes. No
+expert identity or acceptance may be invented.

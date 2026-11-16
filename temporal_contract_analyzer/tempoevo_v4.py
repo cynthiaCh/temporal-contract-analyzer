@@ -13,7 +13,7 @@ from . import archive, experience_approval as approval, experience_memory as mem
 from .candidate_files import capture, inventory, write_files
 from .core import EvidenceError, canonical, sha
 from ._session_runtime.model_settings import resolve_profile, identity
-from . import contract_review, preparation_validation as preparation
+from . import preparation_validation as preparation
 from .stage_retry import restart_counts
 
 VERSION = 'tempoevo-trajectory-v12'
@@ -56,8 +56,7 @@ def current_protocol(protocol):
     return (protocol.get('schema_version')==VERSION and protocol.get('mode') in ACCEPTANCE_POLICIES
             and protocol.get('acceptance_policy')==expected
             and (protocol['mode']!='testing' or (protocol.get('max_attempts')==1
-                 and (protocol.get('condition')=='baseline' or
-                      protocol.get('contract_review_policy')==(None if protocol.get('retrieval_profile')=='business-source-v1' else contract_review.POLICY)))))
+                 and protocol.get('contract_review_policy') is None)))
 
 
 def visible_verdict(attempts):
@@ -216,7 +215,8 @@ class Trajectory:
         recipe=cfg.get('training_recipe')
         if recipe not in (None,V8_TRAINING_RECIPE):raise EvidenceError('Unknown training recipe')
         if recipe and (cfg['mode']!='learning' or not cfg.get('visible_evaluator')):raise EvidenceError('V8 training requires learning mode and a public evaluator')
-        retrieval_profile=cfg.get('retrieval_profile','source-bound-v8' if recipe else 'semantic-v11')
+        default_retrieval='business-source-v1' if cfg['mode']=='testing' and cfg['condition']=='structured' else 'source-bound-v8' if recipe else 'semantic-v11'
+        retrieval_profile=cfg.get('retrieval_profile',default_retrieval)
         if retrieval_profile not in ('semantic-v11','source-bound-v8','business-source-v1'):raise EvidenceError('Unknown retrieval profile')
         if recipe and retrieval_profile!='source-bound-v8':raise EvidenceError('V8 training requires source-bound retrieval')
         if retrieval_profile=='source-bound-v8' and cfg['condition'] not in ('structured','fixed_contract') and not recipe:raise EvidenceError('Source-bound retrieval requires structured memory')
@@ -244,8 +244,7 @@ class Trajectory:
         attempts=cfg.get('max_attempts',1 if cfg['mode']=='testing' else 3)
         if type(attempts) is not int or not 1<=attempts<=3:raise EvidenceError('At most three Actions total')
         if cfg['mode']=='testing' and attempts!=1:raise EvidenceError('Testing requires exactly one bounded Action and one final submission')
-        review_policy=contract_review.POLICY if cfg['mode']=='testing' and cfg['condition']!='baseline' and retrieval_profile!='business-source-v1' else None
-        if cfg.get('contract_review_policy',review_policy)!=review_policy:raise EvidenceError('Historical Contract review policy is read-only')
+        if cfg.get('contract_review_policy') is not None:raise EvidenceError('Historical Contract review policy is read-only')
         try:settings=resolve_profile(cfg.get('model_profile'),cfg.get('model_config'))
         except (ValueError,TypeError,OSError) as error:raise EvidenceError('Invalid model configuration: '+str(error)) from error
         if cfg.get('model',identity(settings))!=identity(settings):raise EvidenceError('Model must match the selected profile')
@@ -332,7 +331,7 @@ class Trajectory:
             from . import business_retrieval
             cfg['retrieval_policy']=dict(version=business_retrieval.VERSION,max_candidates=business_retrieval.MAX_CANDIDATES,max_experiences=business_retrieval.MAX_EXPERIENCES,max_characters=business_retrieval.MAX_CHARACTERS)
         cfg.update(schema_version=VERSION,model=identity(settings),memory_snapshot=bank,max_attempts=attempts,limits=limits,total_request_cap=total,
-            contract_review_policy=review_policy,
+            contract_review_policy=None,
             store=str(store),original_inventory=inventory(files),feedback_fields=['observations','regressions','unknowns'],
             required_visible_checks=bool(recipe),acceptance_policy=acceptance,
             evaluation_budget=dict(visible=attempts if cfg.get('visible_evaluator') else 0,oracle=attempts if cfg['mode']=='learning' else 0,gold=1 if cfg['mode']=='testing' else 0),
@@ -343,7 +342,7 @@ class Trajectory:
         self.save('binding.json',dict(protocol=sha((self.root/'protocol.json').read_bytes()),
             bank=sha((self.root/'memory-snapshot.json').read_bytes()),ast=sha((self.root/'ast-evidence.json').read_bytes()),
             implementation=sha(Path(__file__).read_bytes()),evaluators=evaluator_hashes,
-            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name(name) for name in ('contract_review.py','business_retrieval.py','preparation_validation.py','semantic_retrieval.py','experience_routing.py','experience_memory.py','experience_updates.py','compact_experience.py','taxonomy.py','contract-taxonomy.json')]+[Path(__file__).with_name('evaluation_split.py'),Path(__file__).resolve().parents[1]/'experiments/evaluation-splits.json',Path(__file__).with_name('online_memory.py'),Path(__file__).with_name('experience_reflection.py'),Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
+            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name(name) for name in ('business_retrieval.py','preparation_validation.py','semantic_retrieval.py','experience_routing.py','experience_memory.py','experience_updates.py','compact_experience.py','taxonomy.py','contract-taxonomy.json')]+[Path(__file__).with_name('evaluation_split.py'),Path(__file__).resolve().parents[1]/'experiments/evaluation-splits.json',Path(__file__).with_name('online_memory.py'),Path(__file__).with_name('experience_reflection.py'),Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
         self.report();return self.state()
 
     def verify(self):
@@ -461,11 +460,7 @@ class Trajectory:
 
     def _remaining_limit(self,p,kind,budget_group=None):
         limit=dict(p['limits'].get(kind,dict(requests=0,seconds=600)))
-        if p.get('contract_review_policy') and kind in ('contract','selection'):
-            stages=[s for s in self.state()['stages'] if s['kind']==kind]
-            limit['requests']-=sum(s.get('requests',0) for s in stages)
-            limit['seconds']-=sum(s.get('seconds',0) for s in stages)
-        elif budget_group:
+        if budget_group:
             stages=[s for s in self.state()['stages'] if s.get('budget_group',s['key'])==budget_group]
             limit['requests']-=sum(s.get('requests',0) for s in stages)
             limit['seconds']-=sum(s.get('seconds',0) for s in stages)
@@ -524,55 +519,6 @@ class Trajectory:
             self._preparation_warning(key,'invalid_preparation_output',attempt=number,error=error)
         self._preparation_warning(key,'guidance_discarded',error=error)
         return None
-
-    def _review_contract(self,p,backend,public,delivery):
-        state=self.state()
-        review=state.get('contract_review') or dict(version=1,reviews=[],stop_reason=None)
-        p=deepcopy(p)
-        if review.get('analysis') is not None:p['routing_analysis']=review['analysis']
-        if state['contract'] is None:review['stop_reason']='draft_unavailable'
-        while not review['stop_reason']:
-            version=review['version'];key='contract-review-'+str(version)
-            cached=any(s['key']==key and s['status']=='complete' for s in self.state()['stages'])
-            limit=self._remaining_limit(p,'contract')
-            if not cached and (limit['requests']<1 or limit['seconds']<=0):
-                review['stop_reason']='budget_exhausted';break
-            before=deepcopy(self.state()['contract'])
-            payload=dict(public,contract_before=before,experience=delivery['experience_text'],
-                routing_analysis=p.get('routing_analysis'),taxonomy=taxonomy.definition(),
-                version=version,previous_reviews=review['reviews'],
-                instruction=contract_review.instruction(version),schema=contract_review.schema(CONTRACT_SCHEMA))
-            def validate_review(output):
-                from ._session_runtime.schema_validator import validate
-                validate(output,contract_review.schema(CONTRACT_SCHEMA))
-                proposal=deepcopy(output)
-                proposal['analysis']=self._advisory_analysis(proposal['analysis'],public,key)
-                changed=contract_review.validate_review(proposal,before,p['task'],public['sources'],version)
-                return proposal,changed
-            checked=self._preparation_output(p,backend,key,'contract',payload,validate_review)
-            if checked is None:
-                review['stop_reason']='invalid_review_discarded';break
-            result,changed=checked;analysis=result['analysis']
-            if analysis!=p.get('routing_analysis') and p['condition'] in ('structured','fixed_contract'):
-                p['routing_analysis']=analysis
-                selection_key='contract-review-selection-'+str(version)
-                cached_selection=any(s['key']==selection_key and s['status']=='complete' for s in self.state()['stages'])
-                selection_limit=self._remaining_limit(p,'selection')
-                if p.get('retrieval_profile')=='source-bound-v8' or cached_selection or (selection_limit['requests']>=1 and selection_limit['seconds']>0):
-                    delivery=self.retrieve(p,backend,selection_key)
-                else:
-                    delivery=dict(selected_sha256s=[],experience_text=None,provisional_sha256s=[],reason='contract_review_selection_budget_exhausted')
-                    self.save('delivery.json',delivery)
-            p['routing_analysis']=analysis
-            review['analysis']=analysis
-            review['reviews'].append(dict(version=version,**result))
-            review['version']+=int(changed)
-            if not changed:review['stop_reason']=result['decision']
-            state=self.state();state['contract']=result['contract_after'];state['contract_review']=review
-            self.save('state.json',state);self.save('contract-review.json',review)
-        state=self.state();state['contract_review']=review;self.save('state.json',state)
-        self.save('contract-review.json',review);self.save('final-contract.json',state['contract'])
-        return p,delivery
 
     def _execute_stage(self,p,backend,key,kind,payload,limit,directory):
         from .stage_retry import aggregate, contract_write_denial, restart_counts
@@ -659,8 +605,6 @@ class Trajectory:
                 draft=self._preparation_output(p,backend,'contract','contract',dict(public,experience=delivery['experience_text'],business_obligations=delivery.get('business_obligations',[]),instruction='Draft a fallible Contract from the original task and public sources. Check proposed business obligations against those originals. When preservation is requested, inspect existing observable behavior and callback-capable boundaries; absence of an explicit prose deadline does not authorize weakening existing behavior. Do not infer requirements from experience alone.',schema=CONTRACT_SCHEMA),validate_draft)
                 state=self.state();state.update(contract=draft,contract_preparation_complete=True)
                 self.save('initial-contract.json',draft);self.save('state.json',state)
-            if p.get('contract_review_policy'):
-                p,delivery=self._review_contract(p,backend,public,delivery)
             self.status('contract_ready');state=self.state()
             for number in range(1,p['max_attempts']+1):
                 if state['attempts']:
@@ -715,10 +659,9 @@ class Trajectory:
                 if p.get('training_recipe')==V8_TRAINING_RECIPE:
                     payload.pop('within_task_reflections',None)
                     payload['instruction']='Repair the supplied current candidate. Preserve original task obligations and correct behavior. No scorer, reference, gold patch or hidden tests are available.'
-                payload['instruction']+=' The automatic Contract and preparation review are unverified guidance. Original task and public source establish requirements. If Contract is null or preparation warnings remain, investigate from those original inputs; do not infer new requirements from rejected guidance or unknown premises.'
+                payload['instruction']+=' The automatic Contract and preparation checks are unverified guidance. Original task and public source establish requirements. If Contract is null or preparation warnings remain, investigate from those original inputs; do not infer new requirements from rejected guidance or unknown premises.'
                 if p['mode']=='testing':
                     payload['instruction']+=' This is the only testing Action. You may run available public project tests and revise code within this session budget. Submit one final candidate; no Gold verdict or later repair Action will be available.'
-                    payload['contract_review']=state.get('contract_review')
                 result=self._step(p,backend,'action-'+str(number),'action',payload)
                 candidate=result['candidate_sources']
                 if not isinstance(candidate,dict) or any(not isinstance(v,str) for v in candidate.values()):raise EvidenceError('Invalid candidate output')
@@ -904,7 +847,7 @@ class Trajectory:
             contract_changes=sum(d['contract_changed'] for d in state['diagnoses']),
             preparation_validation_policy=p.get('preparation_validation_policy'),preparation_warnings=state.get('preparation_warnings',[]),
             preparation_corrections=sum(s['key'].endswith('-validation-correction') for s in state['stages']),
-            contract_review_policy=p.get('contract_review_policy'),contract_review=state.get('contract_review'),
+            contract_review_policy=p.get('contract_review_policy'),
             diagnoses=[d['diagnosis'] for d in state['diagnoses']],requests=sum(s['requests'] for s in state['stages'] if type(s.get('requests')) is int),
             unknown_request_stages=[s['key'] for s in state['stages'] if s['kind'] in LIMITS and type(s.get('requests')) is not int],
             cumulative_action_request_cap=p['limits']['action']['requests']*p['max_attempts'],

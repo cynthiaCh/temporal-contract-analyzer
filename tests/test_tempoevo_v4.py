@@ -21,15 +21,7 @@ class Backend:
     def execute(self,stage,payload,model,limits,directory):
         self.calls.append((stage,deepcopy(payload),deepcopy(model),deepcopy(limits)))
         if self.invalid==stage:return dict(valid=False,error='synthetic timeout',requests=1,model=MODEL)
-        if stage=='contract' and 'version' in payload:
-            from temporal_contract_analyzer import contract_review, taxonomy
-            out=dict(decision='ready',contract_after=deepcopy(payload['contract_before']),
-                analysis=payload.get('routing_analysis') or dict(taxonomy_version=taxonomy.VERSION,
-                    contract=payload['task'],obligation_labels=[],facts=[],unknowns=[]),
-                checks=[dict(criterion=c,status='supported',explanation='Synthetic review only.',
-                    evidence=[dict(file='TASK',quote='Preserve accepted work.')]) for c in contract_review.CRITERIA],
-                changes=[],removed_obligations=[],remaining_unknowns=[])
-        elif stage=='contract':out=contract()
+        if stage=='contract':out=contract()
         elif stage=='selection':
             evidence=[dict(file='TASK',quote=payload['task'])]
             out=dict(assessments=[dict(sha256=c['sha256'],relevance='direct',
@@ -113,7 +105,7 @@ class V4Tests(unittest.TestCase):
         backend=Backend(2);state=loop.run(backend,execute=True)
         self.assertEqual(state['status'],'scored',state.get('error'));self.assertFalse(state['gold_result']['passed'])
         self.assertEqual(len(state['attempts']),1)
-        self.assertEqual([r[0] for r in backend.calls],['contract','contract','action'])
+        self.assertEqual([r[0] for r in backend.calls],['contract','action'])
         self.assertEqual([r['kind'] for r in state['stages']].count('gold'),1)
         self.assertFalse((loop.root/'candidate-pool').exists())
         self.assertEqual(protocol['memory_snapshot'],approval.freeze(self.store))
@@ -189,6 +181,29 @@ class V4Tests(unittest.TestCase):
         for _,payload,_,_ in backend.calls:
             self.assertNotIn('SECRET',json.dumps(payload))
         with self.assertRaises(EvidenceError):loop.publish_candidate('success')
+
+    def test_testing_defaults_to_business_selection_without_contract_review(self):
+        from temporal_contract_analyzer import experience_approval as approval
+        loop=self.prepare(mode='testing',condition='structured',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
+        p=loop.verify();self.assertEqual(p['retrieval_profile'],'business-source-v1')
+        self.assertIsNone(p['contract_review_policy']);self.assertEqual(p['total_request_cap'],48)
+        backend=Backend();state=loop.run(backend,execute=True)
+        self.assertEqual(state['status'],'scored',state.get('error'))
+        self.assertEqual([c[0] for c in backend.calls],['contract','action'])
+        self.assertFalse(any(s['key'].startswith('contract-review') for s in state['stages']))
+        self.assertEqual(sum(s['kind']=='gold' for s in state['stages']),1)
+        self.assertNotIn('contract_review',next(c[1] for c in backend.calls if c[0]=='action'))
+
+    def test_removed_contract_review_protocol_is_read_only(self):
+        from temporal_contract_analyzer import experience_approval as approval
+        cfg=dict(mode='testing',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
+        with self.assertRaisesRegex(EvidenceError,'read-only'):
+            self.prepare(**cfg,contract_review_policy='public_contract_review_3_versions_v1')
+        loop=self.prepare(**cfg);summary=(loop.root/'summary.json').read_bytes()
+        p=read(loop.root/'protocol.json');p['contract_review_policy']='public_contract_review_3_versions_v1';loop.save('protocol.json',p)
+        self.assertEqual(loop.report(),json.loads(summary))
+        self.assertEqual((loop.root/'summary.json').read_bytes(),summary)
+        with self.assertRaisesRegex(EvidenceError,'read-only'):loop.run(Backend(),execute=True)
     def test_invalid_stage_is_not_three_failures_or_retried(self):
         loop=self.prepare();backend=Backend(invalid='action');state=loop.run(backend,execute=True)
         self.assertEqual(state['status'],'execution_invalid');self.assertEqual(state['attempts'],[])
@@ -427,169 +442,3 @@ class V4Tests(unittest.TestCase):
                 result=super().execute(*args);result['requests']=100;return result
         state=loop.run(Overspend(),execute=True)
         self.assertEqual(state['status'],'execution_invalid');self.assertEqual(loop.report()['requests'],100)
-
-
-class ContractReviewTests(unittest.TestCase):
-    setUp=V4Tests.setUp
-
-    def prepare(self, **changes):
-        from temporal_contract_analyzer import experience_approval as approval
-        config=dict(mode='testing',memory_snapshot=approval.freeze(self.store),
-            gold_evaluator=dict(command=['synthetic-gold']),visible_evaluator=None)
-        config.update(changes)
-        return V4Tests.prepare(self,**config)
-
-    def test_three_versions_share_contract_budget_before_one_action(self):
-        class Revising(Backend):
-            def execute(inner,kind,payload,*args):
-                result=super().execute(kind,payload,*args)
-                if kind=='contract' and payload.get('version',3)<3:
-                    result['output']['decision']='revise'
-                    result['output']['checks'][0]['status']='issue'
-                    result['output']['contract_after']['checkpoints'].append('Source review '+str(payload['version']))
-                    result['output']['changes']=[dict(reason='Clarify preservation check.',
-                        evidence=[dict(file='TASK',quote='Preserve accepted work.')])]
-                return result
-        loop=self.prepare();backend=Revising(passes=99);state=loop.run(backend,execute=True)
-        self.assertEqual(state['status'],'scored',state.get('error'))
-        reviews=[c for c in backend.calls if c[0]=='contract' and 'version' in c[1]]
-        self.assertEqual([c[1]['version'] for c in reviews],[1,2,3])
-        self.assertEqual([c[3]['requests'] for c in backend.calls if c[0]=='contract'],[12,11,10,9])
-        self.assertTrue(all(0<c[3]['seconds']<=600 for c in reviews))
-        self.assertEqual(state['contract_review']['version'],3)
-        action=next(c[1] for c in backend.calls if c[0]=='action')
-        self.assertEqual(len(action['contract']['checkpoints']),2)
-        self.assertEqual(action['contract_review']['stop_reason'],'ready')
-        self.assertEqual(len(state['attempts']),1)
-        self.assertEqual([s['kind'] for s in state['stages']].count('gold'),1)
-        self.assertFalse(state['gold_result']['passed'])
-        self.assertNotIn('SECRET',json.dumps(backend.calls))
-        self.assertFalse((loop.root/'candidate-pool').exists())
-        self.assertEqual(read(loop.root/'final-contract.json'),action['contract'])
-
-    def test_unsupported_draft_obligation_can_be_removed_with_cited_reason(self):
-        class Removing(Backend):
-            def execute(inner,kind,payload,*args):
-                result=super().execute(kind,payload,*args)
-                if kind=='contract' and 'version' not in payload:
-                    result['output']['obligations'].append(dict(id='spurious',text='Discard all old callbacks.'))
-                elif kind=='contract' and payload['version']==1:
-                    review=result['output'];review['decision']='revise'
-                    review['checks'][2]['status']='issue'
-                    review['contract_after']['obligations']=[o for o in review['contract_after']['obligations'] if o['id']!='spurious']
-                    change=dict(reason='The request establishes preservation, not callback discard.',
-                        evidence=[dict(file='TASK',quote='Preserve accepted work.')])
-                    review['changes']=[change];review['removed_obligations']=[dict(id='spurious',**change)]
-                return result
-        loop=self.prepare();backend=Removing();state=loop.run(backend,execute=True)
-        self.assertEqual(state['status'],'scored',state.get('error'))
-        self.assertEqual([o['id'] for o in state['contract']['obligations']],['preserve'])
-        self.assertEqual(state['contract_review']['version'],2)
-
-    def test_invalid_review_changes_are_discarded_while_repair_continues(self):
-        for invalid in ('citation','deletion','ready_issue','duplicate_criterion','fourth_version'):
-            with self.subTest(invalid=invalid):
-                class BadReview(Backend):
-                    def execute(inner,kind,payload,*args):
-                        result=super().execute(kind,payload,*args)
-                        if kind=='contract' and 'version' in payload:
-                            review=result['output']
-                            if invalid=='citation':review['checks'][0]['evidence'][0]['quote']='INVENTED SOURCE'
-                            elif invalid=='deletion':
-                                review['decision']='revise'
-                                review['contract_after']['obligations']=[dict(id='replacement',text='Preserve accepted work.')]
-                                review['changes']=[dict(reason='Replace ID without removal evidence.',evidence=[dict(file='TASK',quote='Preserve accepted work.')])]
-                            elif invalid=='ready_issue':review['checks'][0]['status']='issue'
-                            elif invalid=='duplicate_criterion':review['checks'][0]['criterion']=review['checks'][1]['criterion']
-                            else:
-                                review['decision']='revise';review['checks'][0]['status']='issue'
-                                review['contract_after']['checkpoints'].append('Attempt another revision.')
-                                review['changes']=[dict(reason='Synthetic issue.',evidence=[dict(file='TASK',quote='Preserve accepted work.')])]
-                        return result
-                loop=self.prepare();backend=BadReview();state=loop.run(backend,execute=True)
-                self.assertEqual(state['status'],'scored',state.get('error'))
-                self.assertEqual([c[0] for c in backend.calls].count('action'),1)
-                self.assertEqual(sum(s['kind']=='gold' for s in state['stages']),1)
-                self.assertEqual(state['contract_review']['stop_reason'],'invalid_review_discarded')
-                self.assertEqual(state['contract']['obligations'],contract()['obligations'])
-                if invalid=='fourth_version':
-                    self.assertEqual([c[1]['version'] for c in backend.calls if 'version' in c[1]],[1,2,3,3])
-                else:self.assertEqual(state['contract'],contract())
-
-    def test_contract_budget_exhaustion_submits_without_claiming_review_success(self):
-        class Exhausting(Backend):
-            def execute(inner,kind,payload,*args):
-                result=super().execute(kind,payload,*args)
-                if kind=='contract':result['requests']=12
-                return result
-        loop=self.prepare();backend=Exhausting();state=loop.run(backend,execute=True)
-        self.assertEqual(state['status'],'scored',state.get('error'))
-        self.assertEqual(state['contract_review']['stop_reason'],'budget_exhausted')
-        self.assertEqual(state['contract_review']['reviews'],[])
-        self.assertEqual(len([c for c in backend.calls if c[0]=='contract']),1)
-        self.assertEqual(len(state['attempts']),1)
-
-    def test_unresolved_review_keeps_questions_without_creating_requirements(self):
-        class Unresolved(Backend):
-            def execute(inner,kind,payload,*args):
-                result=super().execute(kind,payload,*args)
-                if kind=='contract' and 'version' in payload:
-                    result['output']['decision']='unresolved'
-                    result['output']['remaining_unknowns']=['Callback reachability remains unknown.']
-                    result['output']['checks'][0].update(status='unknown',evidence=[])
-                return result
-        loop=self.prepare();backend=Unresolved();state=loop.run(backend,execute=True)
-        self.assertEqual(state['status'],'scored',state.get('error'))
-        action=next(c[1] for c in backend.calls if c[0]=='action')
-        self.assertEqual(action['contract'],contract())
-        self.assertEqual(action['contract_review']['stop_reason'],'unresolved')
-        self.assertIn('reachability',action['contract_review']['reviews'][0]['remaining_unknowns'][0])
-
-    def test_changed_classification_reselects_from_the_same_frozen_bank(self):
-        from temporal_contract_analyzer import taxonomy
-        initial=dict(taxonomy_version=taxonomy.VERSION,contract='Preserve accepted work.',obligation_labels=[],facts=[],unknowns=[])
-        class Classified(Backend):
-            def execute(inner,kind,payload,*args):
-                result=super().execute(kind,payload,*args)
-                if kind=='contract' and 'version' in payload:
-                    result['output']['analysis']['obligation_labels']=[dict(code='I',statement='Preserve accepted work.',
-                        evidence=[dict(file='TASK',line=1,quote='Preserve accepted work.')])]
-                return result
-        loop=self.prepare(condition='structured',routing_analysis=initial)
-        frozen=(loop.root/'memory-snapshot.json').read_bytes()
-        state=loop.run(Classified(),execute=True)
-        self.assertEqual(state['status'],'scored',state.get('error'))
-        self.assertTrue((loop.root/'retrieval/contract-review-selection-1-recall.json').exists())
-        self.assertEqual((loop.root/'memory-snapshot.json').read_bytes(),frozen)
-        self.assertEqual(loop.report()['contract_review']['analysis']['obligation_labels'][0]['code'],'I')
-
-    def test_selection_budget_exhaustion_withdraws_stale_guidance(self):
-        from unittest.mock import patch
-        from temporal_contract_analyzer import taxonomy
-        initial=dict(taxonomy_version=taxonomy.VERSION,contract='Preserve accepted work.',obligation_labels=[],facts=[],unknowns=[])
-        class Classified(Backend):
-            def execute(inner,kind,payload,*args):
-                result=super().execute(kind,payload,*args)
-                if kind=='contract' and 'version' in payload:
-                    result['output']['analysis']['unknowns']=['Classification needs rechecking.']
-                return result
-        loop=self.prepare(condition='structured',routing_analysis=initial)
-        remaining=loop._remaining_limit
-        def budget(p,kind,budget_group=None):
-            if kind=='selection':return dict(requests=0,seconds=0)
-            return remaining(p,kind)
-        with patch.object(loop,'_remaining_limit',side_effect=budget):
-            backend=Classified();state=loop.run(backend,execute=True)
-        self.assertEqual(state['status'],'scored',state.get('error'))
-        delivery=read(loop.root/'delivery.json')
-        self.assertEqual(delivery['reason'],'contract_review_selection_budget_exhausted')
-        self.assertIsNone(next(c[1] for c in backend.calls if c[0]=='action')['experience'])
-
-    def test_old_testing_policy_is_read_only_and_baseline_skips_review(self):
-        loop=self.prepare();summary=(loop.root/'summary.json').read_bytes()
-        p=read(loop.root/'protocol.json');p.pop('contract_review_policy');loop.save('protocol.json',p)
-        self.assertEqual(loop.report(),json.loads(summary))
-        with self.assertRaisesRegex(EvidenceError,'read-only'):loop.run(Backend(),execute=True)
-        baseline=self.prepare(condition='baseline');backend=Backend();state=baseline.run(backend,execute=True)
-        self.assertEqual(state['status'],'scored',state.get('error'))
-        self.assertEqual([c[0] for c in backend.calls],['action'])
