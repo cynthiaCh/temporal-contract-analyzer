@@ -31,6 +31,8 @@ class DockerV4Tests(unittest.TestCase):
   self.assertNotIn(runtime,temporary,'Mounting the whole runtime hides installed JS dependencies')
   self.assertIn(runtime+'/builds',temporary)
   self.assertIn(runtime+'/native-launch-receipts',temporary)
+  self.assertIn('/opt/swe-tempoc/results/multi-family-expansion-20261005/rxjs-executions',temporary)
+  self.assertNotIn('/opt/swe-tempoc/results/multi-family-expansion-20261005/rxjs-cache',temporary)
  def test_stage_dispatches_to_existing_docker_runner(self):
   directory=self.root/'stage';directory.mkdir()
   backend=NativeV4Backend(dict(binary='/public/codex',backend=dict(kind='docker',solver_image=IMAGE)))

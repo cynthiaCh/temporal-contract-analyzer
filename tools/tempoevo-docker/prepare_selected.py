@@ -7,6 +7,7 @@ parser.add_argument('--root',type=Path,required=True);parser.add_argument('--sol
 parser.add_argument('--start-rank',type=int,default=1,help='First one-based CSV rank to prepare')
 parser.add_argument('--selection-file',type=Path,help='Explicit ranked case CSV; defaults to the historical50 selection')
 parser.add_argument('--swe-tempoc-root',type=Path,help='Read public inputs from the frozen SWE-TempoC roster; regular cases support learning/testing')
+parser.add_argument('--evaluation-split',type=Path,help='Explicit frozen split registry for a new incremental cohort')
 parser.add_argument('--training-feedback',type=Path,help='Explicit public feedback mapping JSON, frozen in every trajectory')
 parser.add_argument('--model-config',type=Path,help='Model profiles JSON file')
 parser.add_argument('--model-profile',help='Named model profile; defaults to the configuration default')
@@ -44,7 +45,7 @@ if args.swe_tempoc_root:
   def upstream_loader(cid,root,row,mp,m):
    if args.mode!='testing':raise ValueError('Upstream repository tasks currently support testing only; training controls are not implemented')
    return load(cid,root,row,mp,m,args.grader_image,public_destination)
-  return swe_case_input(case_id,bench,upstream_loader=upstream_loader)
+  return swe_case_input(case_id,bench,upstream_loader=upstream_loader,public_destination=public_destination)
 from temporal_contract_analyzer.tempoevo_backend import NativeV4Backend
 from temporal_contract_analyzer import experience_approval as approval
 from temporal_contract_analyzer.tempoevo_v4 import Trajectory,MODEL
@@ -67,7 +68,7 @@ for mapping in family_feedback.values():validate_mapping(mapping)
 visible_configs=json.loads(args.visible_evaluators.read_text()) if args.visible_evaluators else {}
 public_docs=json.loads(args.public_checks_docs.read_text()) if args.public_checks_docs else {}
 from temporal_contract_analyzer.evaluation_split import enforce
-for row in rows:enforce(dict(task_id=row['case_id'],mode=args.mode))
+for row in rows:enforce(dict(task_id=row['case_id'],mode=args.mode,**({'evaluation_split_file':str(args.evaluation_split.resolve())} if args.evaluation_split else {})))
 root=args.root.resolve();root.mkdir()
 shutil.copyfile(selection_path,root/'selection.csv')
 (root/'selection-source.json').write_text(json.dumps(dict(path=str(selection_path),sha256=sha(selection_path.read_bytes()),benchmark_root=str(bench),source='swe-tempoc' if args.swe_tempoc_root else 'registered-catalog'),indent=2)+'\n')
@@ -92,13 +93,16 @@ for row in rows:
    if not isinstance(doc,str) or not doc.strip():raise ValueError('Missing public check description for '+cid)
    (r/'public/VISIBLE_CHECKS.md').write_text(doc)
   visible=visible_configs.get(cid)
-  if args.training_recipe:
+  if args.training_recipe and not visible:
    visible=dict(image=grader,inputs={str(r/'case.json'):'/checks/case.json',str(repo/'tools/tempoevo-docker/public_checks.cjs'):'/checks/public_checks.cjs'},command=['/opt/swe-tempoc/.swe-tempoc/toolchains/node-v16.20.2/bin/node','/checks/public_checks.cjs'],seconds=180)
   gold=dict(image=grader,inputs={str(r/'case.json'):'/checks/case.json',str(repo/'tools/tempoevo-docker/gold.py'):'/checks/gold.py'},command=['/usr/bin/python3','/checks/gold.py'],seconds=180)
-  if cfg.get('projection'):
+  if m.get('schema_version')=='python-pilot-0.1':gold['inputs'][str(repo/'tools/tempoevo-docker/python_gold.py')]=gold['inputs'].pop(str(repo/'tools/tempoevo-docker/gold.py'))
+  if cfg.get('projection') and cfg['projection']['kind']=='frozen_base_public_projection_v1':
+   gold.update(inputs={str(r/'case.json'):'/checks/case.json',str(repo/'tools/tempoevo-docker/projected_gold.py'):'/checks/gold.py'},seconds=300)
+  elif cfg.get('projection'):
    gold.update(inputs={str(r/'case.json'):'/checks/case.json',str(repo/'tools/tempoevo-docker/upstream_gold.py'):'/checks/gold.py'},seconds=300)
   controls=[]
-  control_specs=([('original',None)] if visible else []) if args.mode=='testing' else [('original',None),('reference',m['references']['bounded']),('negative',m['mutants'][0])]
+  control_specs=([('original',None)] if visible else []) if args.mode=='testing' else [('original',None),('reference',(m.get('reference') or m['references']['bounded'])),('negative',m['mutants'][0])]
   for name,overlay in control_specs:
    subject=r/'public' if overlay is None else r/'controls'/name
    if overlay:shutil.copytree(r/'public',subject);shutil.copytree(bench/Path(c['case_record']['manifest']).parent/overlay,subject,dirs_exist_ok=True)
@@ -116,6 +120,7 @@ for row in rows:
   if args.retrieval_profile:config['retrieval_profile']=args.retrieval_profile
   if args.approved_supplement_store:config['approved_memory_supplements']=[dict(store=str(args.approved_supplement_store.resolve()),snapshot=json.loads(args.approved_supplement_snapshot.read_text()))]
   if args.training_recipe:config.update(training_recipe=args.training_recipe,required_visible_checks=True,protected_paths=['README.md','VISIBLE_CHECKS.md'])
+  if args.evaluation_split:config['evaluation_split_file']=str(args.evaluation_split.resolve())
   config['public_case_record']=c['case_record']
   config['learning_policy']=args.learning_policy
   if args.mode=='testing':
