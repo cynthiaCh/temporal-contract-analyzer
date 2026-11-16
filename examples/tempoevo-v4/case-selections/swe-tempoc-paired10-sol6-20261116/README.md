@@ -70,3 +70,5 @@ python3 -B examples/tempoevo-v4/case-selections/swe-tempoc-paired10-sol6-2026111
 ```
 
 V8 配方的训练设置与测试预注册见 [V8_TRAIN_AND_TEST.md](V8_TRAIN_AND_TEST.md)。选题时的低历史通过率属于 gpt-6-sol/medium；恢复 V8 后模型改为 gpt-6.1-sol/medium，不应把旧模型通过率当作新模型的实测基线。
+
+当前测试采用 [V12 单组全量经验配置](testing-protocol-v12-full-memory.json)：冻结全部已审核经验，4 workers，test10；历史 A/B 方案不再执行。

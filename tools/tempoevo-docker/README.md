@@ -82,3 +82,12 @@ budget. Failed correction discards the guidance and continues to the sole testin
 Action; it does not relax tool permissions, approved-memory checks or Gold isolation.
 Use a new output root; historical V11 bindings and results remain read-only.
 See [the V12 policy](../../docs/TEMPOEVO_V12.md).
+
+For a prepared single-group testing batch, `run_testing.py --root RUN_ROOT
+--workers 4 --execute` schedules at most four independent trajectories concurrently.
+The root contains `plan.json` plus `batch/progress.json`; every case must use the
+same frozen approved bank and current single-submission testing protocol. One case
+error does not abort the other cases, and incomplete previously started stages
+are not replayed. Results retain the full denominator and archive after completion.
+The current study uses the full approved categorized library as its retrieval pool;
+A/B is historical and is not launched by this command.

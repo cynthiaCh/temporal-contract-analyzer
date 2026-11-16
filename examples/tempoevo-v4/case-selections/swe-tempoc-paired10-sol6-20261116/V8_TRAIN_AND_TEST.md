@@ -1,5 +1,8 @@
 # V8 经验构建与全量经验单组测试方案
 
+> 当前测试设置已按用户最新要求改为 **V12 单组全量已审核经验 + 4 workers**，不再执行 A/B。本轮冻结39条已审核经验作为检索池，每例按原始任务/源码检索至多5条。当前配置见 `testing-protocol-v12-full-memory.json`；下文 A/B 为历史设计和旧结果的解释，不是当前执行方案。
+
+
 本轮训练恢复 V8 的有效配方，使用已选的 train10，模型 `gpt-6.1-sol / medium`，原始 16 条已审核经验快照，按顺序在线积累 provisional 经验。每例最多 3 次 Action，每次最多 24 requests / 600 秒，整例最多 132 requests。失败后保留 diagnosis；Action 接收最新反馈和更新的 Contract，不附加累计诊断解释。采用 V8 原有 source-bound routing，跳过新增的独立语义选择模型阶段。训练通过要求公开检查和独立 Gold 同时通过。
 
 沿用原有只读输入、评分隔离、证据校验、Contract 写入被拒后的单次纠正机会。历史 V8 目录不改写。已有机制复用 V8 公开例子；review、workspace 和 download 依公开 API 增补例子，并记录来源。这是 V8 配方在新 train10 上的复用，不是旧 25 例的精确复现；历史 24/25 不能作为本轮成绩或预期。
