@@ -1,7 +1,42 @@
 """Explicit transient-failure classification and null-safe per-stage accounting."""
 import re
+from pathlib import PurePosixPath
 
 TOKEN_FIELDS = ('input_tokens','cached_input_tokens','cache_write_input_tokens','output_tokens','reasoning_output_tokens','total_tokens')
+
+
+def contract_write_denial(result, kind, sources):
+    """A stopped Contract session may correct one attempted patch to public files."""
+    receipt = result.get('native_receipt') or {}
+    denial = result.get('policy_denial') or {}
+    if kind != 'contract' or result.get('failure_type') != 'tool_policy_denied' \
+            or receipt.get('archive_failure_requires_stop') is not False \
+            or receipt.get('transport_cleanup_error') or not receipt.get('native', {}).get('blocked_tools') \
+            or receipt.get('patch_delivered') is not False or receipt.get('preanalysis_error') \
+            or denial.get('tool_name') != 'apply_patch':
+        return False
+    patch = denial.get('command')
+    if not isinstance(patch, str) or not patch.startswith('*** Begin Patch\n') or not patch.rstrip().endswith('*** End Patch'):
+        return False
+    paths = re.findall(r'^\*\*\* (?:Update File|Add File|Delete File|Move to): (.+)$', patch, re.M)
+    if not paths:
+        return False
+    for text in paths:
+        path = PurePosixPath(text)
+        if '..' in path.parts:
+            return False
+        if path.is_absolute():
+            try:path = path.relative_to('/workspace')
+            except ValueError:return False
+        if str(path) not in sources:
+            return False
+    return True
+
+
+def restart_counts(stage):
+    executions = stage.get('executions', [])
+    corrections = sum(e.get('restart_reason') == 'contract_write_recovery' for e in executions)
+    return dict(transport_retries=max(len(executions)-1-corrections, 0), tool_policy_recoveries=corrections)
 
 
 def transient_transport(result, message):

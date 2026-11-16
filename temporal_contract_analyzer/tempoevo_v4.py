@@ -14,6 +14,7 @@ from .candidate_files import capture, inventory, write_files
 from .core import EvidenceError, canonical, sha
 from ._session_runtime.model_settings import resolve_profile, identity
 from . import contract_review
+from .stage_retry import restart_counts
 
 VERSION = 'tempoevo-trajectory-v11'
 ACCEPTANCE_POLICIES = dict(learning='oracle_pass_or_action_budget_exhausted',
@@ -452,17 +453,19 @@ class Trajectory:
         return p,delivery
 
     def _execute_stage(self,p,backend,key,kind,payload,limit,directory):
-        from .stage_retry import aggregate
+        from .stage_retry import aggregate, contract_write_denial, restart_counts
         policy=p['model_settings']['retry_policy'];results=[];started=time.monotonic()
-        for index in range(policy['max_retries']+1):
+        stage_payload=deepcopy(payload);restart_reason='initial'
+        for index in range(policy['max_retries']+2):
             if self.state()['cancelled']:raise EvidenceError('Cancelled before transport execution')
             used=sum(r['requests'] for r in results)
             remaining=dict(requests=limit['requests']-used,seconds=limit['seconds']-(time.monotonic()-started))
             trial=directory/'executions'/str(index+1);trial.mkdir(parents=True)
             state=self.state();row=next(s for s in state['stages'] if s['key']==key)
-            execution=dict(number=index+1,status='started',limits=remaining,input_sha256=sha(canonical(payload).encode()))
-            row.setdefault('executions',[]).append(execution);self.save('state.json',state)
-            result=backend.execute(kind,deepcopy(payload),p['model'],remaining,trial)
+            execution=dict(number=index+1,status='started',limits=remaining,restart_reason=restart_reason,input_sha256=sha(canonical(stage_payload).encode()))
+            row.setdefault('executions',[]).append(execution);row.update(restart_counts(row));self.save('state.json',state)
+            self.save(trial.relative_to(self.root)/'input.json',stage_payload)
+            result=backend.execute(kind,deepcopy(stage_payload),p['model'],remaining,trial)
             self.save(trial.relative_to(self.root)/'result.json',result)
             state=self.state();row=next(s for s in state['stages'] if s['key']==key)
             execution=row['executions'][-1];execution.update(status='complete',valid=result.get('valid'),requests=result.get('requests'),
@@ -472,16 +475,23 @@ class Trajectory:
             if type(requests) is not int or not 0<=requests<=remaining['requests']:
                 raise EvidenceError('Invalid measured request count; transport retry prohibited')
             if result.get('model')!=p['model']:raise EvidenceError('Actual model settings mismatch')
-            if result.get('valid') is True or result.get('failure_type')!='transient_transport_error':break
-            if index==policy['max_retries']:break
-            delay=policy['backoff_seconds']*(index+1)
+            if result.get('valid') is True:break
+            counts=restart_counts(row)
+            if counts['tool_policy_recoveries']==0 and contract_write_denial(result,kind,payload.get('sources',{})):
+                restart_reason='contract_write_recovery';delay=0
+                stage_payload=deepcopy(payload)
+                stage_payload['tool_policy_feedback']=dict(reason='A patch to a public workspace file was blocked in the read-only Contract stage.',
+                    instruction='This is your single correction opportunity. Do not call apply_patch or change files. Return only the requested structured Contract. Describe intended fixes as obligations or unknowns; the later Action performs code edits. The blocked patch was not applied.')
+            elif result.get('failure_type')=='transient_transport_error' and counts['transport_retries']<policy['max_retries']:
+                restart_reason='transient_transport';delay=policy['backoff_seconds']*(counts['transport_retries']+1)
+            else:break
             if sum(r['requests'] for r in results)>=limit['requests'] or time.monotonic()-started+delay>=limit['seconds']:break
             until=time.monotonic()+delay
             while time.monotonic()<until:
                 if self.state()['cancelled']:raise EvidenceError('Cancelled during transport backoff')
                 time.sleep(min(.1,until-time.monotonic()) if time.monotonic()<until else 0)
             self.verify()  # Recheck frozen bindings before spending another request.
-        return dict(result,**aggregate(results),transport_executions=len(results),transport_retries=len(results)-1)
+        return dict(result,**aggregate(results),transport_executions=len(results),**restart_counts(row))
 
     def run(self, backend, execute=False):
         if not execute:raise EvidenceError('Explicit execution authorization required')
@@ -721,7 +731,8 @@ class Trajectory:
             reflection_updates=[dict(name=name,update=read(self.root/'candidate-pool'/(name+'.json')).get('reflection_update'),
                 publication_kind=read(self.root/'candidate-pool'/(name+'.json')).get('publication_kind')) for name in ('success','expert') if (self.root/'candidate-pool'/(name+'.json')).exists()],
             transport_executions=sum(len(s.get('executions',[])) for s in state['stages']),
-            transport_retries=sum(max(len(s.get('executions',[]))-1,0) for s in state['stages']),
+            transport_retries=sum(restart_counts(s)['transport_retries'] for s in state['stages']),
+            tool_policy_recoveries=sum(restart_counts(s)['tool_policy_recoveries'] for s in state['stages']),
             known_tokens=sum((s.get('observed_tokens') or s.get('tokens') or {}).get('total_tokens') or 0 for s in state['stages']),
             unknown_usage_requests=None if any(s.get('unknown_usage_requests',0) is None for s in state['stages']) else sum(s.get('unknown_usage_requests',0) for s in state['stages']),
             usage_incomplete=any(s.get('usage_incomplete',False) for s in state['stages']),

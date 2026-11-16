@@ -114,7 +114,15 @@ Analysis's closed read grammar also permits exactly `git status --short` and
 readers. Other Git operations/options and paths outside the workspace remain
 denied. A hook-denied operation is reported as `tool_policy_denied` with the
 actual tool/command, retaining any secondary JSON parse error. Such denials
-cannot trigger transport retries. Failed stages are marked invalid rather than
+cannot trigger transport retries. A Contract-stage `apply_patch` denial targeting
+known public workspace files gets one correction opportunity in a fresh read-only
+session after confirmed archival and cleanup. The feedback explicitly requests
+structured Contract output and defers edits to Action. Both sessions share the
+original request/deadline budget; unknown usage, exhausted budget, cancellation,
+changed frozen inputs or unconfirmed cleanup prohibit correction. A repeated
+patch denial still stops the stage. Blocked patches are never applied or scored.
+`tool_policy_recoveries` is reported separately from `transport_retries`, with
+per-execution inputs, results and restart reasons retained. Failed stages are marked invalid rather than
 left marked as running. The public workspace need not be a Git repository;
 the stage prompt recommends direct source readers.
 
