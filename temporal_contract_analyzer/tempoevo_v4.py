@@ -20,6 +20,7 @@ VERSION = 'tempoevo-trajectory-v11'
 ACCEPTANCE_POLICIES = dict(learning='oracle_pass_or_action_budget_exhausted',
                            testing='single_submission_then_independent_gold')
 MODEL = identity(resolve_profile())
+V8_TRAINING_RECIPE = 'v8-compatible-v1'
 CONDITIONS = ('baseline', 'contract', 'bm25', 'structured', 'fixed_contract')
 LIMITS = dict(selection=dict(requests=12, seconds=600), routing=dict(requests=12, seconds=600), contract=dict(requests=12, seconds=600), action=dict(requests=24, seconds=600),
               diagnosis=dict(requests=12, seconds=600), extract=dict(requests=12, seconds=600))
@@ -47,8 +48,12 @@ def read(path):
 
 
 def current_protocol(protocol):
+    recipe=protocol.get('training_recipe')
+    if recipe not in (None,V8_TRAINING_RECIPE):return False
+    if recipe and (protocol.get('mode')!='learning' or not protocol.get('required_visible_checks') or not protocol.get('visible_evaluator')):return False
+    expected='training_gold_and_required_visible' if recipe else ACCEPTANCE_POLICIES.get(protocol.get('mode'))
     return (protocol.get('schema_version')==VERSION and protocol.get('mode') in ACCEPTANCE_POLICIES
-            and protocol.get('acceptance_policy')==ACCEPTANCE_POLICIES[protocol['mode']]
+            and protocol.get('acceptance_policy')==expected
             and (protocol['mode']!='testing' or (protocol.get('max_attempts')==1
                  and (protocol.get('condition')=='baseline' or
                       protocol.get('contract_review_policy')==contract_review.POLICY))))
@@ -207,10 +212,13 @@ class Trajectory:
         if cfg['mode'] not in ('learning','testing') or cfg['condition'] not in CONDITIONS:raise EvidenceError('Invalid mode/condition')
         if any(key in cfg for key in ('public_checks','repair_policy','testing_policy')):
             raise EvidenceError('Repair strategy switches were removed; testing submits once before independent Gold scoring')
-        acceptance=ACCEPTANCE_POLICIES[cfg['mode']]
+        recipe=cfg.get('training_recipe')
+        if recipe not in (None,V8_TRAINING_RECIPE):raise EvidenceError('Unknown training recipe')
+        if recipe and (cfg['mode']!='learning' or not cfg.get('visible_evaluator')):raise EvidenceError('V8 training requires learning mode and a public evaluator')
+        acceptance='training_gold_and_required_visible' if recipe else ACCEPTANCE_POLICIES[cfg['mode']]
         if cfg.get('acceptance_policy',acceptance)!=acceptance:
             raise EvidenceError('Historical protocol is read-only; prepare a new trajectory')
-        if cfg.get('required_visible_checks'):
+        if cfg.get('required_visible_checks') and not recipe:
             raise EvidenceError('Training and testing use public checks as advisory feedback only')
         from .evaluation_split import enforce
         split=enforce(cfg)
@@ -290,17 +298,18 @@ class Trajectory:
         uses_contract=cfg['condition']!='baseline'
         total=attempts*limits['action']['requests']+((attempts-1)*limits['diagnosis']['requests']+limits['contract']['requests'] if uses_contract else 0)+(limits['extract']['requests'] if cfg['mode']=='learning' else 0)
         if cfg['condition'] in ('structured','fixed_contract') and not cfg.get('routing_analysis'):total+=limits['routing']['requests']
-        if cfg['condition'] in ('structured','fixed_contract'):
+        if cfg['condition'] in ('structured','fixed_contract') and not recipe:
             total+=(attempts if cfg['condition']=='structured' else 1)*limits['selection']['requests']
         from . import semantic_retrieval
         cfg['retrieval_policy']=(dict(version=semantic_retrieval.VERSION,max_candidates=semantic_retrieval.MAX_CANDIDATES,
             max_experiences=semantic_retrieval.MAX_EXPERIENCES,max_characters=semantic_retrieval.MAX_CHARACTERS)
             if cfg['condition'] in ('structured','fixed_contract') else
             dict(version='bm25-v1' if cfg['condition']=='bm25' else 'no-memory',max_experiences=5 if cfg['condition']=='bm25' else 0))
+        if recipe:cfg['retrieval_policy']=dict(version='source-bound-routing-v8',max_experiences=5)
         cfg.update(schema_version=VERSION,model=identity(settings),memory_snapshot=bank,max_attempts=attempts,limits=limits,total_request_cap=total,
             contract_review_policy=review_policy,
             store=str(store),original_inventory=inventory(files),feedback_fields=['observations','regressions','unknowns'],
-            required_visible_checks=False,acceptance_policy=acceptance,
+            required_visible_checks=bool(recipe),acceptance_policy=acceptance,
             evaluation_budget=dict(visible=attempts if cfg.get('visible_evaluator') else 0,oracle=attempts if cfg['mode']=='learning' else 0,gold=1 if cfg['mode']=='testing' else 0),
             held_out_eligible=False,split_status='final_only_gold_testing' if cfg['mode']=='testing' else 'unverified_no_independent_split_evidence',
             memory_snapshot_sha256=bank['sha256'],source_sha256=sha(canonical(sources).encode()))
@@ -344,6 +353,12 @@ class Trajectory:
             hits=memory.search_records(bundles,p['task'],limit=5,include_all=True)['results']
             selected=[next(b for b in bundles if b['sha256']==h['sha256']) for h in hits]
             result=dict(selected_sha256s=[b['sha256'] for b in selected],experience_text=memory.delivery_text(selected),reason='bm25_frozen_bank')
+        elif condition in ('structured','fixed_contract') and p.get('training_recipe')==V8_TRAINING_RECIPE:
+            from . import experience_routing as routing,experience_updates as updates
+            sources={k:v.decode() for k,v in capture(self.root/'original')[0].items()};a=p['routing_analysis']
+            review=dict(input_sha256=routing.input_digest(a,p['task'],sources),reviewer='unreviewed_model_analysis',approved=False,
+                blocking_issues=[],scope_unknowns=[],evidence=[],reason='V8-compatible source-bound routing')
+            result=updates.route_view(dict(task=p['task'],sources=sources,analysis=a,review=review),bundles)
         elif condition in ('structured','fixed_contract'):
             from . import semantic_retrieval as retrieval
             sources={k:v.decode() for k,v in capture(self.root/'original')[0].items()};a=p['routing_analysis']
@@ -566,6 +581,9 @@ class Trajectory:
                         status='unverified_task_local_reflection',**{k:deepcopy(d[k]) for k in ('diagnosis','explanation','structured_delta','supporting_evidence','remaining_unknowns','contract_changed')})
                         for d in state['diagnoses'] if d['attempt']<=number],
                     instruction='Repair the supplied current candidate. Use cumulative within_task_reflections from the actual preceding failed candidates, including when Contract is unchanged or no cross-task experience matched. Treat their explanations as fallible hypotheses: retain unknowns, check against public task/source and observations, and do not turn inferred causes or checks into new business requirements. Preserve original task obligations and correct behavior. No scorer, reference, gold patch or hidden tests are available.')
+                if p.get('training_recipe')==V8_TRAINING_RECIPE:
+                    payload.pop('within_task_reflections',None)
+                    payload['instruction']='Repair the supplied current candidate. Preserve original task obligations and correct behavior. No scorer, reference, gold patch or hidden tests are available.'
                 if p['mode']=='testing':
                     payload['instruction']+=' This is the only testing Action. You may run available public project tests and revise code within this session budget. Submit one final candidate; no Gold verdict or later repair Action will be available.'
                     payload['contract_review']=state.get('contract_review')
@@ -596,8 +614,8 @@ class Trajectory:
                     result=self._step(p,backend,'acceptance-'+str(number),'gold',dict(candidate=str(directory),
                         evaluator=p['training_evaluator'],purpose='training_acceptance'))
                     if inventory(capture(directory)[0])!=inventory({k:v.encode() for k,v in candidate.items()}):raise EvidenceError('Oracle evaluator mutated candidate')
-                    accepted=result['passed']
-                    feedback['oracle_acceptance']=deepcopy(result['feedback'])
+                    accepted=result['passed'] and (evaluation['passed'] is True or not p['required_visible_checks'])
+                    feedback['training_acceptance' if p.get('training_recipe')==V8_TRAINING_RECIPE else 'oracle_acceptance']=deepcopy(result['feedback'])
                     self.save('training-exposure.json',dict(task_id=p.get('task_id'),source_sha256=p['source_sha256'],training_feedback_used=True,eligible_for_independent_testing=False))
                 state=self.state();state['attempts'].append(dict(number=number,visible_passed=evaluation['passed'],
                     delivered_sha256s=delivery.get('selected_sha256s',[]),

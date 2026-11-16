@@ -7,7 +7,7 @@ under a different protocol.
 
 The default selection remains the historical hardest50 CSV. To use a different
 ranked CSV, pass `--selection-file`. To resolve public inputs directly from the
-frozen SWE-TempoC roster, also pass `--swe-tempoc-root` (testing only):
+frozen SWE-TempoC roster, also pass `--swe-tempoc-root` (regular cases support training and testing; upstream tasks currently support testing only):
 
 ```bash
 python3 -B tools/tempoevo-docker/prepare_selected.py \
@@ -43,3 +43,17 @@ Trusted tests and reference patches are never copied to the solver. This public
 source projection differs from historical full-repository baselines and must be
 reported when comparing that case. Full grading is validated by the eventual
 final score, not by preparation or source extraction alone.
+
+The explicit learning-only `--training-recipe v8-compatible-v1` restores V8
+source-bound experience routing, required external public checks plus Gold, and
+the non-cumulative Action feedback format. It requires `--public-checks-docs`
+(case ID to public example description) and can use an exact audited
+`--memory-snapshot` with its retained approved history in `--store`. The public
+evaluator runs outside the solver; only descriptions enter the candidate. Its
+original/reference/negative controls are archived alongside independent Gold
+controls, and the reference must pass both evaluators. Default V11 behavior is
+unchanged. Testing rejects this recipe and training-only check descriptions.
+
+The paired train10/test10 plan and the distinction between historical seed
+experiences and newly learned experiences are documented in
+[the V8 protocol](../../examples/tempoevo-v4/case-selections/swe-tempoc-paired10-sol6-20261116/V8_TRAIN_AND_TEST.md).

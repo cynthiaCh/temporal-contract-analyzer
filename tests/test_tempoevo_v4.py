@@ -65,6 +65,44 @@ class V4Tests(unittest.TestCase):
         cfg.update(changes)
         if cfg['mode']=='testing':cfg.pop('training_evaluator',None)
         loop=Trajectory(self.root/('run-'+str(len(list(self.root.glob('run-*'))))));loop.prepare(cfg);return loop
+    def test_v8_recipe_uses_public_and_gold_acceptance_without_reflection_payload(self):
+        class PublicFailsFirst(Backend):
+            def evaluate(self,stage,payload,directory):
+                result=super().evaluate(stage,payload,directory)
+                if stage!='gold':
+                    n=int((Path(payload['candidate'])/'main.py').read_text().split('=')[1])
+                    result['passed']=n>=2
+                return result
+        loop=self.prepare(training_recipe='v8-compatible-v1')
+        backend=PublicFailsFirst(1);state=loop.run(backend,execute=True)
+        self.assertEqual(state['status'],'passed',state.get('error'))
+        self.assertEqual(len(state['attempts']),2)
+        self.assertFalse(state['attempts'][0]['acceptance_passed'])
+        self.assertIn('diagnosis',[role for role,*_ in backend.calls])
+        for role,payload,*_ in backend.calls:
+            if role=='action':self.assertNotIn('within_task_reflections',payload)
+        self.assertIn('training_acceptance',state['attempts'][0]['feedback'])
+
+    def test_v8_structured_recipe_routes_without_semantic_stage_and_caps_requests(self):
+        from unittest.mock import patch
+        from temporal_contract_analyzer import experience_updates, taxonomy
+        loop=self.prepare(condition='structured',training_recipe='v8-compatible-v1')
+        protocol=loop.verify();self.assertEqual(protocol['total_request_cap'],132)
+        self.assertEqual(protocol['retrieval_policy']['version'],'source-bound-routing-v8')
+        # Isolate delivery from model analysis; routing input is already source-grounded here.
+        protocol['routing_analysis']=dict(taxonomy_version=taxonomy.VERSION,contract='Preserve accepted work.',obligation_labels=[],facts=[],unknowns=[])
+        routed=dict(selected_sha256s=[],experience_text=None,reason='fixture')
+        with patch.object(experience_updates,'route_view',return_value=routed) as route:
+            result=loop.retrieve(protocol)
+        route.assert_called_once();self.assertEqual(result['selected_sha256s'],[])
+
+    def test_v8_recipe_cannot_be_used_in_testing_or_without_public_evaluator(self):
+        from temporal_contract_analyzer import experience_approval as approval
+        with self.assertRaises(EvidenceError):
+            self.prepare(training_recipe='v8-compatible-v1',visible_evaluator=None)
+        with self.assertRaises(EvidenceError):
+            self.prepare(mode='testing',training_recipe='v8-compatible-v1',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
+
     def test_first_pass_stops_and_is_staged_not_approved(self):
         loop=self.prepare();backend=Backend();state=loop.run(backend,execute=True)
         self.assertEqual(state['status'],'passed',state.get('error'));self.assertEqual(len(state['attempts']),1)
