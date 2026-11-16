@@ -103,6 +103,54 @@ class V4Tests(unittest.TestCase):
         with self.assertRaises(EvidenceError):
             self.prepare(mode='testing',training_recipe='v8-compatible-v1',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
 
+    def test_testing_v8_router_keeps_one_action_and_independent_gold(self):
+        from temporal_contract_analyzer import taxonomy, experience_approval as approval
+        analysis=dict(taxonomy_version=taxonomy.VERSION,contract='Preserve accepted work.',obligation_labels=[],facts=[],unknowns=[])
+        loop=self.prepare(mode='testing',condition='structured',retrieval_profile='source-bound-v8',
+            routing_analysis=analysis,memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
+        protocol=loop.verify();self.assertEqual(protocol['total_request_cap'],36)
+        self.assertFalse(protocol['required_visible_checks']);self.assertNotIn('training_recipe',protocol)
+        backend=Backend(2);state=loop.run(backend,execute=True)
+        self.assertEqual(state['status'],'scored',state.get('error'));self.assertFalse(state['gold_result']['passed'])
+        self.assertEqual(len(state['attempts']),1)
+        self.assertEqual([r[0] for r in backend.calls],['contract','contract','action'])
+        self.assertEqual([r['kind'] for r in state['stages']].count('gold'),1)
+        self.assertFalse((loop.root/'candidate-pool').exists())
+        self.assertEqual(protocol['memory_snapshot'],approval.freeze(self.store))
+        for _,payload,*_ in backend.calls:self.assertNotIn('SECRET_GOLD',json.dumps(payload))
+
+    def test_invalid_retrieval_profiles_do_not_silently_change_testing(self):
+        with self.assertRaises(EvidenceError):self.prepare(retrieval_profile='unknown')
+        with self.assertRaises(EvidenceError):self.prepare(retrieval_profile='source-bound-v8')
+        with self.assertRaises(EvidenceError):self.prepare(condition='structured',training_recipe='v8-compatible-v1',retrieval_profile='semantic-v11')
+
+    def test_testing_supplement_binds_real_approval_from_separate_store(self):
+        from temporal_contract_analyzer import compact_experience as compact, experience_approval as approval
+        directory=self.root/'supplement';directory.mkdir();file=directory/'experiences.json'
+        item=dict(id='supplement-example',title='Synthetic approved supplement',labels=['I'],requires=['entry_snapshot'],excludes=[],
+            applicability='Use an entry snapshot.',event_relation='Keep accepted identity.',preservation='Retain accepted work.',
+            exclusion='Confirm public policy.',verification='Exercise reentry.')
+        value=dict(schema_version=compact.VERSION,experiences=[item]);file.write_text(json.dumps(value))
+        base=approval.freeze(self.store)
+        from temporal_contract_analyzer import taxonomy
+        cfg=dict(mode='testing',condition='structured',retrieval_profile='source-bound-v8',
+            routing_analysis=dict(taxonomy_version=taxonomy.VERSION,contract='Preserve accepted work.',obligation_labels=[],facts=[],unknowns=[]),
+            memory_snapshot=base,gold_evaluator=dict(command=['synthetic-gold']))
+        pending=dict(store=str(directory),snapshot=approval.freeze(directory))
+        with self.assertRaises(EvidenceError):self.prepare(**cfg,approved_memory_supplements=[pending])
+        value['experiences'][0]['review']=dict(reviewer='Synthetic test reviewer',decision='accept',at='2026-11-16T00:00:00Z')
+        file.write_text(json.dumps(value));snapshot=approval.freeze(directory);supplement=dict(store=str(directory),snapshot=snapshot)
+        bad=deepcopy(snapshot);bad['entries'][0]['expert_decision']['reviewer']='forged'
+        with self.assertRaises(EvidenceError):self.prepare(**cfg,approved_memory_supplements=[dict(store=str(directory),snapshot=bad)])
+        with self.assertRaises(EvidenceError):self.prepare(**cfg,approved_memory_supplements=[supplement,supplement])
+        with self.assertRaises(EvidenceError):self.prepare(approved_memory_supplements=[supplement])
+        loop=self.prepare(**cfg,approved_memory_supplements=[supplement]);protocol=loop.verify()
+        self.assertEqual(protocol['memory_snapshot']['entries'],snapshot['entries'])
+        self.assertEqual(protocol['memory_snapshot']['entries'][0]['expert_decision']['reviewer'],'Synthetic test reviewer')
+        self.assertEqual(read(loop.root/'memory-snapshot.json'),protocol['memory_snapshot'])
+        state=loop.run(Backend(),execute=True);self.assertEqual(state['status'],'scored',state.get('error'))
+        self.assertEqual(len(state['attempts']),1);self.assertEqual(approval.freeze(self.store),base)
+
     def test_first_pass_stops_and_is_staged_not_approved(self):
         loop=self.prepare();backend=Backend();state=loop.run(backend,execute=True)
         self.assertEqual(state['status'],'passed',state.get('error'));self.assertEqual(len(state['attempts']),1)

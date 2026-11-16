@@ -64,3 +64,11 @@ and evidence proposals under `experience-memory/training-runs/<run-id>/`, preser
 original bytes, source paths and SHA-256 hashes, and commit them to Git. Stage content
 candidates in the categorized library as pending for review. Committing candidates
 does not approve them or change an already frozen retrieval snapshot.
+
+Testing may explicitly select `--retrieval-profile source-bound-v8` to reuse the
+V8 source-bound router without enabling its learning recipe. It still permits
+one Action and final-only Gold. To compare the historical approved bank with
+reviewed additions from another store, provide both `--approved-supplement-store`
+and `--approved-supplement-snapshot`. Every supplemental entry must validate
+against its actual retained approval; pending guidance and duplicates are rejected.
+The combined bank is frozen and hashed in each trajectory; no approval is synthesized.

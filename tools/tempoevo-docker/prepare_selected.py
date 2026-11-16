@@ -18,9 +18,14 @@ parser.add_argument('--online-memory',type=Path,help='Training-only shared provi
 parser.add_argument('--mode',choices=['learning','testing'],default='learning')
 parser.add_argument('--visible-evaluators',type=Path,help='Optional existing project evaluator mapping; omitted by default')
 parser.add_argument('--training-recipe',choices=['v8-compatible-v1'],help='Restore V8 learning semantics with public checks and behavior feedback')
+parser.add_argument('--retrieval-profile',choices=['semantic-v11','source-bound-v8'],help='Explicit memory router; source-bound-v8 is usable in single-submission testing')
+parser.add_argument('--approved-supplement-store',type=Path,help='Additional reviewed memory store for frozen testing only')
+parser.add_argument('--approved-supplement-snapshot',type=Path,help='Exact audited snapshot from the supplemental store')
 parser.add_argument('--memory-snapshot',type=Path,help='Exact audited approved snapshot; validated against --store')
 parser.add_argument('--public-checks-docs',type=Path,help='Training-only case-to-public-check-description mapping')
 args=parser.parse_args()
+if bool(args.approved_supplement_store)!=bool(args.approved_supplement_snapshot):parser.error('Supplement store and snapshot must be provided together')
+if args.approved_supplement_store and args.mode!='testing':parser.error('Approved supplements are testing-only')
 if args.start_rank<1 or args.limit<1:parser.error('--start-rank and --limit must be positive')
 if args.learning_policy=='online' and (args.condition!='structured' or not args.online_memory):parser.error('Online learning requires structured condition and --online-memory')
 if args.learning_policy=='frozen' and args.online_memory:parser.error('Frozen runs cannot read an online pool')
@@ -108,6 +113,8 @@ for row in rows:
   config=dict(task_id=cid,task=c['task'],candidate=str(r/'public'),store=str(store),mode='learning',condition='structured',max_attempts=3,model=MODEL,binary=shutil.which('codex'),backend=dict(kind='docker',solver_image=solver,grader_image=grader,solver_node='/runtime/node16/bin/node'),memory_snapshot=bank,training_evaluator=gold,training_feedback=feedback,protected_paths=['README.md'])
   if visible:config['visible_evaluator']=visible
   config.update(model=identity(settings),model_profile=settings['profile'],condition=args.condition,training_feedback=family_feedback.get(family,feedback))
+  if args.retrieval_profile:config['retrieval_profile']=args.retrieval_profile
+  if args.approved_supplement_store:config['approved_memory_supplements']=[dict(store=str(args.approved_supplement_store.resolve()),snapshot=json.loads(args.approved_supplement_snapshot.read_text()))]
   if args.training_recipe:config.update(training_recipe=args.training_recipe,required_visible_checks=True,protected_paths=['README.md','VISIBLE_CHECKS.md'])
   config['public_case_record']=c['case_record']
   config['learning_policy']=args.learning_policy

@@ -215,6 +215,11 @@ class Trajectory:
         recipe=cfg.get('training_recipe')
         if recipe not in (None,V8_TRAINING_RECIPE):raise EvidenceError('Unknown training recipe')
         if recipe and (cfg['mode']!='learning' or not cfg.get('visible_evaluator')):raise EvidenceError('V8 training requires learning mode and a public evaluator')
+        retrieval_profile=cfg.get('retrieval_profile','source-bound-v8' if recipe else 'semantic-v11')
+        if retrieval_profile not in ('semantic-v11','source-bound-v8'):raise EvidenceError('Unknown retrieval profile')
+        if recipe and retrieval_profile!='source-bound-v8':raise EvidenceError('V8 training requires source-bound retrieval')
+        if retrieval_profile=='source-bound-v8' and cfg['condition'] not in ('structured','fixed_contract') and not recipe:raise EvidenceError('Source-bound retrieval requires structured memory')
+        cfg['retrieval_profile']=retrieval_profile
         acceptance='training_gold_and_required_visible' if recipe else ACCEPTANCE_POLICIES[cfg['mode']]
         if cfg.get('acceptance_policy',acceptance)!=acceptance:
             raise EvidenceError('Historical protocol is read-only; prepare a new trajectory')
@@ -254,6 +259,19 @@ class Trajectory:
             if any(pool==p or pool in p.parents or p in pool.parents for p in (store,source,self.root)):raise EvidenceError('Online pool must be separate from long-term store and trajectory/candidate')
             cfg['online_memory']=str(pool)
         bank=approval.validate_snapshot(store,cfg['memory_snapshot']) if cfg.get('memory_snapshot') else approval.freeze(store)
+        supplements=cfg.get('approved_memory_supplements',[])
+        if not isinstance(supplements,list):raise EvidenceError('Approved memory supplements must be a list')
+        if supplements:
+            if cfg['mode']!='testing' or policy!='frozen' or cfg['condition']!='structured':raise EvidenceError('Approved supplements require frozen structured testing')
+            bank=deepcopy(bank);seen={e['bundle']['sha256'] for e in bank['entries']}
+            for supplement in supplements:
+                if not isinstance(supplement,dict) or set(supplement)!={'store','snapshot'}:raise EvidenceError('Supplement requires an audited store and exact approved snapshot')
+                accepted=approval.validate_snapshot(Path(supplement['store']),supplement['snapshot'])
+                if not accepted['entries']:raise EvidenceError('Approved supplement must contain accepted guidance')
+                for entry in accepted['entries']:
+                    if entry['bundle']['sha256'] in seen:raise EvidenceError('Duplicate approved supplemental experience')
+                    seen.add(entry['bundle']['sha256']);bank['entries'].append(deepcopy(entry))
+            bank['sha256']=sha(canonical({k:v for k,v in bank.items() if k!='sha256'}).encode())
         from .preanalysis import analyze_candidate
         if cfg.get('backend',{}).get('kind')=='docker':
             from .tempoevo_docker import analyze,image_identity
@@ -298,14 +316,14 @@ class Trajectory:
         uses_contract=cfg['condition']!='baseline'
         total=attempts*limits['action']['requests']+((attempts-1)*limits['diagnosis']['requests']+limits['contract']['requests'] if uses_contract else 0)+(limits['extract']['requests'] if cfg['mode']=='learning' else 0)
         if cfg['condition'] in ('structured','fixed_contract') and not cfg.get('routing_analysis'):total+=limits['routing']['requests']
-        if cfg['condition'] in ('structured','fixed_contract') and not recipe:
+        if cfg['condition'] in ('structured','fixed_contract') and retrieval_profile!='source-bound-v8':
             total+=(attempts if cfg['condition']=='structured' else 1)*limits['selection']['requests']
         from . import semantic_retrieval
         cfg['retrieval_policy']=(dict(version=semantic_retrieval.VERSION,max_candidates=semantic_retrieval.MAX_CANDIDATES,
             max_experiences=semantic_retrieval.MAX_EXPERIENCES,max_characters=semantic_retrieval.MAX_CHARACTERS)
             if cfg['condition'] in ('structured','fixed_contract') else
             dict(version='bm25-v1' if cfg['condition']=='bm25' else 'no-memory',max_experiences=5 if cfg['condition']=='bm25' else 0))
-        if recipe:cfg['retrieval_policy']=dict(version='source-bound-routing-v8',max_experiences=5)
+        if retrieval_profile=='source-bound-v8':cfg['retrieval_policy']=dict(version='source-bound-routing-v8',max_experiences=5)
         cfg.update(schema_version=VERSION,model=identity(settings),memory_snapshot=bank,max_attempts=attempts,limits=limits,total_request_cap=total,
             contract_review_policy=review_policy,
             store=str(store),original_inventory=inventory(files),feedback_fields=['observations','regressions','unknowns'],
@@ -353,7 +371,7 @@ class Trajectory:
             hits=memory.search_records(bundles,p['task'],limit=5,include_all=True)['results']
             selected=[next(b for b in bundles if b['sha256']==h['sha256']) for h in hits]
             result=dict(selected_sha256s=[b['sha256'] for b in selected],experience_text=memory.delivery_text(selected),reason='bm25_frozen_bank')
-        elif condition in ('structured','fixed_contract') and p.get('training_recipe')==V8_TRAINING_RECIPE:
+        elif condition in ('structured','fixed_contract') and p.get('retrieval_profile')=='source-bound-v8':
             from . import experience_routing as routing,experience_updates as updates
             sources={k:v.decode() for k,v in capture(self.root/'original')[0].items()};a=p['routing_analysis']
             review=dict(input_sha256=routing.input_digest(a,p['task'],sources),reviewer='unreviewed_model_analysis',approved=False,
@@ -451,7 +469,7 @@ class Trajectory:
                 selection_key='contract-review-selection-'+str(version)
                 cached_selection=any(s['key']==selection_key and s['status']=='complete' for s in self.state()['stages'])
                 selection_limit=self._remaining_limit(p,'selection')
-                if cached_selection or (selection_limit['requests']>=1 and selection_limit['seconds']>0):
+                if p.get('retrieval_profile')=='source-bound-v8' or cached_selection or (selection_limit['requests']>=1 and selection_limit['seconds']>0):
                     delivery=self.retrieve(p,backend,selection_key)
                 else:
                     delivery=dict(selected_sha256s=[],experience_text=None,provisional_sha256s=[],reason='contract_review_selection_budget_exhausted')
