@@ -2,7 +2,7 @@
 from . import experience_memory as memory, taxonomy
 from .core import EvidenceError
 
-VERSION='business-source-coverage-v1'
+VERSION='business-source-coverage-v2'
 MAX_CANDIDATES=64
 MAX_EXPERIENCES=5
 MAX_CHARACTERS=16000
@@ -34,7 +34,7 @@ def schema(candidates):
         premises=dict(type='array',items=premise),predicate_findings=dict(type='array',items=predicate),object_mapping=text,contribution=text,
         covered_obligations=dict(type='array',items=text),supporting_evidence=evidence,redundant_with=dict(type='array',items=dict(type='string',enum=codes)),reason=text))
     return obj(dict(business_obligations=dict(type='array',minItems=1,maxItems=20,items=obligation),
-                    assessments=dict(type='array',minItems=len(codes),maxItems=len(codes),items=row)))
+                    assessments=dict(type='array',minItems=0,maxItems=2*len(codes),items=row)))
 
 
 def payload(task,sources,ast,recalled):
@@ -51,39 +51,90 @@ def payload(task,sources,ast,recalled):
         'Progress reception/decoding/audit, document saving/submission, and query cancellation are different operations; generic lifecycle/reentry overlap alone does not make guidance applicable. '
         'Experience citations from its original training task do not establish requirements in this task. Cite only current TASK or exact current source paths/quotes. '
         'Use unique business obligation IDs and reference only those IDs in covered_obligations. Explain a concrete contribution; identify redundancy. '
+        'Return each candidate exactly once. Invalid or conflicting candidate rows are rejected individually; missing or unsupported assessments are never filled in or admitted. '
         'For weak/not_applicable/unknown entries use concise reasons and empty unsupported evidence/findings/coverage as appropriate; never invent support or fill a quota. '
         'Return structured output only; do not edit code or access scores, references, historical case/cluster identifiers or Gold. '
         'All applicability judgments and proposed obligations remain fallible hypotheses for source-based repair, not correctness or effectiveness certificates.')
 
 
 def select(result,recalled,task,sources,bundles):
+    from collections import defaultdict
     from ._session_runtime.schema_validator import validate
     from .tempoevo_v4 import evidence_valid
-    validate(result,schema(recalled['candidates']))
+    requested=schema(recalled['candidates'])
+    # Validate the envelope first, then each independently useful obligation/row.
+    # The requested model schema remains typed; host validation isolates row errors.
+    envelope=dict(requested,properties=dict(requested['properties']))
+    envelope['properties']['business_obligations']=dict(requested['properties']['business_obligations'],items={})
+    envelope['properties']['assessments']=dict(requested['properties']['assessments'],items={})
+    validate(result,envelope)
     candidates={x['sha256']:x for x in recalled['candidates']}
-    obligations=result['business_obligations'];ids=[x['id'] for x in obligations]
-    if len(ids)!=len(set(ids)):raise EvidenceError('Business obligations require unique IDs')
-    for obligation in obligations:evidence_valid(obligation['evidence'],task,sources)
-    rows=result['assessments'];codes=[x['sha256'] for x in rows]
-    if len(codes)!=len(set(codes)) or set(codes)!=set(candidates):raise EvidenceError('Assess every recalled candidate exactly once')
-    decisions=[];accepted=[]
-    for row in rows:
-        code=row['sha256'];candidate=candidates[code]
-        if not set(row['covered_obligations'])<=set(ids):raise EvidenceError('Coverage references an unknown business obligation')
-        if code in row['redundant_with']:raise EvidenceError('Experience cannot duplicate itself')
-        for premise in row['premises']:evidence_valid(premise['evidence'],task,sources)
-        for finding in row['predicate_findings']:evidence_valid(finding['evidence'],task,sources)
-        evidence_valid(row['supporting_evidence'],task,sources)
-        expected={(kind,key) for kind in ('requires','excludes') for key in candidate[kind]}
-        findings={(f['kind'],f['predicate']):f for f in row['predicate_findings']}
-        if len(findings)!=len(row['predicate_findings']) or not set(findings)<=expected:raise EvidenceError('Unexpected or duplicate applicability predicate finding')
+    bysha={b['sha256']:b for b in bundles}
+    if len(candidates)!=len(recalled['candidates']) or not set(candidates)<=set(bysha):
+        raise EvidenceError('Recalled candidate bank identity mismatch')
+    issues=[];obligation_groups=defaultdict(list);assessment_groups=defaultdict(list)
+    def issue(kind,index,error,code=None):
+        value=dict(kind=kind,index=index,error=str(error))
+        if code is not None:value['sha256']=code
+        issues.append(value)
+    for index,row in enumerate(result['business_obligations']):
+        try:
+            validate(row,requested['properties']['business_obligations']['items'])
+            evidence_valid(row['evidence'],task,sources)
+        except (EvidenceError,ValueError) as error:
+            # Reserve an identifiable bad ID too: no row may borrow a different
+            # definition under an ambiguous obligation identity.
+            if isinstance(row,dict) and isinstance(row.get('id'),str):obligation_groups[row['id']].append((index,None))
+            issue('invalid_obligation',index,error);continue
+        obligation_groups[row['id']].append((index,row))
+    obligations=[]
+    for ident,group in obligation_groups.items():
+        first=group[0][1]
+        if first is None or any(row is None or row!=first for _,row in group):
+            issue('conflicting_obligation',group[0][0],'Unusable or conflicting business obligation ID: '+ident);continue
+        obligations.append(first)
+        if len(group)>1:issue('identical_obligation_deduplicated',group[0][0],'Repeated identical business obligation ID: '+ident)
+    if not obligations:raise EvidenceError('No unique source-grounded business obligations')
+    ids={x['id'] for x in obligations}
+    for index,row in enumerate(result['assessments']):
+        code=row.get('sha256') if isinstance(row,dict) else None
+        if not isinstance(code,str) or code not in candidates:
+            issue('unrecognized_assessment',index,'Assessment does not identify a recalled candidate',code if isinstance(code,str) else None);continue
+        assessment_groups[code].append((index,row))
+    decisions=[];accepted=[];validated=0
+    for code,candidate in candidates.items():
+        group=assessment_groups.get(code,[])
+        if not group:
+            decisions.append(dict(sha256=code,admitted=False,selection_reason='missing_assessment'))
+            issue('missing_assessment',None,'Candidate was not assessed',code);continue
+        index,row=group[0]
+        if any(other!=row for _,other in group[1:]):
+            decisions.append(dict(sha256=code,admitted=False,selection_reason='conflicting_assessments'))
+            issue('conflicting_assessments',index,'Conflicting duplicate candidate assessments',code);continue
+        if len(group)>1:issue('identical_assessment_deduplicated',index,'Repeated identical candidate assessment',code)
+        try:
+            validate(row,requested['properties']['assessments']['items'])
+            if not set(row['covered_obligations'])<=ids:raise EvidenceError('Coverage references an unknown or rejected business obligation')
+            if code in row['redundant_with']:raise EvidenceError('Experience cannot duplicate itself')
+            for premise in row['premises']:evidence_valid(premise['evidence'],task,sources)
+            for finding in row['predicate_findings']:evidence_valid(finding['evidence'],task,sources)
+            evidence_valid(row['supporting_evidence'],task,sources)
+            expected={(kind,key) for kind in ('requires','excludes') for key in candidate[kind]}
+            findings={(f['kind'],f['predicate']):f for f in row['predicate_findings']}
+            if len(findings)!=len(row['predicate_findings']) or not set(findings)<=expected:raise EvidenceError('Unexpected or duplicate applicability predicate finding')
+        except (EvidenceError,ValueError) as error:
+            decisions.append(dict(sha256=code,admitted=False,selection_reason='invalid_assessment',validation_error=str(error)))
+            issue('invalid_assessment',index,error,code);continue
+        validated+=1
         complete=set(findings)==expected
         supported=complete and all(f['state']==('known' if kind=='requires' else 'contradicted') and f['evidence'] for (kind,_),f in findings.items())
         premises=bool(row['premises']) and all(p['status']=='supported' and p['evidence'] for p in row['premises'])
         admitted=row['relevance'] in ('direct','transferable') and supported and premises and bool(row['supporting_evidence']) and bool(row['covered_obligations'])
         decisions.append(dict(row,admitted=bool(admitted),selection_reason='eligible' if admitted else 'unsupported_or_irrelevant'))
         if admitted:accepted.append(row)
-    selected=[];covered=set();bysha={b['sha256']:b for b in bundles}
+    if candidates and not validated:
+        raise EvidenceError('No independently valid candidate assessments: '+str(issues[:3]))
+    selected=[];covered=set()
     while accepted and len(selected)<MAX_EXPERIENCES:
         accepted.sort(key=lambda x:(-len(set(x['covered_obligations'])-covered),x['relevance']!='direct',-candidates[x['sha256']]['lexical_score'],x['sha256']))
         row=accepted.pop(0);code=row['sha256'];chosen={x['sha256'] for x in selected}
@@ -94,5 +145,5 @@ def select(result,recalled,task,sources,bundles):
         selected.append(row);covered.update(row['covered_obligations']);decision['selection_reason']='selected'
     return dict(schema_version=VERSION,reason='public_business_applicability_and_coverage',
         selected_sha256s=[x['sha256'] for x in selected],experience_text=memory.delivery_text([bysha[x['sha256']] for x in selected]),
-        business_obligations=obligations,covered_obligations=sorted(covered),uncovered_obligations=[x for x in ids if x not in covered],
-        decisions=decisions,effectiveness_verified=False)
+        business_obligations=obligations,covered_obligations=sorted(covered),uncovered_obligations=[x['id'] for x in obligations if x['id'] not in covered],
+        decisions=decisions,validation=dict(policy='per-entry-source-validation-v1',partial=bool(issues),validated_assessments=validated,eligible_assessments=sum(x['admitted'] for x in decisions),issues=issues),effectiveness_verified=False)

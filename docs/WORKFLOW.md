@@ -65,6 +65,17 @@ valid Contract. A missing draft permits Action with the original task/source and
 otherwise eligible experience. This format/evidence correction is not a Contract
 Review loop or a correctness certificate.
 
+Business selection uses `business-source-coverage-v2` with per-entry validation.
+Identical duplicate assessments are merged; conflicting duplicates, wrong predicates,
+invalid citations and malformed rows reject only the affected candidate. Missing
+assessments never imply applicability. Invalid or conflicting shared obligation IDs
+also reject their dependent rows, while independently supported obligations survive.
+Valid entries proceed directly to Contract and Action, with a partial-selection
+warning and detailed `retrieval/selection-*-validation.json` audit. All applicability
+requirements, exclusions and source-evidence checks still apply. An unusable envelope
+or no independently valid assessments uses the existing single correction/fallback.
+This policy applies to newly prepared runs; archived scores are unchanged.
+
 Frozen hashes, approved-memory admission, paths, permissions, model identity,
 measured usage, protected files and evaluator isolation remain hard boundaries.
 Invalid Action output or scoring infrastructure remains an execution error.

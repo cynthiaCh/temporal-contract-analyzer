@@ -64,11 +64,11 @@ class BusinessRetrievalTests(unittest.TestCase):
 
     def test_unmatched_quotes_or_foreign_coverage_cannot_admit_guidance(self):
         value=self.response();value['assessments'][0]['supporting_evidence'][0]=dict(ANCHOR,quote='Invented source statement')
-        with self.assertRaises(EvidenceError):self.select(value)
+        self.assertEqual(self.select(value)['selected_sha256s'],[value['assessments'][1]['sha256']])
         value=self.response();value['assessments'][0]['covered_obligations']=['not-an-obligation']
-        with self.assertRaises(EvidenceError):self.select(value)
+        self.assertEqual(self.select(value)['selected_sha256s'],[value['assessments'][1]['sha256']])
         value=self.response();value['assessments'][0]['predicate_findings'].append(deepcopy(value['assessments'][0]['predicate_findings'][0]))
-        with self.assertRaises(EvidenceError):self.select(value)
+        self.assertEqual(self.select(value)['selected_sha256s'],[value['assessments'][1]['sha256']])
 
     def test_complementary_coverage_precedes_high_text_score_repetition(self):
         value=self.response();row=value['assessments'][2];row['relevance']='direct'
@@ -77,11 +77,46 @@ class BusinessRetrievalTests(unittest.TestCase):
         self.assertEqual([ids[c] for c in out['selected_sha256s']],['save-rule','departure-rule'])
         self.assertEqual(next(x for x in out['decisions'] if x['sha256']==row['sha256'])['selection_reason'],'no_new_obligation_coverage')
 
-    def test_every_candidate_and_unique_business_obligations_are_required(self):
+    def test_missing_candidates_are_not_inferred_and_identical_obligations_are_deduplicated(self):
         value=self.response();value['assessments'].pop()
-        with self.assertRaises((EvidenceError,ValueError)):self.select(value)
+        out=self.select(value);self.assertEqual(len(out['selected_sha256s']),2)
+        self.assertTrue(any(x['selection_reason']=='missing_assessment' for x in out['decisions']))
         value=self.response();value['business_obligations'].append(deepcopy(value['business_obligations'][0]))
-        with self.assertRaises(EvidenceError):self.select(value)
+        out=self.select(value);self.assertEqual(len(out['selected_sha256s']),2)
+        self.assertEqual(len(out['business_obligations']),2)
+
+    def test_identical_candidate_duplicates_are_deduplicated_and_conflicts_are_rejected(self):
+        value=self.response();value['assessments'].append(deepcopy(value['assessments'][0]))
+        self.assertEqual(len(self.select(value)['selected_sha256s']),2)
+        value['assessments'][-1]['relevance']='unknown'
+        for rows in (value['assessments'],list(reversed(value['assessments']))):
+            out=self.select(dict(value,assessments=rows))
+            self.assertEqual(out['selected_sha256s'],[value['assessments'][1]['sha256']])
+            self.assertTrue(any(x['selection_reason']=='conflicting_assessments' for x in out['decisions']))
+
+    def test_invalid_obligations_only_reject_dependent_candidates(self):
+        for kind in ('conflict','bad_quote'):
+            value=self.response()
+            if kind=='conflict':value['business_obligations'].append(dict(value['business_obligations'][0],text='Conflicting definition'))
+            else:value['business_obligations'][0]['evidence']=[dict(ANCHOR,quote='Invented')]
+            out=self.select(value)
+            self.assertEqual(out['selected_sha256s'],[value['assessments'][1]['sha256']])
+            self.assertEqual([x['id'] for x in out['business_obligations']],['O2'])
+
+    def test_malformed_foreign_and_wrong_predicate_rows_are_quarantined(self):
+        for kind in ('malformed','foreign','predicate','unexpected_predicate'):
+            value=self.response();row=value['assessments'][0]
+            if kind=='malformed':row.pop('premises')
+            elif kind=='foreign':row['sha256']='foreign'
+            elif kind=='predicate':row['predicate_findings'][0]['predicate']='invented-predicate'
+            else:row['predicate_findings'][0]['predicate']='shared_lifetime'
+            out=self.select(value)
+            self.assertEqual(out['selected_sha256s'],[value['assessments'][1]['sha256']])
+            self.assertTrue(out['validation']['partial'])
+
+    def test_entirely_unusable_output_still_requires_correction(self):
+        for value in ({},dict(self.response(),assessments=[]),dict(self.response(),business_obligations=[])):
+            with self.assertRaises((EvidenceError,ValueError)):self.select(value)
 
     def test_pipeline_has_selection_draft_action_and_one_gold_without_review_or_routing(self):
         source=self.root/'source';source.mkdir();(source/'main.py').write_text('value = 0\n')
@@ -89,6 +124,7 @@ class BusinessRetrievalTests(unittest.TestCase):
             retrieval_profile='business-source-v1',memory_snapshot=self.snapshot,gold_evaluator=dict(command=['synthetic-gold']))
         loop.prepare(cfg);protocol=loop.verify();self.assertEqual(protocol['total_request_cap'],48);self.assertIsNone(protocol['contract_review_policy'])
         expected=self.response()
+        expected['assessments'][2]['predicate_findings'].append(deepcopy(expected['assessments'][2]['predicate_findings'][0]))
         class Selector(Backend):
             def execute(inner,kind,payload,model,limits,directory):
                 if kind=='selection':
@@ -101,6 +137,15 @@ class BusinessRetrievalTests(unittest.TestCase):
         self.assertEqual(approval.freeze(self.library),self.snapshot)
         self.assertEqual(len(next(x[1] for x in backend.calls if x[0]=='contract')['business_obligations']),2)
         self.assertNotIn('SECRET_GOLD',json.dumps(backend.calls))
+        delivery=json.loads((loop.root/'delivery.json').read_text())
+        self.assertEqual(len(delivery['selected_sha256s']),2)
+        self.assertTrue(delivery['validation']['partial'])
+        self.assertTrue((loop.root/'retrieval/selection-1-validation.json').is_file())
+        self.assertTrue(any(w['code']=='business_selection_partial' for w in state['preparation_warnings']))
+        for kind,payload,_,_ in backend.calls:
+            if kind in ('contract','action'):
+                self.assertEqual(payload['experience'],delivery['experience_text'])
+                self.assertTrue(payload['experience'])
 
 
 if __name__=='__main__':unittest.main()

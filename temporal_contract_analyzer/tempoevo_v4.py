@@ -393,6 +393,12 @@ class Trajectory:
                 result=self._preparation_output(p,backend,selection_key,'selection',retrieval.payload(p['task'],sources,read(self.root/'ast-evidence.json'),recalled),
                     lambda output:retrieval.select(output,recalled,p['task'],sources,bundles))
                 if result is None:result=dict(selected_sha256s=[],experience_text=None,reason='invalid_business_selection_discarded')
+                elif result.get('validation',{}).get('partial'):
+                    validation=result['validation']
+                    self.save('retrieval/'+selection_key+'-validation.json',validation)
+                    self._preparation_warning(selection_key,'business_selection_partial',
+                        issue_count=len(validation['issues']),selected_count=len(result['selected_sha256s']),
+                        detail_path='retrieval/'+selection_key+'-validation.json')
             else:result=dict(selected_sha256s=[],experience_text=None,reason='empty_approved_bank')
         elif condition in ('structured','fixed_contract'):
             from . import semantic_retrieval as retrieval
