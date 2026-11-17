@@ -80,6 +80,24 @@ class ReflectionTests(unittest.TestCase):
         self.assertEqual([b['sha256'] for b in reflection.related(p,dict(selected_sha256s=[a['sha256']]))],[a['sha256']])
         p['condition']='baseline';self.assertEqual(reflection.related(p,{}),[])
 
+    def test_update_search_is_independent_of_five_entry_solver_delivery(self):
+        a=self.bundle();bundles=[]
+        for i in range(20):
+            value=deepcopy(a);value.update(id='synthetic-'+str(i),sha256=str(i).zfill(64));bundles.append(value)
+        p=dict(condition='structured',task='Capture entry identity',memory_snapshot=dict(entries=[dict(bundle=b) for b in bundles]))
+        related=reflection.related(p,dict(selected_sha256s=[bundles[-1]['sha256']]))
+        self.assertEqual(len(related),16)
+        self.assertEqual(related[0],bundles[-1])
+        self.assertEqual(len(reflection.catalog(p)),20)
+        self.assertLessEqual({b['sha256'] for b in related},{b['sha256'] for b in bundles})
+        p['condition']='baseline';self.assertEqual(reflection.catalog(p),[])
+
+    def test_new_with_existing_guidance_needs_an_independent_increment(self):
+        a=self.bundle();exp=self.experience(a);exp['rules'][0]['body']+=' Independent operation.'
+        for missing in ('change_summary','supporting_attempts'):
+            update=self.update('new',[]);update[missing]=[]
+            with self.assertRaises(EvidenceError):reflection.plan(exp,update,[a],1)
+
     def test_expert_failure_summary_can_propose_revision_without_claiming_success(self):
         from unittest.mock import patch
         a=self.bundle();loop=self.prepare()

@@ -39,7 +39,7 @@ class Backend:
         else:
             sources=deepcopy(payload['candidate_sources']);n=int(sources['main.py'].split('=')[1])+1;sources['main.py']='value = '+str(n)+'\n'
             return dict(valid=True,requests=1,tokens=dict(total_tokens=10),model=MODEL,candidate_sources=sources)
-        if stage=='extract':out=dict(experience=out,update=dict(operation='new',target_sha256s=[],reason='Synthetic new rule.',change_summary=[],failure_attribution='not_applicable',supporting_attempts=[1]))
+        if stage=='extract':out=dict(experience=out,update=dict(operation='new',target_sha256s=[],reason='Synthetic new rule.',change_summary=['Independent synthetic increment.'],failure_attribution='not_applicable',supporting_attempts=[1]))
         return dict(valid=True,requests=1,tokens=dict(total_tokens=10),model=MODEL,output=out)
     def evaluate(self,stage,payload,directory):
         n=int((Path(payload['candidate'])/'main.py').read_text().split('=')[1])

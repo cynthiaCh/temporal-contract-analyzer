@@ -34,9 +34,11 @@ def _acceptance(rows, code):
 def _index(store, bundles, rows):
     from .compact_experience import is_library
     if is_library(store):
+        from .compact_experience import active_view
+        current=set(active_view(store)['active_ids'])
         accepted = {r['candidate_sha256'] for r in rows if r['decision']=='accept'}
         return dict(schema_version=ACTIVE_VERSION, history=[],
-                    versions={b['id']:code for code,b in bundles.items() if code in accepted})
+                    versions={b['id']:code for code,b in bundles.items() if code in accepted and b['id'] in current})
     path = Path(store)/'active.json'
     if not path.is_file():
         raise EvidenceError('Explicit active.json is missing; migrate-active with an exact reviewed version mapping')
@@ -322,7 +324,7 @@ def active(store):
 
 
 def approved(store):
-    """Accepted guidance, excluding exact source versions covered by accepted merges."""
+    """Accepted retrieval guidance, resolving compact revisions and merges."""
     bundles = {b['sha256']: b for b in memory.records(store)}
     latest = {}
     for row in decisions(store):
@@ -331,6 +333,10 @@ def approved(store):
             for row in sorted(latest.values(), key=lambda r: r['sequence'])
             if row['decision'] == 'accept' and not
             (Path(store)/'workflow/revocations'/(row['sha256']+'.json')).exists()]
+    from .compact_experience import is_library,active_view
+    if is_library(store):
+        current=set(active_view(store)['active_ids'])
+        return [entry for entry in accepted if entry['bundle']['id'] in current]
     # Explicitly reviewed merges consolidate exact source versions. The original
     # acceptance and frozen historical snapshots remain valid and readable.
     superseded=set()
@@ -364,8 +370,8 @@ def review_template(store, code, full=False):
 
 
 def freeze(store, *, legacy=False):
-    # The legacy argument remains for compatibility. Neither active pointers nor
-    # taxonomy/effect protocol versions restrict the approved retrieval pool.
+    # The legacy argument remains for compatibility. Native active pointers do
+    # not gate this bank; compact accepted replacements are resolved by approved().
     entries = approved(store)
     result = dict(schema_version='experience-active-snapshot-v1', scope='research_only',
                   entries=entries)

@@ -445,3 +445,39 @@ delivery and rejection cases. That validates an interface, not empirical benefit
 Multiple matching records are included with unique SHA:rule references, also retained in failure reflection. Singular selected_memory_record / selected_sha256 fields are populated only for a single match; consumers must use the plural fields for multiple matches. Unknown prerequisites and exclusion boundaries still prevent a record from matching.
 
 Delivery defaults to at most five matched experience identities. Matching and latest-applicable revision selection happen before the cap. Eligible identities are ordered by label Jaccard similarity to the current task, then shared-label count, then stable digests; this is a transparent heuristic, not an empirically calibrated effectiveness score. The audit records matched_count, max_experiences, truncated_count and omitted record digests. The retrieve CLI supports --max-experiences; the Python retrieve / route_view APIs accept max_experiences. Truncation never turns successful matches into AUTO, and delivered rule bodies are not cut.
+
+## Updating compact experience instead of appending guidance
+
+Compact libraries retain all reviewed versions as archive entries. Fresh approved
+snapshots and `approval.active()` now resolve `revise` / `merge` proposals under
+`compact-current-guidance-v1`: an unambiguous accepted revision replaces its target
+in retrieval; an accepted merge replaces all targets. Pending/rejected proposals
+never supersede accepted guidance. Rejecting a replacement exposes its still-accepted
+sources again. Historical frozen snapshots remain valid; no archived acceptance or
+text is rewritten.
+
+New proposals bind both target IDs and exact target hashes. Acceptance checks that
+the target is still current, so concurrent stale revisions require rebasing rather
+than silently creating competing active replacements. Cycles, competing replacements,
+missing targets and stale hashes are reported; the affected connected lineage is
+retained without choosing a winner by file order or review time. An explicitly
+accepted merge covering every competing branch resolves that fork. This conservatively
+keeps unresolved historical guidance available. `compact.active_view(path)` exposes
+the complete report; the review page labels superseded and unresolved entries, and
+new trajectories archive `memory-lifecycle.json`. Acceptance and current retrieval
+status are distinct.
+
+Training reflection has a separate update search: up to 16 complete related entries,
+including delivered guidance, ranked using the original task and source-grounded
+business obligations. It also receives a short discovery catalog of the frozen bank;
+previews are incomplete and cannot establish novelty on their own. Action still
+receives at most five entries. Exact duplicates become evidence supplements. New
+entries compared against existing guidance require an explicit independent increment
+and actual attempt evidence; the extraction prompt prefers evidence/revise/merge,
+requires explaining why existing guidance cannot cover a proposed new mechanism, and
+requires retaining still-applicable business obligations in updates. Language changes
+or wording changes alone do not justify new guidance. These are source-grounded model
+judgments, not a semantic guarantee that every paraphrase is detected.
+
+This does not automatically synthesize merged guidance for ambiguous historical
+branches, remove preservation obligations, learn from test outcomes or rerun models.

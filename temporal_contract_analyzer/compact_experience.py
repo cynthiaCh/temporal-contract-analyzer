@@ -52,12 +52,18 @@ def validate_review(review):
 
 
 def validate_proposal(proposal):
-    memory.object_fields(proposal, {'operation', 'target_ids'}, 'candidate proposal')
+    fields={'operation','target_ids'}
+    if isinstance(proposal,dict) and 'target_sha256s' in proposal:fields.add('target_sha256s')
+    memory.object_fields(proposal, fields, 'candidate proposal')
     operation=proposal['operation'];targets=proposal['target_ids']
     memory.strings(targets, 'candidate targets')
     if operation not in ('new','revise','merge') or (operation=='new' and targets) \
             or (operation=='revise' and len(targets)!=1) or (operation=='merge' and len(targets)<2):
         raise EvidenceError('Invalid candidate operation or targets')
+    if 'target_sha256s' in proposal:
+        hashes=proposal['target_sha256s']
+        if not isinstance(hashes,list) or len(hashes)!=len(targets) or any(not isinstance(c,str) or len(c)!=64 or any(x not in '0123456789abcdef' for x in c) for c in hashes):
+            raise EvidenceError('Invalid exact target hashes')
 
 
 def load(path):
@@ -134,6 +140,63 @@ def materialize(path):
     return bundles, decisions, blobs
 
 
+def active_view(path):
+    """Resolve unambiguous accepted replacements without altering archive/reviews.
+
+    Ambiguous components remain visible with issues; never pick a branch by time,
+    file order or score. Pending/rejected updates cannot supersede accepted text.
+    """
+    entries={item['id']:item for _,value in documents(path) for item in value['experiences']
+             if review_for(value,item)['decision']=='accept'}
+    bundles={b['id']:b for b in materialize(path)[0]}
+    edges={key:set() for key in entries};neighbors={key:set() for key in entries}
+    issues=[];bad=set();owners={}
+    for key,item in entries.items():
+        proposal=item.get('proposal',{})
+        if proposal.get('operation') not in ('revise','merge'):continue
+        targets=proposal['target_ids']
+        for i,target in enumerate(targets):
+            if target not in entries:
+                issues.append(dict(id=key,code='unresolved_target',target_id=target));bad.add(key);continue
+            edges[key].add(target);neighbors[key].add(target);neighbors[target].add(key)
+            owners.setdefault(target,[]).append(key)
+            expected=proposal.get('target_sha256s')
+            if expected is not None and expected[i]!=bundles[target]['sha256']:
+                issues.append(dict(id=key,code='stale_target',target_id=target));bad.add(key)
+    def ancestors(key):
+        found=set();pending=list(edges[key])
+        while pending:
+            target=pending.pop()
+            if target not in found:found.add(target);pending.extend(edges[target])
+        return found
+    ancestry={key:ancestors(key) for key in entries}
+    for target,children in owners.items():
+        # An explicitly accepted descendant that merges every competing branch
+        # resolves that fork; it must be possible to consolidate old conflicts.
+        resolved=any(set(children)<=parents for parents in ancestry.values())
+        if len(children)>1 and not resolved:
+            issues.append(dict(id=target,code='conflicting_replacements',replacement_ids=sorted(children)))
+            bad.add(target)
+    # DFS also detects cycles through merges. Propagate ambiguity across the
+    # connected lineage so descendants cannot hide an unresolved branch.
+    visiting=set();done=set()
+    def visit(key):
+        if key in visiting:
+            issues.append(dict(id=key,code='replacement_cycle'));bad.add(key);return
+        if key in done:return
+        visiting.add(key)
+        for target in sorted(edges[key]):visit(target)
+        visiting.remove(key);done.add(key)
+    for key in sorted(entries):visit(key)
+    blocked=set(bad);pending=list(bad)
+    while pending:
+        for other in neighbors[pending.pop()]-blocked:blocked.add(other);pending.append(other)
+    superseded={target for key,targets in edges.items() if key not in blocked for target in targets}
+    return dict(policy='compact-current-guidance-v1',active_ids=sorted(set(entries)-superseded),
+        superseded_ids=sorted(superseded),unresolved_ids=sorted(blocked),issues=issues,
+        accepted_count=len(entries),active_count=len(entries)-len(superseded))
+
+
 @contextmanager
 def _locked(path):
     # Lock the stable directory inode; atomic JSON replacement needs no lock sidecar.
@@ -181,6 +244,7 @@ def publish_candidate(path, record):
             # Evidence for training-only guidance is archival, never memory admission.
             return dict(published_proposal_sha256=code,publication_kind='evidence_proposal' if target in current else 'provisional_evidence_proposal')
         proposal=dict(operation=update['operation'],target_ids=target_ids)
+        if target_ids:proposal['target_sha256s']=list(update['target_sha256s'])
         validate_proposal(proposal)
         rules=experience['rules']
         if not isinstance(rules,list) or not rules:
@@ -235,6 +299,13 @@ def _save_review(path, request):
     file, value, item = match
     if bundle['sha256']!=request['expected_record'] or review_for(value, item)!=request['expected_review']:
         raise EvidenceError('经验或审核状态已变化，请刷新后重新审核')
+    proposal=item.get('proposal',{})
+    if request['decision']=='accept' and review_for(value,item)['decision']!='accept' and proposal.get('target_sha256s'):
+        current={b['id']:b['sha256'] for b in bundles}
+        active=set(active_view(path)['active_ids'])
+        for ident,code in zip(proposal['target_ids'],proposal['target_sha256s']):
+            if current.get(ident)!=code or ident not in active:
+                raise EvidenceError('Update target changed or was superseded; rebase against current guidance')
     # Move existing whole-file acceptance onto its existing items before saving.
     if 'review' in value:
         for entry in value['experiences']:
@@ -250,6 +321,7 @@ def page(path):
     values = documents(path)
     bundles = {b['id']:b for b in materialize(path)[0]}
     cards = []
+    lifecycle=active_view(path)
     categories = list(dict.fromkeys(value.get('category', '未分类') for _,value in values))
     entries = [(file,value,item) for file,value in values for item in value['experiences']]
     for file, value, item in entries:
@@ -258,6 +330,8 @@ def page(path):
         state = review['decision']
         status = STATES[state]
         saved = status if state=='pending' else f'{status} · {review["reviewer"]} · {review["at"]}'
+        if item['id'] in lifecycle['superseded_ids']:saved+=' · 已被替代，不参与新检索'
+        elif item['id'] in lifecycle['unresolved_ids']:saved+=' · 替代关系待核对，暂保留检索'
         sections = ''.join(f'<dt>{label}</dt><dd>{escape(item[key])}</dd>'
                            for key, label in SECTIONS)
         proposal=item.get('proposal')
