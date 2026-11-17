@@ -1,0 +1,1 @@
+/usr/bin/python3 -B /home/sribd/Downloads/wangshu/temporal-contract-analyzer/tools/tempoevo-docker/run_training_replay.py --root /home/sribd/Downloads/wangshu/tempoevo-gpt56-sol-medium-train70-twoarms-worker1-20261118_002327 --prepare-only
