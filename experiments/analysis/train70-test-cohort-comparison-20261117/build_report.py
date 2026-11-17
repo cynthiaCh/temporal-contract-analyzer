@@ -75,6 +75,11 @@ def main():
         evidence.append(dict(cohort=cohort,case_id=cid,protocol_sha256=sha(p/'protocol.json'),state_sha256=sha(p/'state.json')))
     assert [len(cohorts[k]) for k in cohorts]==[70,20,10,21]
     summary={k:aggregate(v) for k,v in cohorts.items()}
+    tests30=cohorts['new_test20']+cohorts['retained_regression10']
+    assert len(tests30)==len({r['case_id'] for r in tests30})==30
+    summary['test30']=aggregate(tests30)
+    for key in ('new_test20','retained_regression10','latest_retest21','test30'):
+        summary[key]['with_experience']['first_passed']=None
     latestids={r['case_id'] for r in cohorts['latest_retest21']}
     overlap={k:sorted(latestids&{r['case_id'] for r in v}) for k,v in cohorts.items() if k!='latest_retest21'}
     (OUT/'summary.json').write_text(json.dumps(dict(model='gpt-6.1-sol',effort='medium',groups=summary,latest_overlap=overlap,
@@ -86,6 +91,8 @@ def main():
             r={k:v for k,v in row.items() if k not in ('auto_test','auto_train')}
             for key in ('auto_test','auto_train'):
                 for field in ('path','valid','passed','first_passed','status'):r[key+'_'+field]=row[key].get(field) if row[key] else None
+            r['display_group']='test30' if r['cohort'] in ('new_test20','retained_regression10') else r['cohort']
+            if r['cohort']!='train70':r['with_experience_first_passed']=None
             flat.append(r)
     with (OUT/'per-case.csv').open('w',encoding='utf-8-sig',newline='') as f:
         w=csv.DictWriter(f,fieldnames=list(flat[0]));w.writeheader();w.writerows(flat)
