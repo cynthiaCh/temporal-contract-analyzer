@@ -1,0 +1,1 @@
+/usr/bin/python3 -B /home/sribd/Downloads/wangshu/tempoevo-gpt6-medium-trainclusters-hard10-workers8-20261117_171557/prepare_testing.py

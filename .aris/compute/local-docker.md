@@ -121,3 +121,10 @@ Documented zero-model command: execute the single line in /home/sribd/Downloads/
 Ranks26-46 preflight READY:1274 source/image files,63 expected controls,21 frozen bindings,current61bank/all6evidence attachments. Independent report /home/sribd/Downloads/wangshu/tempoevo-sol61-medium-ranks26-46-workers8-20261117_155257/agent-follows-doc.json. No models called before this checkpoint.
 
 Ranks26-46 launched:8 concurrent cases each produced non-denied PreModelRequest for gpt-6.1-sol; medium is frozen in all21protocols. Launch proof /home/sribd/Downloads/wangshu/tempoevo-sol61-medium-ranks26-46-workers8-20261117_155257/launch-verification.json. Runtime and bank remain frozen until queue completes.
+
+## GPT6 medium same-training-core hard10 285fab58
+Spec: /home/sribd/Downloads/wangshu/tempoevo-gpt6-medium-trainclusters-hard10-workers8-20261117_171557/env-spec.json
+Reuse pinned immutable images/CPU toolchains; no GPU allocation or rebuild.10 non-trained cases in6 training70cores,all0/3 originalLatent;prior-test-exposed retest,61 currentapprovedbank,8 initialworkers.
+Documented zero-model command: execute the single line in /home/sribd/Downloads/wangshu/tempoevo-gpt6-medium-trainclusters-hard10-workers8-20261117_171557/prepare-command.sh VERBATIM from /home/sribd/Downloads/wangshu/temporal-contract-analyzer. Verify selectedcase/image identity,30 original/reference/negative controls,10 protocol bindings,61 approved experiences plus all6evidence appendices,exactgpt-6-sol/medium. No model execution. Independent fresh agent-follows-doc READY required before launch.
+
+Same-training-core hard10 READY:30 expected controls,10 frozen bindings,all selected cores covered by training70,zero known exact-source overlap,61 accepted bank/all6 appendices verified. Independent report /home/sribd/Downloads/wangshu/tempoevo-gpt6-medium-trainclusters-hard10-workers8-20261117_171557/agent-follows-doc.json. No model calls before this checkpoint.
