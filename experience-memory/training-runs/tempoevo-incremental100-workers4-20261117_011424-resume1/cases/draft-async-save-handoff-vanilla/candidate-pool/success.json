@@ -1,0 +1,1364 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/editor.js\n+++ candidate/src/editor.js\n@@ -1,14 +1,23 @@\n import { attachSaveStatus } from \"./save-status.js\";\n+import { createTrailingTask } from \"./trailing-task.js\";\n export function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n   let current = null;\n+  let navigation = 0;\n   function retire() {\n     const old = current; current = null;\n-    if (old) old.stop();\n+    if (old) {\n+      old.stop();\n+      old.task.flush();\n+    }\n   }\n   return {\n     open(id) {\n+      const request = ++navigation;\n       retire();\n+      // A save-start callback may have issued a newer navigation request.\n+      if (request !== navigation) return;\n       const visit = {id, latest:null};\n+      visit.task = createTrailingTask((text, owner) => store.write(id, text, owner), 120, timers);\n       current = visit;\n       visit.stop = attachSaveStatus(store, id, owner => current === visit && owner === visit.latest, renderStatus);\n       renderDocument({id, text:store.read(id)});\n@@ -17,8 +26,12 @@\n       if (!current) return;\n       const visit = current, owner = {};\n       visit.latest = owner;\n-      store.write(visit.id, text, owner);\n+      visit.task.push(text, owner);\n     },\n-    close() { retire(); renderDocument(null); },\n+    close() {\n+      const request = ++navigation;\n+      retire();\n+      if (request === navigation) renderDocument(null);\n+    },\n   };\n }\n",
+        "from_previous": "--- previous/src/editor.js\n+++ candidate/src/editor.js\n@@ -1,14 +1,23 @@\n import { attachSaveStatus } from \"./save-status.js\";\n+import { createTrailingTask } from \"./trailing-task.js\";\n export function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n   let current = null;\n+  let navigation = 0;\n   function retire() {\n     const old = current; current = null;\n-    if (old) old.stop();\n+    if (old) {\n+      old.stop();\n+      old.task.flush();\n+    }\n   }\n   return {\n     open(id) {\n+      const request = ++navigation;\n       retire();\n+      // A save-start callback may have issued a newer navigation request.\n+      if (request !== navigation) return;\n       const visit = {id, latest:null};\n+      visit.task = createTrailingTask((text, owner) => store.write(id, text, owner), 120, timers);\n       current = visit;\n       visit.stop = attachSaveStatus(store, id, owner => current === visit && owner === visit.latest, renderStatus);\n       renderDocument({id, text:store.read(id)});\n@@ -17,8 +26,12 @@\n       if (!current) return;\n       const visit = current, owner = {};\n       visit.latest = owner;\n-      store.write(visit.id, text, owner);\n+      visit.task.push(text, owner);\n     },\n-    close() { retire(); renderDocument(null); },\n+    close() {\n+      const request = ++navigation;\n+      retire();\n+      if (request === navigation) renderDocument(null);\n+    },\n   };\n }\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [],
+        "coverage": [
+          {
+            "path": "src/draft-store.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/editor.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/save-status.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/search-preview.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/timers.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/trailing-task.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/workspace.js",
+            "status": "parsed"
+          }
+        ],
+        "events": [
+          {
+            "arguments": [
+              "id",
+              "text"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "accepted.set",
+            "column": 35,
+            "conditions": [],
+            "end_column": 57,
+            "end_line": 12,
+            "id": "src/draft-store.js::e23",
+            "kind": "call",
+            "line": 12,
+            "path": "src/draft-store.js",
+            "receiver": "accepted",
+            "scope": "<module>/createDraftStore/write",
+            "text": "accepted.set(id, text)"
+          },
+          {
+            "arguments": [
+              "event"
+            ],
+            "binding": "parameter_callback",
+            "callee": "transport",
+            "column": 22,
+            "conditions": [],
+            "end_column": 38,
+            "end_line": 14,
+            "id": "src/draft-store.js::e26",
+            "kind": "call",
+            "line": 14,
+            "path": "src/draft-store.js",
+            "receiver": "",
+            "scope": "<module>/createDraftStore/write",
+            "text": "transport(event)"
+          },
+          {
+            "arguments": [
+              "id",
+              "text"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "persisted.set",
+            "column": 39,
+            "conditions": [
+              "if revision > (committed.get(id) || 0)"
+            ],
+            "end_column": 62,
+            "end_line": 17,
+            "id": "src/draft-store.js::e34",
+            "kind": "call",
+            "line": 17,
+            "path": "src/draft-store.js",
+            "receiver": "persisted",
+            "scope": "<module>/createDraftStore/write/<callback>",
+            "text": "persisted.set(id, text)"
+          },
+          {
+            "arguments": [
+              "event"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "listener",
+            "column": 47,
+            "conditions": [
+              "ForOfStatement path; execution/repetition not proven"
+            ],
+            "end_column": 62,
+            "end_line": 19,
+            "id": "src/draft-store.js::e36",
+            "kind": "call",
+            "line": 19,
+            "path": "src/draft-store.js",
+            "receiver": "",
+            "scope": "<module>/createDraftStore/write/<callback>",
+            "text": "listener(event)"
+          },
+          {
+            "awaited": false,
+            "column": 6,
+            "conditions": [],
+            "end_column": 114,
+            "end_line": 13,
+            "id": "src/editor.js::e14",
+            "kind": "write",
+            "line": 13,
+            "operator": "=",
+            "path": "src/editor.js",
+            "scope": "<module>/createDraftEditor/open",
+            "target": "visit.stop",
+            "text": "visit.stop = attachSaveStatus(store, id, owner => current === visit && owner === visit.latest, renderStatus)"
+          },
+          {
+            "arguments": [
+              "{id, text:store.read(id)}"
+            ],
+            "binding": "parameter_callback",
+            "callee": "renderDocument",
+            "column": 6,
+            "conditions": [],
+            "end_column": 47,
+            "end_line": 14,
+            "id": "src/editor.js::e16",
+            "kind": "call",
+            "line": 14,
+            "path": "src/editor.js",
+            "receiver": "",
+            "scope": "<module>/createDraftEditor/open",
+            "text": "renderDocument({id, text:store.read(id)})"
+          }
+        ],
+        "findings": [
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "回调未位于另一个嵌套函数体，且此前未发现 await/yield；只是源码上的候选直接通知路径。名称、循环元素和路径可达性未作类型/控制流证明，未证明它与其他文件中的订阅者是同一实例。",
+            "evidence": [
+              "src/draft-store.js::e23",
+              "src/draft-store.js::e26"
+            ],
+            "message": "成员写入或集合/持久化名称调用之后，同一非 async 函数直接调用参数回调或循环取出的可调用项。",
+            "path": "src/draft-store.js",
+            "review_question": "该调用是否通知外部消费者？消费者能否在返回前重新进入当前对象？调用后继续使用的状态是否仍有效，最新请求如何决定优先级？",
+            "rule": "state-write-inline-notification",
+            "scope": "<module>/createDraftStore/write"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "回调未位于另一个嵌套函数体，且此前未发现 await/yield；只是源码上的候选直接通知路径。名称、循环元素和路径可达性未作类型/控制流证明，未证明它与其他文件中的订阅者是同一实例。",
+            "evidence": [
+              "src/draft-store.js::e34",
+              "src/draft-store.js::e36"
+            ],
+            "message": "成员写入或集合/持久化名称调用之后，同一非 async 函数直接调用参数回调或循环取出的可调用项。",
+            "path": "src/draft-store.js",
+            "review_question": "该调用是否通知外部消费者？消费者能否在返回前重新进入当前对象？调用后继续使用的状态是否仍有效，最新请求如何决定优先级？",
+            "rule": "state-write-inline-notification",
+            "scope": "<module>/createDraftStore/write/<callback>"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "回调未位于另一个嵌套函数体，且此前未发现 await/yield；只是源码上的候选直接通知路径。名称、循环元素和路径可达性未作类型/控制流证明，未证明它与其他文件中的订阅者是同一实例。",
+            "evidence": [
+              "src/editor.js::e14",
+              "src/editor.js::e16"
+            ],
+            "message": "成员写入或集合/持久化名称调用之后，同一非 async 函数直接调用参数回调或循环取出的可调用项。",
+            "path": "src/editor.js",
+            "review_question": "该调用是否通知外部消费者？消费者能否在返回前重新进入当前对象？调用后继续使用的状态是否仍有效，最新请求如何决定优先级？",
+            "rule": "state-write-inline-notification",
+            "scope": "<module>/createDraftEditor/open"
+          }
+        ],
+        "limitations": [
+          "Syntax facts, candidate call links and review hints are not verified contracts, bugs, severity or difficulty scores.",
+          "API names are clues. Types, aliases, control flow, dynamic dispatch and callback targets are not fully resolved.",
+          "Local order is lexical order within a block; branches, exceptions, loops, short-circuiting and execution remain unchecked.",
+          "await may suspend; cancellation does not imply completed work or cleanup. Listener removal does not cancel work already started.",
+          "if/try/finally syntax does not prove adequate protection. The absence of hints does not imply safety.",
+          "No hidden scorers, reference patches, model results or human profiles are read. Operators must verify input provenance."
+        ],
+        "relations": [
+          {
+            "after": "src/draft-store.js::e26",
+            "before": "src/draft-store.js::e23",
+            "kind": "lexical_write_before_direct_call",
+            "qualification": "Source order in one function; path execution, callback type and reentry remain unproven."
+          },
+          {
+            "after": "src/draft-store.js::e36",
+            "before": "src/draft-store.js::e34",
+            "kind": "lexical_write_before_direct_call",
+            "qualification": "Source order in one function; path execution, callback type and reentry remain unproven."
+          },
+          {
+            "after": "src/editor.js::e16",
+            "before": "src/editor.js::e14",
+            "kind": "lexical_write_before_direct_call",
+            "qualification": "Source order in one function; path execution, callback type and reentry remain unproven."
+          }
+        ],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "parsed",
+        "target_definitions": []
+      },
+      "sources": {
+        "README.md": "# Workspace drafts with asynchronous acknowledgements\n\nopen/edit/close are synchronous. The editor currently submits every edit.\nA visit's latest pending text must be submitted exactly once before close or\nnavigation returns; submission must not wait for network acknowledgement.\nAccepted writes belong to the document, survive navigation, and all settle.\nStore read exposes the latest accepted draft for immediate reopen; readPersisted\nexposes acknowledged data, protected by write revision against late old writes.\nThe provided transport accepts a write synchronously and returns a Promise.\nIts start callback may synchronously open another document, reopen the same\none, hide the editor, or edit that new visit. Acceptance occurs before that hook.\nNavigation priority follows call start order: a newer open/close supersedes an\nouter navigation that resumes after a save-start callback. Obsolete destinations\nmust not render. A newly accepted edit must not be erased by old flush cleanup.\n\nA save-status notification may appear only for the current visit's latest edit.\nA pending newer edit invalidates an older acknowledgement even before its own\nwrite is submitted. store.write(id,text,owner) round-trips an opaque owner token;\nattachSaveStatus supports an owner predicate. Reopening the same document does\nnot give its new visit ownership of the old visit's acknowledgement.\nDo not cancel accepted saves to suppress UI messages. No network failures or\nretry policy are included in this fixture; each transport Promise settles once.\n\nThe search preview is transient: 40 ms quiet interval, discard pending query\non hide, reusable afterward. It is outside the editor maintenance request.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\n  \"name\": \"draft-autosave-handoff-v2-fixture\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+        "src/draft-store.js": "// Acceptance precedes the transport callback, which may navigate synchronously.\n// Every accepted write completes independently. A late older acknowledgement\n// cannot roll persisted data back. read() exposes accepted drafts immediately.\nexport function createDraftStore(initial = {}, { transport = event => Promise.resolve() } = {}) {\n  const accepted = new Map(Object.entries(initial)), persisted = new Map(Object.entries(initial));\n  const revisions = new Map(), committed = new Map(), listeners = new Set();\n  return {\n    read(id) { return accepted.get(id) ?? \"\"; },\n    readPersisted(id) { return persisted.get(id) ?? \"\"; },\n    write(id, text, owner) {\n      const revision = (revisions.get(id) || 0) + 1;\n      revisions.set(id, revision); accepted.set(id, text);\n      const event = Object.freeze({ id, text, revision, owner });\n      const pending = transport(event);\n      return Promise.resolve(pending).then(() => {\n        if (revision > (committed.get(id) || 0)) {\n          committed.set(id, revision); persisted.set(id, text);\n        }\n        for (const listener of [...listeners]) listener(event);\n        return event;\n      });\n    },\n    subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },\n  };\n}\n",
+        "src/editor.js": "import { attachSaveStatus } from \"./save-status.js\";\nexport function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n  let current = null;\n  function retire() {\n    const old = current; current = null;\n    if (old) old.stop();\n  }\n  return {\n    open(id) {\n      retire();\n      const visit = {id, latest:null};\n      current = visit;\n      visit.stop = attachSaveStatus(store, id, owner => current === visit && owner === visit.latest, renderStatus);\n      renderDocument({id, text:store.read(id)});\n    },\n    edit(text) {\n      if (!current) return;\n      const visit = current, owner = {};\n      visit.latest = owner;\n      store.write(visit.id, text, owner);\n    },\n    close() { retire(); renderDocument(null); },\n  };\n}\n",
+        "src/save-status.js": "export function attachSaveStatus(store, id, accepts, renderStatus) {\n  return store.subscribe(event => {\n    if (event.id === id && accepts(event.owner)) renderStatus(event);\n  });\n}\n",
+        "src/search-preview.js": "import { createTrailingTask } from \"./trailing-task.js\";\n\nexport function createSearchPreview({ timers, publish }) {\n  const task = createTrailingTask(query => publish({ query }), 40, timers);\n  return {\n    query(value) { task.push(value); },\n    hide() { task.cancel(); },\n  };\n}\n",
+        "src/timers.js": "export const browserTimers = {\n  schedule(callback, delay) { return setTimeout(callback, delay); },\n  cancel(handle) { clearTimeout(handle); },\n};\n",
+        "src/trailing-task.js": "import { browserTimers } from \"./timers.js\";\n\n// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.\n// Retire the old batch before invoking work so a callback may enqueue a new batch.\nexport function createTrailingTask(work, delay, timers = browserTimers) {\n  let handle = null;\n  let pending = null;\n  function flush() {\n    if (handle !== null) timers.cancel(handle);\n    handle = null;\n    const args = pending;\n    pending = null;\n    if (args !== null) work(...args);\n  }\n  return {\n    push(...args) {\n      if (handle !== null) timers.cancel(handle);\n      pending = args;\n      handle = timers.schedule(flush, delay);\n    },\n    flush,\n    cancel() {\n      if (handle !== null) timers.cancel(handle);\n      handle = null;\n      pending = null;\n    },\n  };\n}\n",
+        "src/workspace.js": "import { createDraftEditor } from \"./editor.js\";\n\nexport function createWorkspace(options) {\n  const editor = createDraftEditor(options);\n  return {\n    open(id) { editor.open(id); },\n    edit(text) { editor.edit(text); },\n    close() { editor.close(); },\n    dispose() { editor.close(); },\n  };\n}\n"
+      },
+      "task": "The workspace draft editor currently writes to the store on every keystroke.\nCoalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces.\nThe adjacent search preview is outside this maintenance change.\n"
+    },
+    "source_sha256": "0edd3644742531074bb7138beac9ca59e00ccad2280a485cdc86834d8ee27c6d",
+    "task_id": "draft-async-save-handoff-vanilla"
+  },
+  "experience": {
+    "excludes": [
+      "discard_boundary_policy",
+      "different_ownership_policy"
+    ],
+    "labels": [
+      "O",
+      "B",
+      "L",
+      "I",
+      "F",
+      "A"
+    ],
+    "limitations": [
+      "Attempt 1 reports passing syntax checks and acceptance without behavioral observations. This does not establish causality, exhaustive correctness, or cross-task effectiveness.",
+      "README.md states: \"No network failures or\nretry policy are included in this fixture; each transport Promise settles once.\" Exception recovery and retry behavior are unspecified.",
+      "Supported synchronous reentry occurs through transport start callbacks. Reentry from rendering, scheduling, reads, or subscription cleanup is not established.",
+      "Terminal disposal semantics, timer cancellation races, and mutable non-string input behavior are unspecified.",
+      "This revision concerns the supplied asynchronous draft workspace. It does not invalidate projection or submission obligations in the related experiences' original tasks.",
+      "No files were modified and no scorer, reference implementation, or hidden tests were accessed."
+    ],
+    "requires": [
+      "deferred_batch",
+      "boundary_persistence",
+      "inline_reentry",
+      "async_resume",
+      "effect_lifetimes"
+    ],
+    "rules": [
+      {
+        "body": "Apply when introducing trailing editor persistence while preserving synchronous navigation, callback-capable write acceptance, and asynchronous acknowledgements whose UI authority is narrower than their persistence lifetime. TASK states: \"Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\\ninterval, write only the latest text in that editing burst. Subsequent bursts\\nmust continue to save. Preserve the editor's other behavior and public interfaces.\" README.md states: \"Accepted writes belong to the document, survive navigation, and all settle.\"",
+        "category": "applicability"
+      },
+      {
+        "body": "Use the existing trailing-task utility with a 120 ms quiet interval. Each edit replaces the pending arguments and restarts the deadline; bind those arguments to the accepting document and edit rather than consulting current selection at execution time. Preserve empty text, subsequent bursts, and no-selection editing. src/trailing-task.js contains \"pending = args;\" and \"handle = timers.schedule(flush, delay);\". Original src/editor.js contains \"if (!current) return;\". No additional persistent buffer bank or editor text model is required by these sources.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Establish the newest edit's opaque owner token immediately when accepting the edit, before delayed submission. Preserve exact visit identity as well as latest-edit identity when authorizing status. Original src/editor.js contains \"const visit = current, owner = {};\" and \"visit.latest = owner;\". README.md states: \"A save-status notification may appear only for the current visit's latest edit.\\nA pending newer edit invalidates an older acknowledgement even before its own\\nwrite is submitted.\" src/save-status.js contains \"if (event.id === id && accepts(event.owner)) renderStatus(event);\". Reopening the same document must not authorize an old visit's acknowledgement.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Consume a pending batch before invoking callback-capable persistence. Preserve src/trailing-task.js ordering: \"    handle = null;\\n    const args = pending;\\n    pending = null;\\n    if (args !== null) work(...args);\" Nested navigation must not consume the same batch again, and callback-enqueued edits must remain independent pending work. Do not add post-save cleanup that erases or cancels those edits. README.md states: \"A newly accepted edit must not be erased by old flush cleanup.\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "On departure, capture the departing visit, revoke its current ownership, detach its captured status subscription, and flush its pending text exactly once before returning. Flush before reading a replacement document, but do not await acknowledgement. Original src/editor.js contains \"const old = current; current = null;\" and \"if (old) old.stop();\". README.md states: \"A visit's latest pending text must be submitted exactly once before close or\\nnavigation returns; submission must not wait for network acknowledgement.\" It also states: \"Store read exposes the latest accepted draft for immediate reopen; readPersisted\\nexposes acknowledged data, protected by write revision against late old writes.\" Include disposal through src/workspace.js: \"dispose() { editor.close(); },\".",
+        "category": "event_relation"
+      },
+      {
+        "body": "After departure flushing can invoke a transport start callback, revalidate navigation authority before installing or rendering an open destination or clearing document output for close. Protect clearing effects as well as installation; complete them before callback-capable work or guard them afterward. README.md states: \"Navigation priority follows call start order: a newer open/close supersedes an\\nouter navigation that resumes after a save-start callback. Obsolete destinations\\nmust not render.\" Cleanup must use captured departing resources so a resumed outer request cannot detach a successor or discard its pending edits.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Preserve independent accepted writes and restrict stale effects at publication rather than cancelling persistence. src/draft-store.js accepts text before transport with \"revisions.set(id, revision); accepted.set(id, text);\", creates \"const event = Object.freeze({ id, text, revision, owner });\", and invokes \"const pending = transport(event);\". Its acknowledgement path uses \"if (revision > (committed.get(id) || 0))\" before updating persisted data and returns the event. Preserve these revision, Promise, event, and subscription semantics. README.md states: \"Do not cancel accepted saves to suppress UI messages.\" Preserve synchronous editor/workspace interfaces and original document rendering \"renderDocument({id, text:store.read(id)});\" and close rendering \"renderDocument(null);\".",
+        "category": "preservation"
+      },
+      {
+        "body": "Keep durable editor departure flushing separate from transient preview cancellation. TASK states: \"The adjacent search preview is outside this maintenance change.\" src/search-preview.js contains \"const task = createTrailingTask(query => publish({ query }), 40, timers);\" and \"hide() { task.cancel(); },\". Preserve its 40 ms delay, discard-on-hide policy, and later reuse. Do not import submission receipts, projection archives, confirmation outlets, persistent buffer banks, or integration-detachment APIs from related experiences when absent from the current public API.",
+        "category": "exclusion"
+      },
+      {
+        "body": "Use controlled timers and independently resolvable transport Promises to check deadline resetting, no active-burst write before 120 ms of quiet, one latest-text write per burst, subsequent bursts, empty text, and no-selection edits. Exercise switch, close, same-document reopening, and dispose with pending edits; verify exactly-once submission before return and immediate accepted-text restoration without acknowledgement. From both timer-driven and departure-driven transport starts, request nested open, same-document reopen, or close and edit the successor; verify the newest navigation's output survives and successor edits save independently without duplicate consumption. Resolve acknowledgements out of order; verify all settle, persisted data does not roll back, retired visits produce no status, and a pending newer edit suppresses an older acknowledgement before its own submission. Also verify current latest-edit status and unchanged preview timing, hide cancellation, and reuse. These checks derive from TASK and the cited public behavior, not the acceptance verdict.",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "Several edits less than 120 ms apart produce no early write and one write containing the latest text after 120 ms of quiet.",
+      "A later editing burst saves again; empty text remains valid; editing without an open document remains a no-op.",
+      "Close, navigation, same-document reopen, and workspace disposal submit the departing visit's pending text exactly once before returning, without waiting for acknowledgement.",
+      "Reopening immediately reads accepted text even while its acknowledgement is pending.",
+      "Transport start callbacks that open, reopen, close, or edit a successor visit preserve the newest navigation and its pending edits.",
+      "Acknowledgements produce status only for the active visit's latest edit, including when a newer edit is still pending submission.",
+      "Out-of-order acknowledgements all settle without rolling persisted text back.",
+      "Search preview retains its existing delay, cancellation on hide, and subsequent reuse."
+    ],
+    "forbidden_effects": [
+      "Do not discard a departing visit's pending text or submit the same consumed batch twice.",
+      "Do not let an older navigation continuation render an obsolete destination or clear a newer visit's document output.",
+      "Do not erase callback-enqueued work during cleanup of an older batch.",
+      "Do not display acknowledgement status for a retired visit or an edit superseded by a pending newer edit.",
+      "Do not cancel accepted writes to suppress status output.",
+      "Do not change search-preview behavior or introduce submission receipts, projection archives, or other APIs absent from these public sources."
+    ],
+    "lifecycle_identity": [
+      "Each opening creates a distinct visit, including reopening the same document ID.",
+      "Each accepted editor edit establishes the latest opaque owner token immediately; status eligibility depends on both the exact active visit and that token.",
+      "Pending save arguments belong to the accepting document and edit, rather than whichever document is selected when the timer fires.",
+      "Accepted store writes outlive editor visits and settle independently."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Use the existing trailing-task utility to coalesce editor edits with a 120 ms quiet interval, submitting only the latest text in each burst and supporting subsequent bursts."
+      },
+      {
+        "id": "O2",
+        "text": "Preserve synchronous public interfaces and submit each departing visit's latest pending text exactly once before close or navigation returns, including closure through dispose; do not wait for network acknowledgement."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve navigation priority by call start order across synchronous transport callbacks. A newer open or close supersedes an older request, and obsolete destinations must not render."
+      },
+      {
+        "id": "O4",
+        "text": "Preserve independent accepted writes, immediate accepted-draft reads, revision-protected persisted reads, and settlement of every accepted write."
+      },
+      {
+        "id": "O5",
+        "text": "Invalidate older status ownership as soon as a newer edit is accepted by the editor, before its delayed submission. Publish status only for the exact current visit's latest edit."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve existing renderer payloads, subscription cleanup, no-selection edit behavior, and the separate search-preview timing and cancellation policy."
+      }
+    ],
+    "ordering_barriers": [
+      "Record the newest edit's owner before scheduling its delayed write, so older acknowledgements are already ineligible during the quiet interval.",
+      "Consume and clear a pending batch before calling store.write; its transport callback may synchronously navigate or enqueue independent work.",
+      "Revoke the departing visit's ownership and detach its captured subscription before submitting its pending save.",
+      "Submit departing pending text before reading a replacement document, preserving immediate restoration from accepted drafts.",
+      "After callback-capable departure submission, revalidate the initiating navigation before installing or rendering its destination.",
+      "Complete departure clearing before callback-capable saving, or guard any later clearing against newer navigation.",
+      "Preserve store acceptance before invoking transport, and revision validation before updating acknowledged data."
+    ],
+    "preservation": [
+      "Workspace open, edit, close, and dispose remain synchronous with their existing interfaces.",
+      "Document rendering remains {id, text} on retained open and null on retained close.",
+      "Editing without a current visit remains a no-op, and empty text is not treated as missing work.",
+      "Store events retain id, text, revision, and opaque owner; writes retain Promise completion and independent acknowledgement semantics.",
+      "Status subscriptions retain document filtering and owner-predicate filtering, with cleanup tied to the captured visit.",
+      "The trailing-task utility remains reusable and retains its distinct flush and cancel semantics.",
+      "Search preview retains its 40 ms quiet interval and discards pending queries on hide."
+    ],
+    "scope": [
+      "Draft a fallible contract from TASK and the supplied public README and source files.",
+      "The maintenance change concerns editor autosave coalescing and preservation of existing observable behavior at synchronous callback boundaries.",
+      "Experience and analysis hints are guidance only; this contract does not derive requirements from evaluation observations.",
+      "This stage makes no file changes."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces."
+      },
+      {
+        "file": "TASK",
+        "quote": "The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "open/edit/close are synchronous. The editor currently submits every edit.\nA visit's latest pending text must be submitted exactly once before close or\nnavigation returns; submission must not wait for network acknowledgement."
+      },
+      {
+        "file": "README.md",
+        "quote": "Accepted writes belong to the document, survive navigation, and all settle.\nStore read exposes the latest accepted draft for immediate reopen; readPersisted\nexposes acknowledged data, protected by write revision against late old writes."
+      },
+      {
+        "file": "README.md",
+        "quote": "Its start callback may synchronously open another document, reopen the same\none, hide the editor, or edit that new visit. Acceptance occurs before that hook.\nNavigation priority follows call start order: a newer open/close supersedes an\nouter navigation that resumes after a save-start callback. Obsolete destinations\nmust not render. A newly accepted edit must not be erased by old flush cleanup."
+      },
+      {
+        "file": "README.md",
+        "quote": "A save-status notification may appear only for the current visit's latest edit.\nA pending newer edit invalidates an older acknowledgement even before its own\nwrite is submitted."
+      },
+      {
+        "file": "README.md",
+        "quote": "Reopening the same document does\nnot give its new visit ownership of the old visit's acknowledgement.\nDo not cancel accepted saves to suppress UI messages."
+      },
+      {
+        "file": "src/trailing-task.js",
+        "quote": "    handle = null;\n    const args = pending;\n    pending = null;\n    if (args !== null) work(...args);"
+      },
+      {
+        "file": "src/editor.js",
+        "quote": "    const old = current; current = null;\n    if (old) old.stop();"
+      },
+      {
+        "file": "src/editor.js",
+        "quote": "      if (!current) return;\n      const visit = current, owner = {};\n      visit.latest = owner;"
+      },
+      {
+        "file": "src/editor.js",
+        "quote": "      renderDocument({id, text:store.read(id)});"
+      },
+      {
+        "file": "src/save-status.js",
+        "quote": "    if (event.id === id && accepts(event.owner)) renderStatus(event);"
+      },
+      {
+        "file": "src/workspace.js",
+        "quote": "    dispose() { editor.close(); },"
+      },
+      {
+        "file": "src/search-preview.js",
+        "quote": "  const task = createTrailingTask(query => publish({ query }), 40, timers);"
+      },
+      {
+        "file": "src/search-preview.js",
+        "quote": "    hide() { task.cancel(); },"
+      }
+    ],
+    "triggers": [
+      "An edit arrives while a document visit is active.",
+      "The editor's quiet interval expires.",
+      "Open, close, or dispose departs an active visit with pending text.",
+      "A synchronous transport start callback requests navigation or accepts another edit.",
+      "An accepted write acknowledges while its originating visit or edit may have been superseded."
+    ],
+    "unknowns": [
+      "Network rejection, transport exceptions, and retry behavior are outside the stated fixture.",
+      "Behavior for render callbacks that reenter the workspace is unspecified; transport start callbacks are explicitly supported.",
+      "The public sources do not specify terminal disposal semantics or prohibit later calls after dispose.",
+      "Scheduler behavior beyond the supplied schedule/cancel interface is unspecified."
+    ]
+  },
+  "final_training_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "Several edits less than 120 ms apart produce no early write and one write containing the latest text after 120 ms of quiet.",
+      "A later editing burst saves again; empty text remains valid; editing without an open document remains a no-op.",
+      "Close, navigation, same-document reopen, and workspace disposal submit the departing visit's pending text exactly once before returning, without waiting for acknowledgement.",
+      "Reopening immediately reads accepted text even while its acknowledgement is pending.",
+      "Transport start callbacks that open, reopen, close, or edit a successor visit preserve the newest navigation and its pending edits.",
+      "Acknowledgements produce status only for the active visit's latest edit, including when a newer edit is still pending submission.",
+      "Out-of-order acknowledgements all settle without rolling persisted text back.",
+      "Search preview retains its existing delay, cancellation on hide, and subsequent reuse."
+    ],
+    "forbidden_effects": [
+      "Do not discard a departing visit's pending text or submit the same consumed batch twice.",
+      "Do not let an older navigation continuation render an obsolete destination or clear a newer visit's document output.",
+      "Do not erase callback-enqueued work during cleanup of an older batch.",
+      "Do not display acknowledgement status for a retired visit or an edit superseded by a pending newer edit.",
+      "Do not cancel accepted writes to suppress status output.",
+      "Do not change search-preview behavior or introduce submission receipts, projection archives, or other APIs absent from these public sources."
+    ],
+    "lifecycle_identity": [
+      "Each opening creates a distinct visit, including reopening the same document ID.",
+      "Each accepted editor edit establishes the latest opaque owner token immediately; status eligibility depends on both the exact active visit and that token.",
+      "Pending save arguments belong to the accepting document and edit, rather than whichever document is selected when the timer fires.",
+      "Accepted store writes outlive editor visits and settle independently."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Use the existing trailing-task utility to coalesce editor edits with a 120 ms quiet interval, submitting only the latest text in each burst and supporting subsequent bursts."
+      },
+      {
+        "id": "O2",
+        "text": "Preserve synchronous public interfaces and submit each departing visit's latest pending text exactly once before close or navigation returns, including closure through dispose; do not wait for network acknowledgement."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve navigation priority by call start order across synchronous transport callbacks. A newer open or close supersedes an older request, and obsolete destinations must not render."
+      },
+      {
+        "id": "O4",
+        "text": "Preserve independent accepted writes, immediate accepted-draft reads, revision-protected persisted reads, and settlement of every accepted write."
+      },
+      {
+        "id": "O5",
+        "text": "Invalidate older status ownership as soon as a newer edit is accepted by the editor, before its delayed submission. Publish status only for the exact current visit's latest edit."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve existing renderer payloads, subscription cleanup, no-selection edit behavior, and the separate search-preview timing and cancellation policy."
+      }
+    ],
+    "ordering_barriers": [
+      "Record the newest edit's owner before scheduling its delayed write, so older acknowledgements are already ineligible during the quiet interval.",
+      "Consume and clear a pending batch before calling store.write; its transport callback may synchronously navigate or enqueue independent work.",
+      "Revoke the departing visit's ownership and detach its captured subscription before submitting its pending save.",
+      "Submit departing pending text before reading a replacement document, preserving immediate restoration from accepted drafts.",
+      "After callback-capable departure submission, revalidate the initiating navigation before installing or rendering its destination.",
+      "Complete departure clearing before callback-capable saving, or guard any later clearing against newer navigation.",
+      "Preserve store acceptance before invoking transport, and revision validation before updating acknowledged data."
+    ],
+    "preservation": [
+      "Workspace open, edit, close, and dispose remain synchronous with their existing interfaces.",
+      "Document rendering remains {id, text} on retained open and null on retained close.",
+      "Editing without a current visit remains a no-op, and empty text is not treated as missing work.",
+      "Store events retain id, text, revision, and opaque owner; writes retain Promise completion and independent acknowledgement semantics.",
+      "Status subscriptions retain document filtering and owner-predicate filtering, with cleanup tied to the captured visit.",
+      "The trailing-task utility remains reusable and retains its distinct flush and cancel semantics.",
+      "Search preview retains its 40 ms quiet interval and discards pending queries on hide."
+    ],
+    "scope": [
+      "Draft a fallible contract from TASK and the supplied public README and source files.",
+      "The maintenance change concerns editor autosave coalescing and preservation of existing observable behavior at synchronous callback boundaries.",
+      "Experience and analysis hints are guidance only; this contract does not derive requirements from evaluation observations.",
+      "This stage makes no file changes."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces."
+      },
+      {
+        "file": "TASK",
+        "quote": "The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "open/edit/close are synchronous. The editor currently submits every edit.\nA visit's latest pending text must be submitted exactly once before close or\nnavigation returns; submission must not wait for network acknowledgement."
+      },
+      {
+        "file": "README.md",
+        "quote": "Accepted writes belong to the document, survive navigation, and all settle.\nStore read exposes the latest accepted draft for immediate reopen; readPersisted\nexposes acknowledged data, protected by write revision against late old writes."
+      },
+      {
+        "file": "README.md",
+        "quote": "Its start callback may synchronously open another document, reopen the same\none, hide the editor, or edit that new visit. Acceptance occurs before that hook.\nNavigation priority follows call start order: a newer open/close supersedes an\nouter navigation that resumes after a save-start callback. Obsolete destinations\nmust not render. A newly accepted edit must not be erased by old flush cleanup."
+      },
+      {
+        "file": "README.md",
+        "quote": "A save-status notification may appear only for the current visit's latest edit.\nA pending newer edit invalidates an older acknowledgement even before its own\nwrite is submitted."
+      },
+      {
+        "file": "README.md",
+        "quote": "Reopening the same document does\nnot give its new visit ownership of the old visit's acknowledgement.\nDo not cancel accepted saves to suppress UI messages."
+      },
+      {
+        "file": "src/trailing-task.js",
+        "quote": "    handle = null;\n    const args = pending;\n    pending = null;\n    if (args !== null) work(...args);"
+      },
+      {
+        "file": "src/editor.js",
+        "quote": "    const old = current; current = null;\n    if (old) old.stop();"
+      },
+      {
+        "file": "src/editor.js",
+        "quote": "      if (!current) return;\n      const visit = current, owner = {};\n      visit.latest = owner;"
+      },
+      {
+        "file": "src/editor.js",
+        "quote": "      renderDocument({id, text:store.read(id)});"
+      },
+      {
+        "file": "src/save-status.js",
+        "quote": "    if (event.id === id && accepts(event.owner)) renderStatus(event);"
+      },
+      {
+        "file": "src/workspace.js",
+        "quote": "    dispose() { editor.close(); },"
+      },
+      {
+        "file": "src/search-preview.js",
+        "quote": "  const task = createTrailingTask(query => publish({ query }), 40, timers);"
+      },
+      {
+        "file": "src/search-preview.js",
+        "quote": "    hide() { task.cancel(); },"
+      }
+    ],
+    "triggers": [
+      "An edit arrives while a document visit is active.",
+      "The editor's quiet interval expires.",
+      "Open, close, or dispose departs an active visit with pending text.",
+      "A synchronous transport start callback requests navigation or accepts another edit.",
+      "An accepted write acknowledges while its originating visit or edit may have been superseded."
+    ],
+    "unknowns": [
+      "Network rejection, transport exceptions, and retry behavior are outside the stated fixture.",
+      "Behavior for render callbacks that reenter the workspace is unspecified; transport start callbacks are explicitly supported.",
+      "The public sources do not specify terminal disposal semantics or prohibit later calls after dispose.",
+      "Scheduler behavior beyond the supplied schedule/cancel interface is unspecified."
+    ]
+  },
+  "origin": "success",
+  "publication_kind": "experience_version",
+  "published_sha256": "05474d7458ec9802a644ec0df4f601850e0ab513d5509d0f1a36f461542a61d1",
+  "reflection_update": {
+    "change_summary": [
+      "Narrow applicability from a synchronous save-notification workspace with projection to the supplied asynchronous acknowledgement workspace.",
+      "Make departure submission before return explicit while separating it from network acknowledgement.",
+      "Add immediate latest-edit ownership invalidation, independent acknowledgement settlement, accepted-draft reads, and revision-protected persisted reads.",
+      "Replace projection checks with transport-start navigation and out-of-order acknowledgement checks; exclude unrelated submission and projection APIs."
+    ],
+    "failure_attribution": "experience_gap",
+    "operation": "revise",
+    "reason": "Revise the primary autosave lineage because its batching and reentry rules remain useful, but its projection-specific applicability and checks omit the current public sources' asynchronous acknowledgement boundary and pending-edit status invalidation. The submission-focused related experiences do not justify adding submission APIs here. This is a source-supported applicability and checkpoint improvement, not an inferred implementation failure: attempt 1 supplies successful syntax and acceptance results without behavioral observations.",
+    "supporting_attempts": [
+      1
+    ],
+    "target_sha256s": [
+      "e983ba13b72bc316b6a02cf6d0cc673e881e93df24aa8f857fa80066d2fd2376"
+    ]
+  },
+  "related_experiences": [
+    {
+      "audit": {
+        "notes": [
+          "Training-only; not approved for long-term retrieval."
+        ],
+        "outcome_refs": [],
+        "rule_links": [
+          {
+            "pointer": "/experience/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "97e56a20bc38792d7d177eb4a9d42ad2b4cfcaac0254a5f5345ef9cac0be70cc"
+          },
+          {
+            "pointer": "/experience/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "97e56a20bc38792d7d177eb4a9d42ad2b4cfcaac0254a5f5345ef9cac0be70cc"
+          },
+          {
+            "pointer": "/experience/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "97e56a20bc38792d7d177eb4a9d42ad2b4cfcaac0254a5f5345ef9cac0be70cc"
+          },
+          {
+            "pointer": "/experience/rules/3",
+            "rule_id": "R04",
+            "source_sha256": "97e56a20bc38792d7d177eb4a9d42ad2b4cfcaac0254a5f5345ef9cac0be70cc"
+          },
+          {
+            "pointer": "/experience/rules/4",
+            "rule_id": "R05",
+            "source_sha256": "97e56a20bc38792d7d177eb4a9d42ad2b4cfcaac0254a5f5345ef9cac0be70cc"
+          },
+          {
+            "pointer": "/experience/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "97e56a20bc38792d7d177eb4a9d42ad2b4cfcaac0254a5f5345ef9cac0be70cc"
+          },
+          {
+            "pointer": "/experience/rules/6",
+            "rule_id": "R07",
+            "source_sha256": "97e56a20bc38792d7d177eb4a9d42ad2b4cfcaac0254a5f5345ef9cac0be70cc"
+          },
+          {
+            "pointer": "/experience/rules/7",
+            "rule_id": "R08",
+            "source_sha256": "97e56a20bc38792d7d177eb4a9d42ad2b4cfcaac0254a5f5345ef9cac0be70cc"
+          }
+        ],
+        "sources": [
+          {
+            "path": "online-source.json",
+            "sha256": "97e56a20bc38792d7d177eb4a9d42ad2b4cfcaac0254a5f5345ef9cac0be70cc"
+          }
+        ]
+      },
+      "body_sha256": "5f48794739a46b0db274531478fbf0faa954e959de7a96c664e45d8c6c2c76dd",
+      "excludes": [
+        "discard_boundary_policy"
+      ],
+      "id": "online-97e56a20bc38792d7d177eb4",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "F",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "deferred_batch",
+        "boundary_persistence",
+        "inline_reentry",
+        "effect_lifetimes"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Departure flushing is a preservation deduction from the original immediate writes and fresh store reads, not an explicit universal before-return deadline.",
+          "Attempt 1 reports successful syntax checks and acceptance but supplies no behavioral observations. This establishes neither causality nor exhaustive correctness or cross-task benefit.",
+          "Public evidence establishes synchronous reentry through store notifications. It does not establish callbacks from renderers, timer operations, or subscription cleanup.",
+          "Exception recovery, timer cancellation races, mutable non-string inputs, and ordering of independent actions at identical deadlines are unspecified.",
+          "The current public API establishes no submission, receipt archive, persistent buffer bank, or framework lifecycle requirement.",
+          "This revision narrows applicability to the current public sources; it does not disprove ownership or submission rules supported by the related experiences' original tasks.",
+          "Unreviewed provisional training guidance; effectiveness unknown."
+        ],
+        "source_sha256": "97e56a20bc38792d7d177eb4a9d42ad2b4cfcaac0254a5f5345ef9cac0be70cc",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when coalescing editor persistence must preserve navigation, accepted edits, and a separate navigation projection while save integrations can synchronously navigate. TASK states: \"autosave to coalesce a burst of input: after 120 ms without another edit, save\\nonly its latest text. Reuse the existing trailing-task utility where appropriate.\" src/workspace.js states: \"// Store notifications synchronously call integrations. Editor state and outline\\n// projection are separate responsibilities; only this workspace connects them.\"",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Enqueue the latest accepted text using the existing trailing-task utility with a 120 ms quiet interval, binding delayed work to the accepting document rather than consulting a later selection. Preserve empty text, subsequent bursts, and editing without a selection as a no-op. The original src/editor.js contains \"if (current) store.write(current.id, text);\"; src/trailing-task.js retains arguments with \"pending = args;\". These sources do not require an additional in-memory text model or persistent buffer bank.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Retire consumed pending state before invoking callback-capable persistence. Preserve src/trailing-task.js ordering: \"    handle = null;\\n    const args = pending;\\n    pending = null;\\n    if (args !== null) work(...args);\" This prevents nested flushing from consuming the same batch twice and lets callback-enqueued edits establish independent work. Do not add completion cleanup that erases that work.",
+          "category": "event_relation",
+          "id": "R03"
+        },
+        {
+          "body": "Capture departing resources, revoke current ownership, detach the captured badge, and finish old-view clearing before flushing pending persistence, or guard any remaining effects against newer navigation. Flush before reading a replacement document to preserve the original synchronous persistence and restoration behavior. TASK states: \"Preserve the workspace's existing navigation and persistence behavior.\" Original src/editor.js orders departure as \"    const leaving = current;\\n    current = null;\\n    if (leaving) leaving.stop();\\n    renderDocument(null);\" and replacement rendering uses \"renderDocument({ id, visit, text: store.read(id) });\". src/save-status.js states: \"// badge immediately: it must produce no further output, including during that\\n// navigation call. Saving the document itself is a separate workspace concern.\"",
+          "category": "event_relation",
+          "id": "R04"
+        },
+        {
+          "body": "After callback-capable departure saving, revalidate the open request before installing its destination and revalidate enclosing workspace navigation before committing or clearing its projection. Protect clearing effects as well as installation. src/draft-store.js directly invokes subscribers with \"if (listeners.has(listener)) listener(event);\"; src/workspace.js registers \"const stop = store.subscribe(event => onSaved(event, navigation));\". README.md requires: \"The outline and breadcrumbs should continue to describe what the user\\nis viewing, while the store should retain accepted edits.\" src/navigation-projection.js states: \"// decides whether a requested visit was retained before committing it here.\" A superseded continuation must not publish a visit that the editor did not retain.",
+          "category": "event_relation",
+          "id": "R05"
+        },
+        {
+          "body": "Preserve synchronous public interfaces, distinct visits, renderer payloads, event/revision semantics, listener snapshot and membership behavior, document-specific status filtering, captured subscription cleanup, and copied breadcrumb publication. src/workspace.js allocates \"const visit = ++nextVisit;\". src/save-status.js filters with \"if (event.id === id) renderStatus(event);\". src/navigation-projection.js contains \"commit(visit) { selected = { ...visit }; trail.push({ ...visit }); publish(); },\" and \"clear() { selected = null; publish(); },\" so clearing selection retains committed history. Preserve disposal's integration detachment before editor closure: src/workspace.js contains \"dispose() { stop(); editor.close(); projection.clear(); }\".",
+          "category": "preservation",
+          "id": "R06"
+        },
+        {
+          "body": "Determine departure scheduling from the current task and original behavior, rather than persistent ownership alone. Do not require persistent buffer reuse, caller-text copying, submission handling, or framework teardown without applicable public evidence. Keep transient preview policy separate: TASK states \"search preview behavior unchanged; its timing is outside this maintenance task.\" Preserve src/search-preview.js: \"const task = createTrailingTask(query => publish({ query }), 40, timers);\" and \"hide() { task.cancel(); },\". Do not transfer durable departure flushing to a feature whose explicit policy discards pending work.",
+          "category": "exclusion",
+          "id": "R07"
+        },
+        {
+          "body": "Verify timer resetting, no active-burst write before 120 ms of quiet, one latest-text write per burst, later successful bursts, empty text, and no-selection editing. With pending text, exercise switch, same-document reopen, close, and dispose; check original-document persistence, fresh reads, and badge retirement. Trigger select and close through timer-driven and departure-driven store notifications, then edit the resulting visit; check that final selection, document output, projection, and breadcrumbs agree and that successor edits save independently without duplicate consumption. Check copied projection payloads and retained history on clear. Confirm preview's unchanged 40 ms delay, hide cancellation, and subsequent-query usability. These checks operationalize TASK's \"Preserve the workspace's existing navigation and persistence behavior.\" and the cited public source semantics; they are not observations supplied by the acceptance verdict.",
+          "category": "verification",
+          "id": "R08"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "e983ba13b72bc316b6a02cf6d0cc673e881e93df24aa8f857fa80066d2fd2376",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "v1"
+    },
+    {
+      "audit": {
+        "notes": [
+          "Training-only; not approved for long-term retrieval."
+        ],
+        "outcome_refs": [],
+        "rule_links": [
+          {
+            "pointer": "/experience/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "7c825c609483b1ee2752927b1d514f01254986bcb3f5d3880d050cc32a4e3237"
+          },
+          {
+            "pointer": "/experience/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "7c825c609483b1ee2752927b1d514f01254986bcb3f5d3880d050cc32a4e3237"
+          },
+          {
+            "pointer": "/experience/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "7c825c609483b1ee2752927b1d514f01254986bcb3f5d3880d050cc32a4e3237"
+          },
+          {
+            "pointer": "/experience/rules/3",
+            "rule_id": "R04",
+            "source_sha256": "7c825c609483b1ee2752927b1d514f01254986bcb3f5d3880d050cc32a4e3237"
+          },
+          {
+            "pointer": "/experience/rules/4",
+            "rule_id": "R05",
+            "source_sha256": "7c825c609483b1ee2752927b1d514f01254986bcb3f5d3880d050cc32a4e3237"
+          },
+          {
+            "pointer": "/experience/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "7c825c609483b1ee2752927b1d514f01254986bcb3f5d3880d050cc32a4e3237"
+          },
+          {
+            "pointer": "/experience/rules/6",
+            "rule_id": "R07",
+            "source_sha256": "7c825c609483b1ee2752927b1d514f01254986bcb3f5d3880d050cc32a4e3237"
+          },
+          {
+            "pointer": "/experience/rules/7",
+            "rule_id": "R08",
+            "source_sha256": "7c825c609483b1ee2752927b1d514f01254986bcb3f5d3880d050cc32a4e3237"
+          },
+          {
+            "pointer": "/experience/rules/8",
+            "rule_id": "R09",
+            "source_sha256": "7c825c609483b1ee2752927b1d514f01254986bcb3f5d3880d050cc32a4e3237"
+          }
+        ],
+        "sources": [
+          {
+            "path": "online-source.json",
+            "sha256": "7c825c609483b1ee2752927b1d514f01254986bcb3f5d3880d050cc32a4e3237"
+          }
+        ]
+      },
+      "body_sha256": "fc3659e48abd334dab8ae6ef73815327c799a1529b59bde32281d3977bfabcfb",
+      "excludes": [
+        "discard_boundary_policy"
+      ],
+      "id": "online-7c825c609483b1ee2752927b",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "F",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "deferred_batch",
+        "boundary_persistence",
+        "inline_reentry",
+        "entry_snapshot",
+        "effect_lifetimes"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Attempt 1 reports passing syntax checks and acceptance, but supplies no behavioral observations. This does not establish causality, exhaustive correctness, or cross-task benefit.",
+          "The public sources establish reentry from store notifications. README.md explicitly excludes callbacks from render functions and the receipt archive; do not invent archive-listener checks.",
+          "The sources do not mandate visit-owned versus document-owned trailing tasks, persistent buffer reuse, a confirmation-binding API, or additional projection layers.",
+          "Exception recovery, mutable non-string text inputs, cancellation races, and ordering between independently scheduled actions at the same deadline are unspecified.",
+          "This guidance is provisional and applies only where the documented persistence boundaries, navigation precedence, and submission lifetime rules hold.",
+          "Unreviewed provisional training guidance; effectiveness unknown."
+        ],
+        "source_sha256": "7c825c609483b1ee2752927b1d514f01254986bcb3f5d3880d050cc32a4e3237",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when deferred editor persistence must preserve synchronous departure persistence, inline save-listener navigation, and entry-bound submissions with visit-bound notices. TASK states: \"Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\\ninterval, write only the latest text in that editing burst. Subsequent bursts\\nmust continue to save. Preserve the editor's other behavior and public interfaces.\" README.md states: \"When close/open returns, the departed document's last accepted edit is readable\\nfrom the store. A close/open request retires its previous save badge immediately.\"",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Update the accepting editor's in-memory text synchronously, then enqueue persistence using the existing trailing-task utility with a 120 ms quiet interval. Bind delayed work to the accepting document rather than consulting the later selection. Preserve editing without a selection as a no-op and allow empty text. src/editor.js contains \"if (!current) return;\" and \"current.text = text;\". TASK requires: \"Subsequent bursts\\nmust continue to save.\" The internal ownership structure may vary if these observable requirements hold.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Retire a consumed batch before invoking persistence so nested flushing cannot consume it twice and edits accepted by an inline listener establish independent pending work. Preserve src/trailing-task.js ordering: \"    handle = null;\\n    const args = pending;\\n    pending = null;\\n    if (args !== null) work(...args);\" Do not add completion cleanup that erases a callback-enqueued batch.",
+          "category": "event_relation",
+          "id": "R03"
+        },
+        {
+          "body": "On departure, capture the old editor resources, revoke current ownership, detach its badge, and complete old-view clearing before flushing its pending persistence, or protect any remaining effects against newer navigation. Flush before reading a replacement document. Recheck navigation request authority after callback-capable persistence before installing a destination. README.md states: \"Reopening a document restores its saved text in a new editor visit.\" It also states: \"Navigation precedence is\\nordered by request start: a request that starts later wins even when an earlier\\nrequest returns afterward.\" src/save-status.js requires that the departing badge \"must produce no further output, including during that\\n// navigation call.\" Cleanup must use captured departing resources so it cannot detach or erase a successor's resources or edits.",
+          "category": "event_relation",
+          "id": "R04"
+        },
+        {
+          "body": "At submission entry, capture the originating visit and its document/text snapshot before persistence can invoke integrations. Persist the accepted text before archive capture, then create and return exactly one receipt even if persistence navigates or accepts further edits. README.md states: \"`submit()` accepts the document and latest text selected at its call entry.\" It further requires: \"Accepted text\\nmust be persisted before the archive captures the receipt. Later edits or\\nnavigation cannot change that receipt's document, text, or obligation to exist.\" Preserve the no-selection null result without creating a receipt.",
+          "category": "event_relation",
+          "id": "R05"
+        },
+        {
+          "body": "Authorize submission notice output using the exact originating visit after callback-capable persistence; receipt validity and notice permission have separate lifetimes. README.md states: \"Its visible submission notice belongs only\\nto the editor visit that accepted the action: it may appear only if that same\\nvisit is still active when the notice is emitted.\" It also states: \"Reopening the same document\\ncreates a different visit. Any navigation clears the previous submission notice.\" An uninterrupted submit must display its receipt and leave editing usable. Do not use document-ID equality to represent visit identity or infer authority from receipt contents.",
+          "category": "preservation",
+          "id": "R06"
+        },
+        {
+          "body": "Preserve synchronous workspace interfaces, store event/revision semantics, live status filtering, subscription cleanup, renderer argument shapes, and immutable archive snapshots with copied listings. src/save-status.js filters with \"if (event.id === id) renderStatus(event);\" src/receipt-archive.js contains \"const receipt = Object.freeze({ id, text });\" and \"list() { return receipts.map(receipt => ({ ...receipt })); },\" Preserve disposal ordering from src/workspace.js: \"return { ...navigation, dispose() { stop(); navigation.close(); } };\" Keep preview behavior separate: TASK states \"The adjacent search preview is outside this maintenance change.\" src/search-preview.js uses \"const task = createTrailingTask(query => publish({ query }), 40, timers);\" and \"hide() { task.cancel(); },\".",
+          "category": "preservation",
+          "id": "R07"
+        },
+        {
+          "body": "Do not generalize departure flushing to contracts that explicitly discard pending work, require persistent buffer banks merely because documents persist, or introduce callbacks from output sinks. README.md states: \"Render functions and the receipt archive are output\\nsinks and never call back into the workspace.\" A final installation guard alone does not protect stale clearing effects after store callbacks; complete those effects first or validate their authority.",
+          "category": "exclusion",
+          "id": "R08"
+        },
+        {
+          "body": "Check timer resetting, no write before 120 ms of quiet, one latest-text write per burst, later successful bursts, empty text, and no-selection editing. With pending edits, exercise switch, same-document reopen, close, and dispose; verify before-return persistence, fresh reads, and immediate badge retirement. Trigger nested open or close from timer-, departure-, and submission-driven store notifications, and edit the resulting visit; verify later navigation wins, successor output survives, and callback-enqueued work saves independently without duplicate consumption. During submit, independently verify the entry snapshot, persistence before capture, exactly one returned receipt, notice suppression after navigation or same-document reopening, uninterrupted notice output, and subsequent editing. Check no-selection submission and unchanged preview delay, hide cancellation, and later-query usability. These checks derive from TASK and public source obligations, not from the acceptance verdict.",
+          "category": "verification",
+          "id": "R09"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "e0b6dc8fdf015a24bccb7cb67ed4d56a59cca6021dac99fc3ad8687055b35a01",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "v1"
+    },
+    {
+      "audit": {
+        "notes": [
+          "Training-only; not approved for long-term retrieval."
+        ],
+        "outcome_refs": [],
+        "rule_links": [
+          {
+            "pointer": "/experience/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "ee6afdf3d3287488268d9a82c714d5d0b6c67a7e9fcb13e70df20f87e3e07e6d"
+          },
+          {
+            "pointer": "/experience/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "ee6afdf3d3287488268d9a82c714d5d0b6c67a7e9fcb13e70df20f87e3e07e6d"
+          },
+          {
+            "pointer": "/experience/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "ee6afdf3d3287488268d9a82c714d5d0b6c67a7e9fcb13e70df20f87e3e07e6d"
+          },
+          {
+            "pointer": "/experience/rules/3",
+            "rule_id": "R04",
+            "source_sha256": "ee6afdf3d3287488268d9a82c714d5d0b6c67a7e9fcb13e70df20f87e3e07e6d"
+          },
+          {
+            "pointer": "/experience/rules/4",
+            "rule_id": "R05",
+            "source_sha256": "ee6afdf3d3287488268d9a82c714d5d0b6c67a7e9fcb13e70df20f87e3e07e6d"
+          },
+          {
+            "pointer": "/experience/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "ee6afdf3d3287488268d9a82c714d5d0b6c67a7e9fcb13e70df20f87e3e07e6d"
+          },
+          {
+            "pointer": "/experience/rules/6",
+            "rule_id": "R07",
+            "source_sha256": "ee6afdf3d3287488268d9a82c714d5d0b6c67a7e9fcb13e70df20f87e3e07e6d"
+          }
+        ],
+        "sources": [
+          {
+            "path": "online-source.json",
+            "sha256": "ee6afdf3d3287488268d9a82c714d5d0b6c67a7e9fcb13e70df20f87e3e07e6d"
+          }
+        ]
+      },
+      "body_sha256": "f7c2332b27e00a35ae01f6f6c87d83dd3ba772fdd9c1d9ded4afd355ad5fbd60",
+      "excludes": [
+        "discard_boundary_policy"
+      ],
+      "id": "online-ee6afdf3d3287488268d9a82",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "F",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "deferred_batch",
+        "boundary_persistence",
+        "inline_reentry",
+        "entry_snapshot"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "The supplied source does not expose integration detachment facilities. README.md states \"Dispose detaches integrations before closing the workspace.\" Preserve that ordering where those facilities exist; do not invent an adapter API.",
+          "Timer exception behavior and cancellation races are unspecified. The supplied Store.stop deletes a subscription without invoking application callbacks; callback-capable cleanup is not established here.",
+          "Attempt 1 passed the reported checks, but no behavioral observations were supplied. This does not establish causality, exhaustive correctness, or cross-task effectiveness.",
+          "Unreviewed provisional training guidance; effectiveness unknown."
+        ],
+        "source_sha256": "ee6afdf3d3287488268d9a82c714d5d0b6c67a7e9fcb13e70df20f87e3e07e6d",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when introducing trailing persistence into a synchronous editor whose save listeners can navigate. TASK requires \"after a 120 ms quiet interval write only the latest text in that editing burst. Subsequent bursts must continue to save.\" README.md requires \"Returning to a document creates a fresh editor visit and restores persisted text.\" These requirements make persistence boundaries and visit identity part of preserving supported behavior.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Keep the visit's immutable in-memory text current immediately, then push it into that visit's reusable trailing task. Preserve pending edits at departure and before submission capture rather than canceling them. Preserve the utility's clearing of pending state before invoking work: src/workflow.rb contains \"    @handle = @pending = nil\\n    @work.call(value) unless value.nil?\" This allows edits admitted by a save callback to form an independent subsequent batch.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Capture the departing visit and remove its current ownership before flushing its pending save. Finish its passive clearing output before the flush, or guard remaining output after callbacks. Complete cleanup using the captured visit. After departure, an outer open must recheck its navigation request before installing its destination. Saving is callback-capable: src/workflow.rb states \"    @listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }\" Nested navigation, edits, subscriptions and rendering must remain authoritative.",
+          "category": "event_relation",
+          "id": "R03"
+        },
+        {
+          "body": "For submission, capture the selected visit, its snapshot and its confirmation capability before flushing pending persistence. Flush before archive capture, then return the receipt even if navigation suppresses its notice. Recheck the originating visit immediately before notice output, including after archive listeners run. README.md states \"An outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity.\" src/workflow.rb enforces identity with \"  def active;!@owner.nil?&&@owner.equal?(@current.call);end\".",
+          "category": "event_relation",
+          "id": "R04"
+        },
+        {
+          "body": "Preserve synchronous public interfaces, immutable text copies, subscription delivery and fresh visits, including reopening the same document ID. Preserve the null result when no editor is selected and receipt delivery independently of notice permission. Leave preview scheduling and cancellation unchanged: TASK states \"Preserve other supported behavior and the synchronous public interfaces. The adjacent search preview is outside this maintenance change.\"",
+          "category": "preservation",
+          "id": "R05"
+        },
+        {
+          "body": "Do not let a successful receipt authorize output for a retired visit, use document ID equality as visit identity, or assume that code after a save still owns navigation. A guard on final installation alone does not protect stale clearing output. Apply the current task's explicit boundary policy; this guidance does not require flushing work that another contract explicitly discards.",
+          "category": "exclusion",
+          "id": "R06"
+        },
+        {
+          "body": "Check several edits within 120 ms yield one latest-text write and a later burst saves again. Check close, switch, same-document reopening and disposal preserve pending text. During timer-driven, departure-driven and submission-driven saves, have a store listener open or close the workspace and edit the resulting visit; verify the outer continuation preserves that visit and its pending batch. During submission, navigate from both store and archive listeners; verify the original snapshot and returned receipt survive while stale notices are suppressed. Also check no-selection submission, subscription delivery, and the unchanged 40 ms preview and hide behavior.",
+          "category": "verification",
+          "id": "R07"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "15336311f26a6afa71502d60f5b82b62d669691dd734cde98439e18d41d5661e",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "290d6720a275c70e901dfcd46c2b19daaebd76f60c2f57252812209569dbf914"
+          }
+        ]
+      },
+      "body_sha256": "4aa890110c1886f3757585df59f9b02358dbc35b01c10df3f4117aa6b615a276",
+      "excludes": [
+        "discard_boundary_policy",
+        "different_ownership_policy"
+      ],
+      "id": "candidate-bd964b4046d4d594cb4429e07b9c7747",
+      "labels": [
+        "O",
+        "B",
+        "L",
+        "I"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "boundary_persistence",
+        "deferred_batch",
+        "inline_reentry"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "290d6720a275c70e901dfcd46c2b19daaebd76f60c2f57252812209569dbf914",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when immediate document persistence is replaced with reusable trailing work, document buffers and view subscriptions have separate responsibilities, and synchronous save callbacks can navigate. Confirm the departure policy from the task and public sources. TASK states: \"Preserve the workspace's existing navigation and persistence behavior.\" README.md states: \"Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive.\"",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Bind each accepted edit to its originating document. Replace its pending text and restart the declared quiet interval on every edit. Save only the latest text after that interval, preserving subsequent bursts, valid empty text and the no-current-view edit guard. TASK states: \"after 120 ms without another edit, save\\nonly its latest text. Reuse the existing trailing-task utility where appropriate.\" src/workflow.py binds the existing buffer callback with \"Trailing(env,120,lambda text:env.write(key,text))\".\n\nConsume and clear a completed batch before invoking callback-capable save work. A synchronous callback may enqueue fresh work; the outer flush must neither repeat the consumed batch nor erase that new work. Preserve the ordering in src/workflow.py: \"        value = self.pending\\n        self.handle = self.pending = None\\n        if value is not None:\\n            self.work(value)\". docs/host-api.md states: \"Store reads values and synchronously notifies saved integrations.\"\n\nPublish retirement state before callback-capable departure work. After a save can synchronously navigate, check that the initiating request still owns navigation before installing its destination. Apply the ownership check at both editor selection and workspace projection boundaries: an older select must not commit its projection after a nested select, and an older close must not clear a nested selection. Preserve fresh edits queued during save callbacks. VISIBLE_CHECKS.md states: \"synchronous save callbacks may navigate and their selected document remains authoritative\".",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Keep persistent document buffers separate from departing status subscriptions. Retire the captured departing subscription before flushing its document-bound pending text, and complete outgoing persistence before switching, closing or disposal returns. Detaching feedback must not discard accepted document text. Preserve same-document reopening. VISIBLE_CHECKS.md states: \"persist pending text before departure returns\"; src/workflow.py defines subscription cleanup as \"def detach(self):self.env.store.stop(self.token)\".\n\nPreserve public interfaces, document identities, visit identifiers, status/event payloads and the copied projection breadcrumb archive. Navigation ownership checks must protect current presentation without deleting retained history. docs/host-api.md states: \"Workspace exposes select(id), edit(text), close(), selection(), dispose(). Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail.\" src/workflow.py implements archive copying with \"def commit(self,v):self.selected=dict(v);self.trail.append(dict(v));self.publish()\".",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Do not transfer persistent-document departure rules to transient preview work. Preserve its existing 40 ms interval, cancellation on hide and later reuse. TASK states: \"Keep\\nsearch preview behavior unchanged; its timing is outside this maintenance task.\" src/workflow.py contains \"Trailing(env,40,lambda query:env.output('preview',dict(query=query)))\" and \"def hide(self):self.task.cancel()\". Do not introduce review-submission behavior from related experience.\n\nCandidate limitations:\n- Supported by TASK and the supplied public sources for this workspace. Other systems require confirming their own persistence, ownership and navigation policies.\n- Only attempt 1 was supplied. Its reported passing observations do not prove causality, exhaustive correctness or cross-task benefit.\n- No implementation failure is established by the supplied trajectory; this revision improves explicit projection preservation checks.\n- Scheduler behavior beyond cancellable handles, save-failure recovery and edits after disposal remain unspecified.\n- The original task establishes no review-submission API. VISIBLE_CHECKS.md references review submission, but that reference does not establish a requirement absent from TASK and the supplied implementation.\n- No files were modified, and no scorer, reference implementation or hidden tests were accessed.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Use controlled clocks and synchronous callbacks to check no early write, deadline restart, latest-value delivery, subsequent bursts, empty text, original-document binding, switch/close/dispose persistence, same-document reopening and departing status cleanup. Exercise nested select and close during a save; check both editor selection and projection, including visit identifiers and retained copied breadcrumbs. Check that callback-created edits remain pending as fresh work. Verify unchanged preview timing, hide cancellation and reuse. These checks derive from the cited task and public behavior; reported passes are observations, not additional requirements or proof of effectiveness.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "bcc003e7a6ffe0b0f02813d5c3b4c6bdf6f134f00fed5e157b831cd0fe80af23",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [
+          "Training-only; not approved for long-term retrieval."
+        ],
+        "outcome_refs": [],
+        "rule_links": [
+          {
+            "pointer": "/experience/rules/0",
+            "rule_id": "R01",
+            "source_sha256": "c56d61e78535d5b5d10b4546eff8a631259c42c1b1909f99153f70f517ed678f"
+          },
+          {
+            "pointer": "/experience/rules/1",
+            "rule_id": "R02",
+            "source_sha256": "c56d61e78535d5b5d10b4546eff8a631259c42c1b1909f99153f70f517ed678f"
+          },
+          {
+            "pointer": "/experience/rules/2",
+            "rule_id": "R03",
+            "source_sha256": "c56d61e78535d5b5d10b4546eff8a631259c42c1b1909f99153f70f517ed678f"
+          },
+          {
+            "pointer": "/experience/rules/3",
+            "rule_id": "R04",
+            "source_sha256": "c56d61e78535d5b5d10b4546eff8a631259c42c1b1909f99153f70f517ed678f"
+          },
+          {
+            "pointer": "/experience/rules/4",
+            "rule_id": "R05",
+            "source_sha256": "c56d61e78535d5b5d10b4546eff8a631259c42c1b1909f99153f70f517ed678f"
+          },
+          {
+            "pointer": "/experience/rules/5",
+            "rule_id": "R06",
+            "source_sha256": "c56d61e78535d5b5d10b4546eff8a631259c42c1b1909f99153f70f517ed678f"
+          },
+          {
+            "pointer": "/experience/rules/6",
+            "rule_id": "R07",
+            "source_sha256": "c56d61e78535d5b5d10b4546eff8a631259c42c1b1909f99153f70f517ed678f"
+          }
+        ],
+        "sources": [
+          {
+            "path": "online-source.json",
+            "sha256": "c56d61e78535d5b5d10b4546eff8a631259c42c1b1909f99153f70f517ed678f"
+          }
+        ]
+      },
+      "body_sha256": "ff52eeb058a76a9caa5f14fbf1392d7c02be48d3ef29391cd73842e878825337",
+      "excludes": [
+        "different_ownership_policy"
+      ],
+      "id": "online-c56d61e78535d5b5d10b4546",
+      "labels": [
+        "I",
+        "A",
+        "B",
+        "L"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "entry_snapshot",
+        "inline_reentry",
+        "effect_lifetimes"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "TASK: \"Preserve other supported behavior and the synchronous public interfaces.\" The local persistence ordering is a preservation inference from original src/Workspace.vue: \"  visit.text = text;\\n  this.env.store.write(visit.id, text);\" It does not establish a universal persistence deadline for other tasks.",
+          "README.md: \"An outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity.\" This supports exact visit ownership independently of document identity.",
+          "src/services.js: \"export function bindConfirmation(current,emit){const owner=current();return {isActive(){return owner!==null&&owner===current();},show(receipt){if(this.isActive())emit(receipt);}};}\" The outlet itself enforces publication authority only for the owner captured at acquisition.",
+          "Exception recovery, transactional rollback, and callbacks during timer scheduling or store reads are unspecified.",
+          "Attempt 1 reports acceptance and syntax success without behavioral observations. This supports no causal or cross-task effectiveness claim.",
+          "Unreviewed provisional training guidance; effectiveness unknown."
+        ],
+        "source_sha256": "c56d61e78535d5b5d10b4546eff8a631259c42c1b1909f99153f70f517ed678f",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when submission accepts a document and text at entry, persistence or recording can synchronously invoke application listeners, and durable submission retention and confirmation publication have separate ownership contracts.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Capture the document, text, and originating visit's confirmation capability before callback-capable persistence or recording. Complete the required save before recording and returning that submission's result. Navigation inside callbacks must not rewrite the accepted snapshot.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Consume the pending save before invoking its consumer. Edits scheduled by synchronous save or record callbacks constitute new work; do not cancel or flush them as cleanup for the earlier submission.",
+          "category": "event_relation",
+          "id": "R03"
+        },
+        {
+          "body": "Retain the durable result and synchronous return value bound to entry even when navigation suppresses confirmation. Publish confirmation only while the exact originating visit remains active; reopening the same document creates a different visit.",
+          "category": "preservation",
+          "id": "R04"
+        },
+        {
+          "body": "Do not acquire the outlet after a save callback, substitute current text for the accepted snapshot, or use matching document ids as proof of visit ownership. Do not transfer durable retention to tasks where navigation explicitly revokes submission.",
+          "category": "exclusion",
+          "id": "R05"
+        },
+        {
+          "body": "Navigate, close, and reopen the same document inside save and record listeners. Independently check the accepted document's persistence before recording, archive contents, synchronous receipt, and suppression of confirmation in another visit.",
+          "category": "verification",
+          "id": "R06"
+        },
+        {
+          "body": "Edit inside save and record listeners, then advance timers. Verify later edits still persist and the consumed submission burst does not produce a duplicate save. Also check active-visit confirmation and the null return when no visit is selected.",
+          "category": "verification",
+          "id": "R07"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "df8303a8e247745a4960acaa6a76a0fb3c19c0217a2aa9d725d5152dc8205bff",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "v1"
+    }
+  ],
+  "source_sha256": "0edd3644742531074bb7138beac9ca59e00ccad2280a485cdc86834d8ee27c6d",
+  "status": "awaiting_content_review",
+  "task": "The workspace draft editor currently writes to the store on every keystroke.\nCoalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces.\nThe adjacent search preview is outside this maintenance change.\n",
+  "training_accepted": true,
+  "trajectory": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "749fe8679219e8a80187561b820da058f1080d477e2be92140dc5bbb64cb753a",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "package.json": "749a9a4fea45dd8a5eec9e4a51f9437ffd5496b599b237ab62043335293b48a2",
+        "src/draft-store.js": "b4e13aae96e80f2bf09d37d4e3805ac43a4e54581128672f99fbd1978c455d55",
+        "src/editor.js": "59257f775fd434c39deae17c1cc22c6b06f9bd8ffcec012759c8ea3eba6e172d",
+        "src/save-status.js": "ddff9cade3e18fb6df48c5a1a0abc67267173f4cdc1793b95b17f3c8c5fbf3f0",
+        "src/search-preview.js": "6c6a9c8276c539eb680e916174db66c7ef4209d5a237b0e340c1bb9aec3524d8",
+        "src/timers.js": "db6d40d6bdf9c27a74d012dbafe7bce3230ab168e57061d33f73574349d2acc7",
+        "src/trailing-task.js": "a5eab4a56995aa183bca380390525f61d2f55e51aa20b6dde06602c84c60d54b",
+        "src/workspace.js": "94e38c1382cbef5bc5eaa5031696afa46cd5ce35b34928dd93b7c557209251e0"
+      },
+      "candidate_sources": {
+        "README.md": "# Workspace drafts with asynchronous acknowledgements\n\nopen/edit/close are synchronous. The editor currently submits every edit.\nA visit's latest pending text must be submitted exactly once before close or\nnavigation returns; submission must not wait for network acknowledgement.\nAccepted writes belong to the document, survive navigation, and all settle.\nStore read exposes the latest accepted draft for immediate reopen; readPersisted\nexposes acknowledged data, protected by write revision against late old writes.\nThe provided transport accepts a write synchronously and returns a Promise.\nIts start callback may synchronously open another document, reopen the same\none, hide the editor, or edit that new visit. Acceptance occurs before that hook.\nNavigation priority follows call start order: a newer open/close supersedes an\nouter navigation that resumes after a save-start callback. Obsolete destinations\nmust not render. A newly accepted edit must not be erased by old flush cleanup.\n\nA save-status notification may appear only for the current visit's latest edit.\nA pending newer edit invalidates an older acknowledgement even before its own\nwrite is submitted. store.write(id,text,owner) round-trips an opaque owner token;\nattachSaveStatus supports an owner predicate. Reopening the same document does\nnot give its new visit ownership of the old visit's acknowledgement.\nDo not cancel accepted saves to suppress UI messages. No network failures or\nretry policy are included in this fixture; each transport Promise settles once.\n\nThe search preview is transient: 40 ms quiet interval, discard pending query\non hide, reusable afterward. It is outside the editor maintenance request.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\n  \"name\": \"draft-autosave-handoff-v2-fixture\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+        "src/draft-store.js": "// Acceptance precedes the transport callback, which may navigate synchronously.\n// Every accepted write completes independently. A late older acknowledgement\n// cannot roll persisted data back. read() exposes accepted drafts immediately.\nexport function createDraftStore(initial = {}, { transport = event => Promise.resolve() } = {}) {\n  const accepted = new Map(Object.entries(initial)), persisted = new Map(Object.entries(initial));\n  const revisions = new Map(), committed = new Map(), listeners = new Set();\n  return {\n    read(id) { return accepted.get(id) ?? \"\"; },\n    readPersisted(id) { return persisted.get(id) ?? \"\"; },\n    write(id, text, owner) {\n      const revision = (revisions.get(id) || 0) + 1;\n      revisions.set(id, revision); accepted.set(id, text);\n      const event = Object.freeze({ id, text, revision, owner });\n      const pending = transport(event);\n      return Promise.resolve(pending).then(() => {\n        if (revision > (committed.get(id) || 0)) {\n          committed.set(id, revision); persisted.set(id, text);\n        }\n        for (const listener of [...listeners]) listener(event);\n        return event;\n      });\n    },\n    subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },\n  };\n}\n",
+        "src/editor.js": "import { attachSaveStatus } from \"./save-status.js\";\nimport { createTrailingTask } from \"./trailing-task.js\";\nexport function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n  let current = null;\n  let navigation = 0;\n  function retire() {\n    const old = current; current = null;\n    if (old) {\n      old.stop();\n      old.task.flush();\n    }\n  }\n  return {\n    open(id) {\n      const request = ++navigation;\n      retire();\n      // A save-start callback may have issued a newer navigation request.\n      if (request !== navigation) return;\n      const visit = {id, latest:null};\n      visit.task = createTrailingTask((text, owner) => store.write(id, text, owner), 120, timers);\n      current = visit;\n      visit.stop = attachSaveStatus(store, id, owner => current === visit && owner === visit.latest, renderStatus);\n      renderDocument({id, text:store.read(id)});\n    },\n    edit(text) {\n      if (!current) return;\n      const visit = current, owner = {};\n      visit.latest = owner;\n      visit.task.push(text, owner);\n    },\n    close() {\n      const request = ++navigation;\n      retire();\n      if (request === navigation) renderDocument(null);\n    },\n  };\n}\n",
+        "src/save-status.js": "export function attachSaveStatus(store, id, accepts, renderStatus) {\n  return store.subscribe(event => {\n    if (event.id === id && accepts(event.owner)) renderStatus(event);\n  });\n}\n",
+        "src/search-preview.js": "import { createTrailingTask } from \"./trailing-task.js\";\n\nexport function createSearchPreview({ timers, publish }) {\n  const task = createTrailingTask(query => publish({ query }), 40, timers);\n  return {\n    query(value) { task.push(value); },\n    hide() { task.cancel(); },\n  };\n}\n",
+        "src/timers.js": "export const browserTimers = {\n  schedule(callback, delay) { return setTimeout(callback, delay); },\n  cancel(handle) { clearTimeout(handle); },\n};\n",
+        "src/trailing-task.js": "import { browserTimers } from \"./timers.js\";\n\n// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.\n// Retire the old batch before invoking work so a callback may enqueue a new batch.\nexport function createTrailingTask(work, delay, timers = browserTimers) {\n  let handle = null;\n  let pending = null;\n  function flush() {\n    if (handle !== null) timers.cancel(handle);\n    handle = null;\n    const args = pending;\n    pending = null;\n    if (args !== null) work(...args);\n  }\n  return {\n    push(...args) {\n      if (handle !== null) timers.cancel(handle);\n      pending = args;\n      handle = timers.schedule(flush, delay);\n    },\n    flush,\n    cancel() {\n      if (handle !== null) timers.cancel(handle);\n      handle = null;\n      pending = null;\n    },\n  };\n}\n",
+        "src/workspace.js": "import { createDraftEditor } from \"./editor.js\";\n\nexport function createWorkspace(options) {\n  const editor = createDraftEditor(options);\n  return {\n    open(id) { editor.open(id); },\n    edit(text) { editor.edit(text); },\n    close() { editor.close(); },\n    dispose() { editor.close(); },\n  };\n}\n"
+      },
+      "delivered_sha256s": [
+        "e983ba13b72bc316b6a02cf6d0cc673e881e93df24aa8f857fa80066d2fd2376",
+        "e0b6dc8fdf015a24bccb7cb67ed4d56a59cca6021dac99fc3ad8687055b35a01",
+        "15336311f26a6afa71502d60f5b82b62d669691dd734cde98439e18d41d5661e",
+        "bcc003e7a6ffe0b0f02813d5c3b4c6bdf6f134f00fed5e157b831cd0fe80af23",
+        "df8303a8e247745a4960acaa6a76a0fb3c19c0217a2aa9d725d5152dc8205bff"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/draft-store.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/editor.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/save-status.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/search-preview.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/timers.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/trailing-task.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/workspace.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ]
+}
