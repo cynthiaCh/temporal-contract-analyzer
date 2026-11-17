@@ -78,6 +78,12 @@ def main():
     tests30=cohorts['new_test20']+cohorts['retained_regression10']
     assert len(tests30)==len({r['case_id'] for r in tests30})==30
     summary['test30']=aggregate(tests30)
+    merged_tests={r['case_id']:r for r in cohorts['retained_regression10']}
+    merged_tests.update({r['case_id']:r for r in cohorts['latest_retest21']})
+    assert len(merged_tests)==25
+    summary['merged_test25']=aggregate(list(merged_tests.values()))
+    summary['merged_test25']['with_experience']['first_passed']=None
+    summary['merged_test25']['merge_policy']='Deduplicate exact case IDs; latest21 replaces older10 outcomes on6 repeated IDs.'
     for key in ('new_test20','retained_regression10','latest_retest21','test30'):
         summary[key]['with_experience']['first_passed']=None
     latestids={r['case_id'] for r in cohorts['latest_retest21']}
