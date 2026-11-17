@@ -1,0 +1,1 @@
+/usr/bin/python3 -B /home/sribd/Downloads/wangshu/tempoevo-sol61-medium-ranks26-46-workers8-20261117_155257/prepare_testing.py
