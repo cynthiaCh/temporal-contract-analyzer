@@ -66,6 +66,37 @@ def validate_proposal(proposal):
             raise EvidenceError('Invalid exact target hashes')
 
 
+
+def evidence_attachment(file,item):
+    """Load a content-bound local evidence appendix, never solver guidance."""
+    ref=item['evidence_ref']
+    memory.object_fields(ref,{'path','sha256'},'evidence attachment')
+    if not isinstance(ref['path'],str) or not ref['path'].startswith('evidence/') or '\\' in ref['path'] or '..' in Path(ref['path']).parts:
+        raise EvidenceError('Evidence attachment must stay in library evidence/')
+    base=Path(file).parent.resolve();target=base/ref['path']
+    if base not in target.resolve().parents or not target.is_file():
+        raise EvidenceError('Missing or external evidence attachment')
+    raw=target.read_bytes()
+    if ref['sha256']!=sha(raw):raise EvidenceError('Evidence attachment digest mismatch')
+    value=json.loads(raw)
+    if not isinstance(value,dict) or value.get('schema_version')!='experience-consolidation-evidence-v1' or value.get('consolidated_id')!=item['id']:
+        raise EvidenceError('Evidence attachment identity mismatch')
+    expected={k:item[k] for k in ('id','title','labels','requires','excludes')+tuple(k for k,_ in SECTIONS)}
+    if value.get('merged_guidance')!=expected:raise EvidenceError('Evidence appendix does not bind current guidance')
+    sources=value.get('sources',[]);proposal=item.get('proposal',{})
+    if not isinstance(sources,list) or not all(isinstance(s,dict) for s in sources):raise EvidenceError('Invalid evidence sources')
+    if [(s.get('id'),s.get('bundle_sha256')) for s in sources]!=list(zip(proposal.get('target_ids',[]),proposal.get('target_sha256s',[]))):
+        raise EvidenceError('Evidence appendix does not bind exact merge targets')
+    try:
+        for source in sources:
+            original=source['record']
+            if original['id']!=source['id'] or _bundle(Path(source['file']),original)[0]['sha256']!=source['bundle_sha256']:
+                raise EvidenceError('Archived evidence source content mismatch')
+    except (KeyError,TypeError) as error:
+        raise EvidenceError('Incomplete archived evidence source') from error
+    return value
+
+
 def load(path):
     value = json.loads(Path(path).read_text(encoding='utf-8'))
     required = {'schema_version', 'experiences'}
@@ -89,6 +120,7 @@ def load(path):
             fields.add('review')
         if isinstance(item, dict) and 'proposal' in item:
             fields.add('proposal')
+        if isinstance(item,dict) and 'evidence_ref' in item:fields.add('evidence_ref')
         memory.object_fields(item, fields, 'experience')
         if not memory.text(item['id']) or item['id'] in ids or not memory.text(item['title']) \
                 or any(not memory.text(item[key]) for key, _ in SECTIONS):
@@ -97,6 +129,7 @@ def load(path):
         validate_review(review_for(value, item))
         if 'proposal' in item:
             validate_proposal(item['proposal'])
+        if 'evidence_ref' in item:evidence_attachment(path,item)
     return value
 
 
@@ -192,8 +225,21 @@ def active_view(path):
     while pending:
         for other in neighbors[pending.pop()]-blocked:blocked.add(other);pending.append(other)
     superseded={target for key,targets in edges.items() if key not in blocked for target in targets}
-    return dict(policy='compact-current-guidance-v1',active_ids=sorted(set(entries)-superseded),
-        superseded_ids=sorted(superseded),unresolved_ids=sorted(blocked),issues=issues,
+    # A reviewed exact-target consolidation may replace those sources even if
+    # their older ancestry is incomplete. It does not choose between unrelated
+    # branches or retire any target not explicitly covered by the reviewed merge.
+    explicit=set()
+    for key,item in entries.items():
+        proposal=item.get('proposal',{})
+        if proposal.get('operation')!='merge' or not proposal.get('target_sha256s') or 'evidence_ref' not in item:continue
+        targets=proposal['target_ids']
+        if key in ancestry[key] or any(target not in entries or bundles[target]['sha256']!=code
+                for target,code in zip(targets,proposal['target_sha256s'])):continue
+        if any(target in ancestry[target] for target in targets):continue
+        explicit.update(targets)
+    superseded.update(explicit)
+    return dict(policy='compact-current-guidance-v2',active_ids=sorted(set(entries)-superseded),
+        superseded_ids=sorted(superseded),explicit_consolidation_source_ids=sorted(explicit),unresolved_ids=sorted(blocked),issues=issues,
         accepted_count=len(entries),active_count=len(entries)-len(superseded))
 
 
@@ -335,10 +381,11 @@ def page(path):
         sections = ''.join(f'<dt>{label}</dt><dd>{escape(item[key])}</dd>'
                            for key, label in SECTIONS)
         proposal=item.get('proposal')
+        appendix=('<p class="meta">证据附件：'+escape(item['evidence_ref']['path'])+'</p>') if 'evidence_ref' in item else ''
         context=('<p class="meta">Proposal: '+escape(proposal['operation'])+' · Targets: '+escape(', '.join(proposal['target_ids']) or 'none')+'</p>') if proposal else ''
         cards.append(f'<article class="panel" data-state="{state}" data-category="{escape(category, quote=True)}"><h2>{escape(item["title"])}</h2>'
                      f'<p class="meta">{escape(category)} · {escape(file.name)}</p>'
-                     f'<p class="compact-status">{escape(saved)}</p>{context}<dl>{sections}</dl>'
+                     f'<p class="compact-status">{escape(saved)}</p>{context}{appendix}<dl>{sections}</dl>'
                      f'<form data-id="{escape(item["id"], quote=True)}" '
                      f'data-record="{bundles[item["id"]]["sha256"]}" '
                      f'data-review="{escape(canonical(review), quote=True)}">'

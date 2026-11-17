@@ -1,0 +1,255 @@
+{
+  "schema_version": "experience-consolidation-evidence-v1",
+  "consolidated_id": "consolidated-terminal-modal-v1",
+  "merged_guidance": {
+    "id": "consolidated-terminal-modal-v1",
+    "title": "Gate terminal-modal effects at completion while preserving operation results",
+    "labels": [
+      "I",
+      "L"
+    ],
+    "requires": [
+      "async_resume",
+      "effect_lifetimes"
+    ],
+    "excludes": [],
+    "applicability": "A deferred result can arrive after terminal close/dispose of its originating modal. Operation invocation/completion and an application-shell or other consumer have independent lifetimes.",
+    "event_relation": "Check that originating modal's current closed state in the completion continuation, before assigning its value or emitting a write. An admission-time snapshot is insufficient, including closure during notify. Preserve result acquisition, assignment, write and any existing publication in their original synchronous order. Where an existing publication follows a callback-capable write, a post-write closure check protects that publication; apply it only to that source's existing effect.",
+    "preservation": "Keep notify invocation and original-payload completion/returned delivery outside the modal-effect guard, including calls made after close. Closing suppresses modal mutation/write/publication, not the independent operation result. Preserve value and payload identity, snapshot shape, controller verbs, terminal closure, separate modal instances, actual unmount cleanup and the existing disposeChild behavior.",
+    "exclusion": "Limit the repair to the modal subscription; preserve shell independence without inventing its implementation. Do not add publication where absent, defer callbacks, impose freshness/request supersession, add cancellation or import persistent-buffer policies. Post-write reentry is a conditional defensive checkpoint, not a universal host guarantee. Rejection handling, callback exceptions, additional disposeChild semantics and concurrent-result ordering remain unspecified unless current source supplies them.",
+    "verification": "Check completion while open, after close, after dispose, during notify closure, run after close, multiple completions and actual unmount cleanup. Observe modal value, write, any existing publication and returned payload separately. Check unchanged disposeChild, independent instances and shell policy. Where writes can reenter closure and publication exists, verify no subsequent publication but continued original-result delivery. Syntax/acceptance alone does not prove behavioral completeness or causality."
+  },
+  "sources": [
+    {
+      "id": "candidate-a2720c4a38b6ce512fa574c0baad751b",
+      "bundle_sha256": "2ded9bf82884eff87cd9b2e07a5921bf6059e6ce95aa9c53205bcf716821b74f",
+      "file": "candidates.json",
+      "original_file_sha256": "bfafeb0aa8452e06b9f1a89f68bad8984943fb631699756c4bdcad285c2cedc9",
+      "record": {
+        "id": "candidate-a2720c4a38b6ce512fa574c0baad751b",
+        "title": "Candidate: Apply when a deferred operation can complete after a terminal view closure, while operation completion and another consu",
+        "labels": [
+          "L",
+          "I"
+        ],
+        "requires": [
+          "async_resume",
+          "effect_lifetimes"
+        ],
+        "excludes": [],
+        "applicability": "Apply when a deferred operation can complete after a terminal view closure, while operation completion and another consumer have independent lifetimes. README.md: \"A view can receive a result while open or after it has closed; the shell belongs to the application.\" docs/host-api.md: \"Shell policy is independent from modal state; close is terminal for a modal instance.\"",
+        "event_relation": "Check the originating modal instance's current closed state when the notification continuation executes, before assigning its value or observing a modal write. Admission-time eligibility cannot establish eligibility after suspension. TASK: \"A notification received after the alerts modal is closed still updates the modal's state. Fix the issue.\" Original src/Workspace.jsx captures \"const admitted=!s.closed;\" but performs modal effects under \"if(true)\". Its terminal boundaries are \"close(){s.closed=true;}\" and \"dispose(){s.closed=true;s.disposed=true;}\".\n\nPreserve the open-modal sequence of value assignment, write observation and publication. Where an injected write can synchronously close or dispose the instance, check current closure again before the remaining publication. Original src/Workspace.jsx: \"s.value=result.value;env.write(s.value);void 0;publish();\". Attempt 1 uses a current-state guard before assignment and another after env.write; treat the latter as a defensive checkpoint, not evidence that synchronous reentry is a documented host guarantee.",
+        "preservation": "Keep original-result completion delivery outside the modal-effect guard, so closure suppresses modal effects without suppressing successful operation completion. docs/host-api.md: \"write(value) observes a state write, returned(payload) observes each operation completion.\" It also states: \"Native callback return port corresponds to the original awaited run result.\" Original src/Workspace.jsx places \"env.returned(result);\" after the modal-effect block. Preserve env.notify(input) invocation, payload identity and the existing behavior when run is invoked after close.",
+        "exclusion": "Limit the change to modal notification handling. TASK: \"Change only the modal subscription; do not migrate the application-shell subscription.\" Preserve snapshot shape, terminal closure and actual unmount cleanup. Original src/Workspace.jsx: \"snapshot(){return {value:s.value,closed:s.closed};}\" and \"useEffect(()=>()=>command('dispose',[]),[])\". Do not introduce request freshness suppression, cancellation or persistent-buffer policies without target-specific evidence.\n\nCandidate limitations:\n- Only TASK and supplied public documents/code establish requirements; automatic contracts and frozen experiences are fallible guidance.\n- Attempt 1 passed reported syntax and acceptance checks, but no behavioral observations establish causality, completeness or cross-task benefit.\n- The public documents do not explicitly promise synchronous lifecycle reentry from injected callbacks. The post-write checkpoint protects against that possibility without establishing a broader host callback contract.\n- No application-shell subscription implementation is supplied; preserve its independent policy without inventing or migrating it.\n- Promise rejection, injected callback exceptions and disposeChild lifecycle semantics have no specified recovery policy.\n- No files were modified and no scorer, reference implementation or hidden tests were accessed.",
+        "verification": "Check completion while open, completion after close, completion after dispose and actual unmount cleanup. Observe modal value, write calls, publication and original-result delivery separately. Exercise run after close and multiple deferred completions to confirm unchanged invocation and completion behavior. If testing callback reentry, close or dispose from env.write and verify that subsequent publication is suppressed while env.returned still receives the result. Keep syntax results separate from behavioral evidence: VISIBLE_CHECKS.md states, \"These checks are required after an Action but do not test business behavior.\"",
+        "proposal": {
+          "operation": "new",
+          "target_ids": []
+        },
+        "review": {
+          "reviewer": "Silas",
+          "decision": "accept",
+          "at": "2026-11-17T00:58:49.528215+00:00"
+        }
+      }
+    },
+    {
+      "id": "candidate-a631652dcc0d6a364617991e83e43641",
+      "bundle_sha256": "73ee5d40da40fd56bcd8cf9b133e5cc43a3d26b4b7145174f53d308eff8d966e",
+      "file": "candidates.json",
+      "original_file_sha256": "bfafeb0aa8452e06b9f1a89f68bad8984943fb631699756c4bdcad285c2cedc9",
+      "record": {
+        "id": "candidate-a631652dcc0d6a364617991e83e43641",
+        "title": "Candidate: Apply when a deferred result can outlive a terminal modal closure while operation completion and the application shell h",
+        "labels": [
+          "L",
+          "I"
+        ],
+        "requires": [
+          "async_resume",
+          "effect_lifetimes"
+        ],
+        "excludes": [],
+        "applicability": "Apply when a deferred result can outlive a terminal modal closure while operation completion and the application shell have independent lifetimes. README.md: \"A view can receive a result while open or after it has closed; the shell belongs to the application.\" docs/host-api.md: \"Shell policy is independent from modal state; close is terminal for a modal instance.\"",
+        "event_relation": "Check the originating modal instance's current closed state in the completion callback, after obtaining the result and before assigning modal value or emitting write. Admission-time eligibility cannot establish eligibility at completion. TASK: \"A notification received after the alerts modal is closed still updates the modal's state. Fix the issue.\" Original src/workflow.py captures \"        admitted=not self.closed\" but applies the result under \"            if True:\". Its closure boundary is \"    def close(self):self.closed=True\". A completion-time guard such as \"if not self.closed:\" addresses this boundary.",
+        "preservation": "Preserve the open-modal sequence: obtain the result, assign its value, emit write, then emit returned with the original payload. Original src/workflow.py: \"                self.value=result['value'];self.env.output('write',self.key,self.value)\" followed by \"            self.env.output('returned',self.key,result)\". Preserve the callback boundary without adding asynchronous deferral.\n\nKeep operation invocation and successful completion reporting independent of modal-write eligibility, including when run is invoked after closure. docs/host-api.md: \"Injected notify(value) returns a deferred payload {value,events}; write(value) observes a state write, returned(payload) observes each operation completion.\" It also states: \"Native callback return port corresponds to the original awaited run result.\" Preserve src/workflow.py: \"        self.env.resolve('notify',self.key,input).add_done_callback(finish)\" and keep returned outside the modal-effect guard.",
+        "exclusion": "Limit the repair to modal notification handling. TASK: \"Change only the modal subscription; do not migrate the application-shell subscription.\" Preserve existing interfaces and lifecycle behavior, including src/workflow.py: \"    def dispose(self):self.close()\", \"    def snapshot(self):return dict(value=self.value,closed=self.closed)\" and \"    def disposeChild(self):\\n        if False:self.close()\". Do not add publication, request-freshness, cancellation or shell policies absent target-specific evidence.\n\nCandidate limitations:\n- Only TASK and supplied public sources establish requirements; frozen experiences and automatic contracts are fallible guidance.\n- Attempt 1 passed reported syntax and acceptance checks, but supplied no behavioral observations establishing causality, completeness or cross-task benefit.\n- The supplied Python source has no separate publication effect after write and no documented synchronous lifecycle reentry guarantee.\n- The application-shell subscription implementation is not supplied; its independent policy must be preserved without inventing an implementation.\n- Notification failure handling and ordering among concurrent results are unspecified.\n- No files were modified or hidden evaluation materials accessed.",
+        "verification": "Verify completion while open updates value and emits write before returned. Separately verify completion after close, completion after dispose, and run after close leave modal value unchanged and emit no write while still reporting the original completion payload. Check disposeChild retains its existing behavior and separate modal instances retain independent closure state. Distinguish syntax checks from behavior: VISIBLE_CHECKS.md states, \"These checks are required after an Action but do not test business behavior.\"",
+        "proposal": {
+          "operation": "revise",
+          "target_ids": [
+            "online-89a3f9e216e8ac86c929bd16"
+          ]
+        },
+        "review": {
+          "reviewer": "Silas",
+          "decision": "accept",
+          "at": "2026-11-17T00:58:49.528238+00:00"
+        }
+      }
+    },
+    {
+      "id": "candidate-acc766af94ccf5d0cbcfecaa9d551157",
+      "bundle_sha256": "01a4e9cfc77263111768cd1e547d1f5f3219ae5960a95d78dff0f18d1555584e",
+      "file": "candidates.json",
+      "original_file_sha256": "bfafeb0aa8452e06b9f1a89f68bad8984943fb631699756c4bdcad285c2cedc9",
+      "record": {
+        "id": "candidate-acc766af94ccf5d0cbcfecaa9d551157",
+        "title": "Candidate: Apply when a deferred operation can complete after a terminal view closure, while operation completion and another consu",
+        "labels": [
+          "L",
+          "I"
+        ],
+        "requires": [
+          "async_resume",
+          "effect_lifetimes"
+        ],
+        "excludes": [],
+        "applicability": "Apply when a deferred operation can complete after a terminal view closure, while operation completion and another consumer have independent lifetimes. README.md: \"A view can receive a result while open or after it has closed; the shell belongs to the application.\" docs/host-api.md: \"Shell policy is independent from modal state; close is terminal for a modal instance.\"",
+        "event_relation": "Check the originating modal instance's current closed state when the notification continuation executes, before assigning its value or observing a modal write. Admission-time eligibility cannot establish eligibility after suspension. TASK: \"A notification received after the alerts modal is closed still updates the modal's state. Fix the issue.\" Original src/Workspace.vue captures \"const admitted=!s.closed;\" but performs modal effects under \"if(true)\". Its terminal boundaries are \"close(){s.closed=true;}\" and \"dispose(){s.closed=true;s.disposed=true;}\". A completion-time check also respects closure occurring during env.notify.\n\nPreserve the open-modal sequence of value assignment, write observation and publication. Original src/Workspace.vue: \"s.value=result.value;env.write(s.value);void 0;publish();\". If an injected write synchronously closes or disposes the instance, check current closure again before publication. Attempt 1 implements this with \"if(!s.closed)publish();\" after env.write. Treat this as a defensive checkpoint consistent with terminal closure, not proof that synchronous reentry is a documented host guarantee.",
+        "preservation": "Keep original-result completion delivery outside the modal-effect guard, so closure suppresses modal effects without suppressing successful operation completion. docs/host-api.md: \"write(value) observes a state write, returned(payload) observes each operation completion.\" It also states: \"Native callback return port corresponds to the original awaited run result.\" Original src/Workspace.vue places \"env.returned(result);\" after the modal-effect block. Preserve env.notify(input) invocation, payload identity and invocation/completion behavior when run is called after close.",
+        "exclusion": "Limit the change to modal notification handling. TASK: \"Change only the modal subscription; do not migrate the application-shell subscription.\" Preserve snapshot shape, terminal closure, controller verbs and Vue unmount cleanup. Original src/Workspace.vue: \"snapshot(){return {value:s.value,closed:s.closed};}\" and \"expose({command});onBeforeUnmount(()=>command('dispose',[]));return {revision};\". Preserve \"disposeChild(){if(false)s.closed=true;}\" without inventing additional lifecycle semantics. Do not introduce request freshness suppression, cancellation or persistent-buffer policies without target-specific evidence.\n\nCandidate limitations:\n- Only TASK and supplied public documents/code establish requirements; automatic contracts and frozen experiences are fallible guidance.\n- Attempt 1 reports passing syntax and acceptance checks but supplies no behavioral observations proving completeness, causality or cross-task benefit.\n- Public sources do not explicitly guarantee synchronous lifecycle reentry from injected callbacks. The post-write guard is a defensive checkpoint, not a new host API requirement.\n- No application-shell subscription implementation is supplied; its independent policy must be preserved without inventing or migrating it.\n- Promise rejection, injected callback exceptions and additional disposeChild semantics have no specified recovery policy.\n- This reflection modifies no files and accesses no scorer, reference implementation or hidden tests.",
+        "verification": "Check completion while open, completion after close, completion after dispose and actual Vue unmount cleanup. Observe modal value, write calls, publication and original-result delivery separately. Exercise closure during env.notify, run after close and multiple deferred completions to confirm unchanged invocation and completion behavior without request supersession. As a defensive reentry check, close or dispose from env.write and verify that subsequent publication is suppressed while env.returned still receives the original result. Preserve the shell's independent behavior wherever its implementation is available. Keep syntax results separate from behavioral evidence: VISIBLE_CHECKS.md states, \"These checks are required after an Action but do not test business behavior.\"",
+        "proposal": {
+          "operation": "revise",
+          "target_ids": [
+            "online-89a3f9e216e8ac86c929bd16"
+          ]
+        },
+        "review": {
+          "reviewer": "Silas",
+          "decision": "accept",
+          "at": "2026-11-17T00:58:49.528241+00:00"
+        }
+      }
+    }
+  ],
+  "obligation_checklist": [
+    "Preserve invocation and original-result completion outside modal effect guard.",
+    "Preserve shell independence and current terminal lifecycle.",
+    "Publication exists only where source supplies it; reentry checkpoint is conditional, not universal."
+  ],
+  "section_coverage": [
+    {
+      "source_id": "candidate-a2720c4a38b6ce512fa574c0baad751b",
+      "source_section": "applicability",
+      "merged_sections": [
+        "applicability"
+      ],
+      "disposition": "retained_in_general_guidance_with_source_specific_conditions; complete text archived here"
+    },
+    {
+      "source_id": "candidate-a2720c4a38b6ce512fa574c0baad751b",
+      "source_section": "event_relation",
+      "merged_sections": [
+        "event_relation"
+      ],
+      "disposition": "retained_in_general_guidance_with_source_specific_conditions; complete text archived here"
+    },
+    {
+      "source_id": "candidate-a2720c4a38b6ce512fa574c0baad751b",
+      "source_section": "preservation",
+      "merged_sections": [
+        "preservation"
+      ],
+      "disposition": "retained_in_general_guidance_with_source_specific_conditions; complete text archived here"
+    },
+    {
+      "source_id": "candidate-a2720c4a38b6ce512fa574c0baad751b",
+      "source_section": "exclusion",
+      "merged_sections": [
+        "exclusion"
+      ],
+      "disposition": "retained_in_general_guidance_with_source_specific_conditions; complete text archived here"
+    },
+    {
+      "source_id": "candidate-a2720c4a38b6ce512fa574c0baad751b",
+      "source_section": "verification",
+      "merged_sections": [
+        "verification"
+      ],
+      "disposition": "retained_in_general_guidance_with_source_specific_conditions; complete text archived here"
+    },
+    {
+      "source_id": "candidate-a631652dcc0d6a364617991e83e43641",
+      "source_section": "applicability",
+      "merged_sections": [
+        "applicability"
+      ],
+      "disposition": "retained_in_general_guidance_with_source_specific_conditions; complete text archived here"
+    },
+    {
+      "source_id": "candidate-a631652dcc0d6a364617991e83e43641",
+      "source_section": "event_relation",
+      "merged_sections": [
+        "event_relation"
+      ],
+      "disposition": "retained_in_general_guidance_with_source_specific_conditions; complete text archived here"
+    },
+    {
+      "source_id": "candidate-a631652dcc0d6a364617991e83e43641",
+      "source_section": "preservation",
+      "merged_sections": [
+        "preservation"
+      ],
+      "disposition": "retained_in_general_guidance_with_source_specific_conditions; complete text archived here"
+    },
+    {
+      "source_id": "candidate-a631652dcc0d6a364617991e83e43641",
+      "source_section": "exclusion",
+      "merged_sections": [
+        "exclusion"
+      ],
+      "disposition": "retained_in_general_guidance_with_source_specific_conditions; complete text archived here"
+    },
+    {
+      "source_id": "candidate-a631652dcc0d6a364617991e83e43641",
+      "source_section": "verification",
+      "merged_sections": [
+        "verification"
+      ],
+      "disposition": "retained_in_general_guidance_with_source_specific_conditions; complete text archived here"
+    },
+    {
+      "source_id": "candidate-acc766af94ccf5d0cbcfecaa9d551157",
+      "source_section": "applicability",
+      "merged_sections": [
+        "applicability"
+      ],
+      "disposition": "retained_in_general_guidance_with_source_specific_conditions; complete text archived here"
+    },
+    {
+      "source_id": "candidate-acc766af94ccf5d0cbcfecaa9d551157",
+      "source_section": "event_relation",
+      "merged_sections": [
+        "event_relation"
+      ],
+      "disposition": "retained_in_general_guidance_with_source_specific_conditions; complete text archived here"
+    },
+    {
+      "source_id": "candidate-acc766af94ccf5d0cbcfecaa9d551157",
+      "source_section": "preservation",
+      "merged_sections": [
+        "preservation"
+      ],
+      "disposition": "retained_in_general_guidance_with_source_specific_conditions; complete text archived here"
+    },
+    {
+      "source_id": "candidate-acc766af94ccf5d0cbcfecaa9d551157",
+      "source_section": "exclusion",
+      "merged_sections": [
+        "exclusion"
+      ],
+      "disposition": "retained_in_general_guidance_with_source_specific_conditions; complete text archived here"
+    },
+    {
+      "source_id": "candidate-acc766af94ccf5d0cbcfecaa9d551157",
+      "source_section": "verification",
+      "merged_sections": [
+        "verification"
+      ],
+      "disposition": "retained_in_general_guidance_with_source_specific_conditions; complete text archived here"
+    }
+  ],
+  "scope": "User-authorized source-preserving consolidation; source quotations are historical evidence, not requirements for a new task. No new model evaluation or effectiveness claim."
+}

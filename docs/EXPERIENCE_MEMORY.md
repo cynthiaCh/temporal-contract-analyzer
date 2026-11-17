@@ -450,7 +450,7 @@ Delivery defaults to at most five matched experience identities. Matching and la
 
 Compact libraries retain all reviewed versions as archive entries. Fresh approved
 snapshots and `approval.active()` now resolve `revise` / `merge` proposals under
-`compact-current-guidance-v1`: an unambiguous accepted revision replaces its target
+`compact-current-guidance-v2`: an unambiguous accepted revision replaces its target
 in retrieval; an accepted merge replaces all targets. Pending/rejected proposals
 never supersede accepted guidance. Rejecting a replacement exposes its still-accepted
 sources again. Historical frozen snapshots remain valid; no archived acceptance or
@@ -481,3 +481,25 @@ judgments, not a semantic guarantee that every paraphrase is detected.
 
 This does not automatically synthesize merged guidance for ambiguous historical
 branches, remove preservation obligations, learn from test outcomes or rerun models.
+
+
+## Consolidated guidance and evidence appendices
+
+The six source-preserving consolidations in `library/zz-consolidated.json` use
+`evidence_ref` to bind a relative `evidence/*.json` appendix and its SHA-256. Each
+appendix retains the complete original entries and their source file/version hashes,
+the consolidated guidance, section coverage and preservation checklist. Evidence
+quotations and historical observations are archival context, not requirements for a
+new repair. Only the five concise guidance sections enter normal solver delivery.
+The loader verifies the appendix digest, current guidance, exact target hashes and
+complete archived source content; missing, modified or external appendices fail
+integrity validation. Appending consolidation records preserves original file hashes
+and decision order, so the pre-consolidation snapshot remains verifiable.
+
+A separately accepted, appendix-backed merge bound to exact currently accepted
+source versions can supersede those named sources even when their older ancestry
+is missing or ambiguous. It does not retire an unrelated branch or infer a winner
+among other historical versions. Cyclic or stale merge targets cannot use this
+exception; rejecting the merge restores the applicable accepted sources. This
+supports reviewed partial consolidation without rewriting older lineage or dropping
+unreviewed obligations. Other ambiguous lineages retain the conservative behavior.
