@@ -119,3 +119,5 @@ Reuse pinned immutable solver/grader images and CPU toolchains; no GPU allocatio
 Documented zero-model command: execute the single line in /home/sribd/Downloads/wangshu/tempoevo-sol61-medium-ranks26-46-workers8-20261117_155257/prepare-command.sh VERBATIM from /home/sribd/Downloads/wangshu/temporal-contract-analyzer. Verify selected source/image hashes,63 original/reference/negative controls,21 prepared bindings,61 approvals and exactgpt-6.1-sol/medium profile. Fresh agent follows-doc verification required before model launch.
 
 Ranks26-46 preflight READY:1274 source/image files,63 expected controls,21 frozen bindings,current61bank/all6evidence attachments. Independent report /home/sribd/Downloads/wangshu/tempoevo-sol61-medium-ranks26-46-workers8-20261117_155257/agent-follows-doc.json. No models called before this checkpoint.
+
+Ranks26-46 launched:8 concurrent cases each produced non-denied PreModelRequest for gpt-6.1-sol; medium is frozen in all21protocols. Launch proof /home/sribd/Downloads/wangshu/tempoevo-sol61-medium-ranks26-46-workers8-20261117_155257/launch-verification.json. Runtime and bank remain frozen until queue completes.
