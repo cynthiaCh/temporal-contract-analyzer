@@ -166,3 +166,10 @@ Documented zero-model command: execute the single line in /home/sribd/Downloads/
 Fresh Latent30 READY: independent report /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-medium-latent30-workers8-20261117_231922/agent-follows-doc.json;30 baseline bindings,emptybank/store,1905 image/source matches,90 verified reused controls,no newpreflightGold/models.39 synthetic state-machine tests passed.
 
 Fresh Latent30 launched:8 distinct non-denied GPT6.1-sol PreModelRequest hooks in Action stage;medium fixed,emptybank,nullContract/nullExperience. Proof /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-medium-latent30-workers8-20261117_231922/launch-verification.json. Runtime frozen until completion.
+
+## GPT6.1medium Auto-Contract-only30 cb7d8c26
+Spec: /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-medium-autocontract30-workers8-20261117_234344/env-spec.json
+Warm reuse pinned immutable CPU Docker images; no GPU/rebuild. Same30 originals/model/evaluator/Action24requests600sec as Latent and memory arms. No memory/routing/selection. Contract12+Action24=36 requests total;oneAction and final-onlyGold;8workers,explicit-capacity fallback8/6/4,no test learning. Execution errors excluded from valid denominator. Trusted90 calibration controls reused only after source/evaluator/image identity checks;no solver outputs reused.
+Documented zero-model command: execute the single line in /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-medium-autocontract30-workers8-20261117_234344/prepare-command.sh VERBATIM from /home/sribd/Downloads/wangshu/temporal-contract-analyzer. Independent fresh agent-follows-doc READY required before launch:30 verified fresh testing bindings,emptybank/store,exactgpt-6.1-sol/medium/priority,Contract12/Action24,total36 and source equality.
+
+Auto-Contract-only30 READY: independent report /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-medium-autocontract30-workers8-20261117_234344/agent-follows-doc.json;30 Auto-Contract-only bindings,emptybank/store,1905 image/source matches,90 verified reused controls,no newpreflightGold/models.Contract12+Action24=36 total; final-only Gold.
