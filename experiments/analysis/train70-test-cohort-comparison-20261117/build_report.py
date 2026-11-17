@@ -95,7 +95,7 @@ def main():
             if r['cohort']!='train70':r['with_experience_first_passed']=None
             flat.append(r)
     with (OUT/'per-case.csv').open('w',encoding='utf-8-sig',newline='') as f:
-        w=csv.DictWriter(f,fieldnames=list(flat[0]));w.writeheader();w.writerows(flat)
+        w=csv.DictWriter(f,fieldnames=list(flat[0]),lineterminator='\n');w.writeheader();w.writerows(flat)
     (OUT/'evidence.json').write_text(json.dumps(evidence,indent=2)+'\n')
     print(json.dumps(summary,ensure_ascii=False,indent=2));print('overlaps',{k:len(v) for k,v in overlap.items()})
 if __name__=='__main__':main()
