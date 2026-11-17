@@ -23,6 +23,7 @@ def allowed(command, workspace='/workspace'):
   if tokens[j:j+3]==['2','>','/dev/null']:j+=3;continue
   cleaned.append(tokens[j]);j+=1
  tokens=cleaned
+ if any(t and all(c in ';&|<>' for c in t) and t not in CONTROL for t in tokens):return False
  root=Path(workspace).resolve();bindings={};i=0
  def expand(token):
   def replace(match):

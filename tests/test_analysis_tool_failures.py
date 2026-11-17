@@ -31,6 +31,8 @@ class AnalysisToolFailureTests(unittest.TestCase):
         self.assertTrue(allowed("if [ -f 'docs/host-api.md' ]; then cat 'docs/host-api.md'; fi"))
         self.assertTrue(allowed('if [ -e README.md ]; then head -n 5 README.md; fi'))
         for command in ['if [ -f README.md ]; then rm README.md; fi',
+                        'if [ -f README.md ]; then cat README.md &; fi',
+                        'if [ -f README.md ]; then cat README.md & fi',
                         'if [ -f README.md ]; then cat README.md; else python3 -c pass; fi',
                         'if [ -f /etc/passwd ]; then cat README.md; fi',
                         'if [ -f README.md ]; then cat /etc/passwd; fi',
