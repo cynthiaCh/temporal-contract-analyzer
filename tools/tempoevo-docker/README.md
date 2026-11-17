@@ -88,3 +88,9 @@ error does not abort the other cases, and incomplete previously started stages
 are not replayed. Results retain the full denominator and archive after completion.
 The current study uses the full approved categorized library as its retrieval pool;
 A/B is historical and is not launched by this command.
+
+For authorized larger testing queues, `run_testing.py --workers 8 --adaptive-workers`
+permits eight concurrent case workers. Explicit provider rate/concurrency errors reduce
+future admission to six, then four, while existing sessions drain. This never replays
+started cases or changes per-case request, Action or scoring budgets. The queue archives
+capacity changes and its observed peak; requested concurrency is not a provider guarantee.

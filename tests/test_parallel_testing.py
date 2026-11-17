@@ -26,6 +26,26 @@ class ParallelTestingTests(unittest.TestCase):
         self.assertEqual([r['rank'] for r in rows],list(range(1,11)))
         self.assertEqual([len(x) for x in snapshots],list(range(1,11)))
 
+    def test_eight_workers_overlap(self):
+        barrier=threading.Barrier(8);lock=threading.Lock();active=0;peak=0
+        def execute(job):
+            nonlocal active,peak
+            with lock:active+=1;peak=max(peak,active)
+            barrier.wait(timeout=5)
+            with lock:active-=1
+            return dict(job,status='scored',gold_passed=True)
+        runner.schedule([dict(case_id=str(n),rank=n) for n in range(8)],8,execute,lambda rows:None)
+        self.assertEqual(peak,8)
+
+    def test_capacity_fallback_is_bounded_and_not_triggered_by_bad_request(self):
+        events=[];capacity=runner.Capacity(8,True,events.append)
+        capacity.acquire();capacity.release(True);self.assertEqual(capacity.limit,6)
+        capacity.acquire();capacity.release(True);self.assertEqual(capacity.limit,4)
+        capacity.acquire();capacity.release(True);self.assertEqual(capacity.limit,4)
+        self.assertEqual([x['workers'] for x in events],[6,4])
+        self.assertFalse(runner.provider_capacity_error(['Bad Request','request budget exhausted']))
+        self.assertTrue(runner.provider_capacity_error(['HTTP429 rate_limit_exceeded']))
+
     def test_worker_error_does_not_abort_other_cases_or_disappear_from_denominator(self):
         def execute(job):
             if job['rank']==2:raise RuntimeError('synthetic worker failure')
@@ -37,7 +57,7 @@ class ParallelTestingTests(unittest.TestCase):
         self.assertEqual(result['queue_errors'],1);self.assertTrue(result['usage_incomplete'])
 
     def test_worker_bound_and_explicit_execution_are_enforced(self):
-        for workers in (0,5,-1,True):
+        for workers in (0,9,-1,True):
             with self.assertRaises(ValueError):runner.schedule([],workers,lambda job:None,lambda rows:None)
         with self.assertRaises(SystemExit):runner.main(['--root','/never-created'])
 
