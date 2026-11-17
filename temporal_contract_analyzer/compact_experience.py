@@ -172,11 +172,14 @@ def publish_candidate(path, record):
         values=documents(path)
         if update['operation']=='evidence':
             current={b['sha256']:b for b in materialize(path)[0]}
-            if len(update['target_sha256s'])!=1 or update['target_sha256s'][0] not in current \
-                    or reflection.content(experience)!=reflection.content(current[update['target_sha256s'][0]]):
+            if len(update['target_sha256s'])!=1:
+                raise EvidenceError('Evidence supplement requires one unchanged guidance target')
+            target=update['target_sha256s'][0]
+            if reflection.content(experience)!=reflection.content(targets[target]):
                 raise EvidenceError('Evidence supplement requires unchanged current guidance')
             code=sha(canonical(dict(experience=experience,update=update)).encode())
-            return dict(published_proposal_sha256=code,publication_kind='evidence_proposal')
+            # Evidence for training-only guidance is archival, never memory admission.
+            return dict(published_proposal_sha256=code,publication_kind='evidence_proposal' if target in current else 'provisional_evidence_proposal')
         proposal=dict(operation=update['operation'],target_ids=target_ids)
         validate_proposal(proposal)
         rules=experience['rules']

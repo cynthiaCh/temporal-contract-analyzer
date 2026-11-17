@@ -95,7 +95,8 @@ def execute(root):
     process=subprocess.Popen(cmd,cwd=REPO,stdout=log,stderr=subprocess.STDOUT);event(dict(event='train_started',case_id=item['case_id'],pid=process.pid));rc=process.wait()
   else:rc=None
   s=read(t/'state.json');event(dict(event='train_finished',case_id=item['case_id'],status=s['status']))
-  return dict(case_id=item['case_id'],rank=item['rank'],root=str(t),status=s['status'],accepted=s.get('training_accepted'),attempts=len(s['attempts']),exit_code=rc,error=s.get('error'))
+  extraction_only_failure=s['status']=='execution_invalid' and s.get('training_accepted') is True and any(z['kind']=='extract' and z['status']=='invalid' for z in s['stages'])
+  return dict(case_id=item['case_id'],rank=item['rank'],root=str(t),status='repair_accepted_extraction_unavailable' if extraction_only_failure else s['status'],raw_status=s['status'],accepted=s.get('training_accepted'),attempts=len(s['attempts']),exit_code=rc,error=s.get('error'),extraction_only_failure=extraction_only_failure)
  event(dict(event='phase_started',phase='train',workers=4,cases=len(jobs),reused=plan['reuse']))
  results=[]
  with ThreadPoolExecutor(max_workers=4) as pool:

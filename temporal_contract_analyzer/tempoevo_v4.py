@@ -342,7 +342,7 @@ class Trajectory:
         self.save('binding.json',dict(protocol=sha((self.root/'protocol.json').read_bytes()),
             bank=sha((self.root/'memory-snapshot.json').read_bytes()),ast=sha((self.root/'ast-evidence.json').read_bytes()),
             implementation=sha(Path(__file__).read_bytes()),evaluators=evaluator_hashes,
-            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name(name) for name in ('business_retrieval.py','preparation_validation.py','semantic_retrieval.py','experience_routing.py','experience_memory.py','experience_updates.py','compact_experience.py','taxonomy.py','contract-taxonomy.json')]+[Path(__file__).with_name('evaluation_split.py'),Path(__file__).resolve().parents[1]/'experiments/evaluation-splits.json',Path(__file__).with_name('online_memory.py'),Path(__file__).with_name('experience_reflection.py'),Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
+            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name(name) for name in ('business_retrieval.py','prompt_context.py','preparation_validation.py','semantic_retrieval.py','experience_routing.py','experience_memory.py','experience_updates.py','compact_experience.py','taxonomy.py','contract-taxonomy.json')]+[Path(__file__).with_name('evaluation_split.py'),Path(__file__).resolve().parents[1]/'experiments/evaluation-splits.json',Path(__file__).with_name('online_memory.py'),Path(__file__).with_name('experience_reflection.py'),Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
         self.report();return self.state()
 
     def verify(self):
@@ -421,7 +421,7 @@ class Trajectory:
                 return read(directory/'result.json')
             raise EvidenceError('Partially started stage cannot be replayed')
         if state['cancelled']:raise EvidenceError('Cancelled')
-        limit=self._remaining_limit(p,kind,budget_group)
+        limit=self._remaining_limit(p,kind,budget_group or key)
         if kind in p['limits']:
             if limit['requests']<1 or limit['seconds']<=0:raise EvidenceError('Stage budget exhausted')
             used=sum(s.get('requests',0) for s in state['stages'])
@@ -589,7 +589,7 @@ class Trajectory:
                 from . import experience_routing as routing
                 if not p.get('routing_analysis'):
                     proposal=self._preparation_output(p,backend,'routing','routing',dict(public,schema=taxonomy.analysis_schema(),
-                        instruction=routing.analysis_prompt(p['task'],sources,public['ast'])),
+                        instruction=routing.analysis_prompt(p['task'],sources,public['ast'],embed_sources=False)),
                         lambda output:self._advisory_analysis(output,public,'routing'))
                 else:
                     try:proposal=self._advisory_analysis(p['routing_analysis'],public,'routing')

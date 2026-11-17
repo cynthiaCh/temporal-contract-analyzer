@@ -22,6 +22,9 @@ class NativeV4Backend:
         protocol=dict(binary=self.protocol['binary'],node=self.protocol.get('node','/usr/bin/node'),case=dict(id=self.protocol.get('task_id','v4-task')),
             execution_policy=VERSION,model_settings=settings,visible=dict(task=payload['task']),input_path=str(source),
             candidate_files=inventory(capture(source)[0]),session_limits=limits,boundary_preflight_complete=True)
+        from .prompt_context import compact
+        wire_payload,context_report=compact(payload)
+        archive.atomic_json(directory/'prompt-context.json',context_report)
         prompt=('Use only the original task and supplied public code/documents as normative evidence. '
             'Experience and automatic Contract are fallible guidance. Evaluation observations do not create business requirements. '
             'Never access a scorer, reference implementation or hidden tests. '
@@ -30,7 +33,7 @@ class NativeV4Backend:
             'Put compiled binaries/classes and caches in /tmp, not the submitted workspace. '
             'Analysis tools permit workspace reads with cat, rg, nl, head, tail and sed -n N,Mp; '
             'the public workspace may not be a Git repository, so prefer these readers to Git probes. '
-            'Other stages return structured output without modifying files.\n'+canonical(payload))
+            'Other stages return structured output without modifying files.\n'+canonical(wire_payload))
         (directory/'native-stage').mkdir()
         backend=NativeBackend()
         if self.protocol.get('backend',{}).get('kind')=='docker':

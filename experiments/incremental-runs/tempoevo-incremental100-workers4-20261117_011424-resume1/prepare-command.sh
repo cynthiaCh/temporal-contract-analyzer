@@ -1,0 +1,1 @@
+/usr/bin/python3 -B /home/sribd/Downloads/wangshu/temporal-contract-analyzer/tools/tempoevo-docker/recover_incremental.py --source /home/sribd/Downloads/wangshu/tempoevo-incremental100-workers4-20261117_011424 --root /home/sribd/Downloads/wangshu/tempoevo-incremental100-workers4-20261117_011424-resume1 --prepare-only

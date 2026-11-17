@@ -77,12 +77,13 @@ def evidence_valid(evidence, task, sources, *, text_grounding=False):
         return False
 
 
-def analysis_prompt(task, sources, ast=None):
+def analysis_prompt(task, sources, ast=None, *, embed_sources=True):
     source_inputs(task, sources)
     numbered = lambda text: '\n'.join(f'{line} | {body}' for line, body in enumerate(text.splitlines(), 1))
     material = dict(task=task, numbered_task=numbered(task),
                     numbered_sources={path:numbered(text) for path, text in sources.items()},
                     AST=ast, taxonomy=taxonomy.definition())
+    if not embed_sources:material=dict(numbered_task=numbered(task),taxonomy=taxonomy.definition(),source_context='Original task, sources and AST are supplied as sibling fields; inspect omitted public source bodies in workspace. Use nl to establish source line numbers.')
     return '''Extract a candidate Contract, multiple obligation labels from the seven-label taxonomy, and mechanism premises from the current task and candidate-visible source.
 Return a structured object directly using the accompanying analysis schema; do not wrap it in a report string.
 Use only R/O/B/L/I/F/A. A task may have multiple labels; if unresolved, return an empty label list and identify the evidence gaps.
