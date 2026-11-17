@@ -139,3 +139,10 @@ Documented zero-model command: execute the single line in /home/sribd/Downloads/
 GPT5.6 low30 READY:30 independently verified bindings,90 expected controls,1905 matching source/image files,61 active approvals/all6 evidence appendices,74 known training/source IDs excluded,no divergences. Exactgpt-5.6-sol/medium/priority verified. Report /home/sribd/Downloads/wangshu/tempoevo-gpt56-sol-medium-low30-untrained-workers8-20261117_180752/agent-follows-doc.json. No models before readiness.
 
 GPT5.6 low30 launched:8 actual concurrent case PreModelRequest hooks,all non-denied gpt-5.6-sol;medium frozen in all30protocols. Proof /home/sribd/Downloads/wangshu/tempoevo-gpt56-sol-medium-low30-untrained-workers8-20261117_180752/launch-verification.json. Runtime and61bank frozen until completion.
+
+## GPT5.6medium Auto-Contract-only30 bf54d1db
+Spec: /home/sribd/Downloads/wangshu/tempoevo-gpt56-sol-medium-autocontract30-workers8-20261117_211340/env-spec.json
+Same30cases/model/images/publicsources/evaluator/Action24requests600sec as parent experience arm;no memory/selection/routing,Contract12+Action24=36 total.8workers,oneAction/finalGold,no learning. Reuse parent90 trusted controls only after exact source/image/evaluator verification;no extra Gold/model calls during preflight.
+Documented zero-model command: execute the single line in /home/sribd/Downloads/wangshu/tempoevo-gpt56-sol-medium-autocontract30-workers8-20261117_211340/prepare-command.sh VERBATIM from /home/sribd/Downloads/wangshu/temporal-contract-analyzer. Independent fresh agent-follows-doc READY required,30bindings/emptybank/no-selection and paired-input identity checked before launch.
+
+Auto-Contract-only30 READY:30 frozen bindings verified;1905 image/source files equal,parent90controls reused,no new Gold/models;empty approved snapshot/store,no selection/routing,exactgpt-5.6-sol/medium/priority,Contract12+Action24=36total. Source/runtime/model/evaluator/Action budgets match parent;parent bindings unchanged. Independent report /home/sribd/Downloads/wangshu/tempoevo-gpt56-sol-medium-autocontract30-workers8-20261117_211340/agent-follows-doc.json.
