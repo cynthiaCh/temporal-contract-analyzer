@@ -27,6 +27,20 @@ class AnalysisToolFailureTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertFalse(allowed(command))
 
+    def test_recorded_literal_file_guard_is_a_read_only_command(self):
+        self.assertTrue(allowed("if [ -f 'docs/host-api.md' ]; then cat 'docs/host-api.md'; fi"))
+        self.assertTrue(allowed('if [ -e README.md ]; then head -n 5 README.md; fi'))
+        for command in ['if [ -f README.md ]; then rm README.md; fi',
+                        'if [ -f README.md ]; then cat README.md; else python3 -c pass; fi',
+                        'if [ -f /etc/passwd ]; then cat README.md; fi',
+                        'if [ -f README.md ]; then cat /etc/passwd; fi',
+                        'if [ -f $(touch evil) ]; then cat README.md; fi',
+                        'if [ -f README.md ]; then cat README.md > out; fi']:
+            with self.subTest(command=command):self.assertFalse(allowed(command))
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);(root/'link').symlink_to('/etc/passwd')
+            self.assertFalse(allowed('if [ -f link ]; then cat link; fi',root))
+
     def test_tool_denial_is_not_reported_as_just_bad_json_or_retried(self):
         with tempfile.TemporaryDirectory() as temp:
             directory=Path(temp)

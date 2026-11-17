@@ -1,4 +1,4 @@
-"""Closed read-command grammar, including ordinary candidate-file for loops.
+"""Closed read-command grammar, including candidate-file loops and literal file guards.
 
 The filesystem namespace remains the isolation boundary. This parser grants
 read commands; it does not evaluate shell syntax or execute a validation shell.
@@ -64,7 +64,8 @@ def allowed(command, workspace='/workspace'):
   nonlocal i
   need=True;seen=False
   while i<len(tokens):
-   if stop and tokens[i]=='done':return seen and not need
+   marker=stop if isinstance(stop,str) else 'done'
+   if stop and tokens[i]==marker:return seen and not need
    if tokens[i]==';':
     i+=1
     if not seen:continue
@@ -74,7 +75,14 @@ def allowed(command, workspace='/workspace'):
     if need or not seen:return False
     i+=1;need=True;continue
    if not need and seen and tokens[i-1]!=';':return False
-   if tokens[i]=='for':
+   if tokens[i]=='if':
+    i+=1
+    if i+5>=len(tokens) or tokens[i]!='[' or tokens[i+1] not in ('-f','-d','-e') or tokens[i+3:i+6]!=[']',';','then']:return False
+    if '$' in tokens[i+2] or not path_ok(tokens[i+2],True):return False
+    i+=6
+    if not sequence('fi') or i>=len(tokens) or tokens[i]!='fi':return False
+    i+=1
+   elif tokens[i]=='for':
     i+=1
     if i+2>=len(tokens) or not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*',tokens[i]):return False
     var=tokens[i];i+=1
@@ -90,7 +98,7 @@ def allowed(command, workspace='/workspace'):
     i+=1;del bindings[var]
    else:
     words=[]
-    while i<len(tokens) and tokens[i] not in CONTROL and not (stop and tokens[i]=='done'):
+    while i<len(tokens) and tokens[i] not in CONTROL and not (stop and tokens[i]==marker):
      words.append(tokens[i]);i+=1
     if not simple(words):return False
    seen=True;need=False
