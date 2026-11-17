@@ -164,3 +164,5 @@ Reuse pinned CPU Docker images, no GPU or rebuild. Same30 originals; new indepen
 Documented zero-model command: execute the single line in /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-medium-latent30-workers8-20261117_231922/prepare-command.sh VERBATIM from /home/sribd/Downloads/wangshu/temporal-contract-analyzer. Independent fresh agent-follows-doc READY required: verify30 bindings, emptybank/store,total24, original-source equality and fresh states.
 
 Fresh Latent30 READY: independent report /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-medium-latent30-workers8-20261117_231922/agent-follows-doc.json;30 baseline bindings,emptybank/store,1905 image/source matches,90 verified reused controls,no newpreflightGold/models.39 synthetic state-machine tests passed.
+
+Fresh Latent30 launched:8 distinct non-denied GPT6.1-sol PreModelRequest hooks in Action stage;medium fixed,emptybank,nullContract/nullExperience. Proof /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-medium-latent30-workers8-20261117_231922/launch-verification.json. Runtime frozen until completion.
