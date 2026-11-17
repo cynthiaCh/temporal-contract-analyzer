@@ -157,3 +157,10 @@ Documented zero-model command: execute the single line in /home/sribd/Downloads/
 GPT6.1same30 READY:30 fresh verified bindings,1905 matching source/image files,90 parent controls reused withidentity checks;61 accepted current experiences/six evidence appendices intact;10180 parentfiles unchanged. Onlymodel/profile andrequiredoutputpaths differ. No newmodels/Gold preflight. Report /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-medium-same30-workers8-20261117_222652/agent-follows-doc.json.
 
 GPT6.1same30 launched:8 actual concurrent case PreModelRequest hooks,all non-denied gpt-6.1-sol;medium frozen in30protocols,61bank unchanged. Proof /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-medium-same30-workers8-20261117_222652/launch-verification.json. Headline success pass/30,execution errors counted failures;runtime frozen until completion.
+
+## GPT6.1medium fresh Latent30 747055e9
+Spec: /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-medium-latent30-workers8-20261117_231922/env-spec.json
+Reuse pinned CPU Docker images, no GPU or rebuild. Same30 originals; new independent outputs, gpt-6.1-sol/medium,8 workers, no memory/Contract/routing/selection, oneAction24requests600sec and final-onlyGold. Execution errors excluded from valid denominator. Reuse90 source/evaluator-verified controls only, never previous solver outputs. Helper CLI now exposes existing baseline engine mode.
+Documented zero-model command: execute the single line in /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-medium-latent30-workers8-20261117_231922/prepare-command.sh VERBATIM from /home/sribd/Downloads/wangshu/temporal-contract-analyzer. Independent fresh agent-follows-doc READY required: verify30 bindings, emptybank/store,total24, original-source equality and fresh states.
+
+Fresh Latent30 READY: independent report /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-medium-latent30-workers8-20261117_231922/agent-follows-doc.json;30 baseline bindings,emptybank/store,1905 image/source matches,90 verified reused controls,no newpreflightGold/models.39 synthetic state-machine tests passed.

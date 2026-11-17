@@ -218,6 +218,24 @@ class V4Tests(unittest.TestCase):
         self.assertEqual(state['status'],'passed',state.get('error'))
         self.assertEqual([r[0] for r in b.calls],['action','action','action','extract'])
         self.assertTrue(all(p['contract'] is None and p['experience'] is None for role,p,_,_ in b.calls if role=='action'))
+    def test_testing_baseline_only_actions_and_final_gold(self):
+        class Recorded(Backend):
+            def __init__(self):super().__init__();self.evaluations=[]
+            def evaluate(self,stage,payload,directory):
+                self.evaluations.append(stage)
+                return super().evaluate(stage,payload,directory)
+        from temporal_contract_analyzer.experience_approval import freeze
+        loop=self.prepare(condition='baseline',mode='testing',max_attempts=1,memory_snapshot=freeze(self.store),
+                          gold_evaluator=dict(command=['synthetic-gold']),visible_evaluator=None)
+        self.assertEqual(loop.verify()['total_request_cap'],24)
+        b=Recorded();state=loop.run(b,execute=True)
+        self.assertEqual(state['status'],'scored',state.get('error'))
+        self.assertEqual([r[0] for r in b.calls],['action'])
+        self.assertEqual(b.evaluations,['gold'])
+        self.assertIsNone(b.calls[0][1]['contract'])
+        self.assertIsNone(b.calls[0][1]['experience'])
+        self.assertFalse((loop.root/'expert-summary-task.json').exists())
+
     def test_model_budget_and_original_snapshot_are_fixed(self):
         loop=self.prepare();p=loop.verify();self.assertEqual(p['total_request_cap'],120)
         b=Backend(3);loop.run(b,execute=True);self.assertTrue(all(m==MODEL for _,_,m,_ in b.calls))

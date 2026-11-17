@@ -12,7 +12,7 @@ parser.add_argument('--training-feedback',type=Path,help='Explicit public feedba
 parser.add_argument('--model-config',type=Path,help='Model profiles JSON file')
 parser.add_argument('--model-profile',help='Named model profile; defaults to the configuration default')
 parser.add_argument('--store',type=Path,help='Reviewed experience library; defaults to experience-memory/library')
-parser.add_argument('--condition',choices=['structured','contract'],default='structured',help='Contract keeps Auto-Contract but never reads cross-task memory')
+parser.add_argument('--condition',choices=['structured','contract','baseline'],default='structured',help='Contract uses Auto-Contract without memory; baseline runs Action only without memory or Contract')
 parser.add_argument('--training-feedback-by-family',type=Path,help='Frozen family-to-public-feedback mapping JSON')
 parser.add_argument('--learning-policy',choices=['frozen','online'],default='frozen')
 parser.add_argument('--online-memory',type=Path,help='Training-only shared provisional memory directory')
@@ -72,7 +72,7 @@ for row in rows:enforce(dict(task_id=row['case_id'],mode=args.mode,**({'evaluati
 root=args.root.resolve();root.mkdir()
 shutil.copyfile(selection_path,root/'selection.csv')
 (root/'selection-source.json').write_text(json.dumps(dict(path=str(selection_path),sha256=sha(selection_path.read_bytes()),benchmark_root=str(bench),source='swe-tempoc' if args.swe_tempoc_root else 'registered-catalog'),indent=2)+'\n')
-if args.condition=='contract':
+if args.condition in ('contract','baseline'):
  bank=dict(schema_version='experience-active-snapshot-v1',scope='research_only',entries=[])
  from temporal_contract_analyzer.core import canonical
  bank['sha256']=sha(canonical(bank).encode())
