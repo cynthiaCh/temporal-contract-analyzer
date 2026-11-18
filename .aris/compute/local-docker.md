@@ -238,3 +238,5 @@ Documented zero-model command: execute single line in /home/sribd/Downloads/wang
 GPT6.1LOWfixed30 READY:30freshbindings,full61bank/source/task/scorer/images/budgets unchanged,lowprofile andexactCLI0.167c3dea068 pinned,1905imagehashes/90controls reused,explicit30testroles,oneAction/finalGold,oneworker. Independent /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-low-same30-worker1-20261119_001852/agent-follows-doc.json. No modelsbeforecheckpoint.
 
 GPT6.1LOW serial queue started:real non-deniedmodelrequest andactualCLI lowflag verified;peakactive1,full61snapshot. First response completion pending atstartup checkpoint (not a behavioral outcome). Proof /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-low-same30-worker1-20261119_001852/launch-verification.json.
+
+GPT6.1LOWfixed30 launched:real non-deniedgpt6.1sol request ANDcompletedresponse,actualCLIflag model_reasoning_effort=low verified,peakactive1. Proof /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-low-same30-worker1-20261119_001852/launch-verification.json. Full61snapshot frozen,nolearning.
