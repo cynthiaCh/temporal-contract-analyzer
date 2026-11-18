@@ -72,6 +72,7 @@ def export(run_id,plots=False):
             actions_started=sum(s['kind']=='action' for s in state.get('stages',[])) if state else None,
             valid_attempts=len(state.get('attempts',[])) if state else None,
             training_accepted=receipt.get('training_accepted'),review_decision=(receipt.get('review') or {}).get('decision'),
+            first_pass_attempt=next((a['number'] for a in state.get('attempts',[]) if a.get('acceptance_passed') is True),None) if mode=='learning' else None,
             observed_training_accepted=state.get('training_accepted') if mode=='learning' else None,
             observed_training_oracle_valid=(state.get('gold_result') or {}).get('valid') if mode=='learning' else None,
             observed_training_oracle_passed=(state.get('gold_result') or {}).get('passed') if mode=='learning' else None,
@@ -159,6 +160,29 @@ def export(run_id,plots=False):
             candidate_sha256=r['candidate_sha256'],review_receipt_sha256=r['review_receipt_sha256']))
         if count is not None:previous=count
     csvsave(out/'experience-growth.csv',experience)
+    closed_train=[r for r in train if r['completed']]
+    valid_train=[r for r in closed_train if r['gold_valid']]
+    cumulative=[dict(action_limit=k,passed=sum(r['training_accepted'] is True and r['first_pass_attempt'] is not None and r['first_pass_attempt']<=k for r in valid_train),
+                     valid_completed_denominator=len(valid_train)) for k in (1,2,3)]
+    for item in cumulative:item['pass_over_valid_completed']=item['passed']/len(valid_train) if valid_train else None
+    training_summary=dict(updated_at=datetime.now(timezone.utc).isoformat(),run_id=run_id,
+        completed=len(closed_train),planned=70,valid_completed=len(valid_train),
+        execution_invalid=sum(not r['gold_valid'] for r in closed_train),
+        experience_stage_invalid=sum(r['review_execution_invalid'] for r in closed_train),
+        accepted=sum(r['training_accepted'] is True for r in valid_train),
+        cumulative=cumulative,
+        definition='Up to k outer repair Actions, early success retained; requires public check and training Oracle acceptance. Denominator is completed training cases with valid scoring. Experience-stage invalidity does not erase valid training scores. Unfinished cases excluded; solver-invalid cases remain unknown, not FAIL.')
+    save(out/'training-summary.json',training_summary)
+    training_lines=['# 训练集最多三轮修复后的累计通过率','',f'运行：`{run_id}`。更新时间：{training_summary["updated_at"]}。',
+        '',f'已闭审 {len(closed_train)}/70 例；有效评分 {len(valid_train)} 例；求解执行无效 {training_summary["execution_invalid"]} 例单列，未算FAIL。',
+        '', '| 最多Action轮数 | 累计通过 | 有效闭审分母 | 累计通过率 |','|---|---:|---:|---:|']
+    for item in cumulative:
+        pct='—' if item['pass_over_valid_completed'] is None else f'{item["pass_over_valid_completed"]:.1%}'
+        training_lines.append(f'| {item["action_limit"]} | {item["passed"]} | {len(valid_train)} | {pct} |')
+    training_lines+=['', '这里的轮次指外层修复Action；每个Action内部可有多次模型/工具交互。提前通过计入后续累计值，统计的不是“只有做满三轮的案例”。训练通过要求公开检查与训练Oracle均接受。',
+        '', '经验总结或审核失败不会抹掉已经有效的训练PASS。尚未闭审的案例不计入分母；此比例只描述当前已处理训练队列，不是测试集泛化通过率，也不是70例最终结果。',
+        '',f'逐例记录：`reports/{run_id}/training-ledger.csv`；结构化汇总：`reports/{run_id}/training-summary.json`。']
+    (HERE/'TRAINING_RESULTS.md').write_text('\n'.join(training_lines)+'\n',encoding='utf8')
     save(out/'export-manifest.json',dict(run_id=run_id,exported_at=datetime.now(timezone.utc).isoformat(),
         run_manifest_sha256=hashlib.sha256((root/'manifest.json').read_bytes()).hexdigest(),
         counts=dict(training_rows=len(train),test_rows=len(test),summary_rows=len(summaries)),
@@ -174,6 +198,7 @@ def export(run_id,plots=False):
     lines+=['',f'账户余额观测减少：{finance["observed_decrease_cny"]} CNY；最新余额：{finance["last_balance_cny"]} CNY。这不是逐case账单。未知用量保留为null，详见finance.json与stage-usage.csv。',
         '', '批准库数量与实际采用经验分开统计，详见retrieval-exposure.csv。测试没有后续检索修订，initial_experience_delivered即该测试是否实际收到非空指导；训练的initial字段仅指初次检索，不代表后续诊断后的所有检索。未采用经验时的波动不能直接归因为经验，也不把此组视作随机对照。',
         '', '[论文与代码差异](PAPER_CODE_AUDIT.md) · [工程问题记录](ISSUES.md) · [追加事件](EVENTS.jsonl)',
+        '', '[训练集最多三轮后的累计通过率](TRAINING_RESULTS.md)',
         '',f'导出目录：`reports/{run_id}`。包含70行训练审核、240行测试、8行汇总、来源/core/runtime分组、成对变化、经验增量及完整计费证据。']
     if amendment:
         lines+=['', '调度修订：用户要求提速后，从M20起测试并发由2提高至4，训练仍为1。冻结求解源码、模型、提示、工具、输出约束、单例预算与成员均保持不变；原manifest及改前账本保留，修订另存scheduler-amendment.json。并发可能影响延迟和执行无效率，因此各节点不是完全相同的调度配置，应同时检查超时/资源异常；不得隐去此差异。']

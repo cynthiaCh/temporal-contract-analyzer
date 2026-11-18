@@ -74,3 +74,4 @@ python -B tools/verify_v4_review.py
 审查副本离线验证：82项测试通过、0失败、0跳过；额外四并发调度/账本验证通过。容器无网络、无凭据、无Docker socket，模型和Gold调用均为0。详情见 `review-provenance/review-validation.json`。完整46,214项构建文件清单未上传，使用 `grader-build-summary.json` 保留原清单哈希、100例范围和条目数量。
 
 发布后补充：D14训练首次PASS，但独立AI审核的原始来源引用校验失败。新增 `close_citation_invalid.py` 仅扩展独立无新增闭审工具，调用冻结来源校验复现拒绝，保留原始审核及训练PASS，不激活候选、不追加模型请求；运行中的102项冻结源码/输入及3项调度绑定仍未改变。详见ISSUES.md第16项。
+`export_results.py`另输出TRAINING_RESULTS.md与training-summary.json：按已闭审且评分有效的同一训练队列，报告最多1/2/3次Action后的累计通过率；提前通过计入累计，经验阶段失败保留真实训练评分，求解无效单列。
