@@ -1,0 +1,1 @@
+No broader authorization is provided.

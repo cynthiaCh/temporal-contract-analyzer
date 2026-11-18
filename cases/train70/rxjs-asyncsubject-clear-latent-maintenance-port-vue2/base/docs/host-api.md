@@ -1,0 +1,1 @@
+Actual framework controller owns an AsyncSubject from rxjs/src. It exposes next, clear, complete, error, unsubscribe, subscribe, snapshot and dispose. Injected subscriber callbacks can invoke operations inline. Upstream tests and dependencies are available in rxjs/ as the original repository evidence.

@@ -90,6 +90,6 @@ are unchanged. V11 and earlier executions and old Contract Review policies are
 read-only; changes require a new root, never rewriting an old score.
 
 See [Docker setup](DOCKER_TRAINING.md), [evaluation boundaries](PUBLIC_TEST_ADAPTERS.md)
-and the [current test10 configuration](../examples/tempoevo-v4/case-selections/swe-tempoc-paired10-sol6-20261116/testing-protocol-business-full-memory.json).
+and the [final 70/30 case bundle](../cases/README.md).
 The existing cases are historically exposed and share source families. Their
 results describe diagnostic performance, not unseen-source generalization.

@@ -1,0 +1,1 @@
+A warm progress source in the facility handover archive transfer shows no initial progress until a later packet arrives. Restore the initial update while preserving the existing transfer, retry, navigation, cleanup and audit behavior, ordinary streaming and subsequent uses. The queue-record format is outside this fix.

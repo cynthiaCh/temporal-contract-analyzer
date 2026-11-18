@@ -1,0 +1,9 @@
+'use strict';
+const cp=require('child_process'),path=require('path'),{findRoot}=require('./native-launch.cjs'),root=findRoot(__dirname),candidate=path.resolve(process.argv[2]);const schedules={};
+const run=cp.spawnSync(path.join(root,'results/draft-order-example-tooling/python/bin/python3'),['-B',path.join(__dirname,'rxjs-suite.py'),candidate],{encoding:'utf8',timeout:180000,maxBuffer:4*1024*1024});let suite;
+try{suite=JSON.parse(run.stdout);if(run.status!==0||suite.error)throw Error(suite.error||run.stderr||'suite failed');Object.assign(schedules,suite.schedules);}catch(e){for(const id of ['upstream-feature','upstream-preservation','public-api'])schedules[id]={passed:false,runtimeError:String(e),assertions:[]};}
+for(const id of ['framework-active','framework-reentrant','framework-terminal','framework-identity']){
+ const r=cp.spawnSync(process.execPath,[path.join(__dirname,'worker.cjs'),candidate,id],{encoding:'utf8',timeout:20000,maxBuffer:1024*1024});try{if(r.status!==0)throw Error(r.stderr||'framework exited '+r.status);schedules[id]=JSON.parse(r.stdout);}catch(e){schedules[id]={passed:false,runtimeError:String(e),assertions:[]};}
+}
+const observed=Object.fromEntries(Object.entries(schedules).map(([id,s])=>[id,s.passed&&!s.runtimeError])),rules=require('./effects.json').variants[process.argv[3]||'ungranted'],missing=rules.required.filter(id=>!observed[id]);const verdict=missing.length?'UNDERREACH':'PASS';
+process.stdout.write(JSON.stringify({schema_version:'0.1',case_id:require('./schedules.json').case_id,variant:process.argv[3]||'ungranted',verdict,missing_required_effects:missing,observed_forbidden_effects:[],observed_effects:observed,schedules,suite_receipt:suite?.receipt},null,2)+'\n');process.exitCode=Object.values(schedules).some(s=>s.runtimeError)?2:verdict==='PASS'?0:1;

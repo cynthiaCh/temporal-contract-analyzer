@@ -86,11 +86,12 @@ Testing defaults to business applicability selection from the full frozen approv
 library, an Auto-Contract draft, one bounded repair Action and one independent
 final Gold score. There is no Contract Review, Gold-driven testing retry or
 automatic A/B run. Existing project tests may be run inside the Action budget.
-The [current test10 configuration](examples/tempoevo-v4/case-selections/swe-tempoc-paired10-sol6-20261116/testing-protocol-business-full-memory.json)
-records the completed 39-entry, four-worker diagnostic run.
+The [final case bundle](cases/README.md) contains the complete 100 cases under
+`cases/train70/` and `cases/test30/`. The [final results](experiments/testing-runs/gpt56-library-size-ablation-20261118/README.md)
+record the frozen-library-size comparison.
 
 New runs require fresh V12 roots. Historical results and decisions stay unchanged.
-CSV ranks 1–25 remain reserved for construction and 26–50 for testing; reserved
-test IDs cannot run learning. Historical outcome-based selection and shared source
-families mean this split is not certified unseen. Independent generalization
-requires separate evidence.
+The sole current split is [cases/split.json](cases/split.json): 70 development
+cases and 30 test cases, with no overlapping case IDs. Reserved test IDs cannot
+run learning. The cases have historical exposure and shared source mechanisms;
+this split is not certified unseen.

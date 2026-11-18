@@ -1,0 +1,1 @@
+Inspect candidate evidence: base/README.md, base/docs/host-api.md, base/src/Workspace.vue, base/rxjs/src/internal/AsyncSubject.ts, base/rxjs/src/internal/Subject.ts, base/rxjs/src/internal/Subscriber.ts.

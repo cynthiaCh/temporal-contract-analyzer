@@ -1,0 +1,180 @@
+{
+  "schema_version": "0.1",
+  "case_id": "listener-snapshot-order-vanilla",
+  "schedules": [
+    {
+      "id": "synchronous-bootstrap",
+      "description": "Channel connection emits bootstrap synchronously before connect returns.",
+      "events": [
+        "presence-opened",
+        "channel-connect-called",
+        "bootstrap-emitted",
+        "connect-returned",
+        "incremental-update-emitted"
+      ]
+    },
+    {
+      "id": "deferred-bootstrap",
+      "description": "Channel connection schedules bootstrap in a microtask after connect returns.",
+      "events": [
+        "presence-opened",
+        "channel-connect-called",
+        "connect-returned",
+        "bootstrap-emitted",
+        "incremental-update-emitted"
+      ]
+    },
+    {
+      "id": "nested-switch",
+      "description": "Bootstrap publication selects another room before outer connect returns.",
+      "events": [
+        "show-a",
+        "bootstrap-a",
+        "show-b",
+        "bootstrap-b",
+        "return-show-a",
+        "update-b",
+        "hide"
+      ]
+    },
+    {
+      "id": "nested-close",
+      "description": "Bootstrap publication hides the panel before connect returns.",
+      "events": [
+        "show-a",
+        "bootstrap-a",
+        "hide",
+        "return-show-a",
+        "update-a"
+      ]
+    },
+    {
+      "id": "decode-after-switch",
+      "description": "An update starts decoding in A, then resolves after switching to B.",
+      "events": [
+        "show-a",
+        "bootstrap-a",
+        "decode-a-start",
+        "show-b",
+        "bootstrap-b",
+        "decode-a-finish",
+        "update-b",
+        "hide"
+      ]
+    },
+    {
+      "id": "decode-after-close",
+      "description": "An update starts decoding before hide and resolves afterward.",
+      "events": [
+        "show-a",
+        "bootstrap-a",
+        "decode-a-start",
+        "hide",
+        "decode-a-finish"
+      ]
+    },
+    {
+      "id": "same-channel-reopen",
+      "description": "An old decoded update settles after reopening the same transport object.",
+      "events": [
+        "show-a",
+        "bootstrap-a",
+        "decode-a-start",
+        "hide",
+        "show-a-again",
+        "bootstrap-a-again",
+        "decode-old-a-finish",
+        "update-new-a",
+        "hide-reopened-visit"
+      ]
+    },
+    {
+      "id": "frame-in-order",
+      "description": "Receive full snapshots 1 then 2; complete decoding in order [1, 2]",
+      "events": [
+        "show",
+        "receive-1",
+        "receive-2",
+        "decode-1",
+        "decode-2",
+        "hide"
+      ]
+    },
+    {
+      "id": "frame-reversed",
+      "description": "Receive full snapshots 1 then 2; complete decoding in order [2, 1]",
+      "events": [
+        "show",
+        "receive-1",
+        "receive-2",
+        "decode-2",
+        "decode-1",
+        "hide"
+      ]
+    },
+    {
+      "id": "frame-sync-newer",
+      "description": "Receive full snapshots 1 then 2; complete decoding in order [2, 1]",
+      "events": [
+        "show",
+        "receive-1",
+        "receive-2",
+        "decode-2",
+        "decode-1",
+        "hide"
+      ]
+    }
+  ],
+  "counterfactual_pairs": [
+    {
+      "left": "synchronous-bootstrap",
+      "right": "deferred-bootstrap",
+      "changed_relation": "bootstrap-emitted moves from before connect-returned to after connect-returned.",
+      "expected_changed_effects": [
+        "presence-bootstrap-observed"
+      ]
+    },
+    {
+      "left": "decode-after-close",
+      "right": "same-channel-reopen",
+      "changed_relation": "An additional show of the same channel occurs before the old decode completes; the old visit remains invalid.",
+      "expected_changed_effects": [
+        "same-channel-reopen"
+      ]
+    },
+    {
+      "left": "nested-switch",
+      "right": "decode-after-switch",
+      "changed_relation": "Selection of B occurs during A bootstrap publication versus after A has started decoding an update.",
+      "expected_changed_effects": [
+        "nested-switch",
+        "decode-after-switch"
+      ]
+    },
+    {
+      "left": "nested-close",
+      "right": "decode-after-close",
+      "changed_relation": "Hide occurs during bootstrap publication versus after an update has started decoding.",
+      "expected_changed_effects": [
+        "nested-close",
+        "decode-after-close"
+      ]
+    },
+    {
+      "left": "frame-in-order",
+      "right": "frame-reversed",
+      "changed_relation": "Only swap decode completion order of the same two frames in the same visit.",
+      "expected_changed_effects": [
+        "frame-reversed"
+      ]
+    },
+    {
+      "left": "frame-reversed",
+      "right": "frame-sync-newer",
+      "changed_relation": "The newer frame decodes synchronously instead of through a Promise; the older frame still settles last.",
+      "expected_changed_effects": [
+        "frame-sync-newer"
+      ]
+    }
+  ]
+}

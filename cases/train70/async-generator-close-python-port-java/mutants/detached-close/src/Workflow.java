@@ -1,0 +1,11 @@
+import java.util.*;import java.util.concurrent.CompletableFuture;
+public final class Workflow {
+ interface Environment{CompletableFuture<Object> resolve(String kind,int key,Object value);int schedule(Runnable fn,int delay);void cancel(int handle);void defer(Runnable fn);void output(String kind,int key,Object value);}
+ static final class Controller{
+  final Environment env;final int key;final java.util.function.Predicate<Object> predicate;CompletableFuture<Object> completion;Object result;Throwable failure;String kind;boolean finishing;
+  Controller(Environment env,int key,Map<String,Object> config){this.env=env;this.key=key;predicate=row->{if(Boolean.TRUE.equals(config.get("predicateError")))throw new IllegalArgumentException("predicate failed");return config.get("match")!=null&&((Number)row).intValue()==((Number)config.get("match")).intValue();};}
+  void scan(){env.resolve("next",key,null).thenAccept(v->{Map<String,Object> row=(Map<String,Object>)v;if(Boolean.TRUE.equals(row.get("cancelled"))){finish("cancelled",null,null);return;}if(Boolean.TRUE.equals(row.get("done"))){finish("return",null,null);return;}try{if(predicate.test(row.get("value")))finish("return",row.get("value"),null);else scan();}catch(Throwable error){finish("error",null,error);}});}
+  void finish(String terminal,Object value,Throwable error){if(finishing)return;finishing=true;kind=terminal;result=value;failure=error;Runnable acknowledge=()->{if(failure!=null)completion.completeExceptionally(failure);else if(kind.equals("cancelled"))completion.completeExceptionally(new java.util.concurrent.CancellationException());else completion.complete(result);};if(true&&(!false||value!=null)){CompletableFuture<Object> cleanup=env.resolve("close",key,null);if(false)cleanup.thenRun(acknowledge);else acknowledge.run();}else acknowledge.run();}
+  Object call(String name,List<Object> args){switch(name){case "start":completion=new CompletableFuture<>();scan();return null;case "cancel":env.output("cancelInput",key,null);return null;case "snapshot":Map<String,Object> s=new LinkedHashMap<>();s.put("done",completion!=null&&completion.isDone());if(completion!=null&&completion.isDone()){s.put("kind",kind);s.put("value",result);s.put("message",failure==null?null:failure.getMessage());}return s;case "dispose":return null;default:throw new IllegalArgumentException(name);}}
+ }
+}

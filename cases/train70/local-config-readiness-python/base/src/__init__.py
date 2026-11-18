@@ -1,0 +1,2 @@
+"""Candidate-visible editor package."""
+

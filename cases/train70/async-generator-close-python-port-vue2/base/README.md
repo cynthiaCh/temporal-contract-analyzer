@@ -1,0 +1,1 @@
+Volunteer coordination — A retained asynchronous record producer and a caller that selects the first match. Producer cleanup can suspend; the producer is retained independently of the consumer. Predicate may fail and a read may be cancelled.

@@ -1,0 +1,1 @@
+The insurance endorsement review editor currently writes on every keystroke. Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst. Subsequent bursts must continue to save. Preserve other supported behavior and the synchronous public interfaces. The adjacent search preview is outside this maintenance change.

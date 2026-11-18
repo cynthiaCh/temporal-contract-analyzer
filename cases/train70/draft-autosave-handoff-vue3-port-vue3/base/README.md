@@ -1,0 +1,1 @@
+Laboratory operations — A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: store-owned BufferBank

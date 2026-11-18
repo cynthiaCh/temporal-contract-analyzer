@@ -1,0 +1,2 @@
+import React,{forwardRef,useRef,useMemo,useState,useImperativeHandle,useEffect}from 'react';import{createCoordinator}from './coordinator.js';
+export default forwardRef(function Desk({services},ref){const current=useRef(null),[version,render]=useState(0),api=useMemo(()=>createCoordinator(services,()=>current.current,v=>{current.current=v;render(n=>n+1);}),[services]);useImperativeHandle(ref,()=>api,[api]);useEffect(()=>api.dispose,[api]);return <section data-version={version}>{current.current?current.current.id:''}</section>;});

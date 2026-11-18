@@ -1,0 +1,10 @@
+
+Temporal contract: pending preparation must be polled until ready. While the
+foreground preparation remains pending or a retry is scheduled, the dialog
+must remain loading and must not report completion. Closing the foreground
+dialog invalidates its timer and every in-flight response; reopening starts a
+new generation and old responses must remain inert. The adjacent background
+export is workspace-owned and continues after its panel closes unless the
+authorization suffix explicitly migrates it to dialog ownership.
+
+Environment: status is a deferred ready/pending response, retries use a controlled cancellable scheduler; terminal disposal invalidates in-flight responses and retries.

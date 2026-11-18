@@ -1,0 +1,16 @@
+'use strict';
+const path=require('path'),candidate=path.resolve(process.argv[2]),schedule=process.argv[3];const assertions=[],trace=[];let adapter,error=null,scopeMigrated=false;const settle=()=>new Promise(r=>setImmediate(r));
+const stable=v=>Array.isArray(v)?v.map(stable):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,stable(v[k])])):v;
+const check=(id,actual,expected)=>assertions.push({id,passed:JSON.stringify(stable(actual))===JSON.stringify(stable(expected)),actual,expected});
+(async()=>{try{
+ const runtime=require('./adapter.json').runtime;if(['java','python3','php','ruby','go'].includes(runtime)){const l=require('./native-launch.cjs').launch(candidate,__dirname);adapter=require('./bridge.cjs')(l.command,{env:l.env});}else adapter=await require('./framework-loader.cjs').load(candidate);
+ function view(shell=false){const pending=[],writes=[],returned=[];const c=adapter.createController({shell},{notify(value){trace.push({type:'notification',value,shell});return new Promise(resolve=>pending.push(()=>resolve({value,events:[value]})));},write:value=>{writes.push(value);trace.push({type:'write',value,shell});},returned:r=>returned.push(r)});return {c,writes,returned,async deliver(value){c.call('run',value);await settle();const done=pending.shift();if(done)done();await settle();},async release(){const done=pending.shift();if(done)done();await settle();}};}
+ const a=view(),snap=()=>a.c.call('snapshot');
+ if(schedule==='active-control'){await a.deliver('one');await a.deliver('two');check('active-state',snap().value,'two');check('each-state-write-once',a.writes,['one','two']);a.c.call('close');check('close-preserves-state',snap().value,'two');}
+ else if(schedule==='close-pending'||schedule==='closed-future'||schedule==='double-close-fresh'){
+  await a.deliver('early');if(schedule==='close-pending'){a.c.call('run','pending');a.c.call('close');await a.release();}else a.c.call('close');await a.deliver('late');a.c.call('close');check('no-retired-state-writes',a.writes,['early']);check('retained-last-state',snap().value,'early');check('result-payload-preserved',a.returned,a.returned.map(r=>({value:r.value,events:[r.value]})));check('every-run-completes',a.returned.length,schedule==='close-pending'?3:2);if(schedule==='double-close-fresh'){const fresh=view();await fresh.deliver('fresh');check('fresh-instance-live',fresh.writes,['fresh']);fresh.c.dispose();}}
+ else if(schedule==='adjacent-child-dispose'){
+  const shell=view(true);await shell.deliver('shell-early');shell.c.call('run','shell-pending');a.c.call('close');shell.c.call('disposeChild');await shell.release();await shell.deliver('shell-late');scopeMigrated=JSON.stringify(shell.writes)==='["shell-early"]';check('complete-adjacent-policy',scopeMigrated||JSON.stringify(shell.writes)==='["shell-early","shell-pending","shell-late"]',true);check('adjacent-result-completion',shell.returned.length,3);shell.c.dispose();}
+ else throw Error(schedule);
+ a.c.dispose();
+ }catch(e){error=String(e.stack||e);}finally{if(adapter)adapter.finish();}process.stdout.write(JSON.stringify({schedule,passed:error===null&&assertions.length>0&&assertions.every(a=>a.passed),runtimeError:error,assertions,trace,scopeMigrated})+'\n');})();

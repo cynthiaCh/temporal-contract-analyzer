@@ -1,0 +1,1 @@
+Harbor logistics — Buffered result storage and completion state belong to a real native object reached by synchronous host ports. The pinned full RxJS public API and subscriber callback layer use this storage; opaque handles retain original value identity. Subscribers may invoke APIs inline.

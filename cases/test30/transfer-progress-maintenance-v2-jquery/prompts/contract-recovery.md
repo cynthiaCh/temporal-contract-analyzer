@@ -1,0 +1,1 @@
+Recover the transfer retry contract from README.md and source, including accepted commands, native abort callbacks, visit ownership, notices, cleanup, and record scope. Cite evidence and predict observable violations.

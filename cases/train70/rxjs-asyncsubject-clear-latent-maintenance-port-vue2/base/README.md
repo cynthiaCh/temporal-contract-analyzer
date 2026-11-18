@@ -1,0 +1,1 @@
+Volunteer coordination — Buffered result ownership is held by an actual mounted framework consumer of the pinned full RxJS product. The consumer can call API operations from inline subscriber callbacks; instances keep separate buffers.

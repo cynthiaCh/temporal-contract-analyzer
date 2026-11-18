@@ -5,7 +5,7 @@ import argparse
 parser=argparse.ArgumentParser(description='Prepare training or single-submission testing trajectories; no model calls')
 parser.add_argument('--root',type=Path,required=True);parser.add_argument('--solver-image',required=True);parser.add_argument('--grader-image',required=True);parser.add_argument('--limit',type=int,default=10)
 parser.add_argument('--start-rank',type=int,default=1,help='First one-based CSV rank to prepare')
-parser.add_argument('--selection-file',type=Path,help='Explicit ranked case CSV; defaults to the historical50 selection')
+parser.add_argument('--selection-file',type=Path,help='Explicit ranked case CSV; defaults to final train70 or test30 for the selected mode')
 parser.add_argument('--swe-tempoc-root',type=Path,help='Read public inputs from the frozen SWE-TempoC roster; regular cases support learning/testing')
 parser.add_argument('--evaluation-split',type=Path,help='Explicit frozen split registry for a new incremental cohort')
 parser.add_argument('--training-feedback',type=Path,help='Explicit public feedback mapping JSON, frozen in every trajectory')
@@ -52,7 +52,7 @@ from temporal_contract_analyzer.tempoevo_v4 import Trajectory,MODEL
 from temporal_contract_analyzer._session_runtime.model_settings import resolve_profile,identity
 settings=resolve_profile(args.model_profile,args.model_config)
 from temporal_contract_analyzer.core import sha
-selection_path=(args.selection_file or repo/'examples/tempoevo-v4/case-selections/gpt61-sol-medium-hardest50-20261029/selected_50_cases.csv').resolve()
+selection_path=(args.selection_file or repo/'cases'/('train70.csv' if args.mode=='learning' else 'test30.csv')).resolve()
 with selection_path.open(encoding='utf-8-sig') as selection_file:
  all_rows=list(csv.DictReader(selection_file))
 if len({row['case_id'] for row in all_rows})!=len(all_rows) or len({int(row['rank']) for row in all_rows})!=len(all_rows):parser.error('Selection case IDs and ranks must be unique')

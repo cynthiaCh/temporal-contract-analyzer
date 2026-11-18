@@ -1,0 +1,1 @@
+Greenhouse operations — Preparation panel uses a request service, cancellable retry timer and snapshot view. The foreground dialog controls its preparation session; background exports belong to the workspace.

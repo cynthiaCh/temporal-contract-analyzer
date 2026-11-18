@@ -5,18 +5,20 @@
 use a new output root. Historical trajectories are not reinterpreted or resumed
 under a different protocol.
 
-The default selection remains the historical hardest50 CSV. To use a different
-ranked CSV, pass `--selection-file`. To resolve public inputs directly from the
+The default selection is `cases/train70.csv` for learning and `cases/test30.csv`
+for testing. These are the only current 70/30 split, documented in
+[the complete case bundle](../../cases/README.md). To use an explicit ranked CSV,
+pass `--selection-file`. To resolve public inputs directly from the
 frozen SWE-TempoC roster, also pass `--swe-tempoc-root` (regular cases support training and testing; upstream tasks currently support testing only):
 
 ```bash
 python3 -B tools/tempoevo-docker/prepare_selected.py \
   --root /new/batch/root \
-  --selection-file examples/tempoevo-v4/case-selections/swe-tempoc-hard-latent25-20261116/selected_25_cases.csv \
+  --selection-file cases/test30.csv \
   --swe-tempoc-root /path/to/swe-tempoc \
   --solver-image sha256:SOLVER_IMAGE_ID \
   --grader-image sha256:GRADER_IMAGE_ID \
-  --mode testing --condition structured --model-profile sol61-medium --limit 25
+  --mode testing --condition structured --model-profile sol56-medium --limit 30
 python3 -B tools/tempoevo-docker/run_selected.py --root /new/batch/root --execute
 ```
 
@@ -54,11 +56,9 @@ original/reference/negative controls are archived alongside independent Gold
 controls, and the reference must pass both evaluators. Default retrieval and acceptance settings are
 unchanged; V12 uses advisory preparation validation. Testing rejects this recipe and training-only check descriptions.
 
-The current test10 plan runs one group using the full approved library
-(39 entries in the completed run), with business applicability selection and no
-Contract Review or A/B control. The source-family case pairing describes selection,
-not two testing arms. See [the current workflow](../../docs/WORKFLOW.md) and
-[the exact batch configuration](../../examples/tempoevo-v4/case-selections/swe-tempoc-paired10-sol6-20261116/testing-protocol-business-full-memory.json).
+The current experiment uses the final 30 test cases with frozen approved
+libraries of 0/20/40/61 entries. See [the current workflow](../../docs/WORKFLOW.md)
+and [the final results](../../experiments/testing-runs/gpt56-library-size-ablation-20261118/README.md).
 
 Training artifacts written outside the Git worktree must not be the only copy of
 learned guidance. After a batch, archive provisional entries, candidate reflections

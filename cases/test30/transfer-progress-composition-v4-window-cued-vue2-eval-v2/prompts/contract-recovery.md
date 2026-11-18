@@ -1,0 +1,1 @@
+Recover the transfer progress contract from README.md and source. Separate frame admission, accepted completion, audit retention, visible freshness across retries, visit ownership, cleanup reentrancy, telemetry bootstrap policy, inherited retry behavior, and authorization scope. Cite evidence and predict observable failures.

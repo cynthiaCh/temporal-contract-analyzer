@@ -1,0 +1,2 @@
+<?php
+class Controller{private $state=['value'=>0,'present'=>false,'completed'=>false];function __construct($env,$key,$config){}function get($name){return $this->state[$name];}function set($name,$value){$this->state[$name]=$value;}function clear($closed,$stopped){if(true&&!$closed&&!$stopped&&(!true||!$this->state['completed'])){$this->state['value']=0;$this->state['present']=false;}}function dispose(){}}
