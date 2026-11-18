@@ -72,3 +72,5 @@ python -B tools/verify_v4_review.py
 新环境复现需要合法取得外部benchmark与CLI，按构建工具重建镜像、完成动态准入，并使用独立run_id/store/volume和对应新冻结配置。不能把本分支的本机准入报告当成另一环境已准入，也不能修改现有绑定后继续拼接本轮曲线。当前v6监督入口要求已记录的调度修订；新实验应显式制定并冻结自己的调度配置。
 
 审查副本离线验证：82项测试通过、0失败、0跳过；额外四并发调度/账本验证通过。容器无网络、无凭据、无Docker socket，模型和Gold调用均为0。详情见 `review-provenance/review-validation.json`。完整46,214项构建文件清单未上传，使用 `grader-build-summary.json` 保留原清单哈希、100例范围和条目数量。
+
+发布后补充：D14训练首次PASS，但独立AI审核的原始来源引用校验失败。新增 `close_citation_invalid.py` 仅扩展独立无新增闭审工具，调用冻结来源校验复现拒绝，保留原始审核及训练PASS，不激活候选、不追加模型请求；运行中的102项冻结源码/输入及3项调度绑定仍未改变。详见ISSUES.md第16项。

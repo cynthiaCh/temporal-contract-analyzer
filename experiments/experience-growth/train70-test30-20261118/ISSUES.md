@@ -21,4 +21,6 @@
 
 15. D12首次Action的公开检查与训练Oracle均PASS，但成功反思输出operation=revise且failure_attribution=implementation_gap，触发原有experience_reflection.plan语义拒绝。原始JSON和schema有效，离线调用冻结校验函数复现完全相同错误；没有生成candidate-pool/success.json，也未进入AI内容审核或激活。原引擎将整个state标为execution_invalid，不能因此抹掉已有效的训练PASS。独立close_reflection_invalid.py严格核对这个特定拒绝、原始结果哈希、完整用量和未变化的经验快照，闭审为经验阶段执行无效/无新增，保留训练PASS和原始state不动；不改答案、不追加请求。D12共11请求，库仍5条。报告器区分有有效训练评分的经验阶段失败与求解执行无效。证据见engineering-observations/D12-reflection-semantic-invalid.json。
 
+16. D14首次训练验收PASS，候选已产生，但AI内容审核的R02/R03/R05/R08原文引用无法通过冻结来源校验，未写入批准决定。JSON/schema本身有效；独立close_citation_invalid.py调用同一冻结来源校验逐条复现拒绝，扩展的只是单独无新增闭审工具，不修改正式求解或监督器绑定。候选与审核原文保留、不激活，不把审核输出accept等同于合法批准；D14真实训练PASS和16次请求保留，经验库仍5条。完整被拒规则及引用保存在D14/review/closure.json的validation_failure中，无额外模型/Gold调用。
+
 追加过程事件见EVENTS.jsonl；每次恢复保留不可变完成收据及计量核对。一般行为FAIL不是自动调参理由。
