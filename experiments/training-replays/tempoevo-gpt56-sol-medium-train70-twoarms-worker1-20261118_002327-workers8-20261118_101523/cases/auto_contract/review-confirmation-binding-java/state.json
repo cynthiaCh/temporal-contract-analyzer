@@ -1,0 +1,1255 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "be22bf0658b0711e740a4d662bb258f2cfd0f532120a81d1a1ec85bcadcb1584",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "0e3fe395900ec1d94c72edfe530012809f20febeb4bca7b579118af288b2650c",
+        "src/Workflow.java": "b612acccc11046f465539715415a09207936cf6f6a2b7b938d6567de569b75f2"
+      },
+      "candidate_sources": {
+        "README.md": "# Medical referral review\n\n\nThe workspace edits persistent documents and submits snapshots to a review queue.\nThe public API is synchronous: open(id), edit(text), close(), submit(), dispose().\nReturning to a document creates a fresh editor visit and restores persisted text.\nThe adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable.\n\nThe coordinator owns editor visits; the acquired confirmation capability owns a view outlet. The document repository and durable queue are separate services. Component or native source defines the local service contracts.\nTheir local interface contracts define the behavior to preserve.\n\nThe injected store has read/write/subscribe, the queue has enqueue/list/subscribe,\nand timers have schedule(callback, delay)/cancel(handle). Render functions are\noutput sinks and do not call application code. Keep the workspace API and these\ninjected interfaces. A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace.\n\nTyped session coordinator and immutable receipt DTO; an acquired confirmation capability reads native visit identity.\n\nAn outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity. Native RPC only adapts timer and passive output/integration resource calls; storage, queue delivery, acquired outlet and command state execute in the target runtime.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"OpenJDK 11.0.27\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "src/Workflow.java": "import java.util.*;\nimport java.util.function.Consumer;\n\n/** Compliance dossier sessions have typed lifetime and value objects. */\npublic final class Workflow {\n    interface Environment {\n        Store store();\n        Object schedule(Runnable callback, int delay);\n        void cancel(Object handle);\n        void output(String kind, Object value);\n        void write(String id, String text);\n        Map<String,Object> capture(Map<String,Object> value);\n    }\n    static Map<String,Object> value(String id, String text) {\n        Map<String,Object> result=new LinkedHashMap<>(); result.put(\"id\",id); result.put(\"text\",text); return result;\n    }\n    static final class Store {\n        final Map<String,String> records=new LinkedHashMap<>();\n        final Map<Integer,Consumer<Map<String,Object>>> listeners=new LinkedHashMap<>();\n        int serial, revision;\n        Store(Map<String,Object> initial) { initial.forEach((k,v)->records.put(k,(String)v)); }\n        String read(String id) { return records.getOrDefault(id, \"\"); }\n        int subscribe(Consumer<Map<String,Object>> fn) { int token=++serial; listeners.put(token,fn); return token; }\n        void stop(int token) { listeners.remove(token); }\n        Map<String,Object> write(String id, String text) {\n            records.put(id,text); Map<String,Object> event=value(id,text); event.put(\"revision\",++revision);\n            for (int token:new ArrayList<>(listeners.keySet())) {\n                Consumer<Map<String,Object>> fn=listeners.get(token); if(fn!=null) fn.accept(event);\n            }\n            return event;\n        }\n    }\n    static final class Receipt {\n        final String id, text;\n        Receipt(Map<String,Object> snapshot) { id=(String)snapshot.get(\"id\"); text=(String)snapshot.get(\"text\"); }\n        Map<String,Object> copy() { return value(id,text); }\n    }\n    static final class Archive {\n        final List<Receipt> receipts=new ArrayList<>();final Map<Integer,Consumer<Map<String,Object>>> listeners=new LinkedHashMap<>();int serial;\n        int subscribe(Consumer<Map<String,Object>>fn){int token=++serial;listeners.put(token,fn);return token;}\n        void stop(int token){listeners.remove(token);}\n        Map<String,Object> capture(Map<String,Object> snapshot) { Receipt receipt=new Receipt(snapshot); receipts.add(receipt); Map<String,Object> event=Collections.unmodifiableMap(receipt.copy());for(int token:new ArrayList<>(listeners.keySet())){Consumer<Map<String,Object>>fn=listeners.get(token);if(fn!=null)fn.accept(event);}return event; }\n        List<Map<String,Object>> list() { List<Map<String,Object>> result=new ArrayList<>(); for(Receipt receipt:receipts) result.add(receipt.copy()); return result; }\n    }\n    static final class Trailing {\n        final Environment env; final int delay; final Consumer<String> work;\n        Object handle; String pending;\n        Trailing(Environment env,int delay,Consumer<String> work) { this.env=env;this.delay=delay;this.work=work; }\n        void push(String text) { if(handle!=null)env.cancel(handle); pending=text; handle=env.schedule(this::flush,delay); }\n        void flush() { if(handle!=null)env.cancel(handle); String text=pending; handle=null;pending=null; if(text!=null)work.accept(text); }\n        void cancel() { if(handle!=null)env.cancel(handle);handle=null;pending=null; }\n    }\n    static final class Session {\n        final String id; String text; final int token; final Trailing task;\n        Session(String id,String text,int token,Trailing task) { this.id=id;this.text=text;this.token=token;this.task=task; }\n    }\n    static final class Confirmation {\n        final java.util.function.Supplier<Session> current;final Consumer<Map<String,Object>> emit;final Session owner;\n        Confirmation(java.util.function.Supplier<Session> current,Consumer<Map<String,Object>> emit){this.current=current;this.emit=emit;owner=current.get();}\n        boolean active(){return owner!=null&&owner==current.get();}\n        void show(Map<String,Object> receipt){if(active())emit.accept(receipt);}\n    }\n    static final class Workspace {\n        final Environment env; Session current; long navigation;\n        Workspace(Environment env) { this.env=env; }\n        void retire() {\n            Session leaving=current; current=null;\n            if(leaving!=null) {\n                env.store().stop(leaving.token);\n                leaving.task.flush();\n            }\n            env.output(\"document\",null);\n            \n        }\n        void open(String id) {\n            env.output(\"notice\",null);long request=++navigation;retire();\n            \n            int token=env.store().subscribe(event->{if(id.equals(event.get(\"id\")))env.output(\"status\",event);});\n            Trailing task=new Trailing(env,120,text->env.write(id,text));\n            current=new Session(id,env.store().read(id),token,task);\n            env.output(\"document\",value(id,current.text));\n        }\n        void edit(String text) { if(current==null)return; current.text=text; current.task.push(text); }\n        void close() { env.output(\"notice\",null);++navigation;retire(); }\n        Map<String,Object> submit() {\n            Confirmation confirmation=new Confirmation(()->current,receipt->env.output(\"notice\",receipt));\n            Session visit=current;if(visit==null)return null;\n            Map<String,Object> snapshot=value(visit.id,visit.text);\n            \n            \n            \n            \n            Map<String,Object> receipt=env.capture(snapshot);\n            \n            confirmation.show(receipt);\n            return receipt;\n        }\n        void dispose() { close(); }\n    }\n    static final class Preview {\n        final Trailing task;\n        Preview(Environment env) { task=new Trailing(env,40,query->{Map<String,Object> value=new LinkedHashMap<>();value.put(\"query\",query);env.output(\"preview\",value);}); }\n        void query(String text) { task.push(text); }\n        void hide() { task.cancel(); }\n    }\n}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "public_java_compile",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "be22bf0658b0711e740a4d662bb258f2cfd0f532120a81d1a1ec85bcadcb1584",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "0e3fe395900ec1d94c72edfe530012809f20febeb4bca7b579118af288b2650c",
+        "src/Workflow.java": "4a15e7148f6d75b064cc8238993c9b4a8ad43c0a6f3715c33e94d13b8438c6d5"
+      },
+      "candidate_sources": {
+        "README.md": "# Medical referral review\n\n\nThe workspace edits persistent documents and submits snapshots to a review queue.\nThe public API is synchronous: open(id), edit(text), close(), submit(), dispose().\nReturning to a document creates a fresh editor visit and restores persisted text.\nThe adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable.\n\nThe coordinator owns editor visits; the acquired confirmation capability owns a view outlet. The document repository and durable queue are separate services. Component or native source defines the local service contracts.\nTheir local interface contracts define the behavior to preserve.\n\nThe injected store has read/write/subscribe, the queue has enqueue/list/subscribe,\nand timers have schedule(callback, delay)/cancel(handle). Render functions are\noutput sinks and do not call application code. Keep the workspace API and these\ninjected interfaces. A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace.\n\nTyped session coordinator and immutable receipt DTO; an acquired confirmation capability reads native visit identity.\n\nAn outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity. Native RPC only adapts timer and passive output/integration resource calls; storage, queue delivery, acquired outlet and command state execute in the target runtime.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"OpenJDK 11.0.27\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "src/Workflow.java": "import java.util.*;\nimport java.util.function.Consumer;\n\n/** Compliance dossier sessions have typed lifetime and value objects. */\npublic final class Workflow {\n    interface Environment {\n        Store store();\n        Object schedule(Runnable callback, int delay);\n        void cancel(Object handle);\n        void output(String kind, Object value);\n        void write(String id, String text);\n        Map<String,Object> capture(Map<String,Object> value);\n    }\n    static Map<String,Object> value(String id, String text) {\n        Map<String,Object> result=new LinkedHashMap<>(); result.put(\"id\",id); result.put(\"text\",text); return result;\n    }\n    static final class Store {\n        final Map<String,String> records=new LinkedHashMap<>();\n        final Map<Integer,Consumer<Map<String,Object>>> listeners=new LinkedHashMap<>();\n        int serial, revision;\n        Store(Map<String,Object> initial) { initial.forEach((k,v)->records.put(k,(String)v)); }\n        String read(String id) { return records.getOrDefault(id, \"\"); }\n        int subscribe(Consumer<Map<String,Object>> fn) { int token=++serial; listeners.put(token,fn); return token; }\n        void stop(int token) { listeners.remove(token); }\n        Map<String,Object> write(String id, String text) {\n            records.put(id,text); Map<String,Object> event=value(id,text); event.put(\"revision\",++revision);\n            for (int token:new ArrayList<>(listeners.keySet())) {\n                Consumer<Map<String,Object>> fn=listeners.get(token); if(fn!=null) fn.accept(event);\n            }\n            return event;\n        }\n    }\n    static final class Receipt {\n        final String id, text;\n        Receipt(Map<String,Object> snapshot) { id=(String)snapshot.get(\"id\"); text=(String)snapshot.get(\"text\"); }\n        Map<String,Object> copy() { return value(id,text); }\n    }\n    static final class Archive {\n        final List<Receipt> receipts=new ArrayList<>();final Map<Integer,Consumer<Map<String,Object>>> listeners=new LinkedHashMap<>();int serial;\n        int subscribe(Consumer<Map<String,Object>>fn){int token=++serial;listeners.put(token,fn);return token;}\n        void stop(int token){listeners.remove(token);}\n        Map<String,Object> capture(Map<String,Object> snapshot) { Receipt receipt=new Receipt(snapshot); receipts.add(receipt); Map<String,Object> event=Collections.unmodifiableMap(receipt.copy());for(int token:new ArrayList<>(listeners.keySet())){Consumer<Map<String,Object>>fn=listeners.get(token);if(fn!=null)fn.accept(event);}return event; }\n        List<Map<String,Object>> list() { List<Map<String,Object>> result=new ArrayList<>(); for(Receipt receipt:receipts) result.add(receipt.copy()); return result; }\n    }\n    static final class Trailing {\n        final Environment env; final int delay; final Consumer<String> work;\n        Object handle; String pending;\n        Trailing(Environment env,int delay,Consumer<String> work) { this.env=env;this.delay=delay;this.work=work; }\n        void push(String text) { if(handle!=null)env.cancel(handle); pending=text; handle=env.schedule(this::flush,delay); }\n        void flush() { if(handle!=null)env.cancel(handle); String text=pending; handle=null;pending=null; if(text!=null)work.accept(text); }\n        void cancel() { if(handle!=null)env.cancel(handle);handle=null;pending=null; }\n    }\n    static final class Session {\n        final String id; String text; final int token; final Trailing task;\n        Session(String id,String text,int token,Trailing task) { this.id=id;this.text=text;this.token=token;this.task=task; }\n    }\n    static final class Confirmation {\n        final java.util.function.Supplier<Session> current;final Consumer<Map<String,Object>> emit;final Session owner;\n        Confirmation(java.util.function.Supplier<Session> current,Consumer<Map<String,Object>> emit){this.current=current;this.emit=emit;owner=current.get();}\n        boolean active(){return owner!=null&&owner==current.get();}\n        void show(Map<String,Object> receipt){if(active())emit.accept(receipt);}\n    }\n    static final class Workspace {\n        final Environment env; Session current; long navigation;\n        Workspace(Environment env) { this.env=env; }\n        void retire() {\n            Session leaving=current; current=null;\n            if(leaving!=null) {\n                env.store().stop(leaving.token);\n                leaving.task.cancel();\n            }\n            env.output(\"document\",null);\n            \n        }\n        void open(String id) {\n            env.output(\"notice\",null);long request=++navigation;retire();\n            \n            int token=env.store().subscribe(event->{if(id.equals(event.get(\"id\")))env.output(\"status\",event);});\n            Trailing task=new Trailing(env,120,text->env.write(id,text));\n            current=new Session(id,env.store().read(id),token,task);\n            env.output(\"document\",value(id,current.text));\n        }\n        void edit(String text) { if(current==null)return; current.text=text; current.task.push(text); }\n        void close() { env.output(\"notice\",null);++navigation;retire(); }\n        Map<String,Object> submit() {\n            Confirmation confirmation=new Confirmation(()->current,receipt->env.output(\"notice\",receipt));\n            Session visit=current;if(visit==null)return null;\n            Map<String,Object> snapshot=value(visit.id,visit.text);\n            \n            \n            \n            \n            Map<String,Object> receipt=env.capture(snapshot);\n            \n            confirmation.show(receipt);\n            return receipt;\n        }\n        void dispose() { close(); }\n    }\n    static final class Preview {\n        final Trailing task;\n        Preview(Environment env) { task=new Trailing(env,40,query->{Map<String,Object> value=new LinkedHashMap<>();value.put(\"query\",query);env.output(\"preview\",value);}); }\n        void query(String text) { task.push(text); }\n        void hide() { task.cancel(); }\n    }\n}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "public_java_compile",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 2,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "be22bf0658b0711e740a4d662bb258f2cfd0f532120a81d1a1ec85bcadcb1584",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "0e3fe395900ec1d94c72edfe530012809f20febeb4bca7b579118af288b2650c",
+        "src/Workflow.java": "b612acccc11046f465539715415a09207936cf6f6a2b7b938d6567de569b75f2"
+      },
+      "candidate_sources": {
+        "README.md": "# Medical referral review\n\n\nThe workspace edits persistent documents and submits snapshots to a review queue.\nThe public API is synchronous: open(id), edit(text), close(), submit(), dispose().\nReturning to a document creates a fresh editor visit and restores persisted text.\nThe adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable.\n\nThe coordinator owns editor visits; the acquired confirmation capability owns a view outlet. The document repository and durable queue are separate services. Component or native source defines the local service contracts.\nTheir local interface contracts define the behavior to preserve.\n\nThe injected store has read/write/subscribe, the queue has enqueue/list/subscribe,\nand timers have schedule(callback, delay)/cancel(handle). Render functions are\noutput sinks and do not call application code. Keep the workspace API and these\ninjected interfaces. A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace.\n\nTyped session coordinator and immutable receipt DTO; an acquired confirmation capability reads native visit identity.\n\nAn outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity. Native RPC only adapts timer and passive output/integration resource calls; storage, queue delivery, acquired outlet and command state execute in the target runtime.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"OpenJDK 11.0.27\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "src/Workflow.java": "import java.util.*;\nimport java.util.function.Consumer;\n\n/** Compliance dossier sessions have typed lifetime and value objects. */\npublic final class Workflow {\n    interface Environment {\n        Store store();\n        Object schedule(Runnable callback, int delay);\n        void cancel(Object handle);\n        void output(String kind, Object value);\n        void write(String id, String text);\n        Map<String,Object> capture(Map<String,Object> value);\n    }\n    static Map<String,Object> value(String id, String text) {\n        Map<String,Object> result=new LinkedHashMap<>(); result.put(\"id\",id); result.put(\"text\",text); return result;\n    }\n    static final class Store {\n        final Map<String,String> records=new LinkedHashMap<>();\n        final Map<Integer,Consumer<Map<String,Object>>> listeners=new LinkedHashMap<>();\n        int serial, revision;\n        Store(Map<String,Object> initial) { initial.forEach((k,v)->records.put(k,(String)v)); }\n        String read(String id) { return records.getOrDefault(id, \"\"); }\n        int subscribe(Consumer<Map<String,Object>> fn) { int token=++serial; listeners.put(token,fn); return token; }\n        void stop(int token) { listeners.remove(token); }\n        Map<String,Object> write(String id, String text) {\n            records.put(id,text); Map<String,Object> event=value(id,text); event.put(\"revision\",++revision);\n            for (int token:new ArrayList<>(listeners.keySet())) {\n                Consumer<Map<String,Object>> fn=listeners.get(token); if(fn!=null) fn.accept(event);\n            }\n            return event;\n        }\n    }\n    static final class Receipt {\n        final String id, text;\n        Receipt(Map<String,Object> snapshot) { id=(String)snapshot.get(\"id\"); text=(String)snapshot.get(\"text\"); }\n        Map<String,Object> copy() { return value(id,text); }\n    }\n    static final class Archive {\n        final List<Receipt> receipts=new ArrayList<>();final Map<Integer,Consumer<Map<String,Object>>> listeners=new LinkedHashMap<>();int serial;\n        int subscribe(Consumer<Map<String,Object>>fn){int token=++serial;listeners.put(token,fn);return token;}\n        void stop(int token){listeners.remove(token);}\n        Map<String,Object> capture(Map<String,Object> snapshot) { Receipt receipt=new Receipt(snapshot); receipts.add(receipt); Map<String,Object> event=Collections.unmodifiableMap(receipt.copy());for(int token:new ArrayList<>(listeners.keySet())){Consumer<Map<String,Object>>fn=listeners.get(token);if(fn!=null)fn.accept(event);}return event; }\n        List<Map<String,Object>> list() { List<Map<String,Object>> result=new ArrayList<>(); for(Receipt receipt:receipts) result.add(receipt.copy()); return result; }\n    }\n    static final class Trailing {\n        final Environment env; final int delay; final Consumer<String> work;\n        Object handle; String pending;\n        Trailing(Environment env,int delay,Consumer<String> work) { this.env=env;this.delay=delay;this.work=work; }\n        void push(String text) { if(handle!=null)env.cancel(handle); pending=text; handle=env.schedule(this::flush,delay); }\n        void flush() { if(handle!=null)env.cancel(handle); String text=pending; handle=null;pending=null; if(text!=null)work.accept(text); }\n        void cancel() { if(handle!=null)env.cancel(handle);handle=null;pending=null; }\n    }\n    static final class Session {\n        final String id; String text; final int token; final Trailing task;\n        Session(String id,String text,int token,Trailing task) { this.id=id;this.text=text;this.token=token;this.task=task; }\n    }\n    static final class Confirmation {\n        final java.util.function.Supplier<Session> current;final Consumer<Map<String,Object>> emit;final Session owner;\n        Confirmation(java.util.function.Supplier<Session> current,Consumer<Map<String,Object>> emit){this.current=current;this.emit=emit;owner=current.get();}\n        boolean active(){return owner!=null&&owner==current.get();}\n        void show(Map<String,Object> receipt){if(active())emit.accept(receipt);}\n    }\n    static final class Workspace {\n        final Environment env; Session current; long navigation;\n        Workspace(Environment env) { this.env=env; }\n        void retire() {\n            Session leaving=current; current=null;\n            if(leaving!=null) {\n                env.store().stop(leaving.token);\n                leaving.task.flush();\n            }\n            env.output(\"document\",null);\n            \n        }\n        void open(String id) {\n            env.output(\"notice\",null);long request=++navigation;retire();\n            \n            int token=env.store().subscribe(event->{if(id.equals(event.get(\"id\")))env.output(\"status\",event);});\n            Trailing task=new Trailing(env,120,text->env.write(id,text));\n            current=new Session(id,env.store().read(id),token,task);\n            env.output(\"document\",value(id,current.text));\n        }\n        void edit(String text) { if(current==null)return; current.text=text; current.task.push(text); }\n        void close() { env.output(\"notice\",null);++navigation;retire(); }\n        Map<String,Object> submit() {\n            Confirmation confirmation=new Confirmation(()->current,receipt->env.output(\"notice\",receipt));\n            Session visit=current;if(visit==null)return null;\n            Map<String,Object> snapshot=value(visit.id,visit.text);\n            \n            \n            \n            \n            Map<String,Object> receipt=env.capture(snapshot);\n            \n            confirmation.show(receipt);\n            return receipt;\n        }\n        void dispose() { close(); }\n    }\n    static final class Preview {\n        final Trailing task;\n        Preview(Environment env) { task=new Trailing(env,40,query->{Map<String,Object> value=new LinkedHashMap<>();value.put(\"query\",query);env.output(\"preview\",value);}); }\n        void query(String text) { task.push(text); }\n        void hide() { task.cancel(); }\n    }\n}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "public_java_compile",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 3,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "Compile public Java sources with OpenJDK 11, placing generated classes outside /workspace.",
+      "Verify multiple edits within one burst produce no immediate writes and exactly one write of the latest text after 120 ms of quiet.",
+      "Verify a later edit burst also saves after its own 120 ms quiet interval.",
+      "Verify open, close, submit, and dispose remain synchronous and retain their existing return behavior.",
+      "Verify editor lifecycle boundaries cannot allow an older visit's pending callback to overwrite a newer visit's persisted text.",
+      "Verify Preview continues to use its existing 40 ms trailing task and hide-cancellation behavior unchanged."
+    ],
+    "forbidden_effects": [
+      "Do not continue calling env.write directly for every edit.",
+      "Do not publish more than one repository write for a single uninterrupted editing burst.",
+      "Do not let a pending task owned by an earlier editor visit write into the lifecycle of a later visit.",
+      "Do not change the adjacent search preview as part of this maintenance change.",
+      "Do not change the synchronous workspace API or the injected store, queue/capture, timer, or output interfaces.",
+      "Do not weaken confirmation outlet ownership or allow a receipt to establish an earlier visit identity.",
+      "Do not alter tests or configuration."
+    ],
+    "lifecycle_identity": [
+      "Each call to open creates a fresh Session identity, even when reopening the same document id.",
+      "The editor trailing task is owned by the Session created for that visit and must not be treated as workspace-global work.",
+      "Confirmation captures the Session active when the capability is acquired and emits only while that exact Session remains current.",
+      "A pending callback from a retired Session must not affect a later Session."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Workspace.edit must update the selected Session's in-memory text synchronously, but persistence must be requested through that Session's existing Trailing utility rather than by calling env.write on every edit."
+      },
+      {
+        "id": "O2",
+        "text": "The editor Trailing utility must use a 120 ms delay and, for edits arriving before the quiet interval expires, cancel the prior scheduled handle and retain only the latest text."
+      },
+      {
+        "id": "O3",
+        "text": "After 120 ms without another edit in the burst, exactly one write must persist the latest text for the active editing visit."
+      },
+      {
+        "id": "O4",
+        "text": "After one burst has flushed, later bursts must be independently schedulable and must also persist their latest text."
+      },
+      {
+        "id": "O5",
+        "text": "The change must preserve the synchronous open(id), edit(text), close(), submit(), and dispose() interfaces, including submit returning the queue receipt or null when no editor is selected."
+      },
+      {
+        "id": "O6",
+        "text": "Opening a document must continue to create a fresh editor visit using persisted repository text, maintain the document-specific store subscription, and render the selected document."
+      },
+      {
+        "id": "O7",
+        "text": "Submission must continue to synchronously capture a snapshot of the selected visit's current in-memory id and text, independently of whether a coalesced repository write is pending."
+      },
+      {
+        "id": "O8",
+        "text": "Retiring or replacing an editor visit must handle its scheduled task so that delayed work from that visit cannot overwrite a later visit; the precise flush-versus-cancel policy at close/open remains an explicit unknown requiring preservation-based resolution."
+      },
+      {
+        "id": "O9",
+        "text": "Preview.query and Preview.hide behavior, including the 40 ms quiet interval and cancellation of unpublished preview work, must remain unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "Within an editing burst, updating Session.text occurs synchronously before the delayed persistence callback can observe the value.",
+      "Each new edit in a pending burst cancels the previous timer before scheduling the replacement timer.",
+      "The normal persistence write occurs only after the final edit has remained quiet for 120 ms.",
+      "A completed flush clears its handle and pending value before invoking the write callback, allowing subsequent bursts to schedule normally.",
+      "Session retirement must prevent any pending callback from crossing into and corrupting a later visit.",
+      "Dispose must detach integrations before the workspace is closed, preserving the documented lifecycle ordering."
+    ],
+    "preservation": [
+      "Returning to a document creates a fresh editor visit and restores its persisted text.",
+      "Store writes continue notifying the existing document-specific subscription and producing status output.",
+      "Submission continues using the selected Session's current text and returning the capture receipt synchronously.",
+      "The confirmation outlet remains bound to the visit active when it is acquired.",
+      "Document and notice clearing behavior on open and close remains supported.",
+      "Injected service interfaces and passive output behavior remain unchanged.",
+      "Preview timing, cancellation, and later-query usability remain unchanged."
+    ],
+    "scope": [
+      "Change only editor persistence initiated by Workspace.edit in src/Workflow.java.",
+      "Reuse the existing Trailing utility with a 120 ms editor delay.",
+      "Include editor-session retirement handling only insofar as necessary to preserve saves and prevent stale delayed writes.",
+      "Exclude the adjacent Preview implementation from the maintenance change."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "The medical referral review editor currently writes on every keystroke. Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst."
+      },
+      {
+        "file": "TASK",
+        "quote": "Subsequent bursts must continue to save."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve other supported behavior and the synchronous public interfaces."
+      },
+      {
+        "file": "TASK",
+        "quote": "The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "The public API is synchronous: open(id), edit(text), close(), submit(), dispose()."
+      },
+      {
+        "file": "README.md",
+        "quote": "Returning to a document creates a fresh editor visit and restores persisted text."
+      },
+      {
+        "file": "README.md",
+        "quote": "The adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable."
+      },
+      {
+        "file": "README.md",
+        "quote": "Keep the workspace API and these\ninjected interfaces. A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace."
+      },
+      {
+        "file": "README.md",
+        "quote": "An outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity."
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "void push(String text) { if(handle!=null)env.cancel(handle); pending=text; handle=env.schedule(this::flush,delay); }"
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "void flush() { if(handle!=null)env.cancel(handle); String text=pending; handle=null;pending=null; if(text!=null)work.accept(text); }"
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "Trailing task=new Trailing(env,120,text->env.write(id,text));"
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "void edit(String text) { if(current==null)return; current.text=text; env.write(current.id,text); }"
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "Map<String,Object> snapshot=value(visit.id,visit.text);"
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "Preview(Environment env) { task=new Trailing(env,40,query->{Map<String,Object> value=new LinkedHashMap<>();value.put(\"query\",query);env.output(\"preview\",value);}); }"
+      }
+    ],
+    "triggers": [
+      "A call to Workspace.edit(text) while a Session is selected starts or resets that visit's 120 ms trailing save interval.",
+      "Expiration of the latest scheduled editor timer after 120 ms of quiet flushes the pending latest text.",
+      "A later edit after a completed flush begins a new independent burst.",
+      "Opening another document, closing the current document, or disposing the workspace retires the current Session and requires safe handling of its pending task.",
+      "Preview.query and Preview.hide remain separate triggers outside the requested change."
+    ],
+    "unknowns": [
+      "The public task and README do not explicitly specify whether close/open must flush a pending editor save immediately, cancel it, or allow it to finish after retirement. Preservation of previously immediate persistence favors retaining the edit, while the 120 ms quiet-interval wording forbids assuming an undocumented early write; implementation review must resolve this without permitting stale-visit overwrites.",
+      "The supplied Environment combines store(), write(), and capture() rather than exposing the README's queue names directly; the public source is the operative local interface contract.",
+      "No public behavioral tests specify timer callback behavior when cancel(handle) races with an already-started callback.",
+      "No public source states whether repeated edit calls containing identical text should be deduplicated beyond ordinary burst coalescing, so no such deduplication is required."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 3,
+  "diagnoses": [
+    {
+      "attempt": 2,
+      "candidate_only_contract_evidence": [],
+      "contract_after": {
+        "checkpoints": [
+          "Compile public Java sources with OpenJDK 11, placing generated classes outside /workspace.",
+          "Verify multiple edits within one burst produce no immediate writes and exactly one write of the latest text after 120 ms of quiet.",
+          "Verify a later edit burst also saves after its own 120 ms quiet interval.",
+          "Verify open, close, submit, and dispose remain synchronous and retain their existing return behavior.",
+          "Verify editor lifecycle boundaries cannot allow an older visit's pending callback to overwrite a newer visit's persisted text.",
+          "Verify Preview continues to use its existing 40 ms trailing task and hide-cancellation behavior unchanged."
+        ],
+        "forbidden_effects": [
+          "Do not continue calling env.write directly for every edit.",
+          "Do not publish more than one repository write for a single uninterrupted editing burst.",
+          "Do not let a pending task owned by an earlier editor visit write into the lifecycle of a later visit.",
+          "Do not change the adjacent search preview as part of this maintenance change.",
+          "Do not change the synchronous workspace API or the injected store, queue/capture, timer, or output interfaces.",
+          "Do not weaken confirmation outlet ownership or allow a receipt to establish an earlier visit identity.",
+          "Do not alter tests or configuration."
+        ],
+        "lifecycle_identity": [
+          "Each call to open creates a fresh Session identity, even when reopening the same document id.",
+          "The editor trailing task is owned by the Session created for that visit and must not be treated as workspace-global work.",
+          "Confirmation captures the Session active when the capability is acquired and emits only while that exact Session remains current.",
+          "A pending callback from a retired Session must not affect a later Session."
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "text": "Workspace.edit must update the selected Session's in-memory text synchronously, but persistence must be requested through that Session's existing Trailing utility rather than by calling env.write on every edit."
+          },
+          {
+            "id": "O2",
+            "text": "The editor Trailing utility must use a 120 ms delay and, for edits arriving before the quiet interval expires, cancel the prior scheduled handle and retain only the latest text."
+          },
+          {
+            "id": "O3",
+            "text": "After 120 ms without another edit in the burst, exactly one write must persist the latest text for the active editing visit."
+          },
+          {
+            "id": "O4",
+            "text": "After one burst has flushed, later bursts must be independently schedulable and must also persist their latest text."
+          },
+          {
+            "id": "O5",
+            "text": "The change must preserve the synchronous open(id), edit(text), close(), submit(), and dispose() interfaces, including submit returning the queue receipt or null when no editor is selected."
+          },
+          {
+            "id": "O6",
+            "text": "Opening a document must continue to create a fresh editor visit using persisted repository text, maintain the document-specific store subscription, and render the selected document."
+          },
+          {
+            "id": "O7",
+            "text": "Submission must continue to synchronously capture a snapshot of the selected visit's current in-memory id and text, independently of whether a coalesced repository write is pending."
+          },
+          {
+            "id": "O8",
+            "text": "Retiring or replacing an editor visit must handle its scheduled task so that delayed work from that visit cannot overwrite a later visit; the precise flush-versus-cancel policy at close/open remains an explicit unknown requiring preservation-based resolution."
+          },
+          {
+            "id": "O9",
+            "text": "Preview.query and Preview.hide behavior, including the 40 ms quiet interval and cancellation of unpublished preview work, must remain unchanged."
+          }
+        ],
+        "ordering_barriers": [
+          "Within an editing burst, updating Session.text occurs synchronously before the delayed persistence callback can observe the value.",
+          "Each new edit in a pending burst cancels the previous timer before scheduling the replacement timer.",
+          "The normal persistence write occurs only after the final edit has remained quiet for 120 ms.",
+          "A completed flush clears its handle and pending value before invoking the write callback, allowing subsequent bursts to schedule normally.",
+          "Session retirement must prevent any pending callback from crossing into and corrupting a later visit.",
+          "Dispose must detach integrations before the workspace is closed, preserving the documented lifecycle ordering."
+        ],
+        "preservation": [
+          "Returning to a document creates a fresh editor visit and restores its persisted text.",
+          "Store writes continue notifying the existing document-specific subscription and producing status output.",
+          "Submission continues using the selected Session's current text and returning the capture receipt synchronously.",
+          "The confirmation outlet remains bound to the visit active when it is acquired.",
+          "Document and notice clearing behavior on open and close remains supported.",
+          "Injected service interfaces and passive output behavior remain unchanged.",
+          "Preview timing, cancellation, and later-query usability remain unchanged."
+        ],
+        "scope": [
+          "Change only editor persistence initiated by Workspace.edit in src/Workflow.java.",
+          "Reuse the existing Trailing utility with a 120 ms editor delay.",
+          "Include editor-session retirement handling only insofar as necessary to preserve saves and prevent stale delayed writes.",
+          "Exclude the adjacent Preview implementation from the maintenance change."
+        ],
+        "supporting_evidence": [
+          {
+            "file": "TASK",
+            "quote": "The medical referral review editor currently writes on every keystroke. Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst."
+          },
+          {
+            "file": "TASK",
+            "quote": "Subsequent bursts must continue to save."
+          },
+          {
+            "file": "TASK",
+            "quote": "Preserve other supported behavior and the synchronous public interfaces."
+          },
+          {
+            "file": "TASK",
+            "quote": "The adjacent search preview is outside this maintenance change."
+          },
+          {
+            "file": "README.md",
+            "quote": "The public API is synchronous: open(id), edit(text), close(), submit(), dispose()."
+          },
+          {
+            "file": "README.md",
+            "quote": "Returning to a document creates a fresh editor visit and restores persisted text."
+          },
+          {
+            "file": "README.md",
+            "quote": "The adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable."
+          },
+          {
+            "file": "README.md",
+            "quote": "Keep the workspace API and these\ninjected interfaces. A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace."
+          },
+          {
+            "file": "README.md",
+            "quote": "An outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity."
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "void push(String text) { if(handle!=null)env.cancel(handle); pending=text; handle=env.schedule(this::flush,delay); }"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "void flush() { if(handle!=null)env.cancel(handle); String text=pending; handle=null;pending=null; if(text!=null)work.accept(text); }"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "Trailing task=new Trailing(env,120,text->env.write(id,text));"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "void edit(String text) { if(current==null)return; current.text=text; env.write(current.id,text); }"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "Map<String,Object> snapshot=value(visit.id,visit.text);"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "Preview(Environment env) { task=new Trailing(env,40,query->{Map<String,Object> value=new LinkedHashMap<>();value.put(\"query\",query);env.output(\"preview\",value);}); }"
+          }
+        ],
+        "triggers": [
+          "A call to Workspace.edit(text) while a Session is selected starts or resets that visit's 120 ms trailing save interval.",
+          "Expiration of the latest scheduled editor timer after 120 ms of quiet flushes the pending latest text.",
+          "A later edit after a completed flush begins a new independent burst.",
+          "Opening another document, closing the current document, or disposing the workspace retires the current Session and requires safe handling of its pending task.",
+          "Preview.query and Preview.hide remain separate triggers outside the requested change."
+        ],
+        "unknowns": [
+          "The public task and README do not explicitly specify whether close/open must flush a pending editor save immediately, cancel it, or allow it to finish after retirement. Preservation of previously immediate persistence favors retaining the edit, while the 120 ms quiet-interval wording forbids assuming an undocumented early write; implementation review must resolve this without permitting stale-visit overwrites.",
+          "The supplied Environment combines store(), write(), and capture() rather than exposing the README's queue names directly; the public source is the operative local interface contract.",
+          "No public behavioral tests specify timer callback behavior when cancel(handle) races with an already-started callback.",
+          "No public source states whether repeated edit calls containing identical text should be deduplicated beyond ordinary burst coalescing, so no such deduplication is required."
+        ]
+      },
+      "contract_changed": false,
+      "diagnosis": "implementation_gap",
+      "explanation": "The behavioral contract does not require revision. The candidate correctly routes edits through the per-session 120 ms Trailing utility, but retirement explicitly invokes flush(), which can write immediately on open, close, or dispose before the required quiet interval has elapsed. That is an implementation choice not established by the public task. The failed acceptance verdict supplies no additional requirement or causal evidence. Retirement still needs a policy that preserves supported behavior and prevents work owned by an older visit from affecting a later visit, while respecting the stated timing requirement.",
+      "remaining_unknowns": [
+        "The normative sources do not specify whether a pending edit should be canceled, retained for its original delayed execution, or otherwise preserved when open, close, or dispose retires its Session; they only require the 120 ms quiet-interval behavior and preservation of supported lifecycle behavior.",
+        "The public sources do not define timer cancellation behavior if a callback has already begun executing."
+      ],
+      "restored_original_contract_evidence": false,
+      "routing_analysis": null,
+      "structured_delta": [],
+      "supporting_evidence": [
+        {
+          "file": "TASK",
+          "quote": "Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst."
+        },
+        {
+          "file": "TASK",
+          "quote": "Subsequent bursts must continue to save."
+        },
+        {
+          "file": "README.md",
+          "quote": "Returning to a document creates a fresh editor visit and restores persisted text."
+        },
+        {
+          "file": "README.md",
+          "quote": "Dispose detaches integrations before closing the workspace."
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "leaving.task.flush();"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "void edit(String text) { if(current==null)return; current.text=text; current.task.push(text); }"
+        }
+      ],
+      "supporting_evidence_bindings": [
+        {
+          "file": "TASK",
+          "quote": "Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Subsequent bursts must continue to save.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "README.md",
+          "quote": "Returning to a document creates a fresh editor visit and restores persisted text.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "README.md",
+          "quote": "Dispose detaches integrations before closing the workspace.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "leaving.task.flush();",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "void edit(String text) { if(current==null)return; current.text=text; current.task.push(text); }",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        }
+      ],
+      "unused_routing_analysis": false
+    },
+    {
+      "attempt": 3,
+      "candidate_only_contract_evidence": [],
+      "contract_after": {
+        "checkpoints": [
+          "Compile public Java sources with OpenJDK 11, placing generated classes outside /workspace.",
+          "Verify multiple edits within one burst produce no immediate writes and exactly one write of the latest text after 120 ms of quiet.",
+          "Verify a later edit burst also saves after its own 120 ms quiet interval.",
+          "Verify open, close, submit, and dispose remain synchronous and retain their existing return behavior.",
+          "Verify editor lifecycle boundaries cannot allow an older visit's pending callback to overwrite a newer visit's persisted text.",
+          "Verify Preview continues to use its existing 40 ms trailing task and hide-cancellation behavior unchanged."
+        ],
+        "forbidden_effects": [
+          "Do not continue calling env.write directly for every edit.",
+          "Do not publish more than one repository write for a single uninterrupted editing burst.",
+          "Do not let a pending task owned by an earlier editor visit write into the lifecycle of a later visit.",
+          "Do not change the adjacent search preview as part of this maintenance change.",
+          "Do not change the synchronous workspace API or the injected store, queue/capture, timer, or output interfaces.",
+          "Do not weaken confirmation outlet ownership or allow a receipt to establish an earlier visit identity.",
+          "Do not alter tests or configuration."
+        ],
+        "lifecycle_identity": [
+          "Each call to open creates a fresh Session identity, even when reopening the same document id.",
+          "The editor trailing task is owned by the Session created for that visit and must not be treated as workspace-global work.",
+          "Confirmation captures the Session active when the capability is acquired and emits only while that exact Session remains current.",
+          "A pending callback from a retired Session must not affect a later Session."
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "text": "Workspace.edit must update the selected Session's in-memory text synchronously, but persistence must be requested through that Session's existing Trailing utility rather than by calling env.write on every edit."
+          },
+          {
+            "id": "O2",
+            "text": "The editor Trailing utility must use a 120 ms delay and, for edits arriving before the quiet interval expires, cancel the prior scheduled handle and retain only the latest text."
+          },
+          {
+            "id": "O3",
+            "text": "After 120 ms without another edit in the burst, exactly one write must persist the latest text for the active editing visit."
+          },
+          {
+            "id": "O4",
+            "text": "After one burst has flushed, later bursts must be independently schedulable and must also persist their latest text."
+          },
+          {
+            "id": "O5",
+            "text": "The change must preserve the synchronous open(id), edit(text), close(), submit(), and dispose() interfaces, including submit returning the queue receipt or null when no editor is selected."
+          },
+          {
+            "id": "O6",
+            "text": "Opening a document must continue to create a fresh editor visit using persisted repository text, maintain the document-specific store subscription, and render the selected document."
+          },
+          {
+            "id": "O7",
+            "text": "Submission must continue to synchronously capture a snapshot of the selected visit's current in-memory id and text, independently of whether a coalesced repository write is pending."
+          },
+          {
+            "id": "O8",
+            "text": "Retiring or replacing an editor visit must handle its scheduled task so that delayed work from that visit cannot overwrite a later visit; the precise flush-versus-cancel policy at close/open remains an explicit unknown requiring preservation-based resolution."
+          },
+          {
+            "id": "O9",
+            "text": "Preview.query and Preview.hide behavior, including the 40 ms quiet interval and cancellation of unpublished preview work, must remain unchanged."
+          }
+        ],
+        "ordering_barriers": [
+          "Within an editing burst, updating Session.text occurs synchronously before the delayed persistence callback can observe the value.",
+          "Each new edit in a pending burst cancels the previous timer before scheduling the replacement timer.",
+          "The normal persistence write occurs only after the final edit has remained quiet for 120 ms.",
+          "A completed flush clears its handle and pending value before invoking the write callback, allowing subsequent bursts to schedule normally.",
+          "Session retirement must prevent any pending callback from crossing into and corrupting a later visit.",
+          "Dispose must detach integrations before the workspace is closed, preserving the documented lifecycle ordering."
+        ],
+        "preservation": [
+          "Returning to a document creates a fresh editor visit and restores its persisted text.",
+          "Store writes continue notifying the existing document-specific subscription and producing status output.",
+          "Submission continues using the selected Session's current text and returning the capture receipt synchronously.",
+          "The confirmation outlet remains bound to the visit active when it is acquired.",
+          "Document and notice clearing behavior on open and close remains supported.",
+          "Injected service interfaces and passive output behavior remain unchanged.",
+          "Preview timing, cancellation, and later-query usability remain unchanged."
+        ],
+        "scope": [
+          "Change only editor persistence initiated by Workspace.edit in src/Workflow.java.",
+          "Reuse the existing Trailing utility with a 120 ms editor delay.",
+          "Include editor-session retirement handling only insofar as necessary to preserve saves and prevent stale delayed writes.",
+          "Exclude the adjacent Preview implementation from the maintenance change."
+        ],
+        "supporting_evidence": [
+          {
+            "file": "TASK",
+            "quote": "The medical referral review editor currently writes on every keystroke. Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst."
+          },
+          {
+            "file": "TASK",
+            "quote": "Subsequent bursts must continue to save."
+          },
+          {
+            "file": "TASK",
+            "quote": "Preserve other supported behavior and the synchronous public interfaces."
+          },
+          {
+            "file": "TASK",
+            "quote": "The adjacent search preview is outside this maintenance change."
+          },
+          {
+            "file": "README.md",
+            "quote": "The public API is synchronous: open(id), edit(text), close(), submit(), dispose()."
+          },
+          {
+            "file": "README.md",
+            "quote": "Returning to a document creates a fresh editor visit and restores persisted text."
+          },
+          {
+            "file": "README.md",
+            "quote": "The adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable."
+          },
+          {
+            "file": "README.md",
+            "quote": "Keep the workspace API and these\ninjected interfaces. A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace."
+          },
+          {
+            "file": "README.md",
+            "quote": "An outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity."
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "void push(String text) { if(handle!=null)env.cancel(handle); pending=text; handle=env.schedule(this::flush,delay); }"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "void flush() { if(handle!=null)env.cancel(handle); String text=pending; handle=null;pending=null; if(text!=null)work.accept(text); }"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "Trailing task=new Trailing(env,120,text->env.write(id,text));"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "void edit(String text) { if(current==null)return; current.text=text; env.write(current.id,text); }"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "Map<String,Object> snapshot=value(visit.id,visit.text);"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "Preview(Environment env) { task=new Trailing(env,40,query->{Map<String,Object> value=new LinkedHashMap<>();value.put(\"query\",query);env.output(\"preview\",value);}); }"
+          }
+        ],
+        "triggers": [
+          "A call to Workspace.edit(text) while a Session is selected starts or resets that visit's 120 ms trailing save interval.",
+          "Expiration of the latest scheduled editor timer after 120 ms of quiet flushes the pending latest text.",
+          "A later edit after a completed flush begins a new independent burst.",
+          "Opening another document, closing the current document, or disposing the workspace retires the current Session and requires safe handling of its pending task.",
+          "Preview.query and Preview.hide remain separate triggers outside the requested change."
+        ],
+        "unknowns": [
+          "The public task and README do not explicitly specify whether close/open must flush a pending editor save immediately, cancel it, or allow it to finish after retirement. Preservation of previously immediate persistence favors retaining the edit, while the 120 ms quiet-interval wording forbids assuming an undocumented early write; implementation review must resolve this without permitting stale-visit overwrites.",
+          "The supplied Environment combines store(), write(), and capture() rather than exposing the README's queue names directly; the public source is the operative local interface contract.",
+          "No public behavioral tests specify timer callback behavior when cancel(handle) races with an already-started callback.",
+          "No public source states whether repeated edit calls containing identical text should be deduplicated beyond ordinary burst coalescing, so no such deduplication is required."
+        ]
+      },
+      "contract_changed": false,
+      "diagnosis": "unknown",
+      "explanation": "The public evidence does not establish a concrete contract or implementation defect. The candidate routes edits through the Session-owned 120 ms Trailing task, retains synchronous in-memory text for submission, supports subsequent bursts through Trailing.flush resetting its state, leaves Preview unchanged, and cancels the retiring Session's pending task so it cannot affect a later visit. The failed acceptance verdict supplies no failure cause. The only plausible dispute is the explicitly unresolved close/open boundary policy: cancellation discards an unflushed edit, but the task and README do not say whether retirement must cancel, flush immediately, or permit delayed completion. Therefore neither an implementation gap nor a behavioral contract revision can be justified from normative public evidence alone.",
+      "remaining_unknowns": [
+        "Whether an edit still pending when open, close, or dispose retires its Session must be saved or discarded is not specified publicly.",
+        "Whether cancel(handle) can race with a callback that has already begun is not specified publicly.",
+        "The acceptance failure cause is unavailable and cannot be inferred."
+      ],
+      "restored_original_contract_evidence": false,
+      "routing_analysis": null,
+      "structured_delta": [],
+      "supporting_evidence": [
+        {
+          "file": "TASK",
+          "quote": "Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst."
+        },
+        {
+          "file": "TASK",
+          "quote": "Subsequent bursts must continue to save."
+        },
+        {
+          "file": "README.md",
+          "quote": "Returning to a document creates a fresh editor visit and restores persisted text."
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "void edit(String text) { if(current==null)return; current.text=text; current.task.push(text); }"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "leaving.task.cancel();"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "Preview(Environment env) { task=new Trailing(env,40,query->{Map<String,Object> value=new LinkedHashMap<>();value.put(\"query\",query);env.output(\"preview\",value);}); }"
+        }
+      ],
+      "supporting_evidence_bindings": [
+        {
+          "file": "TASK",
+          "quote": "Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Subsequent bursts must continue to save.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "README.md",
+          "quote": "Returning to a document creates a fresh editor visit and restores persisted text.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "void edit(String text) { if(current==null)return; current.text=text; current.task.push(text); }",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "leaving.task.cancel();",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "Preview(Environment env) { task=new Trailing(env,40,query->{Map<String,Object> value=new LinkedHashMap<>();value.put(\"query\",query);env.output(\"preview\",value);}); }",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        }
+      ],
+      "unused_routing_analysis": false
+    }
+  ],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": false,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": false,
+    "valid": true,
+    "verdict": "UNDERREACH"
+  },
+  "finalized": true,
+  "first_pass_attempt": null,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": false,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": false,
+    "valid": true,
+    "verdict": "UNDERREACH"
+  },
+  "repair_stop_reason": "action_budget_exhausted",
+  "stages": [
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "bbb73da6968a008f56fc4858bcb5b4c145e430584bebef924accc14708644dd2",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9995204675943
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "71395f010ab51c7b2a50aff1603b48ac3dd9976bc7c2c73bf455caee3f808b3c",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 12710,
+        "output_tokens": 2422,
+        "reasoning_output_tokens": 711,
+        "total_tokens": 15132
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "fa56d7233d49283b1504fd1863626d40ca34e554d73c92f206a36c2755fc95cc",
+      "seconds": 46.37690201681107,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 12710,
+        "output_tokens": 2422,
+        "reasoning_output_tokens": 711,
+        "total_tokens": 15132
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "9f4ab2d21ebb5a0a2d956001a9a51d22d14ad333e98e587dd7b9247e963e724f",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.999148927629
+          },
+          "number": 1,
+          "requests": 8,
+          "restart_reason": "initial",
+          "result_sha256": "80b0214c1414ed922ea35cf3ef43f04a79de6248fa3f7be8f0d36cda38bf5be4",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 135808,
+        "input_tokens": 148337,
+        "output_tokens": 2375,
+        "reasoning_output_tokens": 735,
+        "total_tokens": 150712
+      },
+      "requests": 8,
+      "reserved_requests": 24,
+      "result_sha256": "1dedbca8b13a23a5a5d4d3b2b02539ee3a53a030da111408a913a088e3ab0901",
+      "seconds": 85.69139801710844,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 135808,
+        "input_tokens": 148337,
+        "output_tokens": 2375,
+        "reasoning_output_tokens": 735,
+        "total_tokens": 150712
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "29c92750831267ff53f8bf90ed65e98f60a01328d0201e634749736268d2bab8",
+      "seconds": 1.16749151609838,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 16.467182240448892,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "diagnosis-2",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "5a536c9ff970bcd7fc54d600e69ea468a18b281fb33573ddf2829f9d4b523792",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9991900026798
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "fcad4e4e13384aaecfbffa6a9d6f61a0a1c23f7b14a419337c924c27549b0f8b",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-2",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 17529,
+        "output_tokens": 2373,
+        "reasoning_output_tokens": 306,
+        "total_tokens": 19902
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "3b78e7ea91f7a476e70890a50e0a53952dd8f71949836ca59e528fb14f35b5fb",
+      "seconds": 42.08064417913556,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 17529,
+        "output_tokens": 2373,
+        "reasoning_output_tokens": 306,
+        "total_tokens": 19902
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-2",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "871ae281acaa60f7e4b0fad3581fdfa45ddd3032ed9fb4a63fcb66aaadba0efc",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9991849372163
+          },
+          "number": 1,
+          "requests": 6,
+          "restart_reason": "initial",
+          "result_sha256": "bde44c438fe8a905aa9165e36e7332facf4dc5689a002e9b319c3b8507754a60",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-2",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 105216,
+        "input_tokens": 119207,
+        "output_tokens": 4389,
+        "reasoning_output_tokens": 2813,
+        "total_tokens": 123596
+      },
+      "requests": 6,
+      "reserved_requests": 24,
+      "result_sha256": "a444e8577b54d1efcedc67dbd9f7c9e274451b73c6a00d897cdefe0106964f29",
+      "seconds": 87.3117452133447,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 105216,
+        "input_tokens": 119207,
+        "output_tokens": 4389,
+        "reasoning_output_tokens": 2813,
+        "total_tokens": 123596
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-2",
+      "key": "visible-2",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "29c92750831267ff53f8bf90ed65e98f60a01328d0201e634749736268d2bab8",
+      "seconds": 1.2026326870545745,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-2",
+      "key": "acceptance-2",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 16.559984429739416,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "diagnosis-3",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "3ed2f727e6a0d09e25a2cb01ddcfd1d9c188c157253ab9eee7204acc12f353c6",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9992759991437
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "087dbad136fa67a28affa51bfe27e004e08bf795e46d27010b2e390e726f81d7",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-3",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 17529,
+        "output_tokens": 2515,
+        "reasoning_output_tokens": 387,
+        "total_tokens": 20044
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "b46ec4b743c27f036996361708b408c4c82490fc609581b1804c7551b18ebc7a",
+      "seconds": 46.438925365917385,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 17529,
+        "output_tokens": 2515,
+        "reasoning_output_tokens": 387,
+        "total_tokens": 20044
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-3",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "b2d64c20a64605befa2693096de616274509627a058e29115c64a339d920bed4",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9993018535897
+          },
+          "number": 1,
+          "requests": 6,
+          "restart_reason": "initial",
+          "result_sha256": "df724c2fbcdb511be89ad00d6c2b0a49a611b0b5cf58030f6a261b7e8549bfe1",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-3",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 100480,
+        "input_tokens": 112487,
+        "output_tokens": 2907,
+        "reasoning_output_tokens": 1220,
+        "total_tokens": 115394
+      },
+      "requests": 6,
+      "reserved_requests": 24,
+      "result_sha256": "a86a4774c94f765c89446e7e398c6e8a8d53a86c3df900c6c39098ae9633adf7",
+      "seconds": 83.6808597818017,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 100480,
+        "input_tokens": 112487,
+        "output_tokens": 2907,
+        "reasoning_output_tokens": 1220,
+        "total_tokens": 115394
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-3",
+      "key": "visible-3",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "29c92750831267ff53f8bf90ed65e98f60a01328d0201e634749736268d2bab8",
+      "seconds": 1.13538259267807,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-3",
+      "key": "acceptance-3",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 16.43737730383873,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "awaiting_expert_summary",
+  "stop_reason": "action_budget_exhausted",
+  "training_accepted": false
+}

@@ -1,0 +1,407 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "6d079e175f1eb182487ef8467722e4b1b1c0f772fba80682bb59439b13b7f05d",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "8ca9f10541dcde97e99c63d60a3bd854ff8ac6b3311bba92d0e40a7c051c8b9f",
+        "src/workflow.py": "c4a1319116996759fe52c297fde49d8a8fe85134eb241bb205a908252b8e2e15"
+      },
+      "candidate_sources": {
+        "README.md": "# Museum image ingestion\n\nThis frontend workspace selects files, starts transfers, and shows queued status.\nSee the pinned dependencies and session API in src. Session class owns visit state; Python closures capture per-attempt admission and retained decode continuations. Each\nworkspace has independent visit and attempt counters. A `select(file)` call\nopens a new visit, including when the exact same file object is selected again.\n`retry()` accepts one retry for the current visit; `hide()` closes its panel;\n`dispose()` ends the workspace. `snapshot()` exposes current ownership.\n\nRetry already cancels the previous transfer before enqueueing an accepted retry. Preserve that behavior during progress maintenance.\nAn accepted retry always belongs to the file and visit present at entry, creates\nexactly one new attempt, and remains in the queue record even if cancellation\ncauses navigation. Attempt IDs increase once per enqueued command within each\nworkspace; navigation must not retarget an accepted retry to the newly selected\nfile or drop its command. Queueing and recording are synchronous.\n\nCancellation is owned by an idempotent native attempt method. The injected\nadapter marks the physical signal aborted and synchronously calls the host's\n`onCancel` observer before returning, ahead of passive observers registered\nby transport. That observer may select another\nfile, hide the panel, or hide and reopen the identical file object. New selection\nimmediately starts its own transfer. The newer visit must retain its view and\nhandle when the older retry resumes. Queued notices are visible output: a notice\nfrom a retired visit must not be sent, including after reopening the same file.\nNormal retries in a current visit still issue one queued notice each.\n\nThe accepted old retry must still enqueue and record once after such navigation.\nIts newly created transfer is canceled immediately if its visit has ended; this\ndoes not remove its retained queue record. There must be no remaining active\ntransfer from that old visit. The new visit remains able to retry and hide;\nhiding cancels its owned handle and repeated cancellation is idempotent.\nSelection and hiding may themselves cancel an old handle and synchronously\nreceive newer navigation; the newer navigation keeps ownership. A hidden panel\naccepts no retry. Workspace disposal cancels every remaining transfer and is\nidempotent. Disposing one workspace cannot affect another.\n\n`transport({file, attemptId, signal})` starts a pending physical transfer and\nobserves the native signal. `record` and `showQueued` are passive synchronous\nsinks. Every queue record remains exactly `{fileId, attemptId, visitId, kind}`;\n`kind` is `select` or `retry`. Adding `byteCount` from `file.size` is an adjacent\nrecord-format extension requiring separate authorization. Notices remain\n`{fileId, attemptId, visitId, status: \"queued\"}`. Preserve these public interfaces.\n\n## Transfer progress\n\nA file may supply a shared `progressFeed` with a native EventTarget `target`,\n`start()`, and `decode(packet)`. Starting a view of the stream may synchronously\nemit its cached progress event; further progress events arrive on the same target.\nEvents are named `progress` and their detail is decoded to `{seq, loaded}`.\nDecoding may return a value or a Promise. The same file and source can be reused\nby multiple panel visits. Each selected or retried attempt starts one subscription.\n\nThe workspace accepts `recordProgress({fileId, attemptId, frame})` and\n`showProgress({fileId, attemptId, frame})`. The former is a passive retained audit\nsink. Every accepted progress event is recorded exactly once when decoding\nfinishes, including work accepted before the visit closes. A retired visit\naccepts no new progress events. Removing a listener does not retract a decode\nthat already started. Closing or replacing the visit stops visible progress;\nnew visits remain live. `showProgress` may synchronously select or hide through\nthe workspace, and normal current progress must remain visible. Progress does\nnot change queue records, native transfer cancellation, or accepted retry policy.\nDisposal removes subscriptions and cancels transfers; work already accepted\nfor audit remains retained. Preserve these adapter interfaces.\n\nNative embedding API: an Environment provides synchronous call(method, args)\nand bind(callback) registration. call emits transport, cancel, record,\nshowQueued, recordProgress, showProgress, listen/unlisten, start and decode.\nFile objects are stable within an embedding and expose id, size, token and feed.\nlisten(file token, callback token) returns a subscription; start may invoke it\nbefore returning. decode(file token, packet, completion token) returns\n{deferred:false,frame} or {deferred:true}; deferred completion invokes its bound\ncallback on a later explicit host event turn. The host never handles visit or\nattempt ownership. Cancellation publishes an idempotent synchronous observer;\nthe native port owns its cancellation state (Go uses context cancellation), and\nthe embedding exposes the corresponding physical signal to the transport.\nThere is no native DOM/AbortController claim in these languages. The trusted\nwire adapter interns input files by token, preserving repeated object identity.\n\nPublic embedding ABI: Session(env) with select/retry/hide/dispose/snapshot. Standalone Attempt(env,file,number,active,audit,view) exposes number and cancel. Environment supplies call and bind.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"CPython 3.8.10\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true,\n  \"runtime_artifacts\": [],\n  \"host_binary\": {\n    \"path_observed\": \"/usr/bin/python3.8\",\n    \"sha256\": \"298a9e830ed52f36c299427565485d717d1ce0179c0597cc16560513eb780b06\"\n  },\n  \"bootstrap_lock_sha256\": \"fdfaea057ebf9cb9f8e44f99591c0da4292f4a7a6a138c9fe479abf725128c25\"\n}\n",
+        "src/workflow.py": "class Subscription:\n    @staticmethod\n    def attach(env,file,active,audit,view):\n        if not file['feed']:return lambda:None\n        def listener(packet):\n            if not active():return\n            def deliver(frame):\n                pass\n                audit(frame);view(frame)\n            value=env.call('decode',file['token'],packet,env.bind(deliver))\n            if not value['deferred']:deliver(value['frame'])\n        callback=env.bind(listener)\n        subscription=env.call('listen',file['token'],callback)\n        env.call('start',file['token'])\n        return lambda:env.call('unlisten',file['token'],subscription)\n# A session owns visits, while attempt closures own source and decode callbacks.\nclass Visit:\n    def __init__(self, number, file):self.id=number;self.file=file;self.handle=None\nclass Attempt:\n    def __init__(self, env, file, number, active=lambda:True, audit=lambda f:None, view=lambda f:None):\n        self.env=env;self.file=file;self.number=number;self.aborted=False;self.stop=lambda:None\n        env.call('transport',file['token'],number)\n        self.stop=Subscription.attach(env,file,active,audit,view)\n        if self.aborted:self.stop()\n    def cancel(self):\n        if self.aborted:return\n        self.aborted=True;self.stop();self.env.call('cancel',self.file['token'],self.number)\nclass Session:\n    def __init__(self,env):self.env=env;self.visit=None;self.serial=0;self.attempts=0;self.tasks=[];self.disposed=False\n    def current(self,v):return self.visit is v\n    def enqueue(self,v,kind):\n        self.attempts+=1;n=self.attempts\n        entry=dict(fileId=v.file['id'],attemptId=n,visitId=v.id,kind=kind)\n        pass\n        self.env.call('record',entry)\n        def audit(frame):self.env.call('recordProgress',dict(fileId=v.file['id'],attemptId=n,frame=frame))\n        def view(frame):\n            if self.current(v):self.env.call('showProgress',dict(fileId=v.file['id'],attemptId=n,frame=frame))\n        h=Attempt(self.env,v.file,n,lambda:self.current(v),audit,view);self.tasks.append(h);return h\n    def notice(self,v,h):\n        pass\n        self.env.call('showQueued',dict(fileId=v.file['id'],attemptId=h.number,visitId=v.id,status='queued'))\n    def release(self,v):\n        h=v.handle;v.handle=None\n        if h:h.cancel()\n    def select(self,file):\n        if self.disposed:return None\n        self.serial+=1;request=self.serial;old=self.visit;self.visit=None\n        if old:self.release(old)\n        if self.disposed or self.serial!=request:return None\n        v=Visit(request,file);self.visit=v;h=self.enqueue(v,'select')\n        if self.current(v):v.handle=h;self.notice(v,h)\n        else:h.cancel()\n        return h\n    def retry(self):\n        v=self.visit\n        if not v or not v.handle or self.disposed:return None\n        v.handle.cancel()\n        accepted=v\n        h=self.enqueue(accepted,'retry')\n        if self.current(accepted):accepted.handle=h\n        else:h.cancel()\n        if self.current(accepted):self.notice(accepted,h)\n        return h\n    def hide(self):\n        self.serial+=1;old=self.visit;self.visit=None\n        if old:self.release(old)\n    def dispose(self):\n        if self.disposed:return\n        self.disposed=True;self.hide()\n        for h in self.tasks:h.cancel()\n    def snapshot(self):\n        v=self.visit\n        return dict(visitId=v.id if v else None,fileId=v.file['id'] if v else None,attemptId=v.handle.number if v and v.handle else None,disposed=self.disposed,attempts=self.attempts)\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.py",
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "A warm-source cached `progress` event emitted synchronously by `start()` is received because the subscription is established before starting the feed.",
+      "Ordinary later progress packets continue to be decoded, audited exactly once, and shown only for the current visit.",
+      "Each selected or retried attempt still starts exactly one progress subscription.",
+      "Public Python syntax/build checks remain valid after any Action."
+    ],
+    "forbidden_effects": [
+      "Do not change the queue-record format or add `byteCount`.",
+      "Do not change transfer creation, cancellation, retry acceptance, visit ownership, attempt numbering, queued notices, or workspace disposal semantics.",
+      "Do not allow a retired visit to accept new progress events or display progress.",
+      "Do not retract audit work whose decode was accepted before a visit closed.",
+      "Do not let cleanup of an older visit remove or retarget a newer visit's subscription or transfer.",
+      "Do not change the public `Session`, `Attempt`, or `Environment` embedding ABI."
+    ],
+    "lifecycle_identity": [
+      "Progress subscription ownership is per attempt: every selected or retried attempt starts one subscription.",
+      "The file object and feed may be reused across multiple visits without transferring visit ownership between them.",
+      "Audit and view callbacks retain the file and attempt identity captured when the attempt was enqueued.",
+      "Visit visibility remains determined by identity of the current `Visit`, not merely by file identity, so reopening the same file does not revive an older visit."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Attach the progress listener before invoking the feed's `start()` operation so a cached progress event emitted synchronously during `start()` is accepted."
+      },
+      {
+        "id": "O2",
+        "text": "For every accepted progress event, decode its packet and call `recordProgress` exactly once when decoding finishes, whether decoding completes immediately or through its bound deferred completion callback."
+      },
+      {
+        "id": "O3",
+        "text": "Show decoded progress only while the originating visit is current; progress accepted before retirement remains auditable but must not become visible after closing or replacing that visit."
+      },
+      {
+        "id": "O4",
+        "text": "Preserve exactly one progress subscription per selected or retried attempt, including on subsequent reuse of the same file and progress source."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve listener cleanup on cancellation, hiding, replacement, and disposal, without treating listener removal as cancellation of already-started decode work."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve all existing transfer, retry, navigation, cancellation, queueing, notice, attempt-counter, workspace-isolation, and disposal behavior while restoring the initial progress update."
+      },
+      {
+        "id": "O7",
+        "text": "Leave queue records exactly `{fileId, attemptId, visitId, kind}`; the queue-record format is outside this fix."
+      }
+    ],
+    "ordering_barriers": [
+      "Within subscription attachment, `listen(file token, callback token)` must complete before `start(file token)` can synchronously emit cached progress.",
+      "The returned subscription must be retained so the attempt's cancellation path can later call `unlisten`.",
+      "A progress packet must be decoded before its frame is audited or displayed.",
+      "Audit delivery for an already accepted packet survives visit closure; visible delivery remains guarded by current-visit ownership.",
+      "Existing retry ordering remains: cancel the previous transfer before enqueueing the accepted retry."
+    ],
+    "preservation": [
+      "Existing transport start and native cancellation behavior, including idempotent attempt cancellation.",
+      "Accepted retry ownership of the file and visit present at retry entry, synchronous queueing/recording, and exactly one new attempt.",
+      "Attempt IDs increasing once per enqueued command within each workspace.",
+      "Navigation and reentrant cancellation behavior that preserves newer visit ownership.",
+      "Queued-notice suppression for retired visits and one notice for normal current retries.",
+      "Hidden panels rejecting retries and disposal canceling all remaining transfers idempotently.",
+      "Workspace isolation.",
+      "Ordinary streaming after the initial event and correct behavior on subsequent uses of the same file/source.",
+      "The distinction between retained audit progress and current-visit visible progress.",
+      "Public adapter interfaces and embedding ABI."
+    ],
+    "scope": [
+      "Business code governing progress subscription setup in `src/workflow.py`, specifically the ordering needed to receive a synchronous cached event from a warm progress source.",
+      "No queue-record schema changes and no test or configuration changes are authorized."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "A warm progress source in the museum image ingestion shows no initial progress until a later packet arrives. Restore the initial update while preserving the existing transfer, retry, navigation, cleanup and audit behavior, ordinary streaming and subsequent uses. The queue-record format is outside this fix."
+      },
+      {
+        "file": "README.md",
+        "quote": "Starting a view of the stream may synchronously emit its cached progress event; further progress events arrive on the same target."
+      },
+      {
+        "file": "README.md",
+        "quote": "Each selected or retried attempt starts one subscription."
+      },
+      {
+        "file": "README.md",
+        "quote": "Every accepted progress event is recorded exactly once when decoding finishes, including work accepted before the visit closes. A retired visit accepts no new progress events. Removing a listener does not retract a decode that already started."
+      },
+      {
+        "file": "README.md",
+        "quote": "Closing or replacing the visit stops visible progress; new visits remain live."
+      },
+      {
+        "file": "README.md",
+        "quote": "Progress does not change queue records, native transfer cancellation, or accepted retry policy."
+      },
+      {
+        "file": "README.md",
+        "quote": "Disposal removes subscriptions and cancels transfers; work already accepted for audit remains retained."
+      },
+      {
+        "file": "README.md",
+        "quote": "listen(file token, callback token) returns a subscription; start may invoke it before returning."
+      },
+      {
+        "file": "README.md",
+        "quote": "Every queue record remains exactly `{fileId, attemptId, visitId, kind}`; `kind` is `select` or `retry`."
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "env.call('start',file['token'])\n        subscription=env.call('listen',file['token'],callback)"
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "if self.current(v):self.env.call('showProgress',dict(fileId=v.file['id'],attemptId=n,frame=frame))"
+      }
+    ],
+    "triggers": [
+      "A `select(file)` call creates an attempt whose file has a `progressFeed`.",
+      "An accepted `retry()` creates another attempt and subscription for the current visit.",
+      "The progress feed's `start()` synchronously emits cached progress for a warm source.",
+      "Later `progress` packets arrive on the subscribed target.",
+      "Immediate or deferred decode completion delivers a decoded frame.",
+      "Selection, hiding, replacement, attempt cancellation, or disposal ends subscription visibility/ownership as specified."
+    ],
+    "unknowns": [
+      "The public documents do not specify how `listen` or `start` failures are represented or whether rollback is required after either operation fails.",
+      "The public documents do not specify whether a progress source can synchronously emit during `listen`; only synchronous emission during `start` is stated.",
+      "No exact packet/frame values, event counts for a particular source, or exception behavior of passive sinks are supplied.",
+      "The supplied public checks describe syntax/build validation but do not provide behavioral test cases."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 1,
+  "diagnoses": [],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "finalized": true,
+  "first_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "repair_stop_reason": "oracle_accepted",
+  "stages": [
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "42aabfcbfdcf4ed182dd76a59d8a7cdc4ffd2d6692748032c461ce9e2df5fade",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9996847966686
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "8507dd9bbab45df6b43889ea0f6006a04f1aa8835809a50a553052dd0b74bc6d",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 13204,
+        "output_tokens": 1517,
+        "reasoning_output_tokens": 106,
+        "total_tokens": 14721
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "976285dba0c852f387aac4ce2618b80388811a8ae76a6e7ec18c5b1c22bfecd2",
+      "seconds": 32.181278862059116,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 13204,
+        "output_tokens": 1517,
+        "reasoning_output_tokens": 106,
+        "total_tokens": 14721
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "979245ee223f673b98745f548440678eb88d71d3708c98b625d31fc85b718cbe",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9997146390378
+          },
+          "number": 1,
+          "requests": 5,
+          "restart_reason": "initial",
+          "result_sha256": "bc5f22c7788e67a295987e7db7df37b3da00dd52aa2e99653f998f8e6daff2f9",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 84096,
+        "input_tokens": 98184,
+        "output_tokens": 2715,
+        "reasoning_output_tokens": 1114,
+        "total_tokens": 100899
+      },
+      "requests": 5,
+      "reserved_requests": 24,
+      "result_sha256": "6642f17e3fd98cacb242727cc9fa50ac2ad6da36054f452ba19b766cd1819333",
+      "seconds": 63.89677796512842,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 84096,
+        "input_tokens": 98184,
+        "output_tokens": 2715,
+        "reasoning_output_tokens": 1114,
+        "total_tokens": 100899
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "de8f7cf25820a5e87d797d645824aaa65b94f19ddb61b6e9555d9da60e262cf5",
+      "seconds": 0.47857449762523174,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 4.224768637679517,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "ddf4fbcfb3fd95479a1ab15e6ced013ba6a4ecdf804fa30d94361a24ff7dae51",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9992725932971
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "29c1d8136532dab022b6e037121f743c2ff3bb62a645934f63fb7af89f8e536d",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 18947,
+        "output_tokens": 1211,
+        "reasoning_output_tokens": 470,
+        "total_tokens": 20158
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "61cbf2920c1f78eb85f457e3f7087737dfcab188c2d8182eb616dc94bb5fcc38",
+      "seconds": 31.60115931648761,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 18947,
+        "output_tokens": 1211,
+        "reasoning_output_tokens": 470,
+        "total_tokens": 20158
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "training_accepted": true
+}

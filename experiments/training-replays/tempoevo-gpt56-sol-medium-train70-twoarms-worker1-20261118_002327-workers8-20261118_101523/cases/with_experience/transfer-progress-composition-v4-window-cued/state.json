@@ -1,0 +1,603 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "36e85c7cec3482ce21d2a6b148595675d3409f44ddd95e91f28cb86bc55f6741",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "package.json": "258f1b4c936cc31c1863ddf8aed0241271f5ec0c004a445057572ed9be07899e",
+        "src/notice.js": "73e745110bf4f17ec126903f39780c134e0286ac8859939d0f0e3383f944fe56",
+        "src/panel.js": "7db55052153320435c2b5d62fbde821881dbe126c102bee82757a981c21953ab",
+        "src/progress-source.js": "fa6b9877c3fec8b95e1b5190fcf4514372e75b3b427c658435250e8ee52abe7a",
+        "src/progress.js": "0260488c22b2cf5927b2d71ecf6125de3554624a72cafa5b06ad4c55b4696402",
+        "src/queue.js": "2b50f44e0d67303dd1aa8bf4c7ada9d3feab75c6f30c46eeeb668f894f824225",
+        "src/retry.js": "69f8b3b9e8f1f97f5a66e39a2fdad4c13e0668662ba4f32942e9bed3b2d382ff",
+        "src/telemetry.js": "03347f4ca2d1c5806ec2b1fc33f3623502311e429dd9a9af9693f6fa290c030d",
+        "src/transfer.js": "c5be42b74650a293468560a4fb811b1fb37af33378b1e1ecf6b8409c5177a595",
+        "src/workspace.js": "0ab132eee919e73a2668d652d971bbe8c7a20246e19fa63c44ebc44ec9cd98dd"
+      },
+      "candidate_sources": {
+        "README.md": "# Transfer retry panel with decoded progress\n\nThis workspace selects files, starts transfers, records queue and progress\nhistory, and paints progress for the open panel. Run it with Node v16.20.2; it\nhas no dependencies. `src/workspace.js` exports the workspace and the source\nhelpers used by the host application.\n\nSelecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file again does open another visit.\nThe feed object is shared by attempts and visits for that file. Its `start()`\nmethod may synchronously emit cached data, and `decode(packet)` may return a\nvalue or a Promise.\n\n`recordProgress` appends transfer history. `showProgress` paints the panel.\nThe queue adapter in `src/queue.js` shows how those two outputs currently relate\nto a visit. Queue records, notices, cancellation, retry, navigation, and cleanup\nretain their existing behavior. Queue records remain\n`{fileId, attemptId, visitId, kind}` unless a separate authorization adds\n`byteCount` from `file.size`.\n\nOne startup window is relevant to this maintenance request: `start()` may emit\nmore than one packet synchronously. A `showProgress` callback may select or hide\nanother visit before `start()` returns, while its caller has not yet received\nthe returned cleanup handle.\n\nThe same feed API also has a diagnostic consumer in `src/telemetry.js`.\nIt is not the panel and must keep its existing behavior while the panel defect\nis repaired. `src/progress-source.js` is the host-visible feed implementation;\nthe navigation and transfer modules show how ownership is handed off when a\nlistener is released. Host callbacks are synchronous unless their code returns\na Promise.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\n  \"name\": \"transfer-progress-composition-v4\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"engines\": {\n    \"node\": \"16.20.2\"\n  }\n}\n",
+        "src/notice.js": "// A queued notice describes the accepted attempt in its originating visit.\nexport function publishQueued(state, visit, handle) {\n  state.showQueued({ fileId: visit.file.id, attemptId: handle.attemptId,\n    visitId: visit.id, status: \"queued\" });\n}\n",
+        "src/panel.js": "import { enqueueTransfer } from \"./queue.js\";\nimport { publishQueued } from \"./notice.js\";\n\nexport function releaseVisit(visit) {\n  const handle = visit.handle;\n  visit.handle = null;\n  if (handle) handle.cancel();\n}\n\nexport function selectFile(state, file) {\n  if (state.disposed) return null;\n  const requestId = ++state.nextVisit;\n  const previous = state.current;\n  state.current = null;\n  if (previous) releaseVisit(previous);\n  if (state.disposed || state.nextVisit !== requestId) return null;\n  const visit = { id: requestId, file, handle: null,\n    nextProgressOrder: 0, displayedProgressOrder: 0 };\n  state.current = visit;\n  const handle = enqueueTransfer(state, visit, \"select\");\n  if (state.current === visit) {\n    visit.handle = handle;\n    publishQueued(state, visit, handle);\n  } else {\n    handle.cancel();\n  }\n  return handle;\n}\n\nexport function hidePanel(state) {\n  state.nextVisit++;\n  const previous = state.current;\n  state.current = null;\n  if (previous) releaseVisit(previous);\n}\n\nexport function disposeWorkspace(state) {\n  if (state.disposed) return;\n  state.disposed = true;\n  hidePanel(state);\n  for (const handle of state.tasks.values()) handle.cancel();\n}\n",
+        "src/progress-source.js": "class ProgressEvent extends Event {\n  constructor(packet) {\n    super(\"progress\");\n    this.detail = packet;\n  }\n}\n\n// Removal commits before notifying the host. The host callback is synchronous\n// and may call workspace.select(...) or workspace.hide(). Repeated removal is inert.\nexport function createProgressFeed({ initialPacket, decode = value => value, onDetach = () => {} }) {\n  const target = new EventTarget();\n  const listeners = new Set();\n  const add = target.addEventListener.bind(target);\n  const remove = target.removeEventListener.bind(target);\n  target.addEventListener = (type, listener, options) => {\n    add(type, listener, options);\n    if (type === \"progress\") listeners.add(listener);\n  };\n  target.removeEventListener = (type, listener, options) => {\n    remove(type, listener, options);\n    if (type === \"progress\" && listeners.delete(listener)) onDetach();\n  };\n  return {\n    target,\n    decode,\n    start() {\n      const packet = typeof initialPacket === \"function\" ? initialPacket() : initialPacket;\n      if (packet !== undefined) target.dispatchEvent(new ProgressEvent(packet));\n    },\n    emit(packet) { target.dispatchEvent(new ProgressEvent(packet)); },\n  };\n}\n",
+        "src/progress.js": "// The source is shared by visits of the same file. Decoding may settle later.\nexport function watchTransferProgress(feed, receive, record, accept) {\n  let active = true;\n  const listener = event => {\n    if (!active) return;\n    const deliver = accept ? accept() : frame => { record(frame); receive(frame); };\n    if (!deliver) return;\n    const decoded = feed.decode(event.detail);\n    if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n    else deliver(decoded);\n  };\n  feed.target.addEventListener(\"progress\", listener);\n  feed.start();\n  return () => {\n    if (!active) return;\n    active = false;\n    feed.target.removeEventListener(\"progress\", listener);\n  };\n}\n",
+        "src/queue.js": "import { createTransfer } from \"./transfer.js\";\n\n// Queue records are retained even when their originating panel visit ends.\nexport function makeQueueRecord(file, attemptId, visitId, kind) {\n  return { fileId: file.id, attemptId, visitId, kind };\n}\n\nexport function enqueueTransfer(state, visit, kind) {\n  const attemptId = ++state.nextAttempt;\n  state.record(makeQueueRecord(visit.file, attemptId, visit.id, kind));\n  const progress = {\n    accept() {\n      if (state.current !== visit) return null;\n      const order = ++visit.nextProgressOrder;\n      return frame => {\n        state.recordProgress({ fileId: visit.file.id, attemptId, frame });\n        if (state.current !== visit || order <= visit.displayedProgressOrder) return;\n        visit.displayedProgressOrder = order;\n        state.showProgress({ fileId: visit.file.id, attemptId, frame });\n      };\n    },\n  };\n  const handle = createTransfer(visit.file, attemptId, state.transport, state.onCancel, progress);\n  state.tasks.set(attemptId, handle);\n  return handle;\n}\n",
+        "src/retry.js": "import { enqueueTransfer } from \"./queue.js\";\nimport { publishQueued } from \"./notice.js\";\n\n// A retry click accepts exactly one command for the current visit and file.\nexport function retryTransfer(state) {\n  const visit = state.current;\n  if (!visit || !visit.handle || state.disposed) return null;\n  const previous = visit.handle;\n  previous.cancel();\n  const handle = enqueueTransfer(state, visit, \"retry\");\n  if (state.current === visit) visit.handle = handle;\n  else handle.cancel();\n  if (state.current === visit) publishQueued(state, visit, handle);\n  return handle;\n}\n",
+        "src/telemetry.js": "// Diagnostics count live deltas only. A cached bootstrap is panel state, not a delta.\nexport function collectProgressTelemetry(feed, recordDelta) {\n  const listener = event => {\n    const deliver = frame => recordDelta(frame);\n    const decoded = feed.decode(event.detail);\n    if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n    else deliver(decoded);\n  };\n  feed.start();\n  feed.target.addEventListener(\"progress\", listener);\n  return () => feed.target.removeEventListener(\"progress\", listener);\n}\n",
+        "src/transfer.js": "import { watchTransferProgress } from \"./progress.js\";\n\nexport function createTransfer(file, attemptId, transport, onCancel, progress = {}) {\n  const controller = new AbortController();\n  let stopProgress = () => {};\n  controller.signal.addEventListener(\"abort\", () => {\n    stopProgress();\n    onCancel({ file, attemptId, signal: controller.signal });\n  }, { once: true });\n  transport({ file, attemptId, signal: controller.signal });\n  if (file.progressFeed) {\n    stopProgress = watchTransferProgress(file.progressFeed, progress.receive, progress.record,\n      progress.accept);\n    if (controller.signal.aborted) stopProgress();\n  }\n  return { file, attemptId, signal: controller.signal,\n    cancel() { if (!controller.signal.aborted) controller.abort(); } };\n}\n",
+        "src/workspace.js": "import { selectFile, hidePanel, disposeWorkspace } from \"./panel.js\";\nimport { retryTransfer } from \"./retry.js\";\n\nexport function createTransferWorkspace({ transport, onCancel, record, showQueued, recordProgress = () => {}, showProgress = () => {} }) {\n  const state = { transport, onCancel, record, showQueued, recordProgress, showProgress, current: null,\n    nextVisit: 0, nextAttempt: 0, tasks: new Map(), disposed: false };\n  return {\n    select(file) { return selectFile(state, file); },\n    retry() { return retryTransfer(state); },\n    hide() { hidePanel(state); },\n    dispose() { disposeWorkspace(state); },\n    snapshot() {\n      const visit = state.current;\n      return { visitId: visit ? visit.id : null, fileId: visit ? visit.file.id : null,\n        attemptId: visit && visit.handle ? visit.handle.attemptId : null,\n        disposed: state.disposed, attempts: state.nextAttempt };\n    },\n  };\n}\n\nexport { createTransfer } from \"./transfer.js\";\nexport { makeQueueRecord, enqueueTransfer } from \"./queue.js\";\nexport { publishQueued } from \"./notice.js\";\nexport { releaseVisit, selectFile, hidePanel, disposeWorkspace } from \"./panel.js\";\nexport { retryTransfer } from \"./retry.js\";\nexport { collectProgressTelemetry } from \"./telemetry.js\";\nexport { createProgressFeed } from \"./progress-source.js\";\n"
+      },
+      "delivered_sha256s": [
+        "77c68e0f51d195985b1ffb123979ed2c80b9a1736302f9949e38bf08649913c1",
+        "6fcd6376641fabd68811e2b973e73444b5f602f80ab32d029097d93133147320",
+        "6dca1fc16aa5e7cc79660bf098beac72edffa9aed4e86dceda44d1800261f778",
+        "cee153e498e5a17c34bdc3c38b488b584b11a5c521164878785bc582aa87293d",
+        "78616bbce7c537e7b3a3bdc31ff765c79152aaf344a6831281305ac9387ec652"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/notice.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/panel.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/progress-source.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/progress.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/queue.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/retry.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/telemetry.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/transfer.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/workspace.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "A warm feed's cached packet is received by the panel during startup, decoded, recorded, and displayed when its originating visit is still current.",
+      "Packets emitted after startup continue through the ordinary panel stream.",
+      "Immediate and Promise-based decodes both retain their existing audit effect.",
+      "If a newer-received frame is displayed before an older-received frame finishes decoding, the older completion is recorded but does not replace the newer display.",
+      "A later-received frame may display even when its numeric values decrease or reset; freshness is based on reception order, not progress magnitude.",
+      "Freshness ordering spans retry attempts within the same visit, while selecting the same file again creates a distinct visit.",
+      "If recording progress synchronously navigates, hides, disposes, or causes a newer frame to publish, authority and freshness are checked again before display.",
+      "If display synchronously retires a visit during startup, further synchronous startup packets are not admitted for that retired subscription; already admitted decodes still retain their audit effect.",
+      "Navigation during listener removal or cancellation cannot let an older startup overwrite or cancel resources owned by a newer visit.",
+      "Retry still cancels the previous handle, records and creates exactly one accepted retry attempt, cancels the resulting handle if its visit retired, and publishes a queued notice only for the still-current visit.",
+      "Repeated cleanup remains inert where it is currently inert, disposal remains idempotent, and independent workspaces keep independent visit and attempt counters.",
+      "Diagnostic telemetry still excludes the cached bootstrap and continues recording later live decoded deltas.",
+      "Queue records remain exactly `{fileId, attemptId, visitId, kind}` and queued notices retain their existing fields.",
+      "Run the public JavaScript syntax/build checks after any Action, while treating them as non-behavioral checks."
+    ],
+    "forbidden_effects": [
+      "Do not change public transfer, retry, navigation, cleanup, audit, queue-record, feed, or workspace interfaces.",
+      "Do not apply the panel's cached-bootstrap reception policy or frame-freshness filtering to diagnostic telemetry.",
+      "Do not suppress `recordProgress` merely because a frame is no longer eligible for panel display.",
+      "Do not infer freshness from numeric progress values; a later full frame may legitimately decrease or reset values.",
+      "Do not let a retired subscription admit additional packets merely because physical listener cleanup has not yet become available.",
+      "Do not let an older callback-capable startup or cleanup path overwrite ownership established by newer navigation.",
+      "Do not add `byteCount` or any other field to queue records.",
+      "Do not change queued-notice identity or status fields.",
+      "Do not discard ordinary post-start streaming or break later reuse of a shared feed.",
+      "Do not modify tests or configuration during Action."
+    ],
+    "lifecycle_identity": [
+      "A visit is created by file selection and is identified independently from its physical transfer attempt.",
+      "Retry creates a new physical attempt but remains in the same visit; its panel publication ordering therefore belongs to that visit rather than to one attempt.",
+      "Selecting the same file again creates a new visit, even when the same feed object is reused.",
+      "Each admitted decode retains the originating file, attempt, visit, subscription, and reception order needed to record the correct history and decide later display eligibility.",
+      "A subscription can become logically retired before its physical listener-removal handle is returned; retirement controls admission immediately.",
+      "Panel authority is the exact current visit identity, not merely matching file identity.",
+      "Workspace visit counters, attempt counters, current ownership, and disposal state remain per-workspace."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Install panel progress reception before invoking callback-capable feed startup so a synchronously emitted cached packet is admitted, while preserving later streaming."
+      },
+      {
+        "id": "O2",
+        "text": "Make logical subscription retirement effective during startup: after navigation, hiding, or disposal retires the originating visit, later packets from that subscription must not begin decoding even if startup has not returned its cleanup handle."
+      },
+      {
+        "id": "O3",
+        "text": "For every packet admitted before retirement, decode it once and preserve its existing `recordProgress` effect once when decoding completes, including completion after cancellation, hiding, replacement, or disposal."
+      },
+      {
+        "id": "O4",
+        "text": "Display a decoded frame only while its exact originating visit remains current, rechecking that authority after the audit callback because host callbacks may synchronously navigate."
+      },
+      {
+        "id": "O5",
+        "text": "Assign panel-frame order at packet reception and keep the displayed-order watermark at visit scope across retries; once a newer-received frame has been displayed, an older completion must not replace it."
+      },
+      {
+        "id": "O6",
+        "text": "Recheck display freshness after the audit callback and advance the displayed-order watermark before calling `showProgress`, so synchronous reentrant delivery cannot restore an older frame."
+      },
+      {
+        "id": "O7",
+        "text": "Reconcile cleanup ownership across callback-capable startup: an older startup that resumes after its visit retired must clean up its own returned listener without overwriting resources installed by newer navigation."
+      },
+      {
+        "id": "O8",
+        "text": "Preserve current cancellation ordering and reentrancy behavior: progress cleanup occurs before `onCancel`, old visit ownership is retired before cancellation callbacks, and newer navigation retains ownership."
+      },
+      {
+        "id": "O9",
+        "text": "Keep an accepted retry bound to the visit and file current at command entry: cancel its previous attempt, enqueue and record the accepted retry once, cancel its resulting handle if that visit retired, and publish its queued notice only if that visit remains current."
+      },
+      {
+        "id": "O10",
+        "text": "Preserve the diagnostic consumer's current startup order and live-delta behavior; the panel repair must not make telemetry observe the cached bootstrap or apply panel freshness suppression."
+      },
+      {
+        "id": "O11",
+        "text": "Preserve all public payload shapes, especially queue records `{fileId, attemptId, visitId, kind}` and queued notices `{fileId, attemptId, visitId, status: \"queued\"}`."
+      }
+    ],
+    "ordering_barriers": [
+      "For panel progress only, register the listener before `feed.start()`; telemetry retains its existing `start()`-before-listener order.",
+      "At packet reception, confirm that the originating subscription and visit can still admit work before calling `feed.decode`.",
+      "Assign reception order before decoding, since Promise completion order may differ from packet arrival order.",
+      "On decode completion, call the audit/history effect before deciding whether visible publication is still permitted.",
+      "After the audit callback returns, recheck exact current-visit authority and compare reception order with the visit's displayed watermark.",
+      "Commit the displayed watermark before invoking callback-capable `showProgress`.",
+      "When replacing or hiding a visit, clear current ownership before canceling the captured old handle.",
+      "When listener removal occurs, removal is committed before the synchronous host detach callback.",
+      "On transfer abort, stop progress before invoking `onCancel`.",
+      "For enqueue, allocate the attempt and record the queue entry before constructing the transfer.",
+      "For retry, cancel the previous attempt before enqueueing the accepted retry; only afterward install its handle or cancel it according to current visit authority.",
+      "During startup reconciliation, never publish an older returned cleanup handle into ownership that a newer navigation has already established."
+    ],
+    "preservation": [
+      "Ordinary progress packets emitted after startup remain observable by the panel.",
+      "Every admitted decoded frame keeps its existing audit/history effect even when no longer displayable.",
+      "Panel display remains restricted to the current exact visit.",
+      "Cancellation remains idempotent through the abort-signal guard, and repeated listener removal remains inert.",
+      "Transfer transport invocation, cancellation notification, retry acceptance, navigation, hiding, disposal, and snapshot behavior retain their existing public behavior.",
+      "Queue recording remains retained when the originating visit ends and remains ordered before transfer construction.",
+      "Queued notices remain visible only for their current originating visit.",
+      "Shared feeds remain reusable for retries and later visits, including selecting the same file again.",
+      "Diagnostic telemetry retains its cached-bootstrap exclusion and later live-delta observations.",
+      "Public exports and adapter call signatures remain unchanged."
+    ],
+    "scope": [
+      "Business-code repair in `/workspace/src` for panel progress reception, per-visit display freshness, and only the lifecycle coordination necessary to preserve existing navigation and cleanup behavior.",
+      "The primary defect is the panel sequence in `src/progress.js`; related ownership may require coordinated changes in `src/transfer.js`, `src/queue.js`, or `src/panel.js` where synchronous callbacks cross startup and cleanup boundaries.",
+      "`src/telemetry.js` is preservation-only: its existing diagnostic behavior must remain unchanged.",
+      "Tests and configuration are outside Action scope."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives. Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior."
+      },
+      {
+        "file": "TASK",
+        "quote": "Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses."
+      },
+      {
+        "file": "README.md",
+        "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file again does open another visit.\nThe feed object is shared by attempts and visits for that file. Its `start()`\nmethod may synchronously emit cached data, and `decode(packet)` may return a\nvalue or a Promise."
+      },
+      {
+        "file": "README.md",
+        "quote": "`recordProgress` appends transfer history. `showProgress` paints the panel."
+      },
+      {
+        "file": "README.md",
+        "quote": "Queue records, notices, cancellation, retry, navigation, and cleanup\nretain their existing behavior. Queue records remain\n`{fileId, attemptId, visitId, kind}` unless a separate authorization adds\n`byteCount` from `file.size`."
+      },
+      {
+        "file": "README.md",
+        "quote": "One startup window is relevant to this maintenance request: `start()` may emit\nmore than one packet synchronously. A `showProgress` callback may select or hide\nanother visit before `start()` returns, while its caller has not yet received\nthe returned cleanup handle."
+      },
+      {
+        "file": "README.md",
+        "quote": "The same feed API also has a diagnostic consumer in `src/telemetry.js`.\nIt is not the panel and must keep its existing behavior while the panel defect\nis repaired."
+      },
+      {
+        "file": "README.md",
+        "quote": "Host callbacks are synchronous unless their code returns a Promise."
+      },
+      {
+        "file": "src/progress.js",
+        "quote": "    const deliver = frame => { record(frame); receive(frame); };"
+      },
+      {
+        "file": "src/progress.js",
+        "quote": "  feed.start();\n  feed.target.addEventListener(\"progress\", listener);"
+      },
+      {
+        "file": "src/telemetry.js",
+        "quote": "// Diagnostics count live deltas only. A cached bootstrap is panel state, not a delta."
+      },
+      {
+        "file": "src/telemetry.js",
+        "quote": "  feed.start();\n  feed.target.addEventListener(\"progress\", listener);"
+      },
+      {
+        "file": "src/progress-source.js",
+        "quote": "// Removal commits before notifying the host. The host callback is synchronous\n// and may call workspace.select(...) or workspace.hide(). Repeated removal is inert."
+      },
+      {
+        "file": "src/transfer.js",
+        "quote": "  controller.signal.addEventListener(\"abort\", () => {\n    stopProgress();\n    onCancel({ file, attemptId, signal: controller.signal });\n  }, { once: true });"
+      },
+      {
+        "file": "src/panel.js",
+        "quote": "  const previous = state.current;\n  state.current = null;\n  if (previous) releaseVisit(previous);\n  if (state.disposed || state.nextVisit !== requestId) return null;"
+      },
+      {
+        "file": "src/queue.js",
+        "quote": "// Queue records are retained even when their originating panel visit ends."
+      },
+      {
+        "file": "src/queue.js",
+        "quote": "    receive(frame) {\n      if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });\n    },"
+      },
+      {
+        "file": "src/retry.js",
+        "quote": "  previous.cancel();\n  const handle = enqueueTransfer(state, visit, \"retry\");\n  if (state.current === visit) visit.handle = handle;\n  else handle.cancel();\n  if (state.current === visit) publishQueued(state, visit, handle);"
+      },
+      {
+        "file": "src/notice.js",
+        "quote": "  state.showQueued({ fileId: visit.file.id, attemptId: handle.attemptId,\n    visitId: visit.id, status: \"queued\" });"
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "These checks are required after an Action but do not test business behavior."
+      }
+    ],
+    "triggers": [
+      "Selecting a file whose progress feed has a cached initial packet.",
+      "A feed emitting one or more packets synchronously from `start()`.",
+      "A later ordinary `emit(packet)` on the shared feed.",
+      "A decode returning either an immediate frame or a Promise.",
+      "Promise decodes completing in an order different from packet reception.",
+      "Retry replacing the physical attempt within the current visit.",
+      "Selecting the same file again, creating a new visit over a reused feed.",
+      "Hiding, selecting, retrying, or disposing from synchronous `recordProgress`, `showProgress`, listener-detach, or cancellation callbacks.",
+      "Aborting a transfer while progress startup or cleanup is in flight."
+    ],
+    "unknowns": [
+      "Behavior for rejected decode Promises, malformed thenables, thrown decoder errors, and adapter callback exceptions is not specified by TASK or the supplied public documents.",
+      "Physical transfer completion and automatic removal of completed handles from `state.tasks` are not specified.",
+      "No public source supplies frame sequence metadata; reception order is the supported meaning of older versus newer for panel freshness.",
+      "The sources do not mandate a particular internal mechanism for provisional cleanup ownership, logical retirement, or per-visit watermarks.",
+      "Whether an older admitted frame should be suppressed while a newer-received frame is still decoding is not explicitly required; the stated rollback prohibition requires suppression once the newer frame has actually been displayed.",
+      "No authorization is supplied to add `byteCount` from `file.size` to queue records."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 1,
+  "diagnoses": [],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "finalized": true,
+  "first_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "repair_stop_reason": "oracle_accepted",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "dd416be98b6a1c5db1f8c9e5ae31beb868c3937dee99af6e243f883b127edca6",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9990879483521
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "cc47c028eaf9529206eec904fca9e64c284aeb6aea3e9f41f4b41f4499dd994e",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 26368,
+        "input_tokens": 35761,
+        "output_tokens": 4914,
+        "reasoning_output_tokens": 2881,
+        "total_tokens": 40675
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "c628f841356740ceedcd42bcd8de77d7e39ed441f0ecc9d499ad14989cdcde9a",
+      "seconds": 101.1467377608642,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 26368,
+        "input_tokens": 35761,
+        "output_tokens": 4914,
+        "reasoning_output_tokens": 2881,
+        "total_tokens": 40675
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "3a90326802382f93f2b9358d00eef45f811b005567974cc471ae5e39f67bcee4",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9995123436674
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "84c38437f538cef7cdc9ad9804f42bdcde0f7377d0ebb3af19eff2bf0cc42c1c",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 23585,
+        "output_tokens": 2944,
+        "reasoning_output_tokens": 116,
+        "total_tokens": 26529
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "0804702e44e8b9d598c8d2da4a19eb82487fb60abba64677ab40a1c3966bb293",
+      "seconds": 62.83080208580941,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 23585,
+        "output_tokens": 2944,
+        "reasoning_output_tokens": 116,
+        "total_tokens": 26529
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "cfbbc238cd738ff4b356e564a7f846bb1e3a21f318e7a5a3b86e38d9e76209cb",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9993366496637
+          },
+          "number": 1,
+          "requests": 7,
+          "restart_reason": "initial",
+          "result_sha256": "22a4e30bca4df59d62ac1678cef6add193d8f00b1eed1053cfb0deb275309ebf",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 207104,
+        "input_tokens": 236074,
+        "output_tokens": 5739,
+        "reasoning_output_tokens": 3007,
+        "total_tokens": 241813
+      },
+      "requests": 7,
+      "reserved_requests": 24,
+      "result_sha256": "6c0e5305e27d643cce38ce812c6359565dd964c5d499d07fa506823120094c5f",
+      "seconds": 116.49836017657071,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 207104,
+        "input_tokens": 236074,
+        "output_tokens": 5739,
+        "reasoning_output_tokens": 3007,
+        "total_tokens": 241813
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "3b8bab1ffd02a9435a670d6da189f8ed8b260529bdfdf95d33d212bfceb1e3be",
+      "seconds": 1.256884802132845,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 1.1448250208050013,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "c9ed2bc62ea5dbea16e54740d10f198872ffb25d7c1ee4127297487cacd264b4",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9940762361512
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "6b0664e409a1c580bb4d37102cdcaa5f28e545400a9f9344be32ed6f852ad1a2",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 82329,
+        "output_tokens": 2065,
+        "reasoning_output_tokens": 132,
+        "total_tokens": 84394
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "082c4118be8c9e8e12f33ac3c757ef470f9c023e13bf4a3e0a5caae08ebd7a5c",
+      "seconds": 47.39451100304723,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 82329,
+        "output_tokens": 2065,
+        "reasoning_output_tokens": 132,
+        "total_tokens": 84394
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "training_accepted": true
+}

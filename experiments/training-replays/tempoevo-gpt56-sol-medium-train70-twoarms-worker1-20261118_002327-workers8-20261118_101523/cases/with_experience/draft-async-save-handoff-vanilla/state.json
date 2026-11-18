@@ -1,0 +1,537 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "749fe8679219e8a80187561b820da058f1080d477e2be92140dc5bbb64cb753a",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "package.json": "749a9a4fea45dd8a5eec9e4a51f9437ffd5496b599b237ab62043335293b48a2",
+        "src/draft-store.js": "b4e13aae96e80f2bf09d37d4e3805ac43a4e54581128672f99fbd1978c455d55",
+        "src/editor.js": "74fe50f1792e139f2f73ffdd88c6a98a120810b5e901c8bdef4a255a80dc5307",
+        "src/save-status.js": "ddff9cade3e18fb6df48c5a1a0abc67267173f4cdc1793b95b17f3c8c5fbf3f0",
+        "src/search-preview.js": "6c6a9c8276c539eb680e916174db66c7ef4209d5a237b0e340c1bb9aec3524d8",
+        "src/timers.js": "db6d40d6bdf9c27a74d012dbafe7bce3230ab168e57061d33f73574349d2acc7",
+        "src/trailing-task.js": "a5eab4a56995aa183bca380390525f61d2f55e51aa20b6dde06602c84c60d54b",
+        "src/workspace.js": "94e38c1382cbef5bc5eaa5031696afa46cd5ce35b34928dd93b7c557209251e0"
+      },
+      "candidate_sources": {
+        "README.md": "# Workspace drafts with asynchronous acknowledgements\n\nopen/edit/close are synchronous. The editor currently submits every edit.\nA visit's latest pending text must be submitted exactly once before close or\nnavigation returns; submission must not wait for network acknowledgement.\nAccepted writes belong to the document, survive navigation, and all settle.\nStore read exposes the latest accepted draft for immediate reopen; readPersisted\nexposes acknowledged data, protected by write revision against late old writes.\nThe provided transport accepts a write synchronously and returns a Promise.\nIts start callback may synchronously open another document, reopen the same\none, hide the editor, or edit that new visit. Acceptance occurs before that hook.\nNavigation priority follows call start order: a newer open/close supersedes an\nouter navigation that resumes after a save-start callback. Obsolete destinations\nmust not render. A newly accepted edit must not be erased by old flush cleanup.\n\nA save-status notification may appear only for the current visit's latest edit.\nA pending newer edit invalidates an older acknowledgement even before its own\nwrite is submitted. store.write(id,text,owner) round-trips an opaque owner token;\nattachSaveStatus supports an owner predicate. Reopening the same document does\nnot give its new visit ownership of the old visit's acknowledgement.\nDo not cancel accepted saves to suppress UI messages. No network failures or\nretry policy are included in this fixture; each transport Promise settles once.\n\nThe search preview is transient: 40 ms quiet interval, discard pending query\non hide, reusable afterward. It is outside the editor maintenance request.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\n  \"name\": \"draft-autosave-handoff-v2-fixture\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+        "src/draft-store.js": "// Acceptance precedes the transport callback, which may navigate synchronously.\n// Every accepted write completes independently. A late older acknowledgement\n// cannot roll persisted data back. read() exposes accepted drafts immediately.\nexport function createDraftStore(initial = {}, { transport = event => Promise.resolve() } = {}) {\n  const accepted = new Map(Object.entries(initial)), persisted = new Map(Object.entries(initial));\n  const revisions = new Map(), committed = new Map(), listeners = new Set();\n  return {\n    read(id) { return accepted.get(id) ?? \"\"; },\n    readPersisted(id) { return persisted.get(id) ?? \"\"; },\n    write(id, text, owner) {\n      const revision = (revisions.get(id) || 0) + 1;\n      revisions.set(id, revision); accepted.set(id, text);\n      const event = Object.freeze({ id, text, revision, owner });\n      const pending = transport(event);\n      return Promise.resolve(pending).then(() => {\n        if (revision > (committed.get(id) || 0)) {\n          committed.set(id, revision); persisted.set(id, text);\n        }\n        for (const listener of [...listeners]) listener(event);\n        return event;\n      });\n    },\n    subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },\n  };\n}\n",
+        "src/editor.js": "import { attachSaveStatus } from \"./save-status.js\";\nimport { createTrailingTask } from \"./trailing-task.js\";\n\nexport function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n  let current = null;\n  let navigation = 0;\n\n  function retire() {\n    const old = current;\n    current = null;\n    if (old) {\n      old.stop();\n      old.task.flush();\n    }\n  }\n\n  return {\n    open(id) {\n      const request = ++navigation;\n      retire();\n      if (request !== navigation) return;\n\n      const visit = {\n        id,\n        latest: null,\n        task: createTrailingTask(\n          (text, owner) => store.write(id, text, owner),\n          120,\n          timers,\n        ),\n      };\n      current = visit;\n      visit.stop = attachSaveStatus(store, id, owner => current === visit && owner === visit.latest, renderStatus);\n      renderDocument({id, text:store.read(id)});\n    },\n    edit(text) {\n      if (!current) return;\n      const visit = current, owner = {};\n      visit.latest = owner;\n      visit.task.push(text, owner);\n    },\n    close() {\n      const request = ++navigation;\n      retire();\n      if (request === navigation) renderDocument(null);\n    },\n  };\n}\n",
+        "src/save-status.js": "export function attachSaveStatus(store, id, accepts, renderStatus) {\n  return store.subscribe(event => {\n    if (event.id === id && accepts(event.owner)) renderStatus(event);\n  });\n}\n",
+        "src/search-preview.js": "import { createTrailingTask } from \"./trailing-task.js\";\n\nexport function createSearchPreview({ timers, publish }) {\n  const task = createTrailingTask(query => publish({ query }), 40, timers);\n  return {\n    query(value) { task.push(value); },\n    hide() { task.cancel(); },\n  };\n}\n",
+        "src/timers.js": "export const browserTimers = {\n  schedule(callback, delay) { return setTimeout(callback, delay); },\n  cancel(handle) { clearTimeout(handle); },\n};\n",
+        "src/trailing-task.js": "import { browserTimers } from \"./timers.js\";\n\n// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.\n// Retire the old batch before invoking work so a callback may enqueue a new batch.\nexport function createTrailingTask(work, delay, timers = browserTimers) {\n  let handle = null;\n  let pending = null;\n  function flush() {\n    if (handle !== null) timers.cancel(handle);\n    handle = null;\n    const args = pending;\n    pending = null;\n    if (args !== null) work(...args);\n  }\n  return {\n    push(...args) {\n      if (handle !== null) timers.cancel(handle);\n      pending = args;\n      handle = timers.schedule(flush, delay);\n    },\n    flush,\n    cancel() {\n      if (handle !== null) timers.cancel(handle);\n      handle = null;\n      pending = null;\n    },\n  };\n}\n",
+        "src/workspace.js": "import { createDraftEditor } from \"./editor.js\";\n\nexport function createWorkspace(options) {\n  const editor = createDraftEditor(options);\n  return {\n    open(id) { editor.open(id); },\n    edit(text) { editor.edit(text); },\n    close() { editor.close(); },\n    dispose() { editor.close(); },\n  };\n}\n"
+      },
+      "delivered_sha256s": [
+        "0f8afbd1eddfaabc061888be095cb69ebafb33e3f68d3ea9f481752f73e75b64",
+        "c8e38b6f8a680f012db4bd5030c99007bb5e65ff85ac5bc828499e6cbb59721f",
+        "be9c359d47a93207b30dae1a27bbea96c05c50f94dc354ea1e880ba1a17ff6ac",
+        "bc00e7137461c55ede04dfd3a6376615561a7552bd46b7141fb8dd4ad78aa29d",
+        "2835752e4b6c1eaf8c6a1161c94a3ab57363a3bf4dd4f02741daa7deacab28bb"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/draft-store.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/editor.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/save-status.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/search-preview.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/timers.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/trailing-task.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/workspace.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "Several edits within one burst reset the timer; no store write occurs until 120 ms of quiet, then exactly one write contains the burst's latest text.",
+      "After one burst is submitted, a later burst schedules and submits independently.",
+      "Editing with no current visit is a no-op; empty-string text remains a valid edit.",
+      "Before open, close, or dispose returns, the departing visit's pending latest text has been submitted exactly once, without waiting for transport acknowledgement.",
+      "Reopening the same document immediately observes the departing visit's submitted text through store.read.",
+      "Exercise transport start callbacks that open another document, reopen the same document, close, or edit a successor visit; the later navigation and its edits remain authoritative.",
+      "An acknowledgement renders status only when its owner is the current visit's latest edit; a pending newer edit suppresses an older acknowledgement before the newer write is submitted.",
+      "All accepted store writes settle independently, and late older acknowledgements cannot roll persisted data back.",
+      "Search preview retains its 40 ms quiet interval, hide cancellation, and subsequent reuse."
+    ],
+    "forbidden_effects": [
+      "Do not write to the store on every edit or submit an intermediate value from a coalesced burst.",
+      "Do not cancel or discard an accepted editor save merely to suppress status output.",
+      "Do not wait for a transport Promise before open, edit, close, or dispose returns.",
+      "Do not let an outer navigation render or clear after a newer open or close begins during a synchronous transport start callback.",
+      "Do not let cleanup of an old flush erase a new batch accepted reentrantly.",
+      "Do not treat document-ID equality as visit identity or give a reopened visit ownership of an earlier visit's acknowledgement.",
+      "Do not change search-preview scheduling, cancellation, or public behavior.",
+      "Do not change the synchronous public interfaces or renderer/store payload shapes except as required to defer editor writes."
+    ],
+    "lifecycle_identity": [
+      "Each open creates a distinct visit, including reopening the same document ID.",
+      "A pending trailing batch belongs to the visit and document that accepted the edit; it must not resolve its target from a later current selection.",
+      "Each accepted edit receives an opaque owner token, and the visit's latest owner changes immediately when the edit is accepted by the editor.",
+      "Navigation authority is identified by call-start order: a later open or close supersedes an outer navigation that resumes after a save-start callback.",
+      "Save-status ownership requires both the same active visit and the owner token of that visit's latest accepted edit."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Coalesce editor edits with the existing trailing-task utility at a 120 ms quiet interval, submitting only the latest text from each burst while allowing subsequent bursts to submit."
+      },
+      {
+        "id": "O2",
+        "text": "On edit, immediately mark the current visit's new owner as latest, then enqueue that visit's document ID, text, and owner for delayed submission; editing without a current visit remains a no-op."
+      },
+      {
+        "id": "O3",
+        "text": "Before a visit is departed by open, close, or workspace disposal, synchronously flush its pending latest batch exactly once. Submission may start asynchronous acknowledgement work but navigation must not wait for it to settle."
+      },
+      {
+        "id": "O4",
+        "text": "Retire the departing visit and detach its status subscription before callback-capable submission can run; consumed trailing state must already be cleared so reentrant edits form an independent later batch."
+      },
+      {
+        "id": "O5",
+        "text": "Flush a departing visit before reading a replacement document, so immediate reopen observes the latest accepted draft."
+      },
+      {
+        "id": "O6",
+        "text": "After any departure flush that can synchronously trigger navigation, revalidate the initiating navigation request before rendering or installing its destination or clearing the document output."
+      },
+      {
+        "id": "O7",
+        "text": "Preserve store acknowledgement behavior: every submitted write settles independently, revision ordering prevents late older acknowledgements from rolling persisted data back, and accepted text remains immediately readable."
+      },
+      {
+        "id": "O8",
+        "text": "Render save status only for the current visit's latest owner. Assigning a newer pending edit must invalidate an older acknowledgement even before the newer edit is submitted."
+      },
+      {
+        "id": "O9",
+        "text": "Leave the adjacent search preview unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "For an edit: establish the new latest-owner token before enqueueing delayed persistence, so an older acknowledgement is rejected immediately.",
+      "For trailing execution: detach timer ownership and clear pending arguments before calling store.write, preserving callback-enqueued successor work.",
+      "For departure: capture the old visit, revoke its current ownership, and detach its save-status listener before flushing its pending submission.",
+      "For replacement navigation: flush the departing visit before store.read for the destination.",
+      "For callback-capable departure submission: verify that no newer navigation request has started before installing or rendering the requested destination.",
+      "For close: render the cleared document only if that close request remains authoritative after departure submission.",
+      "For persistence: store acceptance precedes the transport start callback; navigation must rely on that synchronous acceptance rather than acknowledgement completion."
+    ],
+    "preservation": [
+      "open, edit, close, and workspace dispose remain synchronous.",
+      "Workspace open/edit/close forwarding and editor public method signatures remain unchanged.",
+      "Document rendering retains the existing `{id, text}` payload and close rendering retains `null`.",
+      "Store write events retain `{ id, text, revision, owner }`, opaque owner round-tripping, independent settlement, and revision-protected persisted data.",
+      "Store listener delivery and document-specific save-status filtering remain intact.",
+      "Returning to a document restores the latest accepted draft immediately.",
+      "Accepted saves survive navigation and are not canceled with view-local status subscriptions.",
+      "Search preview remains a separate transient 40 ms trailing task whose hide operation discards pending preview work."
+    ],
+    "scope": [
+      "Editor autosave scheduling and departure handoff in `src/editor.js`, using the existing `src/trailing-task.js` utility.",
+      "Navigation effects exposed through the synchronous workspace open, close, and dispose operations insofar as editor save-start callbacks can reenter them.",
+      "Existing store acceptance, acknowledgement, revision, and owner-token semantics are preserved, not redesigned.",
+      "`src/search-preview.js` is explicitly outside the maintenance change."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces.\nThe adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "open/edit/close are synchronous. The editor currently submits every edit.\nA visit's latest pending text must be submitted exactly once before close or\nnavigation returns; submission must not wait for network acknowledgement."
+      },
+      {
+        "file": "README.md",
+        "quote": "Accepted writes belong to the document, survive navigation, and all settle.\nStore read exposes the latest accepted draft for immediate reopen; readPersisted\nexposes acknowledged data, protected by write revision against late old writes."
+      },
+      {
+        "file": "README.md",
+        "quote": "Its start callback may synchronously open another document, reopen the same\none, hide the editor, or edit that new visit. Acceptance occurs before that hook."
+      },
+      {
+        "file": "README.md",
+        "quote": "Navigation priority follows call start order: a newer open/close supersedes an\nouter navigation that resumes after a save-start callback. Obsolete destinations\nmust not render. A newly accepted edit must not be erased by old flush cleanup."
+      },
+      {
+        "file": "README.md",
+        "quote": "A save-status notification may appear only for the current visit's latest edit.\nA pending newer edit invalidates an older acknowledgement even before its own\nwrite is submitted."
+      },
+      {
+        "file": "README.md",
+        "quote": "store.write(id,text,owner) round-trips an opaque owner token;\nattachSaveStatus supports an owner predicate. Reopening the same document does\nnot give its new visit ownership of the old visit's acknowledgement."
+      },
+      {
+        "file": "README.md",
+        "quote": "Do not cancel accepted saves to suppress UI messages. No network failures or\nretry policy are included in this fixture; each transport Promise settles once."
+      },
+      {
+        "file": "src/trailing-task.js",
+        "quote": "// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.\n// Retire the old batch before invoking work so a callback may enqueue a new batch."
+      },
+      {
+        "file": "src/trailing-task.js",
+        "quote": "    handle = null;\n    const args = pending;\n    pending = null;\n    if (args !== null) work(...args);"
+      },
+      {
+        "file": "src/draft-store.js",
+        "quote": "// Acceptance precedes the transport callback, which may navigate synchronously.\n// Every accepted write completes independently. A late older acknowledgement\n// cannot roll persisted data back. read() exposes accepted drafts immediately."
+      },
+      {
+        "file": "src/editor.js",
+        "quote": "      const visit = current, owner = {};\n      visit.latest = owner;\n      store.write(visit.id, text, owner);"
+      },
+      {
+        "file": "src/save-status.js",
+        "quote": "    if (event.id === id && accepts(event.owner)) renderStatus(event);"
+      },
+      {
+        "file": "src/search-preview.js",
+        "quote": "  const task = createTrailingTask(query => publish({ query }), 40, timers);"
+      },
+      {
+        "file": "src/search-preview.js",
+        "quote": "    hide() { task.cancel(); },"
+      }
+    ],
+    "triggers": [
+      "An edit while a visit is current starts or resets that visit's 120 ms trailing interval.",
+      "Expiry after 120 ms without another edit submits the latest pending text.",
+      "A later edit after a completed submission starts a new independent burst.",
+      "open, close, or workspace dispose while a visit has pending text forces submission before the navigation operation returns.",
+      "Calling store.write invokes transport after synchronous acceptance; the transport start callback may synchronously reenter workspace navigation or editing.",
+      "Promise settlement invokes store listeners and may attempt save-status rendering."
+    ],
+    "unknowns": [
+      "Behavior when timer scheduling, transport invocation, listener delivery, or rendering throws is not specified.",
+      "Timer cancellation races and ordering between unrelated callbacks at the same deadline are not specified.",
+      "Network failure and retry behavior are explicitly outside the fixture.",
+      "The sources do not require persistent per-document buffer banks; visit-bound trailing work is sufficient if all stated departure and reentrancy behavior is preserved.",
+      "No requirement specifies copying or validating non-string text values."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 1,
+  "diagnoses": [],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "finalized": true,
+  "first_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "repair_stop_reason": "oracle_accepted",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "73ccaefc18e95e5fa1dab3e321abc03fe1a0f1f970640fe87bb8f752c2203b07",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9991491995752
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "658ba15cd9f8e4e8b5dddf3c24255f602f16e47da5661ff4aaf35888212b470f",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 24320,
+        "input_tokens": 31844,
+        "output_tokens": 3668,
+        "reasoning_output_tokens": 1686,
+        "total_tokens": 35512
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "0e54db1b1691841c41e04f550274e0e4800898126238bc0e6d63191cf14c4f7f",
+      "seconds": 71.82386452611536,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 24320,
+        "input_tokens": 31844,
+        "output_tokens": 3668,
+        "reasoning_output_tokens": 1686,
+        "total_tokens": 35512
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "7b26364b7a2409840f60e98808b014a18d05f50ed6ffa8d0c3c1f37fe1a46da5",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9990014601499
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "ce1d18af6be66154209773e8cd6085610819de7aa2a8d129bcdb27c579907b2e",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 20460,
+        "output_tokens": 2538,
+        "reasoning_output_tokens": 468,
+        "total_tokens": 22998
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "0ef62e265d676d822ee7d6eb62986bdeea8355bd7d70fd51a71d153cc8fd71fe",
+      "seconds": 47.59404560830444,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 20460,
+        "output_tokens": 2538,
+        "reasoning_output_tokens": 468,
+        "total_tokens": 22998
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "2fb1c0101f94448f018edbad2ead6f967079ea07f1bac0756cdedaec0f938397",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9995004180819
+          },
+          "number": 1,
+          "requests": 6,
+          "restart_reason": "initial",
+          "result_sha256": "4bf0ffb1aaebe5dc1f848e690147a19be9c2e333f1ab74fa005e21e94e72f196",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 137216,
+        "input_tokens": 157349,
+        "output_tokens": 3964,
+        "reasoning_output_tokens": 1549,
+        "total_tokens": 161313
+      },
+      "requests": 6,
+      "reserved_requests": 24,
+      "result_sha256": "5c35563035dc2337deeedef234d6dd5ebe2916774b24fbd6b832f32c8158e4f4",
+      "seconds": 86.13585624564439,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 137216,
+        "input_tokens": 157349,
+        "output_tokens": 3964,
+        "reasoning_output_tokens": 1549,
+        "total_tokens": 161313
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "fa6c37a51b435621dd7ba0a5947e9273f3daa3eb4bfced5999bc7580271fe48f",
+      "seconds": 1.061189215630293,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 1.0380015335977077,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "19c020cb22b168f6599d2ec20bc1750994bf84c3d8ebcf191d6e63b38b9b71a9",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9954290147871
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "f17abf9d72a66355d0446a65104c2ac0e50baee8b40eab5451a552f5f1235303",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 80163,
+        "output_tokens": 2050,
+        "reasoning_output_tokens": 169,
+        "total_tokens": 82213
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "56a55279907ccfa2c21489131520179dfa3eacfc55b4f786a3004a3518386780",
+      "seconds": 39.39431893546134,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 80163,
+        "output_tokens": 2050,
+        "reasoning_output_tokens": 169,
+        "total_tokens": 82213
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "training_accepted": true
+}

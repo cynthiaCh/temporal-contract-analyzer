@@ -1,0 +1,407 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "f6155ef95bf1af65f6abd216f26bff2c750d276b2871075ed923d84f0896d33d",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "b2da36ea3cfe474b3989decfe362aa8e6cbd45ec24e6267964489e28d7396ae8",
+        "docs/host-api.md": "3e0bc0b0bd7a4facd4b5135f81f947636e682f22c5b56c7782500db6fb061211",
+        "src/workflow.py": "7618129595d2979ca954c370f130fd828963fe652bf771358b2f1fc3aedbdb9b"
+      },
+      "candidate_sources": {
+        "README.md": "# Botanical collection annotations\n\n\nThe workspace API drives a document editor and its save badge. The workspace store\nholds draft text across navigation and closed editor views. Returning to a document\nrestores the user's last edit. Save integrations receive committed records and may\nselect another document synchronously. Later navigation means the navigation request that starts later takes precedence, even if an earlier request returns afterward. For example, if open(B) starts and saving the departed A invokes a callback that calls open(C), C remains selected after the callback and the outer open(B) return. If that callback calls close() instead, the editor remains closed after the outer open(B) returns. These are navigation results, independent of when the departed document's save occurs.\nWhen close/open returns, the departed document's last accepted edit is available\nthrough the store, even if the next view selects a different document.\n\n`createSearchPreview` is an adjacent transient search panel. It publishes after a\n40 ms quiet interval; hiding it discards an unpublished query. It can be reused.\n\nThe public methods are synchronous. Output render functions observe state; navigation\ncomes through the workspace API, including its `onSaved` integration. `store` provides\n`read`, `write` and `subscribe`; `timers` provides `schedule(callback, delay)` and\n`cancel(handle)`. Production timers use the browser's timers. Keep these interfaces.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"CPython 3.8.10\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "docs/host-api.md": "# Host integration\n\nopen(id), edit(text), close() and dispose() are synchronous entry points.\nThe store owns persisted document records independently of any mounted view.\nStore delivery writes first, snapshots subscriptions, and skips removed listeners.\nonSaved is called inline and can navigate or edit; rendering is an output sink.\nEvery open creates a fresh visit and subscription, including same-key reopen.\nInjected timers provide schedule(callback,delay) and cancel(handle).\nThe preview is transient and independent of the editor's persistence policy.\n",
+        "src/workflow.py": "from dataclasses import dataclass\nclass Store:\n    def __init__(self, records):\n        self.records = dict(records)\n        self.listeners = {}\n        self.serial = self.revision = 0\n\n    def read(self, key):\n        return self.records.get(key, '')\n\n    def subscribe(self, listener):\n        self.serial += 1\n        token = self.serial\n        self.listeners[token] = listener\n        return token\n\n    def stop(self, token):\n        self.listeners.pop(token, None)\n\n    def write(self, key, text):\n        self.records[key] = text\n        self.revision += 1\n        event = dict(id=key, text=text, revision=self.revision)\n        for token, listener in list(self.listeners.items()):\n            if token in self.listeners:\n                listener(event)\n        return event\n\n\nclass Trailing:\n    def __init__(self, env, delay, work):\n        self.env, self.delay, self.work = env, delay, work\n        self.handle = self.pending = None\n\n    def push(self, value):\n        if self.handle is not None:\n            self.env.cancel(self.handle)\n        self.pending = value\n        self.handle = self.env.schedule(self.flush, self.delay)\n\n    def flush(self):\n        if self.handle is not None:\n            self.env.cancel(self.handle)\n        value = self.pending\n        self.handle = self.pending = None\n        if value is not None:\n            self.work(value)\n\n    def cancel(self):\n        if self.handle is not None:\n            self.env.cancel(self.handle)\n        self.handle = self.pending = None\n\n\n\n@dataclass\nclass Visit:\n    env: object\n    id: str\n    token: int\n    task: Trailing\n\n    def accept(self, text):\n        self.task.push(text)\n\n    def depart(self):\n        self.env.store.stop(self.token)\n        self.env.output('document', None)\n        self.task.flush()\n\nclass Workspace:\n    def __init__(self, env):\n        self.env, self.current, self.generation = env, None, 0\n\n    def retire(self):\n        old, self.current = self.current, None\n        if old:\n            old.depart()\n        else:\n            self.env.output('document', None)\n\n    def open(self, key):\n        self.generation += 1\n        ticket = self.generation\n        self.retire()\n        if ticket != self.generation:\n            return\n        token = self.env.store.subscribe(lambda e: self.env.output('status', e) if e['id'] == key else None)\n        task = Trailing(self.env, 120, lambda text: self.env.write(key, text))\n        self.current = Visit(self.env, key, token, task)\n        self.env.output('document', dict(id=key, text=self.env.store.read(key)))\n\n    def edit(self, text):\n        selected = self.current\n        if selected:\n            selected.accept(text)\n\n    def close(self):\n        self.generation += 1\n        self.retire()\n\n    def dispose(self):\n        self.close()\n\nclass Preview:\n    def __init__(self, env):\n        self.task = Trailing(env, 40, lambda q: env.output('preview', dict(query=q)))\n    def query(self, text):\n        self.task.push(text)\n    def hide(self):\n        self.task.cancel()\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.py",
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "After one or more edits, inspect the store before 120 ms of quiet: no text from that burst has been written yet.",
+      "After 120 ms of quiet, inspect the store and save integration: exactly the latest text from that burst has been committed once.",
+      "Start another burst after the first save and verify that its latest text is also committed after its own 120 ms quiet interval.",
+      "Call open, close, or dispose with an edit pending and verify synchronously on return that the departed document's latest accepted text is readable from the store.",
+      "During departure-triggered saving, have the inline save callback call open or close and verify that the callback's later navigation remains authoritative after the outer call returns.",
+      "Reopen the same key and verify that it creates a fresh visit and subscription while restoring the last committed edit.",
+      "Verify preview query publication remains delayed by 40 ms, hide discards an unpublished query, and the preview remains reusable."
+    ],
+    "forbidden_effects": [
+      "Do not write on every edit or commit intermediate texts from the same editing burst.",
+      "Do not allow a stale scheduled callback to repeat a save that was already flushed or canceled.",
+      "Do not allow an outer open to overwrite navigation initiated synchronously by the departed document's save callback.",
+      "Do not weaken synchronous close, open, dispose, store-availability, or inline-callback behavior.",
+      "Do not change the public entry points or injected store/timer interfaces.",
+      "Do not change the adjacent search preview's 40 ms, hide, reuse, or transient behavior."
+    ],
+    "lifecycle_identity": [
+      "Each open, including reopening the same key, creates a fresh visit, subscription, and trailing-save lifecycle.",
+      "A pending edit remains associated with the visit and document key that accepted it, even if navigation begins before its scheduled save.",
+      "Departure retires that visit and its subscription while ensuring its last accepted pending edit is committed.",
+      "After a trailing save fires or is synchronously flushed, the same trailing utility remains usable for later editing bursts."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "For an active document, coalesce edits with the existing trailing utility and commit only the latest text after a 120 ms quiet interval."
+      },
+      {
+        "id": "O2",
+        "text": "After one burst is committed, later editing bursts must independently schedule and commit their latest text."
+      },
+      {
+        "id": "O3",
+        "text": "When a visit departs through open, close, or dispose, synchronously make its last accepted edit available through the store before the public call returns."
+      },
+      {
+        "id": "O4",
+        "text": "Preserve reentrant navigation precedence: navigation started later from an inline save callback remains selected or closed after the earlier outer navigation returns."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve fresh-visit and subscription behavior for every open, including same-key reopen, and restore the document's last committed text."
+      },
+      {
+        "id": "O6",
+        "text": "Keep all public workspace, store, timer, rendering, and save-integration interfaces unchanged."
+      },
+      {
+        "id": "O7",
+        "text": "Leave the adjacent search preview behavior unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "Within an editing burst, each accepted edit replaces the pending trailing value and resets the 120 ms quiet interval; no burst value is committed before the effective trailing flush.",
+      "A scheduled or departure-triggered flush must consume and clear its pending state before invoking write, so inline callbacks cannot cause the same pending value to be committed again.",
+      "Departure cleanup must not emit later document output that erases a document selected by a reentrant save callback.",
+      "Before open continues to install its requested visit, it must detect whether an inline callback initiated later navigation and abandon the superseded outer request.",
+      "A departing document's pending save must complete before the corresponding synchronous open, close, or dispose returns."
+    ],
+    "preservation": [
+      "The workspace store continues to hold draft text across navigation and closed editor views, and reopening restores the last edit.",
+      "Later navigation continues to take precedence over an earlier navigation request, including navigation invoked inline while saving the departed document.",
+      "Store writes continue to occur before subscription delivery; delivery continues to use a subscription snapshot and skip listeners removed before invocation.",
+      "Output rendering remains an observer/output sink and does not become a navigation entry point.",
+      "Every open continues to create a fresh visit and subscription, including reopening the same key.",
+      "Public workspace methods remain synchronous.",
+      "Preview remains transient, independent from editor persistence, reusable, delayed by 40 ms, and cancelable by hide."
+    ],
+    "scope": [
+      "Change only the workspace editor's edit-persistence lifecycle in src/workflow.py.",
+      "Use the existing Trailing utility with a 120 ms delay for document saves.",
+      "Account for edit, open, close, dispose, store subscription, inline save callbacks, and render output insofar as they preserve existing workspace behavior.",
+      "Exclude functional changes to Preview and its 40 ms search-query behavior."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "The botanical collection annotations currently writes on every edit. Coalesce edits using the existing trailing utility: after a 120 ms quiet interval, write only the latest text in that editing burst. Subsequent bursts must continue to save. Preserve other behavior and public interfaces. The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "The workspace store\nholds draft text across navigation and closed editor views. Returning to a document\nrestores the user's last edit."
+      },
+      {
+        "file": "README.md",
+        "quote": "Later navigation means the navigation request that starts later takes precedence, even if an earlier request returns afterward. For example, if open(B) starts and saving the departed A invokes a callback that calls open(C), C remains selected after the callback and the outer open(B) return. If that callback calls close() instead, the editor remains closed after the outer open(B) returns."
+      },
+      {
+        "file": "README.md",
+        "quote": "When close/open returns, the departed document's last accepted edit is available\nthrough the store, even if the next view selects a different document."
+      },
+      {
+        "file": "README.md",
+        "quote": "`createSearchPreview` is an adjacent transient search panel. It publishes after a\n40 ms quiet interval; hiding it discards an unpublished query. It can be reused."
+      },
+      {
+        "file": "README.md",
+        "quote": "The public methods are synchronous. Output render functions observe state; navigation\ncomes through the workspace API, including its `onSaved` integration. `store` provides\n`read`, `write` and `subscribe`; `timers` provides `schedule(callback, delay)` and\n`cancel(handle)`. Production timers use the browser's timers. Keep these interfaces."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Store delivery writes first, snapshots subscriptions, and skips removed listeners.\nonSaved is called inline and can navigate or edit; rendering is an output sink.\nEvery open creates a fresh visit and subscription, including same-key reopen."
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "task = Trailing(self.env, 120, lambda text: self.env.write(key, text))\n        self.current = Visit(self.env, key, token, task)"
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "def edit(self, text):\n        selected = self.current\n        if selected:\n            selected.accept(text)"
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "def accept(self, text):\n        self.env.write(self.id, text)"
+      }
+    ],
+    "triggers": [
+      "Calling edit(text) while a document visit is active.",
+      "Expiration of 120 ms without a later edit in the same burst.",
+      "Calling open(key) while another visit has a pending edit.",
+      "Calling close() or dispose() while a visit has a pending edit.",
+      "Synchronous navigation or editing performed by the save integration during write.",
+      "Opening any key, including reopening the currently selected key.",
+      "Preview query and hide calls, as preservation-only boundaries."
+    ],
+    "unknowns": [
+      "The public documents do not name the environment method that invokes onSaved or define its implementation; src/workflow.py exposes saves through env.write, so callback behavior must be preserved at that boundary.",
+      "The public documents require synchronous availability on departure but do not explicitly prescribe the internal order among subscription removal, clearing document output, and flushing; the chosen order must satisfy callback navigation precedence and avoid clobbering reentrant render output.",
+      "No public behavioral test suite is supplied, so exact output-event counts beyond the documented store, navigation, subscription, and rendering guarantees remain unspecified."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 1,
+  "diagnoses": [],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "finalized": true,
+  "first_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "repair_stop_reason": "oracle_accepted",
+  "stages": [
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "71cb9fca3dd4aef81283a0bc7a07d8b4f4e2df446b2975e154c2f50872315018",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.99948141817
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "ad87f8d4da2d218b96baf3e3eab86124716bb8c5899cc478040b6d4c81f6499e",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 12238,
+        "output_tokens": 2419,
+        "reasoning_output_tokens": 725,
+        "total_tokens": 14657
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "14118312a719da11a663017f190559b453e2fbf6b52c3eb11ae1b6b8559c29e5",
+      "seconds": 42.729202888906,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 12238,
+        "output_tokens": 2419,
+        "reasoning_output_tokens": 725,
+        "total_tokens": 14657
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "8fab89a42fe7b52d7dae657dc6bc6f3f8b21e4f781b81fb8714e2b9edc46bdc9",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9996986277401
+          },
+          "number": 1,
+          "requests": 4,
+          "restart_reason": "initial",
+          "result_sha256": "1f44c7548ed9afd78a6c908d1db55319ea4fff41234fec99f450355a239f909d",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 55936,
+        "input_tokens": 64847,
+        "output_tokens": 1536,
+        "reasoning_output_tokens": 317,
+        "total_tokens": 66383
+      },
+      "requests": 4,
+      "reserved_requests": 24,
+      "result_sha256": "49d479e4dca3dab7dd688e1d7cefaaf2b5fc09f25be37b4fedab3aa68195f603",
+      "seconds": 45.87501511443406,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 55936,
+        "input_tokens": 64847,
+        "output_tokens": 1536,
+        "reasoning_output_tokens": 317,
+        "total_tokens": 66383
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "de8f7cf25820a5e87d797d645824aaa65b94f19ddb61b6e9555d9da60e262cf5",
+      "seconds": 0.4530286816880107,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 4.590246275067329,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "fe33c0d3a254f68c642c9d21d04fd5baf4e8fa2276519a17d59466f5b63158cf",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9989085560665
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "5774406174535d5a7da3e6df303ac68398832e4b7ecd4cfd069406f8c9d518d9",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 0,
+        "input_tokens": 17571,
+        "output_tokens": 831,
+        "reasoning_output_tokens": 211,
+        "total_tokens": 18402
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "65be4ad2c350a1bfc0c4f54eeb3fd2912b097d68711486b68d509455151050d1",
+      "seconds": 24.54367769230157,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 0,
+        "input_tokens": 17571,
+        "output_tokens": 831,
+        "reasoning_output_tokens": 211,
+        "total_tokens": 18402
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "training_accepted": true
+}

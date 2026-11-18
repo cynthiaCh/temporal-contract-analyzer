@@ -1,0 +1,930 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/presence-panel.js\n+++ candidate/src/presence-panel.js\n@@ -6,7 +6,23 @@\n   return {\n     show(channel, bootstrapMode = \"synchronous\") {\n       release();\n-      release = subscribeChannel(channel, bootstrapMode, publish);\n+\n+      let active = true;\n+      let unsubscribe = () => {};\n+      const stop = () => {\n+        active = false;\n+        unsubscribe();\n+      };\n+\n+      // Own this visit before connect can synchronously publish and navigate.\n+      release = stop;\n+      const subscribedRelease = subscribeChannel(channel, bootstrapMode, (value) => {\n+        if (active) publish(value);\n+      });\n+      unsubscribe = subscribedRelease;\n+\n+      // A synchronous publication may already have replaced or closed this visit.\n+      if (!active) subscribedRelease();\n     },\n     close() {\n       release();\n--- original/src/subscription.js\n+++ candidate/src/subscription.js\n@@ -1,12 +1,28 @@\n // The decoder may return a value or a Promise (compressed network frames).\n // EventTarget removal detaches reception; an already started decode still settles.\n export function subscribeChannel(channel, bootstrapMode, receive) {\n+  let active = true;\n+  let nextPosition = 0;\n+  let publishedPosition = 0;\n+\n   const listener = (event) => {\n+    const position = ++nextPosition;\n     const decoded = channel.decode(event.detail);\n-    if (decoded && typeof decoded.then === \"function\") decoded.then(receive);\n-    else receive(decoded);\n+    const publish = (value) => {\n+      if (!active || position <= publishedPosition) return;\n+      publishedPosition = position;\n+      receive(value);\n+    };\n+\n+    if (decoded && typeof decoded.then === \"function\") decoded.then(publish);\n+    else publish(decoded);\n   };\n+\n+  channel.target.addEventListener(\"presence\", listener);\n   channel.connect(bootstrapMode);\n-  channel.target.addEventListener(\"presence\", listener);\n-  return () => channel.target.removeEventListener(\"presence\", listener);\n+\n+  return () => {\n+    active = false;\n+    channel.target.removeEventListener(\"presence\", listener);\n+  };\n }\n",
+        "from_previous": "--- previous/src/presence-panel.js\n+++ candidate/src/presence-panel.js\n@@ -6,7 +6,23 @@\n   return {\n     show(channel, bootstrapMode = \"synchronous\") {\n       release();\n-      release = subscribeChannel(channel, bootstrapMode, publish);\n+\n+      let active = true;\n+      let unsubscribe = () => {};\n+      const stop = () => {\n+        active = false;\n+        unsubscribe();\n+      };\n+\n+      // Own this visit before connect can synchronously publish and navigate.\n+      release = stop;\n+      const subscribedRelease = subscribeChannel(channel, bootstrapMode, (value) => {\n+        if (active) publish(value);\n+      });\n+      unsubscribe = subscribedRelease;\n+\n+      // A synchronous publication may already have replaced or closed this visit.\n+      if (!active) subscribedRelease();\n     },\n     close() {\n       release();\n--- previous/src/subscription.js\n+++ candidate/src/subscription.js\n@@ -1,12 +1,28 @@\n // The decoder may return a value or a Promise (compressed network frames).\n // EventTarget removal detaches reception; an already started decode still settles.\n export function subscribeChannel(channel, bootstrapMode, receive) {\n+  let active = true;\n+  let nextPosition = 0;\n+  let publishedPosition = 0;\n+\n   const listener = (event) => {\n+    const position = ++nextPosition;\n     const decoded = channel.decode(event.detail);\n-    if (decoded && typeof decoded.then === \"function\") decoded.then(receive);\n-    else receive(decoded);\n+    const publish = (value) => {\n+      if (!active || position <= publishedPosition) return;\n+      publishedPosition = position;\n+      receive(value);\n+    };\n+\n+    if (decoded && typeof decoded.then === \"function\") decoded.then(publish);\n+    else publish(decoded);\n   };\n+\n+  channel.target.addEventListener(\"presence\", listener);\n   channel.connect(bootstrapMode);\n-  channel.target.addEventListener(\"presence\", listener);\n-  return () => channel.target.removeEventListener(\"presence\", listener);\n+\n+  return () => {\n+    active = false;\n+    channel.target.removeEventListener(\"presence\", listener);\n+  };\n }\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [
+          {
+            "basis": "import_binding_candidate",
+            "call": "src/presence-panel.js::e5",
+            "kind": "candidate_call_target",
+            "qualification": "Lexical/import binding candidate only; execution, reassignment timing and arguments not proven.",
+            "target": "src/subscription.js::<module>/subscribeChannel"
+          }
+        ],
+        "coverage": [
+          {
+            "path": "src/channel.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/metrics-consumer.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/presence-panel.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/render-workspace.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/subscription.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/workspace-navigation.js",
+            "status": "parsed"
+          }
+        ],
+        "events": [
+          {
+            "arguments": [
+              "bootstrapMode"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "channel.connect",
+            "column": 2,
+            "conditions": [],
+            "end_column": 32,
+            "end_line": 28,
+            "id": "src/channel.js::e25",
+            "kind": "call",
+            "line": 28,
+            "path": "src/channel.js",
+            "receiver": "channel",
+            "scope": "<module>/observeChannel",
+            "text": "channel.connect(bootstrapMode)"
+          },
+          {
+            "arguments": [
+              "\"presence\"",
+              "(event) => events.push(event.detail)"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "channel.target.addEventListener",
+            "column": 2,
+            "conditions": [],
+            "end_column": 83,
+            "end_line": 29,
+            "id": "src/channel.js::e29",
+            "kind": "call",
+            "line": 29,
+            "path": "src/channel.js",
+            "receiver": "channel.target",
+            "scope": "<module>/observeChannel",
+            "text": "channel.target.addEventListener(\"presence\", (event) => events.push(event.detail))"
+          },
+          {
+            "arguments": [
+              "channel",
+              "bootstrapMode",
+              "publish"
+            ],
+            "binding": "import_binding_candidate",
+            "callee": "subscribeChannel",
+            "column": 16,
+            "conditions": [],
+            "end_column": 65,
+            "end_line": 9,
+            "id": "src/presence-panel.js::e5",
+            "import_name": "./subscription.js.subscribeChannel",
+            "kind": "call",
+            "line": 9,
+            "path": "src/presence-panel.js",
+            "receiver": "",
+            "scope": "<module>/createPresencePanel/show",
+            "text": "subscribeChannel(channel, bootstrapMode, publish)"
+          },
+          {
+            "awaited": false,
+            "column": 6,
+            "conditions": [],
+            "end_column": 65,
+            "end_line": 9,
+            "id": "src/presence-panel.js::e6",
+            "kind": "write",
+            "line": 9,
+            "operator": "=",
+            "path": "src/presence-panel.js",
+            "scope": "<module>/createPresencePanel/show",
+            "target": "release",
+            "text": "release = subscribeChannel(channel, bootstrapMode, publish)"
+          },
+          {
+            "column": 2,
+            "conditions": [],
+            "end_column": 25,
+            "end_line": 23,
+            "id": "src/presence-panel.js::e23",
+            "kind": "await",
+            "line": 23,
+            "path": "src/presence-panel.js",
+            "scope": "<module>/renderPresence",
+            "text": "await Promise.resolve()"
+          },
+          {
+            "arguments": [],
+            "binding": "local_value_unresolved",
+            "callee": "panel.close",
+            "column": 2,
+            "conditions": [],
+            "end_column": 15,
+            "end_line": 25,
+            "id": "src/presence-panel.js::e25",
+            "kind": "call",
+            "line": 25,
+            "path": "src/presence-panel.js",
+            "receiver": "panel",
+            "scope": "<module>/renderPresence",
+            "text": "panel.close()"
+          },
+          {
+            "column": 8,
+            "conditions": [],
+            "end_column": 53,
+            "end_line": 6,
+            "expression": "decoded && typeof decoded.then === \"function\"",
+            "id": "src/subscription.js::e4",
+            "kind": "guard",
+            "line": 6,
+            "path": "src/subscription.js",
+            "scope": "<module>/subscribeChannel/listener",
+            "text": "decoded && typeof decoded.then === \"function\""
+          },
+          {
+            "arguments": [
+              "receive"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "decoded.then",
+            "column": 55,
+            "conditions": [
+              "if decoded && typeof decoded.then === \"function\""
+            ],
+            "end_column": 76,
+            "end_line": 6,
+            "id": "src/subscription.js::e5",
+            "kind": "call",
+            "line": 6,
+            "path": "src/subscription.js",
+            "receiver": "decoded",
+            "scope": "<module>/subscribeChannel/listener",
+            "text": "decoded.then(receive)"
+          },
+          {
+            "arguments": [
+              "bootstrapMode"
+            ],
+            "binding": "parameter_member",
+            "callee": "channel.connect",
+            "column": 2,
+            "conditions": [],
+            "end_column": 32,
+            "end_line": 9,
+            "id": "src/subscription.js::e8",
+            "kind": "call",
+            "line": 9,
+            "path": "src/subscription.js",
+            "receiver": "channel",
+            "scope": "<module>/subscribeChannel",
+            "text": "channel.connect(bootstrapMode)"
+          },
+          {
+            "arguments": [
+              "\"presence\"",
+              "listener"
+            ],
+            "binding": "parameter_member",
+            "callee": "channel.target.addEventListener",
+            "column": 2,
+            "conditions": [],
+            "end_column": 55,
+            "end_line": 10,
+            "id": "src/subscription.js::e9",
+            "kind": "call",
+            "line": 10,
+            "path": "src/subscription.js",
+            "receiver": "channel.target",
+            "scope": "<module>/subscribeChannel",
+            "text": "channel.target.addEventListener(\"presence\", listener)"
+          },
+          {
+            "arguments": [
+              "\"presence\"",
+              "listener"
+            ],
+            "binding": "parameter_member",
+            "callee": "channel.target.removeEventListener",
+            "column": 15,
+            "conditions": [],
+            "end_column": 71,
+            "end_line": 11,
+            "id": "src/subscription.js::e12",
+            "kind": "call",
+            "line": 11,
+            "path": "src/subscription.js",
+            "receiver": "channel.target",
+            "scope": "<module>/subscribeChannel/<callback>",
+            "text": "channel.target.removeEventListener(\"presence\", listener)"
+          }
+        ],
+        "findings": [
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "Receiver expressions match; verify types, aliases, synchronous notifications and whether missed messages are allowed.",
+            "evidence": [
+              "src/channel.js::e25",
+              "src/channel.js::e29"
+            ],
+            "message": "Connect precedes listener registration in the same block.",
+            "path": "src/channel.js",
+            "review_question": "Should this consumer receive synchronous initial messages from connect? Statistics consumers may intentionally skip them.",
+            "rule": "connect-before-listen",
+            "scope": "<module>/observeChannel"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "Check whether user callbacks can reenter the caller; reentry is not established.",
+            "evidence": [
+              "src/presence-panel.js::e5",
+              "src/presence-panel.js::e6"
+            ],
+            "message": "A cleanup-like handle is assigned after the right-hand call returns.",
+            "path": "src/presence-panel.js",
+            "review_question": "If a callback switches or closes the owner, can the old return overwrite a newer cleanup handle?",
+            "rule": "cleanup-handle-after-call",
+            "scope": "<module>/createPresencePanel/show"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "Receiver expressions match; verify types, aliases, synchronous notifications and whether missed messages are allowed.",
+            "evidence": [
+              "src/subscription.js::e8",
+              "src/subscription.js::e9"
+            ],
+            "message": "Connect precedes listener registration in the same block.",
+            "path": "src/subscription.js",
+            "review_question": "Should this consumer receive synchronous initial messages from connect? Statistics consumers may intentionally skip them.",
+            "rule": "connect-before-listen",
+            "scope": "<module>/subscribeChannel"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "Co-occurrence only; verify that both concern the same work and lifecycle.",
+            "evidence": [
+              "src/subscription.js::e5",
+              "src/subscription.js::e12"
+            ],
+            "message": "Completion callback registration and listener removal coexist in this file.",
+            "path": "src/subscription.js",
+            "review_question": "If related, is validity checked when in-flight work completes after listener removal?",
+            "rule": "continuation-and-listener-removal",
+            "scope": "<module>/subscribeChannel/listener"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/presence-panel.js::e23",
+              "src/presence-panel.js::e25"
+            ],
+            "message": "完成回调/等待点与关闭、重新打开或清理边界名称线索出现在同一词法单元。",
+            "path": "src/presence-panel.js",
+            "review_question": "关闭、卸载和切换是否是不同边界？哪些边界应使旧结果失效，哪些工作应继续？需从仓库证据确认。",
+            "rule": "continuation-lifecycle-boundaries",
+            "scope": "<module>/renderPresence"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/subscription.js::e5",
+              "src/subscription.js::e12"
+            ],
+            "message": "完成回调/等待点与关闭、重新打开或清理边界名称线索出现在同一词法单元。",
+            "path": "src/subscription.js",
+            "review_question": "关闭、卸载和切换是否是不同边界？哪些边界应使旧结果失效，哪些工作应继续？需从仓库证据确认。",
+            "rule": "continuation-lifecycle-boundaries",
+            "scope": "<module>/subscribeChannel"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/subscription.js::e4",
+              "src/subscription.js::e5",
+              "src/subscription.js::e12"
+            ],
+            "message": "列出相关词法单元中的条件判断，以及关闭/返回清理函数内的状态写入；存在判断不等于有效性保护。",
+            "path": "src/subscription.js",
+            "review_question": "回调检查了什么状态？关闭、卸载、重开分别更新了什么？只取消计时器能否约束已发请求？相同标识重新使用时判断是否仍适用？",
+            "rule": "continuation-guard-state-review",
+            "scope": "<module>/subscribeChannel"
+          }
+        ],
+        "limitations": [
+          "Syntax facts, candidate call links and review hints are not verified contracts, bugs, severity or difficulty scores.",
+          "API names are clues. Types, aliases, control flow, dynamic dispatch and callback targets are not fully resolved.",
+          "Local order is lexical order within a block; branches, exceptions, loops, short-circuiting and execution remain unchecked.",
+          "await may suspend; cancellation does not imply completed work or cleanup. Listener removal does not cancel work already started.",
+          "if/try/finally syntax does not prove adequate protection. The absence of hints does not imply safety.",
+          "No hidden scorers, reference patches, model results or human profiles are read. Operators must verify input provenance."
+        ],
+        "relations": [
+          {
+            "after": "src/channel.js::e29",
+            "before": "src/channel.js::e25",
+            "kind": "lexical_before_same_block",
+            "qualification": "Only if both statements execute on this path; not a whole-program happens-before proof."
+          },
+          {
+            "after": "src/presence-panel.js::e6",
+            "before": "src/presence-panel.js::e5",
+            "kind": "rhs_before_assignment",
+            "qualification": "Assignment occurs after successful RHS evaluation; call return alone does not imply asynchronous work completion."
+          },
+          {
+            "after": "src/subscription.js::e9",
+            "before": "src/subscription.js::e8",
+            "kind": "lexical_before_same_block",
+            "qualification": "Only if both statements execute on this path; not a whole-program happens-before proof."
+          }
+        ],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "parsed",
+        "target_definitions": [
+          {
+            "id": "src/subscription.js::<module>/subscribeChannel",
+            "line": 3,
+            "path": "src/subscription.js",
+            "scope": "<module>/subscribeChannel"
+          }
+        ]
+      },
+      "sources": {
+        "README.md": "# Presence snapshots\n\nThe panel displays full online-user snapshots, not an append-only event history.\nWithin one visit, channel event arrival order defines snapshot freshness.\nDecoding compressed frames can finish out of order. Once a newer snapshot has\nbeen published, an older frame must not roll the panel back. If an earlier\nframe finishes before any newer snapshot is published, it may still be shown.\nThis ordering is per visit; revisiting the same channel starts a new visit.\nClosing stops publication, but pending decodes can still settle.\nMetrics remains an incremental-only observer and must not adopt panel policy.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\n  \"name\": \"listener-snapshot-order-vanilla-fixture\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+        "src/channel.js": "// Presence frames are full snapshots; see ../README.md for ordering semantics.\nclass PresenceEvent extends Event {\n  constructor(detail) {\n    super(\"presence\");\n    this.detail = detail;\n  }\n}\n\nexport function createPresenceChannel(token, { decode = (value) => value } = {}) {\n  const target = new EventTarget();\n  const emit = (kind) => target.dispatchEvent(new PresenceEvent(`${token}:${kind}`));\n  return {\n    target,\n    decode,\n    connect(bootstrapMode) {\n      if (bootstrapMode === \"deferred\") queueMicrotask(() => emit(\"bootstrap\"));\n      else emit(\"bootstrap\");\n    },\n    emitUpdate() {\n      emit(\"update\");\n    },\n  };\n}\n\nexport async function observeChannel({ token, bootstrapMode }) {\n  const events = [];\n  const channel = createPresenceChannel(token);\n  channel.connect(bootstrapMode);\n  channel.target.addEventListener(\"presence\", (event) => events.push(event.detail));\n  await Promise.resolve();\n  channel.emitUpdate();\n  return { events };\n}\n",
+        "src/metrics-consumer.js": "import { observeChannel } from \"./channel.js\";\n\nexport function collectMetrics(token) {\n  // Metrics deliberately attach after the synchronous bootstrap and count deltas only.\n  return observeChannel({ token, bootstrapMode: \"synchronous\" });\n}\n",
+        "src/presence-panel.js": "import { createPresenceChannel } from \"./channel.js\";\nimport { subscribeChannel } from \"./subscription.js\";\n\nexport function createPresencePanel(publish) {\n  let release = () => {};\n  return {\n    show(channel, bootstrapMode = \"synchronous\") {\n      release();\n      release = subscribeChannel(channel, bootstrapMode, publish);\n    },\n    close() {\n      release();\n      release = () => {};\n    },\n  };\n}\n\nexport async function renderPresence(token, bootstrapMode) {\n  const events = [];\n  const panel = createPresencePanel((value) => events.push(value));\n  const channel = createPresenceChannel(token);\n  panel.show(channel, bootstrapMode);\n  await Promise.resolve();\n  channel.emitUpdate();\n  panel.close();\n  return { events };\n}\n",
+        "src/render-workspace.js": "import { collectMetrics } from \"./metrics-consumer.js\";\nimport { renderPresence } from \"./presence-panel.js\";\n\nexport async function render({ token, bootstrapMode }) {\n  const [presence, metrics] = await Promise.all([\n    renderPresence(token, bootstrapMode),\n    collectMetrics(token),\n  ]);\n  return { presence, metrics };\n}\n",
+        "src/subscription.js": "// The decoder may return a value or a Promise (compressed network frames).\n// EventTarget removal detaches reception; an already started decode still settles.\nexport function subscribeChannel(channel, bootstrapMode, receive) {\n  const listener = (event) => {\n    const decoded = channel.decode(event.detail);\n    if (decoded && typeof decoded.then === \"function\") decoded.then(receive);\n    else receive(decoded);\n  };\n  channel.connect(bootstrapMode);\n  channel.target.addEventListener(\"presence\", listener);\n  return () => channel.target.removeEventListener(\"presence\", listener);\n}\n",
+        "src/workspace-navigation.js": "import { createPresencePanel } from \"./presence-panel.js\";\n\n// Presence publication can synchronously select a different room or hide the\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot).\n// Reusing a transport object on a later visit is supported by the workspace.\nexport function createWorkspaceNavigation(renderState) {\n  const panel = createPresencePanel((value) => renderState(value, navigation));\n  const navigation = {\n    select(channel, mode = \"synchronous\") { panel.show(channel, mode); },\n    hide() { panel.close(); },\n  };\n  return navigation;\n}\n"
+      },
+      "task": "# Maintenance task\n\nImmediately after opening the presence panel, the initial online-user state is\nsometimes missing even though later presence updates appear. Fix the presence\npanel while preserving its existing behavior, including workspace navigation.\n\nDo not change the metrics consumer.\n"
+    },
+    "source_sha256": "7e2c2feff7a5f1693e890bb75f9b19c9579f856056ef99d40f945d927dbbb00e",
+    "task_id": "listener-snapshot-order-vanilla"
+  },
+  "experience": {
+    "excludes": [
+      "shared_lifetime",
+      "attempt_resource",
+      "lazy_consumption",
+      "deferred_batch",
+      "boundary_persistence",
+      "different_ownership_policy",
+      "no_lazy_shared_mechanism"
+    ],
+    "labels": [
+      "R",
+      "O",
+      "B",
+      "L",
+      "I",
+      "A"
+    ],
+    "limitations": [
+      "Public sources do not specify handling for decoder Promise rejection, synchronous decoder exceptions, connect failures, or event-registration failures.",
+      "This guidance does not require cancellation of already-started decoding; src/subscription.js states: \"EventTarget removal detaches reception; an already started decode still settles.\"",
+      "This guidance applies to full-snapshot panel visits. README.md states: \"Metrics remains an incremental-only observer and must not adopt panel policy.\"",
+      "A successful acceptance result for attempt 1 supports this combined implementation but does not isolate which individual rule caused acceptance or establish applicability beyond analogous snapshot observers."
+    ],
+    "requires": [
+      "observer_lifetime",
+      "async_resume",
+      "entry_snapshot",
+      "inline_reentry",
+      "discard_boundary_policy"
+    ],
+    "rules": [
+      {
+        "body": "Apply this guidance when an observer must capture an entry snapshot, asynchronous decoding may reorder completions, and synchronous publication may reenter owner navigation. TASK states: \"Immediately after opening the presence panel, the initial online-user state is\\nsometimes missing even though later presence updates appear.\"",
+        "category": "applicability"
+      },
+      {
+        "body": "Register the panel listener before invoking connect when connect can synchronously emit the entry snapshot. src/channel.js states: \"if (bootstrapMode === \\\"deferred\\\") queueMicrotask(() => emit(\\\"bootstrap\\\"));\\n      else emit(\\\"bootstrap\\\");\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "Assign a monotonically increasing position when each frame arrives, before decoding. Publish a completed frame only if its visit is active and its position is newer than the last published position. README.md states: \"Within one visit, channel event arrival order defines snapshot freshness.\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "Advance the published position only when a decoded snapshot is actually published. This permits an earlier frame to appear when it completes first while preventing it from rolling back a newer snapshot published first. README.md states: \"Once a newer snapshot has\\nbeen published, an older frame must not roll the panel back. If an earlier\\nframe finishes before any newer snapshot is published, it may still be shown.\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "Keep active state and freshness counters local to each subscription visit. Cleanup must invalidate the visit before removing its listener so already-started asynchronous work cannot publish. README.md states: \"This ordering is per visit; revisiting the same channel starts a new visit.\" and \"Closing stops publication, but pending decodes can still settle.\"",
+        "category": "preservation"
+      },
+      {
+        "body": "Install the new visit's cleanup ownership before calling subscription code that can synchronously connect and publish. If synchronous reentry closes or replaces that visit before subscription setup returns, immediately invoke the returned unsubscribe handle instead of allowing the old operation to overwrite the authoritative cleanup owner. src/workspace-navigation.js states: \"Presence publication can synchronously select a different room or hide the\\n// panel\" and \"Reusing a transport object on a later visit is supported by the workspace.\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "Preserve full-snapshot replacement semantics and later update delivery. README.md states: \"The panel displays full online-user snapshots, not an append-only event history.\"",
+        "category": "preservation"
+      },
+      {
+        "body": "Do not change observers with a different documented attachment policy. TASK states: \"Do not change the metrics consumer.\" src/metrics-consumer.js states: \"Metrics deliberately attach after the synchronous bootstrap and count deltas only.\"",
+        "category": "exclusion"
+      },
+      {
+        "body": "Verify synchronous and deferred bootstrap capture, later updates, reverse decode settlement, early completion of an older frame, close with pending work, same-channel revisit, and synchronous select/hide reentry. Also run the public syntax/build checks; VISIBLE_CHECKS.md states: \"These checks are required after an Action but do not test business behavior.\"",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "Open the panel in synchronous bootstrap mode and verify the initial bootstrap snapshot is published.",
+      "Open the panel in deferred bootstrap mode and verify the initial bootstrap snapshot is published.",
+      "Deliver two frames whose decodes settle in reverse order and verify an older frame cannot overwrite an already-published newer snapshot.",
+      "Let an earlier frame decode before any newer snapshot is published and verify it may still be shown, followed by the newer snapshot when ready.",
+      "Close the panel while a decode is pending and verify its settlement does not publish.",
+      "Close and revisit the same channel object, then verify pending work from the earlier visit cannot publish into or suppress the later visit.",
+      "From a synchronous publication callback, select another channel and verify the new visit remains active and the old visit is detached.",
+      "From a synchronous publication callback, hide the panel and verify no listener or pending decode from that visit can publish afterward.",
+      "Verify the metrics consumer still omits the synchronous bootstrap and continues counting later incremental updates only.",
+      "Run the required public syntax/build checks after any Action."
+    ],
+    "forbidden_effects": [
+      "Do not change the metrics consumer or make metrics adopt presence-panel snapshot policy.",
+      "Do not allow an older frame to roll the panel back after a newer snapshot from the same visit has been published.",
+      "Do not publish results from a visit after that visit is closed, hidden, or replaced.",
+      "Do not let pending work from an earlier visit affect a later visit, even when the same transport object is reused.",
+      "Do not let reentrant navigation during synchronous publication overwrite the cleanup ownership of the newly selected visit.",
+      "Do not treat listener removal as cancellation of a decode that has already started.",
+      "Do not edit tests or configuration."
+    ],
+    "lifecycle_identity": [
+      "Ordering and validity belong to a distinct panel visit created by each show/select operation.",
+      "Revisiting the same channel starts a new visit with independent ordering state.",
+      "Closing, hiding, or selecting another channel invalidates the previous visit for future publication.",
+      "Transport object identity alone is insufficient to identify a visit because the workspace supports reusing a transport object.",
+      "The cleanup handle retained by the panel must correspond to the currently active visit, including when publication synchronously reenters workspace navigation."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "The presence panel must attach reception early enough to receive and publish the initial online-user snapshot emitted during a synchronous open/connect."
+      },
+      {
+        "id": "O2",
+        "text": "The presence panel must continue to receive the initial snapshot when bootstrap delivery is deferred and must continue to receive later presence updates."
+      },
+      {
+        "id": "O3",
+        "text": "Within one visit, frame arrival order defines freshness: after a newer snapshot has been published, an older frame that finishes decoding later must not be published."
+      },
+      {
+        "id": "O4",
+        "text": "An earlier frame that finishes decoding before any newer snapshot has been published may be shown; a later-arriving snapshot may subsequently replace it."
+      },
+      {
+        "id": "O5",
+        "text": "Closing or hiding the panel must stop publication for that visit, although decodes already started may still settle without publishing."
+      },
+      {
+        "id": "O6",
+        "text": "Each revisit starts a new ordering lifecycle, including a revisit using the same channel object; results and freshness state from an earlier visit must not affect the new visit."
+      },
+      {
+        "id": "O7",
+        "text": "Workspace navigation must remain correct when publication synchronously selects another channel or hides the panel: the reentrant operation becomes authoritative and must not be undone by completion of the older show operation."
+      },
+      {
+        "id": "O8",
+        "text": "Metrics must remain an incremental-only observer that intentionally attaches after synchronous bootstrap; its code and observable policy must not change."
+      },
+      {
+        "id": "O9",
+        "text": "The fix must preserve the panel's full-snapshot semantics rather than treating presence frames as an append-only history."
+      }
+    ],
+    "ordering_barriers": [
+      "For panel subscriptions, listener readiness must precede an operation that can synchronously emit the bootstrap snapshot.",
+      "Assign each received frame its freshness position at arrival, before asynchronous decoding can reorder completion.",
+      "At decode completion, publication must be gated by both the originating visit's continued validity and whether a newer-arriving snapshot from that visit has already been published.",
+      "Establish the new visit's lifecycle ownership before invoking callback-capable connection/publication boundaries.",
+      "A close, hide, or replacement visit is a publication barrier for all pending work belonging to the invalidated visit."
+    ],
+    "preservation": [
+      "Preserve full online-user snapshot behavior rather than append-only accumulation.",
+      "Preserve later presence update delivery.",
+      "Preserve both synchronous and deferred bootstrap modes.",
+      "Preserve support for decoders that return either a direct value or a Promise.",
+      "Preserve workspace navigation, including synchronous selection or hiding from a publication callback.",
+      "Preserve support for revisiting the same transport object.",
+      "Preserve metrics as an incremental-only observer that skips synchronous bootstrap.",
+      "Preserve the fact that already-started decodes may settle after listener removal, while preventing invalid publication."
+    ],
+    "scope": [
+      "Business behavior in the presence-panel subscription and lifecycle path, principally src/presence-panel.js and src/subscription.js.",
+      "Observable integration with src/channel.js and src/workspace-navigation.js must be preserved.",
+      "src/metrics-consumer.js is explicitly out of change scope.",
+      "Tests and configuration are outside Action edit scope."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Immediately after opening the presence panel, the initial online-user state is\nsometimes missing even though later presence updates appear."
+      },
+      {
+        "file": "TASK",
+        "quote": "Fix the presence\npanel while preserving its existing behavior, including workspace navigation."
+      },
+      {
+        "file": "TASK",
+        "quote": "Do not change the metrics consumer."
+      },
+      {
+        "file": "README.md",
+        "quote": "The panel displays full online-user snapshots, not an append-only event history."
+      },
+      {
+        "file": "README.md",
+        "quote": "Within one visit, channel event arrival order defines snapshot freshness."
+      },
+      {
+        "file": "README.md",
+        "quote": "Decoding compressed frames can finish out of order. Once a newer snapshot has\nbeen published, an older frame must not roll the panel back. If an earlier\nframe finishes before any newer snapshot is published, it may still be shown."
+      },
+      {
+        "file": "README.md",
+        "quote": "This ordering is per visit; revisiting the same channel starts a new visit."
+      },
+      {
+        "file": "README.md",
+        "quote": "Closing stops publication, but pending decodes can still settle."
+      },
+      {
+        "file": "README.md",
+        "quote": "Metrics remains an incremental-only observer and must not adopt panel policy."
+      },
+      {
+        "file": "src/channel.js",
+        "quote": "connect(bootstrapMode) {\n      if (bootstrapMode === \"deferred\") queueMicrotask(() => emit(\"bootstrap\"));\n      else emit(\"bootstrap\");\n    }"
+      },
+      {
+        "file": "src/subscription.js",
+        "quote": "// The decoder may return a value or a Promise (compressed network frames).\n// EventTarget removal detaches reception; an already started decode still settles."
+      },
+      {
+        "file": "src/metrics-consumer.js",
+        "quote": "// Metrics deliberately attach after the synchronous bootstrap and count deltas only."
+      },
+      {
+        "file": "src/workspace-navigation.js",
+        "quote": "// Presence publication can synchronously select a different room or hide the\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot).\n// Reusing a transport object on a later visit is supported by the workspace."
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations."
+      }
+    ],
+    "triggers": [
+      "Opening or selecting a presence channel with synchronous bootstrap.",
+      "Opening or selecting a presence channel with deferred bootstrap.",
+      "Receiving a presence bootstrap or update frame.",
+      "A decoder returning synchronously.",
+      "A decoder Promise settling, including out of arrival order.",
+      "Closing or hiding the panel.",
+      "Selecting another channel while a visit is active.",
+      "Revisiting the same channel object.",
+      "A publication callback synchronously selecting another room or hiding the panel."
+    ],
+    "unknowns": [
+      "The public sources do not specify required handling for decode Promise rejection or synchronous decoder exceptions.",
+      "The public sources do not specify required handling if connect or event registration throws.",
+      "The public sources do not define deduplication behavior for identical snapshots.",
+      "The public sources do not require cancellation of decode work; they only require publication to stop after close.",
+      "The public sources do not define transport disconnection because the exposed cleanup only removes the event listener.",
+      "The public sources do not specify whether receive/publish return values or thrown exceptions have lifecycle significance."
+    ]
+  },
+  "final_training_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "Open the panel in synchronous bootstrap mode and verify the initial bootstrap snapshot is published.",
+      "Open the panel in deferred bootstrap mode and verify the initial bootstrap snapshot is published.",
+      "Deliver two frames whose decodes settle in reverse order and verify an older frame cannot overwrite an already-published newer snapshot.",
+      "Let an earlier frame decode before any newer snapshot is published and verify it may still be shown, followed by the newer snapshot when ready.",
+      "Close the panel while a decode is pending and verify its settlement does not publish.",
+      "Close and revisit the same channel object, then verify pending work from the earlier visit cannot publish into or suppress the later visit.",
+      "From a synchronous publication callback, select another channel and verify the new visit remains active and the old visit is detached.",
+      "From a synchronous publication callback, hide the panel and verify no listener or pending decode from that visit can publish afterward.",
+      "Verify the metrics consumer still omits the synchronous bootstrap and continues counting later incremental updates only.",
+      "Run the required public syntax/build checks after any Action."
+    ],
+    "forbidden_effects": [
+      "Do not change the metrics consumer or make metrics adopt presence-panel snapshot policy.",
+      "Do not allow an older frame to roll the panel back after a newer snapshot from the same visit has been published.",
+      "Do not publish results from a visit after that visit is closed, hidden, or replaced.",
+      "Do not let pending work from an earlier visit affect a later visit, even when the same transport object is reused.",
+      "Do not let reentrant navigation during synchronous publication overwrite the cleanup ownership of the newly selected visit.",
+      "Do not treat listener removal as cancellation of a decode that has already started.",
+      "Do not edit tests or configuration."
+    ],
+    "lifecycle_identity": [
+      "Ordering and validity belong to a distinct panel visit created by each show/select operation.",
+      "Revisiting the same channel starts a new visit with independent ordering state.",
+      "Closing, hiding, or selecting another channel invalidates the previous visit for future publication.",
+      "Transport object identity alone is insufficient to identify a visit because the workspace supports reusing a transport object.",
+      "The cleanup handle retained by the panel must correspond to the currently active visit, including when publication synchronously reenters workspace navigation."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "The presence panel must attach reception early enough to receive and publish the initial online-user snapshot emitted during a synchronous open/connect."
+      },
+      {
+        "id": "O2",
+        "text": "The presence panel must continue to receive the initial snapshot when bootstrap delivery is deferred and must continue to receive later presence updates."
+      },
+      {
+        "id": "O3",
+        "text": "Within one visit, frame arrival order defines freshness: after a newer snapshot has been published, an older frame that finishes decoding later must not be published."
+      },
+      {
+        "id": "O4",
+        "text": "An earlier frame that finishes decoding before any newer snapshot has been published may be shown; a later-arriving snapshot may subsequently replace it."
+      },
+      {
+        "id": "O5",
+        "text": "Closing or hiding the panel must stop publication for that visit, although decodes already started may still settle without publishing."
+      },
+      {
+        "id": "O6",
+        "text": "Each revisit starts a new ordering lifecycle, including a revisit using the same channel object; results and freshness state from an earlier visit must not affect the new visit."
+      },
+      {
+        "id": "O7",
+        "text": "Workspace navigation must remain correct when publication synchronously selects another channel or hides the panel: the reentrant operation becomes authoritative and must not be undone by completion of the older show operation."
+      },
+      {
+        "id": "O8",
+        "text": "Metrics must remain an incremental-only observer that intentionally attaches after synchronous bootstrap; its code and observable policy must not change."
+      },
+      {
+        "id": "O9",
+        "text": "The fix must preserve the panel's full-snapshot semantics rather than treating presence frames as an append-only history."
+      }
+    ],
+    "ordering_barriers": [
+      "For panel subscriptions, listener readiness must precede an operation that can synchronously emit the bootstrap snapshot.",
+      "Assign each received frame its freshness position at arrival, before asynchronous decoding can reorder completion.",
+      "At decode completion, publication must be gated by both the originating visit's continued validity and whether a newer-arriving snapshot from that visit has already been published.",
+      "Establish the new visit's lifecycle ownership before invoking callback-capable connection/publication boundaries.",
+      "A close, hide, or replacement visit is a publication barrier for all pending work belonging to the invalidated visit."
+    ],
+    "preservation": [
+      "Preserve full online-user snapshot behavior rather than append-only accumulation.",
+      "Preserve later presence update delivery.",
+      "Preserve both synchronous and deferred bootstrap modes.",
+      "Preserve support for decoders that return either a direct value or a Promise.",
+      "Preserve workspace navigation, including synchronous selection or hiding from a publication callback.",
+      "Preserve support for revisiting the same transport object.",
+      "Preserve metrics as an incremental-only observer that skips synchronous bootstrap.",
+      "Preserve the fact that already-started decodes may settle after listener removal, while preventing invalid publication."
+    ],
+    "scope": [
+      "Business behavior in the presence-panel subscription and lifecycle path, principally src/presence-panel.js and src/subscription.js.",
+      "Observable integration with src/channel.js and src/workspace-navigation.js must be preserved.",
+      "src/metrics-consumer.js is explicitly out of change scope.",
+      "Tests and configuration are outside Action edit scope."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Immediately after opening the presence panel, the initial online-user state is\nsometimes missing even though later presence updates appear."
+      },
+      {
+        "file": "TASK",
+        "quote": "Fix the presence\npanel while preserving its existing behavior, including workspace navigation."
+      },
+      {
+        "file": "TASK",
+        "quote": "Do not change the metrics consumer."
+      },
+      {
+        "file": "README.md",
+        "quote": "The panel displays full online-user snapshots, not an append-only event history."
+      },
+      {
+        "file": "README.md",
+        "quote": "Within one visit, channel event arrival order defines snapshot freshness."
+      },
+      {
+        "file": "README.md",
+        "quote": "Decoding compressed frames can finish out of order. Once a newer snapshot has\nbeen published, an older frame must not roll the panel back. If an earlier\nframe finishes before any newer snapshot is published, it may still be shown."
+      },
+      {
+        "file": "README.md",
+        "quote": "This ordering is per visit; revisiting the same channel starts a new visit."
+      },
+      {
+        "file": "README.md",
+        "quote": "Closing stops publication, but pending decodes can still settle."
+      },
+      {
+        "file": "README.md",
+        "quote": "Metrics remains an incremental-only observer and must not adopt panel policy."
+      },
+      {
+        "file": "src/channel.js",
+        "quote": "connect(bootstrapMode) {\n      if (bootstrapMode === \"deferred\") queueMicrotask(() => emit(\"bootstrap\"));\n      else emit(\"bootstrap\");\n    }"
+      },
+      {
+        "file": "src/subscription.js",
+        "quote": "// The decoder may return a value or a Promise (compressed network frames).\n// EventTarget removal detaches reception; an already started decode still settles."
+      },
+      {
+        "file": "src/metrics-consumer.js",
+        "quote": "// Metrics deliberately attach after the synchronous bootstrap and count deltas only."
+      },
+      {
+        "file": "src/workspace-navigation.js",
+        "quote": "// Presence publication can synchronously select a different room or hide the\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot).\n// Reusing a transport object on a later visit is supported by the workspace."
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations."
+      }
+    ],
+    "triggers": [
+      "Opening or selecting a presence channel with synchronous bootstrap.",
+      "Opening or selecting a presence channel with deferred bootstrap.",
+      "Receiving a presence bootstrap or update frame.",
+      "A decoder returning synchronously.",
+      "A decoder Promise settling, including out of arrival order.",
+      "Closing or hiding the panel.",
+      "Selecting another channel while a visit is active.",
+      "Revisiting the same channel object.",
+      "A publication callback synchronously selecting another room or hiding the panel."
+    ],
+    "unknowns": [
+      "The public sources do not specify required handling for decode Promise rejection or synchronous decoder exceptions.",
+      "The public sources do not specify required handling if connect or event registration throws.",
+      "The public sources do not define deduplication behavior for identical snapshots.",
+      "The public sources do not require cancellation of decode work; they only require publication to stop after close.",
+      "The public sources do not define transport disconnection because the exposed cleanup only removes the event listener.",
+      "The public sources do not specify whether receive/publish return values or thrown exceptions have lifecycle significance."
+    ]
+  },
+  "origin": "success",
+  "reflection_update": {
+    "change_summary": [
+      "Created new reusable guidance because the frozen experience_catalog and complete related_experiences are empty; there is no existing lineage to revise, merge, or record unchanged evidence against.",
+      "The guidance captures the accepted attempt's combined mechanism: listener-before-connect entry capture, arrival-position freshness gating, per-visit invalidation, and cleanup ownership established before synchronous reentry boundaries.",
+      "It preserves the documented full-snapshot semantics, deferred and later delivery, same-transport revisits, pending-decode settlement without publication after close, workspace navigation, and the metrics consumer's distinct incremental-only policy."
+    ],
+    "failure_attribution": "not_applicable",
+    "operation": "new",
+    "reason": "Attempt 1 passed acceptance and implements a source-supported composite lifecycle mechanism for an entry-snapshot observer whose asynchronous decoding and synchronous reentry interact. With no catalog or related experience entries, no existing guidance can receive evidence or be revised/merged.",
+    "supporting_attempts": [
+      1
+    ],
+    "target_sha256s": []
+  },
+  "related_experiences": [],
+  "source_sha256": "7e2c2feff7a5f1693e890bb75f9b19c9579f856056ef99d40f945d927dbbb00e",
+  "status": "awaiting_content_review",
+  "task": "# Maintenance task\n\nImmediately after opening the presence panel, the initial online-user state is\nsometimes missing even though later presence updates appear. Fix the presence\npanel while preserving its existing behavior, including workspace navigation.\n\nDo not change the metrics consumer.\n",
+  "training_accepted": true,
+  "trajectory": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "81b872186ec7455d361453a2b788e1e252823c35b98372763181741fda405136",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "package.json": "7984c67f416880985803329ef982d2ab714819400f5cae2a06568ed077db0683",
+        "src/channel.js": "ba40ce05391f80582611e3850cc8f2c45a5db8d39a31b753174a690dcefc3a85",
+        "src/metrics-consumer.js": "73445d7fb5ede97450b4f339370c1f0987394808ce312bb0407694575b380213",
+        "src/presence-panel.js": "1198ba42fd7c91eafef0e038f8727c3e2c92bf5763f25d2df7e6157c50c0f39f",
+        "src/render-workspace.js": "0d1412acc6eeda2ea6fa3d1b50314be93fa28b7e74e124faec0354129aa19035",
+        "src/subscription.js": "0375700d65c444f9a54f0983be271981b87f8164796b5f71f5dd86f6dd6d6588",
+        "src/workspace-navigation.js": "3745d2d03240263eea523df10e5bf4d6b7c52aa20496406b1959035b2fe2040d"
+      },
+      "candidate_sources": {
+        "README.md": "# Presence snapshots\n\nThe panel displays full online-user snapshots, not an append-only event history.\nWithin one visit, channel event arrival order defines snapshot freshness.\nDecoding compressed frames can finish out of order. Once a newer snapshot has\nbeen published, an older frame must not roll the panel back. If an earlier\nframe finishes before any newer snapshot is published, it may still be shown.\nThis ordering is per visit; revisiting the same channel starts a new visit.\nClosing stops publication, but pending decodes can still settle.\nMetrics remains an incremental-only observer and must not adopt panel policy.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\n  \"name\": \"listener-snapshot-order-vanilla-fixture\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+        "src/channel.js": "// Presence frames are full snapshots; see ../README.md for ordering semantics.\nclass PresenceEvent extends Event {\n  constructor(detail) {\n    super(\"presence\");\n    this.detail = detail;\n  }\n}\n\nexport function createPresenceChannel(token, { decode = (value) => value } = {}) {\n  const target = new EventTarget();\n  const emit = (kind) => target.dispatchEvent(new PresenceEvent(`${token}:${kind}`));\n  return {\n    target,\n    decode,\n    connect(bootstrapMode) {\n      if (bootstrapMode === \"deferred\") queueMicrotask(() => emit(\"bootstrap\"));\n      else emit(\"bootstrap\");\n    },\n    emitUpdate() {\n      emit(\"update\");\n    },\n  };\n}\n\nexport async function observeChannel({ token, bootstrapMode }) {\n  const events = [];\n  const channel = createPresenceChannel(token);\n  channel.connect(bootstrapMode);\n  channel.target.addEventListener(\"presence\", (event) => events.push(event.detail));\n  await Promise.resolve();\n  channel.emitUpdate();\n  return { events };\n}\n",
+        "src/metrics-consumer.js": "import { observeChannel } from \"./channel.js\";\n\nexport function collectMetrics(token) {\n  // Metrics deliberately attach after the synchronous bootstrap and count deltas only.\n  return observeChannel({ token, bootstrapMode: \"synchronous\" });\n}\n",
+        "src/presence-panel.js": "import { createPresenceChannel } from \"./channel.js\";\nimport { subscribeChannel } from \"./subscription.js\";\n\nexport function createPresencePanel(publish) {\n  let release = () => {};\n  return {\n    show(channel, bootstrapMode = \"synchronous\") {\n      release();\n\n      let active = true;\n      let unsubscribe = () => {};\n      const stop = () => {\n        active = false;\n        unsubscribe();\n      };\n\n      // Own this visit before connect can synchronously publish and navigate.\n      release = stop;\n      const subscribedRelease = subscribeChannel(channel, bootstrapMode, (value) => {\n        if (active) publish(value);\n      });\n      unsubscribe = subscribedRelease;\n\n      // A synchronous publication may already have replaced or closed this visit.\n      if (!active) subscribedRelease();\n    },\n    close() {\n      release();\n      release = () => {};\n    },\n  };\n}\n\nexport async function renderPresence(token, bootstrapMode) {\n  const events = [];\n  const panel = createPresencePanel((value) => events.push(value));\n  const channel = createPresenceChannel(token);\n  panel.show(channel, bootstrapMode);\n  await Promise.resolve();\n  channel.emitUpdate();\n  panel.close();\n  return { events };\n}\n",
+        "src/render-workspace.js": "import { collectMetrics } from \"./metrics-consumer.js\";\nimport { renderPresence } from \"./presence-panel.js\";\n\nexport async function render({ token, bootstrapMode }) {\n  const [presence, metrics] = await Promise.all([\n    renderPresence(token, bootstrapMode),\n    collectMetrics(token),\n  ]);\n  return { presence, metrics };\n}\n",
+        "src/subscription.js": "// The decoder may return a value or a Promise (compressed network frames).\n// EventTarget removal detaches reception; an already started decode still settles.\nexport function subscribeChannel(channel, bootstrapMode, receive) {\n  let active = true;\n  let nextPosition = 0;\n  let publishedPosition = 0;\n\n  const listener = (event) => {\n    const position = ++nextPosition;\n    const decoded = channel.decode(event.detail);\n    const publish = (value) => {\n      if (!active || position <= publishedPosition) return;\n      publishedPosition = position;\n      receive(value);\n    };\n\n    if (decoded && typeof decoded.then === \"function\") decoded.then(publish);\n    else publish(decoded);\n  };\n\n  channel.target.addEventListener(\"presence\", listener);\n  channel.connect(bootstrapMode);\n\n  return () => {\n    active = false;\n    channel.target.removeEventListener(\"presence\", listener);\n  };\n}\n",
+        "src/workspace-navigation.js": "import { createPresencePanel } from \"./presence-panel.js\";\n\n// Presence publication can synchronously select a different room or hide the\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot).\n// Reusing a transport object on a later visit is supported by the workspace.\nexport function createWorkspaceNavigation(renderState) {\n  const panel = createPresencePanel((value) => renderState(value, navigation));\n  const navigation = {\n    select(channel, mode = \"synchronous\") { panel.show(channel, mode); },\n    hide() { panel.close(); },\n  };\n  return navigation;\n}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/channel.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/metrics-consumer.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/presence-panel.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/render-workspace.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/subscription.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/workspace-navigation.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ]
+}

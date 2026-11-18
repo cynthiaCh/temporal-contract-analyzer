@@ -1,0 +1,1837 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "676066034751849b1b3e3efce014b5af2133bed6e27bba8d1188352c3deb717d",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "0e3fe395900ec1d94c72edfe530012809f20febeb4bca7b579118af288b2650c",
+        "src/Workflow.java": "2a96a0597d4aedc6d951dfc86bee383075418fde29d9bf6c9047c47ec93b4733"
+      },
+      "candidate_sources": {
+        "README.md": "# Rail timetable lookup\n\nA shared per-key query cache provides subscribe(key,options) -> unique observer\nhandle, unsubscribe(handle), online(boolean), focus(boolean), snapshot(key),\nand dispose() of observer scopes. Queries retain status (pending/success/error),\nfetchStatus (idle/fetching/paused), and data. queryFn receives a lazy signal\naccessor. Each actual access records consumption; each fetch owns its controller\nand completion. Completion is asynchronous; initial online entry is synchronous,\npaused continuation resumes on a Promise turn. First start uses network mode;\ncontinuation also needs focus. 'always' can run offline; 'offlineFirst' allows\nfirst offline entry but retry can pause. Retries use explicit scheduler handles.\nMultiple observers share one fetch. Unconsumed active work can finish into cache\nafter its view departs; consumed work is physically abortable. Cancellation\nreverts previous query data/status and settles the originating attempt. Late\nfulfillment cannot become a new attempt's data. Unknown unsubscribe is inert.\nThe component owns observer scope; the cache remains outside individual views.\nDependency versions and build/test configuration are outside the repair scope.\n\nEmbedding API: bind registers a native callable; Environment.call\nprovides newAttempt(key,number), abort(key,number), request(key,number, lazy-read\ntoken, completion token), defer(callback token), schedule(callback token,delay).\nThe request host calls queryFn with an actual AbortSignal property. Reading it\ninvokes the native consumption closure synchronously; Promise settlement later\ninvokes the native completion with {ok,value}. All observer, retry, cancellation,\nstate and cache logic executes in the target language. No native JS Promise or\nDOM claim is made. Native object identity binds query and attempt generations;\nwire handles only identify injected callbacks. \nJava query objects and observer handles; per-attempt completion and real abort adapter\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"OpenJDK 11.0.27\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "src/Workflow.java": "import java.util.*;import java.util.function.*;\nclass Workflow {\n interface Environment{int bind(Function<Object,Object> fn);Object call(String name,Object...args);}\n interface Client{Object handle(String name,List<?> args);}\n static Map<String,Object> obj(Object...values){Map<String,Object> m=new LinkedHashMap<>();for(int i=0;i<values.length;i+=2)m.put((String)values[i],values[i+1]);return m;}\n static int number(Object x){return ((Number)x).intValue();}\n static class Attempt{int number,failures;Map<String,Object> previous,options;boolean settled,started,consumed,retryCancelled,queued;Attempt(int n,Map<String,Object>s,Map<String,Object>o){number=n;previous=new LinkedHashMap<>(s);options=o;}}\n static class Query{String key;Map<String,Object> state;Set<Integer> observers=new HashSet<>();Attempt attempt;boolean consumed;Query(String key,Object data){this.key=key;state=obj(\"status\",data==null?\"pending\":\"success\",\"fetchStatus\",\"idle\",\"data\",data);}}\n static class Cache implements Client {\n  Environment env;Map<String,Query> queries=new LinkedHashMap<>();Map<Integer,Query> handles=new LinkedHashMap<>();boolean online,focused;int serial,fetchSerial;\n  Cache(Environment e,Map<String,Object> initial){env=e;online=(Boolean)initial.getOrDefault(\"online\",true);focused=(Boolean)initial.getOrDefault(\"focused\",true);}\n  boolean eligible(Attempt a){return focused&&(a.options.getOrDefault(\"networkMode\",\"online\").equals(\"always\")||online);}\n  boolean active(Query q,Attempt a){return q.attempt==a&&!a.settled;}\n  void cancel(Query q,Attempt a){if(a.settled)return;a.settled=true;q.state=new LinkedHashMap<>(a.previous);q.state.put(\"fetchStatus\",\"idle\");env.call(\"abort\",q.key,a.number);}\n  @SuppressWarnings(\"unchecked\")void invoke(Query q,Attempt a){a.queued=false;if(!active(q,a))return;a.started=true;q.state.put(\"fetchStatus\",\"fetching\");q.consumed=false;\n   int getter=env.bind(x->{q.consumed=true;return null;});int done=env.bind(x->{Map<String,Object> v=(Map<String,Object>)x;if(!active(q,a))return null;\n    if(Boolean.TRUE.equals(v.get(\"ok\"))){a.settled=true;q.state.put(\"data\",v.get(\"value\"));q.state.put(\"status\",\"success\");q.state.put(\"fetchStatus\",\"idle\");}\n    else if(!a.retryCancelled&&a.failures<number(a.options.getOrDefault(\"retry\",0))){a.failures++;int token=env.bind(y->{if(!active(q,a))return null;if(a.retryCancelled){a.settled=true;q.state.put(\"status\",\"error\");q.state.put(\"fetchStatus\",\"idle\");return null;}if(eligible(a))invoke(q,a);else q.state.put(\"fetchStatus\",\"paused\");return null;});env.call(\"schedule\",token,a.options.getOrDefault(\"retryDelay\",10));}\n    else{a.settled=true;q.state.put(\"status\",\"error\");q.state.put(\"fetchStatus\",\"idle\");}return null;});env.call(\"request\",q.key,a.number,getter,done);\n  }\n  void resume(Query q){Attempt a=q.attempt;if(a!=null&&active(q,a)&&q.state.get(\"fetchStatus\").equals(\"paused\")&&eligible(a)&&!a.queued){a.queued=true;int token=env.bind(x->{a.queued=false;if(!active(q,a))return null;if(a.failures>0&&a.retryCancelled){a.settled=true;q.state.put(\"status\",\"error\");q.state.put(\"fetchStatus\",\"idle\");return null;}invoke(q,a);return null;});env.call(\"defer\",token);}}\n  int subscribe(String key,Map<String,Object> options){Query q=queries.computeIfAbsent(key,k->new Query(k,options.get(\"initialData\")));int h=++serial;handles.put(h,q);q.observers.add(h);if(q.attempt!=null&&!q.attempt.settled){q.attempt.retryCancelled=false;resume(q);}else{Attempt a=new Attempt(++fetchSerial,q.state,options);q.attempt=a;env.call(\"newAttempt\",key,a.number);if(!options.getOrDefault(\"networkMode\",\"online\").equals(\"online\")||online)invoke(q,a);else q.state.put(\"fetchStatus\",\"paused\");}return h;}\n  void unsubscribe(int h){Query q=handles.remove(h);if(q==null)return;q.observers.remove(h);if(q.observers.isEmpty()){Attempt a=q.attempt;if(a!=null&&!a.settled){if(q.consumed||!a.started)cancel(q,a);else a.retryCancelled=true;}}}\n  @SuppressWarnings(\"unchecked\")public Object handle(String name,List<?> a){switch(name){case \"subscribe\":return subscribe((String)a.get(0),(Map<String,Object>)a.get(1));case \"unsubscribe\":unsubscribe(number(a.get(0)));return null;case \"snapshot\":return new LinkedHashMap<>(queries.get((String)a.get(0)).state);case \"dispose\":for(int h:new ArrayList<>(handles.keySet()))unsubscribe(h);return null;case \"online\":online=(Boolean)a.get(0);break;case \"focus\":focused=(Boolean)a.get(0);break;default:throw new IllegalArgumentException(name);}for(Query q:new ArrayList<>(queries.values()))resume(q);return null;}\n }\n @SuppressWarnings(\"unchecked\")static Client create(Environment e,Object initial){return new Cache(e,(Map<String,Object>)initial);}\n}\n"
+      },
+      "delivered_sha256s": [
+        "98295aa2919059b252b315192210813df312e80c68473cfb51d4056f44860fbd",
+        "129faf3f6bc67dd105ecfd0a7432adf34a6e7051ba434d534f060fe5cc7ee33a",
+        "a61888fc25043255da3bcb32237113aacae934551481da4cb97ab786557ae90f",
+        "6cd9c152e8f43aa9b7324cbed5d56edfdd1744d5f497afc0b744c2fc7e8dda2f",
+        "540afef243f6a3d3c82d188bdfdeda7ceb328db2fb0fb35df0e7c4fd519bdc15"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "public_java_compile",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "676066034751849b1b3e3efce014b5af2133bed6e27bba8d1188352c3deb717d",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "0e3fe395900ec1d94c72edfe530012809f20febeb4bca7b579118af288b2650c",
+        "src/Workflow.java": "2e72a1d47e2d1a0fb93bf939099ee258327dcc81925d6bb9d0c2901dda66f1ed"
+      },
+      "candidate_sources": {
+        "README.md": "# Rail timetable lookup\n\nA shared per-key query cache provides subscribe(key,options) -> unique observer\nhandle, unsubscribe(handle), online(boolean), focus(boolean), snapshot(key),\nand dispose() of observer scopes. Queries retain status (pending/success/error),\nfetchStatus (idle/fetching/paused), and data. queryFn receives a lazy signal\naccessor. Each actual access records consumption; each fetch owns its controller\nand completion. Completion is asynchronous; initial online entry is synchronous,\npaused continuation resumes on a Promise turn. First start uses network mode;\ncontinuation also needs focus. 'always' can run offline; 'offlineFirst' allows\nfirst offline entry but retry can pause. Retries use explicit scheduler handles.\nMultiple observers share one fetch. Unconsumed active work can finish into cache\nafter its view departs; consumed work is physically abortable. Cancellation\nreverts previous query data/status and settles the originating attempt. Late\nfulfillment cannot become a new attempt's data. Unknown unsubscribe is inert.\nThe component owns observer scope; the cache remains outside individual views.\nDependency versions and build/test configuration are outside the repair scope.\n\nEmbedding API: bind registers a native callable; Environment.call\nprovides newAttempt(key,number), abort(key,number), request(key,number, lazy-read\ntoken, completion token), defer(callback token), schedule(callback token,delay).\nThe request host calls queryFn with an actual AbortSignal property. Reading it\ninvokes the native consumption closure synchronously; Promise settlement later\ninvokes the native completion with {ok,value}. All observer, retry, cancellation,\nstate and cache logic executes in the target language. No native JS Promise or\nDOM claim is made. Native object identity binds query and attempt generations;\nwire handles only identify injected callbacks. \nJava query objects and observer handles; per-attempt completion and real abort adapter\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"OpenJDK 11.0.27\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "src/Workflow.java": "import java.util.*;import java.util.function.*;\nclass Workflow {\n interface Environment{int bind(Function<Object,Object> fn);Object call(String name,Object...args);}\n interface Client{Object handle(String name,List<?> args);}\n static Map<String,Object> obj(Object...values){Map<String,Object> m=new LinkedHashMap<>();for(int i=0;i<values.length;i+=2)m.put((String)values[i],values[i+1]);return m;}\n static int number(Object x){return ((Number)x).intValue();}\n static class Attempt{int number,failures;Map<String,Object> previous,options;boolean settled,started,consumed,retryCancelled,queued;Attempt(int n,Map<String,Object>s,Map<String,Object>o){number=n;previous=new LinkedHashMap<>(s);options=o;}}\n static class Query{String key;Map<String,Object> state;Set<Integer> observers=new HashSet<>();Attempt attempt;boolean consumed;Query(String key,Object data){this.key=key;state=obj(\"status\",data==null?\"pending\":\"success\",\"fetchStatus\",\"idle\",\"data\",data);}}\n static class Cache implements Client {\n  Environment env;Map<String,Query> queries=new LinkedHashMap<>();Map<Integer,Query> handles=new LinkedHashMap<>();boolean online,focused;int serial,fetchSerial;\n  Cache(Environment e,Map<String,Object> initial){env=e;online=(Boolean)initial.getOrDefault(\"online\",true);focused=(Boolean)initial.getOrDefault(\"focused\",true);}\n  boolean eligible(Attempt a){return focused&&(a.options.getOrDefault(\"networkMode\",\"online\").equals(\"always\")||online);}\n  boolean active(Query q,Attempt a){return q.attempt==a&&!a.settled;}\n  boolean mayInvoke(Query q,Attempt a){return active(q,a)&&(a.started||!q.observers.isEmpty());}\n  void cancel(Query q,Attempt a){if(a.settled)return;a.settled=true;q.state=new LinkedHashMap<>(a.previous);q.state.put(\"fetchStatus\",\"idle\");env.call(\"abort\",q.key,a.number);}\n  @SuppressWarnings(\"unchecked\")void invoke(Query q,Attempt a){a.queued=false;if(!mayInvoke(q,a))return;a.started=true;q.state.put(\"fetchStatus\",\"fetching\");q.consumed=false;\n   int getter=env.bind(x->{q.consumed=true;return null;});int done=env.bind(x->{Map<String,Object> v=(Map<String,Object>)x;if(!active(q,a))return null;\n    if(Boolean.TRUE.equals(v.get(\"ok\"))){a.settled=true;q.state.put(\"data\",v.get(\"value\"));q.state.put(\"status\",\"success\");q.state.put(\"fetchStatus\",\"idle\");}\n    else if(!a.retryCancelled&&a.failures<number(a.options.getOrDefault(\"retry\",0))){a.failures++;int token=env.bind(y->{if(!active(q,a))return null;if(a.retryCancelled){a.settled=true;q.state.put(\"status\",\"error\");q.state.put(\"fetchStatus\",\"idle\");return null;}if(eligible(a))invoke(q,a);else q.state.put(\"fetchStatus\",\"paused\");return null;});env.call(\"schedule\",token,a.options.getOrDefault(\"retryDelay\",10));}\n    else{a.settled=true;q.state.put(\"status\",\"error\");q.state.put(\"fetchStatus\",\"idle\");}return null;});env.call(\"request\",q.key,a.number,getter,done);\n  }\n  void resume(Query q){Attempt a=q.attempt;if(a!=null&&mayInvoke(q,a)&&q.state.get(\"fetchStatus\").equals(\"paused\")&&eligible(a)&&!a.queued){a.queued=true;int token=env.bind(x->{a.queued=false;if(!mayInvoke(q,a))return null;if(a.failures>0&&a.retryCancelled){a.settled=true;q.state.put(\"status\",\"error\");q.state.put(\"fetchStatus\",\"idle\");return null;}invoke(q,a);return null;});env.call(\"defer\",token);}}\n  int subscribe(String key,Map<String,Object> options){Query q=queries.computeIfAbsent(key,k->new Query(k,options.get(\"initialData\")));int h=++serial;handles.put(h,q);q.observers.add(h);if(q.attempt!=null&&!q.attempt.settled){q.attempt.retryCancelled=false;resume(q);}else{Attempt a=new Attempt(++fetchSerial,q.state,options);q.attempt=a;env.call(\"newAttempt\",key,a.number);if(!options.getOrDefault(\"networkMode\",\"online\").equals(\"online\")||online)invoke(q,a);else q.state.put(\"fetchStatus\",\"paused\");}return h;}\n  void unsubscribe(int h){Query q=handles.remove(h);if(q==null)return;q.observers.remove(h);if(q.observers.isEmpty()){Attempt a=q.attempt;if(a!=null&&!a.settled){if(q.consumed||!a.started)cancel(q,a);else a.retryCancelled=true;}}}\n  @SuppressWarnings(\"unchecked\")public Object handle(String name,List<?> a){switch(name){case \"subscribe\":return subscribe((String)a.get(0),(Map<String,Object>)a.get(1));case \"unsubscribe\":unsubscribe(number(a.get(0)));return null;case \"snapshot\":return new LinkedHashMap<>(queries.get((String)a.get(0)).state);case \"dispose\":for(int h:new ArrayList<>(handles.keySet()))unsubscribe(h);return null;case \"online\":online=(Boolean)a.get(0);break;case \"focus\":focused=(Boolean)a.get(0);break;default:throw new IllegalArgumentException(name);}for(Query q:new ArrayList<>(queries.values()))resume(q);return null;}\n }\n @SuppressWarnings(\"unchecked\")static Client create(Environment e,Object initial){return new Cache(e,(Map<String,Object>)initial);}\n}\n"
+      },
+      "delivered_sha256s": [
+        "98295aa2919059b252b315192210813df312e80c68473cfb51d4056f44860fbd",
+        "129faf3f6bc67dd105ecfd0a7432adf34a6e7051ba434d534f060fe5cc7ee33a",
+        "a61888fc25043255da3bcb32237113aacae934551481da4cb97ab786557ae90f",
+        "6cd9c152e8f43aa9b7324cbed5d56edfdd1744d5f497afc0b744c2fc7e8dda2f",
+        "540afef243f6a3d3c82d188bdfdeda7ceb328db2fb0fb35df0e7c4fd519bdc15"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "public_java_compile",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 2,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "676066034751849b1b3e3efce014b5af2133bed6e27bba8d1188352c3deb717d",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "0e3fe395900ec1d94c72edfe530012809f20febeb4bca7b579118af288b2650c",
+        "src/Workflow.java": "11e6b9ba8231aadfb68ad1cc423f872c0f9f965ecfc286c75055cfa88b6191cf"
+      },
+      "candidate_sources": {
+        "README.md": "# Rail timetable lookup\n\nA shared per-key query cache provides subscribe(key,options) -> unique observer\nhandle, unsubscribe(handle), online(boolean), focus(boolean), snapshot(key),\nand dispose() of observer scopes. Queries retain status (pending/success/error),\nfetchStatus (idle/fetching/paused), and data. queryFn receives a lazy signal\naccessor. Each actual access records consumption; each fetch owns its controller\nand completion. Completion is asynchronous; initial online entry is synchronous,\npaused continuation resumes on a Promise turn. First start uses network mode;\ncontinuation also needs focus. 'always' can run offline; 'offlineFirst' allows\nfirst offline entry but retry can pause. Retries use explicit scheduler handles.\nMultiple observers share one fetch. Unconsumed active work can finish into cache\nafter its view departs; consumed work is physically abortable. Cancellation\nreverts previous query data/status and settles the originating attempt. Late\nfulfillment cannot become a new attempt's data. Unknown unsubscribe is inert.\nThe component owns observer scope; the cache remains outside individual views.\nDependency versions and build/test configuration are outside the repair scope.\n\nEmbedding API: bind registers a native callable; Environment.call\nprovides newAttempt(key,number), abort(key,number), request(key,number, lazy-read\ntoken, completion token), defer(callback token), schedule(callback token,delay).\nThe request host calls queryFn with an actual AbortSignal property. Reading it\ninvokes the native consumption closure synchronously; Promise settlement later\ninvokes the native completion with {ok,value}. All observer, retry, cancellation,\nstate and cache logic executes in the target language. No native JS Promise or\nDOM claim is made. Native object identity binds query and attempt generations;\nwire handles only identify injected callbacks. \nJava query objects and observer handles; per-attempt completion and real abort adapter\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"OpenJDK 11.0.27\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "src/Workflow.java": "import java.util.*;import java.util.function.*;\nclass Workflow {\n interface Environment{int bind(Function<Object,Object> fn);Object call(String name,Object...args);}\n interface Client{Object handle(String name,List<?> args);}\n static Map<String,Object> obj(Object...values){Map<String,Object> m=new LinkedHashMap<>();for(int i=0;i<values.length;i+=2)m.put((String)values[i],values[i+1]);return m;}\n static int number(Object x){return ((Number)x).intValue();}\n static class Attempt{int number,failures;Map<String,Object> previous,options;boolean settled,started,consumed,retryCancelled,queued;Attempt(int n,Map<String,Object>s,Map<String,Object>o){number=n;previous=new LinkedHashMap<>(s);options=o;}}\n static class Query{String key;Map<String,Object> state;Set<Integer> observers=new HashSet<>();Attempt attempt;Query(String key,Object data){this.key=key;state=obj(\"status\",data==null?\"pending\":\"success\",\"fetchStatus\",\"idle\",\"data\",data);}}\n static class Cache implements Client {\n  Environment env;Map<String,Query> queries=new LinkedHashMap<>();Map<Integer,Query> handles=new LinkedHashMap<>();boolean online,focused;int serial,fetchSerial;\n  Cache(Environment e,Map<String,Object> initial){env=e;online=(Boolean)initial.getOrDefault(\"online\",true);focused=(Boolean)initial.getOrDefault(\"focused\",true);}\n  boolean eligible(Attempt a){return focused&&(a.options.getOrDefault(\"networkMode\",\"online\").equals(\"always\")||online);}\n  boolean active(Query q,Attempt a){return q.attempt==a&&!a.settled;}\n  boolean mayInvoke(Query q,Attempt a){return active(q,a)&&(a.started||!q.observers.isEmpty());}\n  void cancel(Query q,Attempt a){if(!active(q,a))return;a.settled=true;q.state=new LinkedHashMap<>(a.previous);q.state.put(\"fetchStatus\",\"idle\");env.call(\"abort\",q.key,a.number);}\n  @SuppressWarnings(\"unchecked\")void invoke(Query q,Attempt a){a.queued=false;if(!mayInvoke(q,a))return;a.started=true;q.state.put(\"fetchStatus\",\"fetching\");a.consumed=false;\n   int getter=env.bind(x->{a.consumed=true;return null;});int done=env.bind(x->{Map<String,Object> v=(Map<String,Object>)x;if(!active(q,a))return null;\n    if(Boolean.TRUE.equals(v.get(\"ok\"))){a.settled=true;q.state.put(\"data\",v.get(\"value\"));q.state.put(\"status\",\"success\");q.state.put(\"fetchStatus\",\"idle\");}\n    else if(!a.retryCancelled&&a.failures<number(a.options.getOrDefault(\"retry\",0))){a.failures++;int token=env.bind(y->{if(!active(q,a))return null;if(a.retryCancelled){a.settled=true;q.state.put(\"status\",\"error\");q.state.put(\"fetchStatus\",\"idle\");return null;}if(eligible(a))invoke(q,a);else q.state.put(\"fetchStatus\",\"paused\");return null;});env.call(\"schedule\",token,a.options.getOrDefault(\"retryDelay\",10));}\n    else{a.settled=true;q.state.put(\"status\",\"error\");q.state.put(\"fetchStatus\",\"idle\");}return null;});env.call(\"request\",q.key,a.number,getter,done);\n  }\n  void resume(Query q){Attempt a=q.attempt;if(a!=null&&mayInvoke(q,a)&&q.state.get(\"fetchStatus\").equals(\"paused\")&&eligible(a)&&!a.queued){a.queued=true;int token=env.bind(x->{a.queued=false;if(!mayInvoke(q,a))return null;if(a.failures>0&&a.retryCancelled){a.settled=true;q.state.put(\"status\",\"error\");q.state.put(\"fetchStatus\",\"idle\");return null;}invoke(q,a);return null;});env.call(\"defer\",token);}}\n  int subscribe(String key,Map<String,Object> options){Query q=queries.computeIfAbsent(key,k->new Query(k,options.get(\"initialData\")));int h=++serial;handles.put(h,q);q.observers.add(h);if(q.attempt!=null&&!q.attempt.settled){q.attempt.retryCancelled=false;resume(q);}else{Attempt a=new Attempt(++fetchSerial,q.state,options);q.attempt=a;env.call(\"newAttempt\",key,a.number);if(!options.getOrDefault(\"networkMode\",\"online\").equals(\"online\")||online)invoke(q,a);else q.state.put(\"fetchStatus\",\"paused\");}return h;}\n  void unsubscribe(int h){Query q=handles.remove(h);if(q==null)return;q.observers.remove(h);if(q.observers.isEmpty()){Attempt a=q.attempt;if(a!=null&&!a.settled){if(a.consumed||!a.started)cancel(q,a);else a.retryCancelled=true;}}}\n  @SuppressWarnings(\"unchecked\")public Object handle(String name,List<?> a){switch(name){case \"subscribe\":return subscribe((String)a.get(0),(Map<String,Object>)a.get(1));case \"unsubscribe\":unsubscribe(number(a.get(0)));return null;case \"snapshot\":return new LinkedHashMap<>(queries.get((String)a.get(0)).state);case \"dispose\":for(int h:new ArrayList<>(handles.keySet()))unsubscribe(h);return null;case \"online\":online=(Boolean)a.get(0);break;case \"focus\":focused=(Boolean)a.get(0);break;default:throw new IllegalArgumentException(name);}for(Query q:new ArrayList<>(queries.values()))resume(q);return null;}\n }\n @SuppressWarnings(\"unchecked\")static Client create(Environment e,Object initial){return new Cache(e,(Map<String,Object>)initial);}\n}\n"
+      },
+      "delivered_sha256s": [
+        "98295aa2919059b252b315192210813df312e80c68473cfb51d4056f44860fbd",
+        "129faf3f6bc67dd105ecfd0a7432adf34a6e7051ba434d534f060fe5cc7ee33a",
+        "a61888fc25043255da3bcb32237113aacae934551481da4cb97ab786557ae90f",
+        "6cd9c152e8f43aa9b7324cbed5d56edfdd1744d5f497afc0b744c2fc7e8dda2f",
+        "540afef243f6a3d3c82d188bdfdeda7ceb328db2fb0fb35df0e7c4fd519bdc15"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "public_java_compile",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 3,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "After the final observer unsubscribes from a fresh online-mode attempt that never entered execution while offline, reconnect must not invoke its query function with a live cancellation signal.",
+      "A continuation already queued before observer departure must revalidate the originating attempt before invoking the query function.",
+      "An obsolete completion must not update cache state belonging to a replacement attempt.",
+      "Existing online starts, supported offline modes, retry continuation, shared-fetch behavior, snapshots, and disposal should remain operational."
+    ],
+    "forbidden_effects": [
+      "Do not allow the departed, never-started online-mode attempt to enter its signal-consuming query function with a live signal after reconnect.",
+      "Do not let a deferred continuation bypass final-observer departure or attempt invalidation.",
+      "Do not cancel unconsumed work merely because its observer departs when that work has already entered execution and is supported to finish into the cache.",
+      "Do not change public interfaces, dependencies, or build/test configuration.",
+      "Do not make behavior depend on refetchOnReconnect."
+    ],
+    "lifecycle_identity": [
+      "A fetch attempt is identified by its Attempt object and number; it remains current only while q.attempt == a and it is not settled.",
+      "Observer lifetime is represented by the query's observer-handle set; the relevant departure is removal of the final handle.",
+      "Native object identity, rather than wire callback handles alone, binds the query and attempt generations.",
+      "Replacement attempts must remain isolated from callbacks and completion belonging to earlier attempts."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "When a fresh online-mode query is subscribed and its final observer unsubscribes while the application remains offline, before that attempt has entered execution, a later reconnect must not invoke that attempt's query function with a live signal."
+      },
+      {
+        "id": "O2",
+        "text": "The protection in O1 must apply regardless of refetchOnReconnect and must cover both future resume scheduling and continuation callbacks that were already queued when the final observer departed."
+      },
+      {
+        "id": "O3",
+        "text": "Resume and deferred-continuation boundaries must validate the originating attempt's current, unsettled, permitted lifecycle before entering request execution."
+      },
+      {
+        "id": "O4",
+        "text": "Cancellation or invalidation must settle the originating attempt consistently, restore its previous query state as supported, and prevent late fulfillment from becoming data for a newer attempt."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve supported behavior for work that legitimately entered execution: multiple observers share a fetch, unconsumed active work may finish into the cache after a view departs, and consumed work remains physically abortable."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve the public subscribe, unsubscribe, online, focus, snapshot, and dispose behavior, network-mode distinctions, retry scheduling, observer scoping, dependencies, and build/test configuration."
+      }
+    ],
+    "ordering_barriers": [
+      "Final-observer departure must establish the never-started attempt's invalid or canceled status before any later reconnect-driven resume can enter request execution.",
+      "A deferred resume callback must check attempt identity and lifecycle after it runs and before invoking the query function.",
+      "Attempt completion must check that the same attempt is still active before mutating query state.",
+      "If implementation chooses query-function entry rather than suppressing entry entirely, the signal must already be canceled before any signal-consuming code can observe it; the task forbids a live signal at that point."
+    ],
+    "preservation": [
+      "Initial eligible online entry remains synchronous.",
+      "Paused continuation remains asynchronous on a Promise/deferred turn and still requires focus.",
+      "The 'always' mode can run offline, and 'offlineFirst' may enter once offline before a retry pauses.",
+      "Retries continue to use explicit scheduler handles.",
+      "Multiple observers continue to share one fetch.",
+      "Unconsumed active work that already entered execution can finish into the cache after its view departs.",
+      "Consumed active work remains physically abortable.",
+      "Cancellation continues to revert previous query data/status and settle the originating attempt.",
+      "Unknown unsubscribe remains inert.",
+      "The cache continues to outlive individual component observer scopes.",
+      "Snapshot state fields and public Environment/Client interfaces remain unchanged."
+    ],
+    "scope": [
+      "Product source in src/Workflow.java, specifically observer departure, paused-attempt resume, deferred continuation, and attempt cancellation/invalidation behavior.",
+      "The defect is limited to a fresh online-mode attempt mounted and unmounted entirely offline before execution, followed by reconnect.",
+      "Tests, configuration, dependencies, native host implementation, hidden evaluators, and unrelated cache behavior are outside the change scope."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Repair the rail timetable lookup cache: a fresh online-mode query mounted and unmounted entirely offline later calls its signal-consuming query function with a live signal after reconnect."
+      },
+      {
+        "file": "TASK",
+        "quote": "This occurs independently of refetchOnReconnect."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve supported query behavior, interfaces, dependencies and build/test configuration. Change product source only."
+      },
+      {
+        "file": "README.md",
+        "quote": "Completion is asynchronous; initial online entry is synchronous, paused continuation resumes on a Promise turn."
+      },
+      {
+        "file": "README.md",
+        "quote": "First start uses network mode; continuation also needs focus."
+      },
+      {
+        "file": "README.md",
+        "quote": "'always' can run offline; 'offlineFirst' allows first offline entry but retry can pause."
+      },
+      {
+        "file": "README.md",
+        "quote": "Multiple observers share one fetch. Unconsumed active work can finish into cache after its view departs; consumed work is physically abortable."
+      },
+      {
+        "file": "README.md",
+        "quote": "Cancellation reverts previous query data/status and settles the originating attempt. Late fulfillment cannot become a new attempt's data."
+      },
+      {
+        "file": "README.md",
+        "quote": "Unknown unsubscribe is inert. The component owns observer scope; the cache remains outside individual views."
+      },
+      {
+        "file": "README.md",
+        "quote": "Native object identity binds query and attempt generations; wire handles only identify injected callbacks."
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "boolean active(Query q,Attempt a){return q.attempt==a&&!a.settled;}"
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "if(q.observers.isEmpty()){Attempt a=q.attempt;if(a!=null&&!a.settled){if(q.consumed)cancel(q,a);else a.retryCancelled=true;}}"
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "void resume(Query q){Attempt a=q.attempt;if(a!=null&&active(q,a)&&q.state.get(\"fetchStatus\").equals(\"paused\")&&eligible(a)&&!a.queued){a.queued=true;"
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "int token=env.bind(x->{a.queued=false;if(!active(q,a))return null;if(a.failures>0&&a.retryCancelled){a.settled=true;q.state.put(\"status\",\"error\");q.state.put(\"fetchStatus\",\"idle\");return null;}invoke(q,a);return null;});env.call(\"defer\",token);"
+      },
+      {
+        "file": "src/Workflow.java",
+        "quote": "if(!options.getOrDefault(\"networkMode\",\"online\").equals(\"online\")||online)invoke(q,a);else q.state.put(\"fetchStatus\",\"paused\");"
+      }
+    ],
+    "triggers": [
+      "Subscribe a fresh key with networkMode equal to online while the cache is offline.",
+      "Unsubscribe its final observer before request execution begins.",
+      "Reconnect by setting online to true, with focus permitting continuation.",
+      "Run any reconnect continuation that was queued before or around final-observer departure."
+    ],
+    "unknowns": [
+      "The public sources do not require one specific repair mechanism: suppressing query-function entry and permitting entry only with an already-canceled signal both satisfy the stated live-signal prohibition if all preservation obligations remain intact.",
+      "The public sources do not define refetchOnReconnect as an option or specify its broader semantics; only independence from it is required.",
+      "The public sources do not specify whether the host's abort operation is appropriate for an attempt whose request function never started.",
+      "The public sources do not prescribe new state fields, callback-handle cancellation APIs, or a particular error status for this never-started departed attempt.",
+      "The public syntax/build checks do not establish business correctness."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 3,
+  "diagnoses": [
+    {
+      "attempt": 2,
+      "candidate_only_contract_evidence": [],
+      "contract_after": {
+        "checkpoints": [
+          "After the final observer unsubscribes from a fresh online-mode attempt that never entered execution while offline, reconnect must not invoke its query function with a live cancellation signal.",
+          "A continuation already queued before observer departure must revalidate the originating attempt before invoking the query function.",
+          "An obsolete completion must not update cache state belonging to a replacement attempt.",
+          "Existing online starts, supported offline modes, retry continuation, shared-fetch behavior, snapshots, and disposal should remain operational."
+        ],
+        "forbidden_effects": [
+          "Do not allow the departed, never-started online-mode attempt to enter its signal-consuming query function with a live signal after reconnect.",
+          "Do not let a deferred continuation bypass final-observer departure or attempt invalidation.",
+          "Do not cancel unconsumed work merely because its observer departs when that work has already entered execution and is supported to finish into the cache.",
+          "Do not change public interfaces, dependencies, or build/test configuration.",
+          "Do not make behavior depend on refetchOnReconnect."
+        ],
+        "lifecycle_identity": [
+          "A fetch attempt is identified by its Attempt object and number; it remains current only while q.attempt == a and it is not settled.",
+          "Observer lifetime is represented by the query's observer-handle set; the relevant departure is removal of the final handle.",
+          "Native object identity, rather than wire callback handles alone, binds the query and attempt generations.",
+          "Replacement attempts must remain isolated from callbacks and completion belonging to earlier attempts."
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "text": "When a fresh online-mode query is subscribed and its final observer unsubscribes while the application remains offline, before that attempt has entered execution, a later reconnect must not invoke that attempt's query function with a live signal."
+          },
+          {
+            "id": "O2",
+            "text": "The protection in O1 must apply regardless of refetchOnReconnect and must cover both future resume scheduling and continuation callbacks that were already queued when the final observer departed."
+          },
+          {
+            "id": "O3",
+            "text": "Resume and deferred-continuation boundaries must validate the originating attempt's current, unsettled, permitted lifecycle before entering request execution."
+          },
+          {
+            "id": "O4",
+            "text": "Cancellation or invalidation must settle the originating attempt consistently, restore its previous query state as supported, and prevent late fulfillment from becoming data for a newer attempt."
+          },
+          {
+            "id": "O5",
+            "text": "Preserve supported behavior for work that legitimately entered execution: multiple observers share a fetch, unconsumed active work may finish into the cache after a view departs, and consumed work remains physically abortable."
+          },
+          {
+            "id": "O6",
+            "text": "Preserve the public subscribe, unsubscribe, online, focus, snapshot, and dispose behavior, network-mode distinctions, retry scheduling, observer scoping, dependencies, and build/test configuration."
+          }
+        ],
+        "ordering_barriers": [
+          "Final-observer departure must establish the never-started attempt's invalid or canceled status before any later reconnect-driven resume can enter request execution.",
+          "A deferred resume callback must check attempt identity and lifecycle after it runs and before invoking the query function.",
+          "Attempt completion must check that the same attempt is still active before mutating query state.",
+          "If implementation chooses query-function entry rather than suppressing entry entirely, the signal must already be canceled before any signal-consuming code can observe it; the task forbids a live signal at that point."
+        ],
+        "preservation": [
+          "Initial eligible online entry remains synchronous.",
+          "Paused continuation remains asynchronous on a Promise/deferred turn and still requires focus.",
+          "The 'always' mode can run offline, and 'offlineFirst' may enter once offline before a retry pauses.",
+          "Retries continue to use explicit scheduler handles.",
+          "Multiple observers continue to share one fetch.",
+          "Unconsumed active work that already entered execution can finish into the cache after its view departs.",
+          "Consumed active work remains physically abortable.",
+          "Cancellation continues to revert previous query data/status and settle the originating attempt.",
+          "Unknown unsubscribe remains inert.",
+          "The cache continues to outlive individual component observer scopes.",
+          "Snapshot state fields and public Environment/Client interfaces remain unchanged."
+        ],
+        "scope": [
+          "Product source in src/Workflow.java, specifically observer departure, paused-attempt resume, deferred continuation, and attempt cancellation/invalidation behavior.",
+          "The defect is limited to a fresh online-mode attempt mounted and unmounted entirely offline before execution, followed by reconnect.",
+          "Tests, configuration, dependencies, native host implementation, hidden evaluators, and unrelated cache behavior are outside the change scope."
+        ],
+        "supporting_evidence": [
+          {
+            "file": "TASK",
+            "quote": "Repair the rail timetable lookup cache: a fresh online-mode query mounted and unmounted entirely offline later calls its signal-consuming query function with a live signal after reconnect."
+          },
+          {
+            "file": "TASK",
+            "quote": "This occurs independently of refetchOnReconnect."
+          },
+          {
+            "file": "TASK",
+            "quote": "Preserve supported query behavior, interfaces, dependencies and build/test configuration. Change product source only."
+          },
+          {
+            "file": "README.md",
+            "quote": "Completion is asynchronous; initial online entry is synchronous, paused continuation resumes on a Promise turn."
+          },
+          {
+            "file": "README.md",
+            "quote": "First start uses network mode; continuation also needs focus."
+          },
+          {
+            "file": "README.md",
+            "quote": "'always' can run offline; 'offlineFirst' allows first offline entry but retry can pause."
+          },
+          {
+            "file": "README.md",
+            "quote": "Multiple observers share one fetch. Unconsumed active work can finish into cache after its view departs; consumed work is physically abortable."
+          },
+          {
+            "file": "README.md",
+            "quote": "Cancellation reverts previous query data/status and settles the originating attempt. Late fulfillment cannot become a new attempt's data."
+          },
+          {
+            "file": "README.md",
+            "quote": "Unknown unsubscribe is inert. The component owns observer scope; the cache remains outside individual views."
+          },
+          {
+            "file": "README.md",
+            "quote": "Native object identity binds query and attempt generations; wire handles only identify injected callbacks."
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "boolean active(Query q,Attempt a){return q.attempt==a&&!a.settled;}"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "if(q.observers.isEmpty()){Attempt a=q.attempt;if(a!=null&&!a.settled){if(q.consumed)cancel(q,a);else a.retryCancelled=true;}}"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "void resume(Query q){Attempt a=q.attempt;if(a!=null&&active(q,a)&&q.state.get(\"fetchStatus\").equals(\"paused\")&&eligible(a)&&!a.queued){a.queued=true;"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "int token=env.bind(x->{a.queued=false;if(!active(q,a))return null;if(a.failures>0&&a.retryCancelled){a.settled=true;q.state.put(\"status\",\"error\");q.state.put(\"fetchStatus\",\"idle\");return null;}invoke(q,a);return null;});env.call(\"defer\",token);"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "if(!options.getOrDefault(\"networkMode\",\"online\").equals(\"online\")||online)invoke(q,a);else q.state.put(\"fetchStatus\",\"paused\");"
+          }
+        ],
+        "triggers": [
+          "Subscribe a fresh key with networkMode equal to online while the cache is offline.",
+          "Unsubscribe its final observer before request execution begins.",
+          "Reconnect by setting online to true, with focus permitting continuation.",
+          "Run any reconnect continuation that was queued before or around final-observer departure."
+        ],
+        "unknowns": [
+          "The public sources do not require one specific repair mechanism: suppressing query-function entry and permitting entry only with an already-canceled signal both satisfy the stated live-signal prohibition if all preservation obligations remain intact.",
+          "The public sources do not define refetchOnReconnect as an option or specify its broader semantics; only independence from it is required.",
+          "The public sources do not specify whether the host's abort operation is appropriate for an attempt whose request function never started.",
+          "The public sources do not prescribe new state fields, callback-handle cancellation APIs, or a particular error status for this never-started departed attempt.",
+          "The public syntax/build checks do not establish business correctness."
+        ]
+      },
+      "contract_changed": false,
+      "diagnosis": "implementation_gap",
+      "explanation": "The behavioral contract already captures the task’s trigger, the final-observer and deferred-resume ordering barriers, attempt identity, and the required preservation of legitimately started unconsumed work. The original implementation leaves a fresh paused attempt active on final unsubscribe by setting only retryCancelled, while the deferred callback honors that flag only when failures > 0; consequently a fresh attempt can still reach invoke after reconnect. No original source supports a behavioral contract revision. The previous candidate adds a started distinction and cancels a never-started attempt, which is directionally consistent with the contract, but the opaque failed acceptance verdict neither identifies a remaining defect nor creates a new requirement.",
+      "remaining_unknowns": [
+        "The acceptance verdict supplies no failure cause, schedule, or assertion, so it cannot establish which candidate behavior, if any, remains incorrect.",
+        "The original sources do not specify whether canceling a never-started attempt should call the host abort operation or use a separate invalidation path.",
+        "The original sources require independence from refetchOnReconnect but do not define that option's wider semantics."
+      ],
+      "restored_original_contract_evidence": false,
+      "routing_analysis": {
+        "contract": "A fresh online-mode attempt created while offline must not enter its signal-consuming request with a live signal after its final observer departs. Final-observer departure must invalidate or cancel that never-started attempt before reconnect or an already-deferred continuation can invoke it. Deferred work and completion must revalidate native attempt identity and settled state. Preserve asynchronous paused continuation, focus and network-mode rules, retries, shared fetches, cache persistence, completion of legitimately started unconsumed work, physical abort of consumed work, cancellation rollback, observer APIs, dependencies, and build configuration.",
+        "facts": [
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 12,
+                "quote": "Multiple observers share one fetch."
+              }
+            ],
+            "predicate": "shared_lifetime",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 15,
+                "quote": "Unknown unsubscribe is inert."
+              },
+              {
+                "file": "README.md",
+                "line": 16,
+                "quote": "The component owns observer scope; the cache remains outside individual views."
+              }
+            ],
+            "predicate": "observer_lifetime",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 7,
+                "quote": "Each actual access records consumption; each fetch owns its controller and completion."
+              }
+            ],
+            "predicate": "attempt_resource",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 6,
+                "quote": "queryFn receives a lazy signal"
+              },
+              {
+                "file": "README.md",
+                "line": 7,
+                "quote": "accessor. Each actual access records consumption; each fetch owns its controller"
+              }
+            ],
+            "predicate": "lazy_consumption",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 9,
+                "quote": "paused continuation resumes on a Promise turn."
+              }
+            ],
+            "predicate": "async_resume",
+            "state": "known"
+          },
+          {
+            "evidence": [],
+            "predicate": "deferred_batch",
+            "state": "unknown"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 16,
+                "quote": "The component owns observer scope; the cache remains outside individual views."
+              }
+            ],
+            "predicate": "boundary_persistence",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "src/Workflow.java",
+                "line": 7,
+                "quote": "previous=new LinkedHashMap<>(s)"
+              }
+            ],
+            "predicate": "entry_snapshot",
+            "state": "known"
+          },
+          {
+            "evidence": [],
+            "predicate": "inline_reentry",
+            "state": "unknown"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 7,
+                "quote": "Each actual access records consumption; each fetch owns its controller and completion."
+              }
+            ],
+            "predicate": "effect_lifetimes",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 16,
+                "quote": "The component owns observer scope; the cache remains outside individual views."
+              }
+            ],
+            "predicate": "different_ownership_policy",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 12,
+                "quote": "Unconsumed active work can finish into cache"
+              },
+              {
+                "file": "README.md",
+                "line": 13,
+                "quote": "after its view departs; consumed work is physically abortable."
+              }
+            ],
+            "predicate": "discard_boundary_policy",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 6,
+                "quote": "queryFn receives a lazy signal"
+              },
+              {
+                "file": "README.md",
+                "line": 12,
+                "quote": "Multiple observers share one fetch."
+              }
+            ],
+            "predicate": "no_lazy_shared_mechanism",
+            "state": "contradicted"
+          }
+        ],
+        "obligation_labels": [
+          {
+            "code": "R",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 7,
+                "quote": "each fetch owns its controller and completion."
+              }
+            ],
+            "statement": "Each attempt owns its cancellation and completion resources."
+          },
+          {
+            "code": "O",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 15,
+                "quote": "Unknown unsubscribe is inert."
+              },
+              {
+                "file": "README.md",
+                "line": 16,
+                "quote": "The component owns observer scope; the cache remains outside individual views."
+              }
+            ],
+            "statement": "Final observer departure governs observer-scoped work without destroying the cache."
+          },
+          {
+            "code": "B",
+            "evidence": [
+              {
+                "file": "TASK",
+                "line": 1,
+                "quote": "mounted and unmounted entirely offline later calls its signal-consuming query function with a live signal after reconnect."
+              }
+            ],
+            "statement": "Reconnect and deferred continuation are boundaries that must not revive the departed never-started attempt."
+          },
+          {
+            "code": "L",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 6,
+                "quote": "queryFn receives a lazy signal"
+              },
+              {
+                "file": "README.md",
+                "line": 7,
+                "quote": "accessor. Each actual access records consumption"
+              }
+            ],
+            "statement": "Signal consumption is lazy and determines whether active work is physically abortable."
+          },
+          {
+            "code": "I",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 26,
+                "quote": "Native object identity binds query and attempt generations; wire handles only identify injected callbacks."
+              }
+            ],
+            "statement": "Callbacks and completions must remain bound to the originating attempt identity."
+          },
+          {
+            "code": "F",
+            "evidence": [
+              {
+                "file": "TASK",
+                "line": 1,
+                "quote": "later calls its signal-consuming query function with a live signal after reconnect."
+              }
+            ],
+            "statement": "The departed fresh attempt must not observe a live signal after reconnect."
+          },
+          {
+            "code": "A",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 8,
+                "quote": "Completion is asynchronous; initial online entry is synchronous,"
+              },
+              {
+                "file": "README.md",
+                "line": 9,
+                "quote": "paused continuation resumes on a Promise turn."
+              }
+            ],
+            "statement": "Preserve synchronous eligible entry and asynchronous paused continuation."
+          }
+        ],
+        "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+        "unknowns": [
+          "Whether the host abort operation should be called for an attempt whose request function never entered execution is unspecified.",
+          "No public source establishes deferred batching or inline callback reentry semantics.",
+          "The failed acceptance verdict provides no normative evidence or diagnosable failure cause."
+        ]
+      },
+      "structured_delta": [],
+      "supporting_evidence": [
+        {
+          "file": "TASK",
+          "quote": "Repair the rail timetable lookup cache: a fresh online-mode query mounted and unmounted entirely offline later calls its signal-consuming query function with a live signal after reconnect."
+        },
+        {
+          "file": "TASK",
+          "quote": "This occurs independently of refetchOnReconnect."
+        },
+        {
+          "file": "README.md",
+          "quote": "Unconsumed active work can finish into cache after its view departs; consumed work is physically abortable."
+        },
+        {
+          "file": "README.md",
+          "quote": "Cancellation reverts previous query data/status and settles the originating attempt. Late fulfillment cannot become a new attempt's data."
+        },
+        {
+          "file": "src/Workflow.java",
+          "quote": "if(q.observers.isEmpty()){Attempt a=q.attempt;if(a!=null&&!a.settled){if(q.consumed)cancel(q,a);else a.retryCancelled=true;}}"
+        },
+        {
+          "file": "src/Workflow.java",
+          "quote": "if(a.failures>0&&a.retryCancelled){a.settled=true;q.state.put(\"status\",\"error\");q.state.put(\"fetchStatus\",\"idle\");return null;}invoke(q,a);"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "if(q.consumed||!a.started)cancel(q,a);else a.retryCancelled=true;"
+        }
+      ],
+      "supporting_evidence_bindings": [
+        {
+          "file": "TASK",
+          "quote": "Repair the rail timetable lookup cache: a fresh online-mode query mounted and unmounted entirely offline later calls its signal-consuming query function with a live signal after reconnect.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "This occurs independently of refetchOnReconnect.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "README.md",
+          "quote": "Unconsumed active work can finish into cache after its view departs; consumed work is physically abortable.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "README.md",
+          "quote": "Cancellation reverts previous query data/status and settles the originating attempt. Late fulfillment cannot become a new attempt's data.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "src/Workflow.java",
+          "quote": "if(q.observers.isEmpty()){Attempt a=q.attempt;if(a!=null&&!a.settled){if(q.consumed)cancel(q,a);else a.retryCancelled=true;}}",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "src/Workflow.java",
+          "quote": "if(a.failures>0&&a.retryCancelled){a.settled=true;q.state.put(\"status\",\"error\");q.state.put(\"fetchStatus\",\"idle\");return null;}invoke(q,a);",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "if(q.consumed||!a.started)cancel(q,a);else a.retryCancelled=true;",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        }
+      ],
+      "unused_routing_analysis": true
+    },
+    {
+      "attempt": 3,
+      "candidate_only_contract_evidence": [],
+      "contract_after": {
+        "checkpoints": [
+          "After the final observer unsubscribes from a fresh online-mode attempt that never entered execution while offline, reconnect must not invoke its query function with a live cancellation signal.",
+          "A continuation already queued before observer departure must revalidate the originating attempt before invoking the query function.",
+          "An obsolete completion must not update cache state belonging to a replacement attempt.",
+          "Existing online starts, supported offline modes, retry continuation, shared-fetch behavior, snapshots, and disposal should remain operational."
+        ],
+        "forbidden_effects": [
+          "Do not allow the departed, never-started online-mode attempt to enter its signal-consuming query function with a live signal after reconnect.",
+          "Do not let a deferred continuation bypass final-observer departure or attempt invalidation.",
+          "Do not cancel unconsumed work merely because its observer departs when that work has already entered execution and is supported to finish into the cache.",
+          "Do not change public interfaces, dependencies, or build/test configuration.",
+          "Do not make behavior depend on refetchOnReconnect."
+        ],
+        "lifecycle_identity": [
+          "A fetch attempt is identified by its Attempt object and number; it remains current only while q.attempt == a and it is not settled.",
+          "Observer lifetime is represented by the query's observer-handle set; the relevant departure is removal of the final handle.",
+          "Native object identity, rather than wire callback handles alone, binds the query and attempt generations.",
+          "Replacement attempts must remain isolated from callbacks and completion belonging to earlier attempts."
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "text": "When a fresh online-mode query is subscribed and its final observer unsubscribes while the application remains offline, before that attempt has entered execution, a later reconnect must not invoke that attempt's query function with a live signal."
+          },
+          {
+            "id": "O2",
+            "text": "The protection in O1 must apply regardless of refetchOnReconnect and must cover both future resume scheduling and continuation callbacks that were already queued when the final observer departed."
+          },
+          {
+            "id": "O3",
+            "text": "Resume and deferred-continuation boundaries must validate the originating attempt's current, unsettled, permitted lifecycle before entering request execution."
+          },
+          {
+            "id": "O4",
+            "text": "Cancellation or invalidation must settle the originating attempt consistently, restore its previous query state as supported, and prevent late fulfillment from becoming data for a newer attempt."
+          },
+          {
+            "id": "O5",
+            "text": "Preserve supported behavior for work that legitimately entered execution: multiple observers share a fetch, unconsumed active work may finish into the cache after a view departs, and consumed work remains physically abortable."
+          },
+          {
+            "id": "O6",
+            "text": "Preserve the public subscribe, unsubscribe, online, focus, snapshot, and dispose behavior, network-mode distinctions, retry scheduling, observer scoping, dependencies, and build/test configuration."
+          }
+        ],
+        "ordering_barriers": [
+          "Final-observer departure must establish the never-started attempt's invalid or canceled status before any later reconnect-driven resume can enter request execution.",
+          "A deferred resume callback must check attempt identity and lifecycle after it runs and before invoking the query function.",
+          "Attempt completion must check that the same attempt is still active before mutating query state.",
+          "If implementation chooses query-function entry rather than suppressing entry entirely, the signal must already be canceled before any signal-consuming code can observe it; the task forbids a live signal at that point."
+        ],
+        "preservation": [
+          "Initial eligible online entry remains synchronous.",
+          "Paused continuation remains asynchronous on a Promise/deferred turn and still requires focus.",
+          "The 'always' mode can run offline, and 'offlineFirst' may enter once offline before a retry pauses.",
+          "Retries continue to use explicit scheduler handles.",
+          "Multiple observers continue to share one fetch.",
+          "Unconsumed active work that already entered execution can finish into the cache after its view departs.",
+          "Consumed active work remains physically abortable.",
+          "Cancellation continues to revert previous query data/status and settle the originating attempt.",
+          "Unknown unsubscribe remains inert.",
+          "The cache continues to outlive individual component observer scopes.",
+          "Snapshot state fields and public Environment/Client interfaces remain unchanged."
+        ],
+        "scope": [
+          "Product source in src/Workflow.java, specifically observer departure, paused-attempt resume, deferred continuation, and attempt cancellation/invalidation behavior.",
+          "The defect is limited to a fresh online-mode attempt mounted and unmounted entirely offline before execution, followed by reconnect.",
+          "Tests, configuration, dependencies, native host implementation, hidden evaluators, and unrelated cache behavior are outside the change scope."
+        ],
+        "supporting_evidence": [
+          {
+            "file": "TASK",
+            "quote": "Repair the rail timetable lookup cache: a fresh online-mode query mounted and unmounted entirely offline later calls its signal-consuming query function with a live signal after reconnect."
+          },
+          {
+            "file": "TASK",
+            "quote": "This occurs independently of refetchOnReconnect."
+          },
+          {
+            "file": "TASK",
+            "quote": "Preserve supported query behavior, interfaces, dependencies and build/test configuration. Change product source only."
+          },
+          {
+            "file": "README.md",
+            "quote": "Completion is asynchronous; initial online entry is synchronous, paused continuation resumes on a Promise turn."
+          },
+          {
+            "file": "README.md",
+            "quote": "First start uses network mode; continuation also needs focus."
+          },
+          {
+            "file": "README.md",
+            "quote": "'always' can run offline; 'offlineFirst' allows first offline entry but retry can pause."
+          },
+          {
+            "file": "README.md",
+            "quote": "Multiple observers share one fetch. Unconsumed active work can finish into cache after its view departs; consumed work is physically abortable."
+          },
+          {
+            "file": "README.md",
+            "quote": "Cancellation reverts previous query data/status and settles the originating attempt. Late fulfillment cannot become a new attempt's data."
+          },
+          {
+            "file": "README.md",
+            "quote": "Unknown unsubscribe is inert. The component owns observer scope; the cache remains outside individual views."
+          },
+          {
+            "file": "README.md",
+            "quote": "Native object identity binds query and attempt generations; wire handles only identify injected callbacks."
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "boolean active(Query q,Attempt a){return q.attempt==a&&!a.settled;}"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "if(q.observers.isEmpty()){Attempt a=q.attempt;if(a!=null&&!a.settled){if(q.consumed)cancel(q,a);else a.retryCancelled=true;}}"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "void resume(Query q){Attempt a=q.attempt;if(a!=null&&active(q,a)&&q.state.get(\"fetchStatus\").equals(\"paused\")&&eligible(a)&&!a.queued){a.queued=true;"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "int token=env.bind(x->{a.queued=false;if(!active(q,a))return null;if(a.failures>0&&a.retryCancelled){a.settled=true;q.state.put(\"status\",\"error\");q.state.put(\"fetchStatus\",\"idle\");return null;}invoke(q,a);return null;});env.call(\"defer\",token);"
+          },
+          {
+            "file": "src/Workflow.java",
+            "quote": "if(!options.getOrDefault(\"networkMode\",\"online\").equals(\"online\")||online)invoke(q,a);else q.state.put(\"fetchStatus\",\"paused\");"
+          }
+        ],
+        "triggers": [
+          "Subscribe a fresh key with networkMode equal to online while the cache is offline.",
+          "Unsubscribe its final observer before request execution begins.",
+          "Reconnect by setting online to true, with focus permitting continuation.",
+          "Run any reconnect continuation that was queued before or around final-observer departure."
+        ],
+        "unknowns": [
+          "The public sources do not require one specific repair mechanism: suppressing query-function entry and permitting entry only with an already-canceled signal both satisfy the stated live-signal prohibition if all preservation obligations remain intact.",
+          "The public sources do not define refetchOnReconnect as an option or specify its broader semantics; only independence from it is required.",
+          "The public sources do not specify whether the host's abort operation is appropriate for an attempt whose request function never started.",
+          "The public sources do not prescribe new state fields, callback-handle cancellation APIs, or a particular error status for this never-started departed attempt.",
+          "The public syntax/build checks do not establish business correctness."
+        ]
+      },
+      "contract_changed": false,
+      "diagnosis": "unknown",
+      "explanation": "The behavioral contract remains supported by the original task and public README/source and needs no revision. The previous candidate appears to address the stated lifecycle hole by recording request entry, canceling a final-observer attempt that has not started, and rechecking permission both when scheduling and when running a deferred resume. It also retains active unconsumed work after observer departure. The supplied compilation observation establishes syntax only, while the unexplained failed acceptance verdict does not identify a source-grounded behavioral violation. Therefore neither a specific implementation gap nor a contract gap can be established from the permitted evidence.",
+      "remaining_unknowns": [
+        "Why the independent acceptance evaluation rejected the previous candidate is not disclosed and cannot be inferred from the verdict alone.",
+        "Whether calling abort for a controller created by newAttempt but never passed to request is supported by the host is not specified publicly.",
+        "No public behavioral test or execution trace confirms the candidate under reconnect, queued-continuation, retry, and replacement-attempt interleavings."
+      ],
+      "restored_original_contract_evidence": false,
+      "routing_analysis": {
+        "contract": "A fresh online-mode attempt created while offline must not enter its signal-consuming request with a live signal after its final observer departs before execution, including across an already queued deferred resume and regardless of refetchOnReconnect. Observer departure must invalidate or cancel that attempt before request entry; resume and completion must revalidate native attempt identity. Preserve synchronous eligible entry, asynchronous focused continuation, network modes, retry scheduling, shared fetches, cache persistence, completion of already-entered unconsumed work, physical abort of consumed work, cancellation rollback, public interfaces, dependencies, and configuration.",
+        "facts": [
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 12,
+                "quote": "Multiple observers share one fetch."
+              }
+            ],
+            "predicate": "shared_lifetime",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 16,
+                "quote": "The component owns observer scope; the cache remains outside individual views."
+              }
+            ],
+            "predicate": "observer_lifetime",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 7,
+                "quote": "Each actual access records consumption; each fetch owns its controller"
+              },
+              {
+                "file": "README.md",
+                "line": 8,
+                "quote": "and completion."
+              }
+            ],
+            "predicate": "attempt_resource",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 6,
+                "quote": "fetchStatus (idle/fetching/paused), and data. queryFn receives a lazy signal"
+              },
+              {
+                "file": "README.md",
+                "line": 7,
+                "quote": "accessor. Each actual access records consumption; each fetch owns its controller"
+              }
+            ],
+            "predicate": "lazy_consumption",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 8,
+                "quote": "and completion. Completion is asynchronous; initial online entry is synchronous,"
+              },
+              {
+                "file": "README.md",
+                "line": 9,
+                "quote": "paused continuation resumes on a Promise turn. First start uses network mode;"
+              }
+            ],
+            "predicate": "async_resume",
+            "state": "known"
+          },
+          {
+            "evidence": [],
+            "predicate": "deferred_batch",
+            "state": "unknown"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 16,
+                "quote": "The component owns observer scope; the cache remains outside individual views."
+              }
+            ],
+            "predicate": "boundary_persistence",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "src/Workflow.java",
+                "line": 7,
+                "quote": "previous=new LinkedHashMap<>(s);options=o;"
+              }
+            ],
+            "predicate": "entry_snapshot",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 9,
+                "quote": "paused continuation resumes on a Promise turn. First start uses network mode;"
+              }
+            ],
+            "predicate": "inline_reentry",
+            "state": "contradicted"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 12,
+                "quote": "Multiple observers share one fetch. Unconsumed active work can finish into cache"
+              },
+              {
+                "file": "README.md",
+                "line": 13,
+                "quote": "after its view departs; consumed work is physically abortable."
+              }
+            ],
+            "predicate": "effect_lifetimes",
+            "state": "known"
+          },
+          {
+            "evidence": [],
+            "predicate": "different_ownership_policy",
+            "state": "unknown"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 15,
+                "quote": "fulfillment cannot become a new attempt's data. Unknown unsubscribe is inert."
+              },
+              {
+                "file": "README.md",
+                "line": 16,
+                "quote": "The component owns observer scope; the cache remains outside individual views."
+              }
+            ],
+            "predicate": "discard_boundary_policy",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 3,
+                "quote": "A shared per-key query cache provides subscribe(key,options) -> unique observer"
+              },
+              {
+                "file": "README.md",
+                "line": 6,
+                "quote": "fetchStatus (idle/fetching/paused), and data. queryFn receives a lazy signal"
+              }
+            ],
+            "predicate": "no_lazy_shared_mechanism",
+            "state": "contradicted"
+          }
+        ],
+        "obligation_labels": [
+          {
+            "code": "R",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 7,
+                "quote": "accessor. Each actual access records consumption; each fetch owns its controller"
+              },
+              {
+                "file": "README.md",
+                "line": 8,
+                "quote": "and completion."
+              }
+            ],
+            "statement": "Each fetch attempt owns its controller and completion resource."
+          },
+          {
+            "code": "O",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 16,
+                "quote": "The component owns observer scope; the cache remains outside individual views."
+              }
+            ],
+            "statement": "Final-observer departure ends the view-owned observer scope without ending cache ownership."
+          },
+          {
+            "code": "B",
+            "evidence": [
+              {
+                "file": "TASK",
+                "line": 1,
+                "quote": "a fresh online-mode query mounted and unmounted entirely offline later calls its signal-consuming query function with a live signal after reconnect."
+              }
+            ],
+            "statement": "The reconnect/request-entry boundary must exclude a departed attempt that never began execution."
+          },
+          {
+            "code": "L",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 6,
+                "quote": "fetchStatus (idle/fetching/paused), and data. queryFn receives a lazy signal"
+              },
+              {
+                "file": "README.md",
+                "line": 7,
+                "quote": "accessor. Each actual access records consumption; each fetch owns its controller"
+              }
+            ],
+            "statement": "Signal consumption is lazy and recorded upon actual access."
+          },
+          {
+            "code": "I",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 26,
+                "quote": "wire handles only identify injected callbacks."
+              },
+              {
+                "file": "README.md",
+                "line": 25,
+                "quote": "DOM claim is made. Native object identity binds query and attempt generations;"
+              }
+            ],
+            "statement": "Native query and attempt identity binds generations; callback handles do not."
+          },
+          {
+            "code": "F",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 12,
+                "quote": "Multiple observers share one fetch. Unconsumed active work can finish into cache"
+              },
+              {
+                "file": "README.md",
+                "line": 13,
+                "quote": "after its view departs; consumed work is physically abortable."
+              }
+            ],
+            "statement": "Do not cancel already-entered unconsumed work solely because its view departed."
+          },
+          {
+            "code": "A",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 8,
+                "quote": "and completion. Completion is asynchronous; initial online entry is synchronous,"
+              },
+              {
+                "file": "README.md",
+                "line": 9,
+                "quote": "paused continuation resumes on a Promise turn. First start uses network mode;"
+              }
+            ],
+            "statement": "Initial eligible entry is synchronous while paused continuation crosses an asynchronous Promise-turn boundary."
+          }
+        ],
+        "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+        "unknowns": [
+          "The sources do not state whether multiple deferred resume callbacks can be batched.",
+          "The sources do not specify a distinct ownership policy for never-started controllers beyond attempt and observer lifecycle rules.",
+          "The public host contract does not say whether abort is valid before request receives the controller.",
+          "The failed acceptance verdict supplies no source-grounded failing interleaving or unmet obligation."
+        ]
+      },
+      "structured_delta": [],
+      "supporting_evidence": [
+        {
+          "file": "TASK",
+          "quote": "Repair the rail timetable lookup cache: a fresh online-mode query mounted and unmounted entirely offline later calls its signal-consuming query function with a live signal after reconnect."
+        },
+        {
+          "file": "TASK",
+          "quote": "This occurs independently of refetchOnReconnect."
+        },
+        {
+          "file": "README.md",
+          "quote": "Multiple observers share one fetch. Unconsumed active work can finish into cache after its view departs; consumed work is physically abortable."
+        },
+        {
+          "file": "README.md",
+          "quote": "Cancellation reverts previous query data/status and settles the originating attempt. Late fulfillment cannot become a new attempt's data."
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "boolean mayInvoke(Query q,Attempt a){return active(q,a)&&(a.started||!q.observers.isEmpty());}"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "if(q.observers.isEmpty()){Attempt a=q.attempt;if(a!=null&&!a.settled){if(q.consumed||!a.started)cancel(q,a);else a.retryCancelled=true;}}"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "void resume(Query q){Attempt a=q.attempt;if(a!=null&&mayInvoke(q,a)&&q.state.get(\"fetchStatus\").equals(\"paused\")&&eligible(a)&&!a.queued)"
+        }
+      ],
+      "supporting_evidence_bindings": [
+        {
+          "file": "TASK",
+          "quote": "Repair the rail timetable lookup cache: a fresh online-mode query mounted and unmounted entirely offline later calls its signal-consuming query function with a live signal after reconnect.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "This occurs independently of refetchOnReconnect.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "README.md",
+          "quote": "Multiple observers share one fetch. Unconsumed active work can finish into cache after its view departs; consumed work is physically abortable.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "README.md",
+          "quote": "Cancellation reverts previous query data/status and settles the originating attempt. Late fulfillment cannot become a new attempt's data.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "boolean mayInvoke(Query q,Attempt a){return active(q,a)&&(a.started||!q.observers.isEmpty());}",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "if(q.observers.isEmpty()){Attempt a=q.attempt;if(a!=null&&!a.settled){if(q.consumed||!a.started)cancel(q,a);else a.retryCancelled=true;}}",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/Workflow.java",
+          "quote": "void resume(Query q){Attempt a=q.attempt;if(a!=null&&mayInvoke(q,a)&&q.state.get(\"fetchStatus\").equals(\"paused\")&&eligible(a)&&!a.queued)",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        }
+      ],
+      "unused_routing_analysis": true
+    }
+  ],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": false,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": false,
+    "valid": true,
+    "verdict": "UNDERREACH"
+  },
+  "finalized": true,
+  "first_pass_attempt": null,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": false,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": false,
+    "valid": true,
+    "verdict": "UNDERREACH"
+  },
+  "repair_stop_reason": "action_budget_exhausted",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "3f127b0cc3abc446eb38f8fc0a1808fdc892bbf40f6995dc9250d3a0c7b54579",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9995240373537
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "fb414cdaa00de4d53cade5e6b570b456fdd3f84647fba46ee1cb2fd7ec73d774",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 23168,
+        "input_tokens": 29295,
+        "output_tokens": 2706,
+        "reasoning_output_tokens": 1270,
+        "total_tokens": 32001
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "19538fa13fb0f47feab41d0c3b7a2f6455e89daa6b9b82aaf8b7e7b77c87262e",
+      "seconds": 50.26497365627438,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 23168,
+        "input_tokens": 29295,
+        "output_tokens": 2706,
+        "reasoning_output_tokens": 1270,
+        "total_tokens": 32001
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "e2f353d76cf615aa367be1d3e08dab85d5efd9fbd9078342d236e13f43f13d08",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9994635805488
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "9ed3b75573b9a6e0bef084821fc547be991bfb49067cd25ec2f4780f12660e18",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 16186,
+        "output_tokens": 2127,
+        "reasoning_output_tokens": 516,
+        "total_tokens": 18313
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "cb83c5dd36962848dc3a56c6f6f23e6d5d0bd1d83e5d4db0e0983c6b839a3f69",
+      "seconds": 39.38642150815576,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 16186,
+        "output_tokens": 2127,
+        "reasoning_output_tokens": 516,
+        "total_tokens": 18313
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "d92019119819bf5207bb5984e70a042f75d2f8509d749ee91054cb685969cc31",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9996624644846
+          },
+          "number": 1,
+          "requests": 7,
+          "restart_reason": "initial",
+          "result_sha256": "d002131e273f866748f2f802da6e93bf216d07eb4bb7835889a6a2622f5f7a60",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 143744,
+        "input_tokens": 161360,
+        "output_tokens": 3621,
+        "reasoning_output_tokens": 1410,
+        "total_tokens": 164981
+      },
+      "requests": 7,
+      "reserved_requests": 24,
+      "result_sha256": "181d2eb8f4a5033f239a316d4cfdeb6362547cd2def1215a683127751f3fbef7",
+      "seconds": 81.7231497997418,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 143744,
+        "input_tokens": 161360,
+        "output_tokens": 3621,
+        "reasoning_output_tokens": 1410,
+        "total_tokens": 164981
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "29c92750831267ff53f8bf90ed65e98f60a01328d0201e634749736268d2bab8",
+      "seconds": 1.1705073015764356,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 14.646962245926261,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "diagnosis-2",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "b7f5cebe55ba1464a0f6d1169f50b3a32f67ccb13497590423302f4279404bdf",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.999284774065
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "c45014483930f00f52ca793f77c09da7720e69017b9dce0599d0aa3d5501f23f",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-2",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 17386,
+        "output_tokens": 4462,
+        "reasoning_output_tokens": 1244,
+        "total_tokens": 21848
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "bcb360d3fd6291a14b68bf9fd70b8e88193bc6c712dcfe2a91de6fdae5e71601",
+      "seconds": 64.85623836982995,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 17386,
+        "output_tokens": 4462,
+        "reasoning_output_tokens": 1244,
+        "total_tokens": 21848
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-2",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "5103ae99b7c853d75356763f0bd86c2a4c159040a3e8344bc833c3a021cd40b1",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9994119442999
+          },
+          "number": 1,
+          "requests": 8,
+          "restart_reason": "initial",
+          "result_sha256": "3f1f61d5bdb3cda67af63797e2932c9ffedd5927d767b3a310d47be70a36b7d0",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-2",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 173440,
+        "input_tokens": 193231,
+        "output_tokens": 4445,
+        "reasoning_output_tokens": 2243,
+        "total_tokens": 197676
+      },
+      "requests": 8,
+      "reserved_requests": 24,
+      "result_sha256": "e95ed6c53c93510d6415105d0ea5de78032f7c34fc83ca91a14ad95fef51b47b",
+      "seconds": 105.02038028370589,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 173440,
+        "input_tokens": 193231,
+        "output_tokens": 4445,
+        "reasoning_output_tokens": 2243,
+        "total_tokens": 197676
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-2",
+      "key": "visible-2",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "29c92750831267ff53f8bf90ed65e98f60a01328d0201e634749736268d2bab8",
+      "seconds": 1.1933840122073889,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-2",
+      "key": "acceptance-2",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 14.675179944373667,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "diagnosis-3",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "4a63c1d6ae7d37a5f23de2c4e5fe3ce4d3f721d1ac72bfd375b400e230dd48fc",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9990138439462
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "090a675a1105ef069a8cb9c7559b82bf7a3d1f6dd4d87bf21410b7ddb8dbacde",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-3",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 17416,
+        "output_tokens": 4471,
+        "reasoning_output_tokens": 1034,
+        "total_tokens": 21887
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "d8dc2b3e565bb9353f2ba624dd71ba7fcfd5d894b9796149cd298b9939e51a7b",
+      "seconds": 69.15720595419407,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 17416,
+        "output_tokens": 4471,
+        "reasoning_output_tokens": 1034,
+        "total_tokens": 21887
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-3",
+      "executions": [
+        {
+          "failure_type": "transient_transport_error",
+          "input_sha256": "32ca72696d4d456eb2a40ed2c9a8f7d29871f367e1ba0993efe9f481dd45cbe5",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9991557477042
+          },
+          "number": 1,
+          "requests": 4,
+          "restart_reason": "initial",
+          "result_sha256": "b2547ab1b1d00a5aebd9e34df71a02e97d6444ee39fd3633f6a1e5302537fc2e",
+          "status": "complete",
+          "valid": false
+        },
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "32ca72696d4d456eb2a40ed2c9a8f7d29871f367e1ba0993efe9f481dd45cbe5",
+          "limits": {
+            "requests": 20,
+            "seconds": 529.45526227355
+          },
+          "number": 2,
+          "requests": 6,
+          "restart_reason": "transient_transport",
+          "result_sha256": "9644033e8182d4dcddb06ecd49b75b53f308a41d5b63627da701218697144938",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-3",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 180480,
+        "input_tokens": 202534,
+        "output_tokens": 6722,
+        "reasoning_output_tokens": 3640,
+        "total_tokens": 209256
+      },
+      "requests": 10,
+      "reserved_requests": 24,
+      "result_sha256": "2a93ef4d2ca7d3565ef2c2f65917311593a75e31814b08944e5e8305757e214f",
+      "seconds": 162.55922754760832,
+      "status": "complete",
+      "tokens": null,
+      "tool_policy_recoveries": 0,
+      "transport_retries": 1,
+      "unknown_usage_requests": 1,
+      "usage_incomplete": true
+    },
+    {
+      "budget_group": "visible-3",
+      "key": "visible-3",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "29c92750831267ff53f8bf90ed65e98f60a01328d0201e634749736268d2bab8",
+      "seconds": 1.2486370299011469,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-3",
+      "key": "acceptance-3",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 14.600462786853313,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "awaiting_expert_summary",
+  "stop_reason": "action_budget_exhausted",
+  "training_accepted": false
+}

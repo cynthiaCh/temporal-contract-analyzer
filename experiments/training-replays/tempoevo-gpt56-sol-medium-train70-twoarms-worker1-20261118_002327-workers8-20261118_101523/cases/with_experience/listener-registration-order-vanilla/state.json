@@ -1,0 +1,500 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "package.json": "b6b0f17dac4d0b749bcb9e534fa0dc50f69303a141fcb8acd8b9986ac1ded9d1",
+        "src/channel.js": "b6e69590b253b577aed53078e2f6b09caf62599cf4286a72dd28f9edc5647736",
+        "src/metrics-consumer.js": "73445d7fb5ede97450b4f339370c1f0987394808ce312bb0407694575b380213",
+        "src/presence-panel.js": "e88b4ae258446a1e6750985f1672c730fa8cbfb3581c4e6e30038aaa98a6043b",
+        "src/render-workspace.js": "0d1412acc6eeda2ea6fa3d1b50314be93fa28b7e74e124faec0354129aa19035",
+        "src/subscription.js": "24e37f76f8bb98237804a5f76bedb5ab2fce6421f197f1061aeb0122dd8f5d33",
+        "src/workspace-navigation.js": "3745d2d03240263eea523df10e5bf4d6b7c52aa20496406b1959035b2fe2040d"
+      },
+      "candidate_sources": {
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\n  \"name\": \"listener-registration-order-vanilla-fixture\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+        "src/channel.js": "class PresenceEvent extends Event {\n  constructor(detail) {\n    super(\"presence\");\n    this.detail = detail;\n  }\n}\n\nexport function createPresenceChannel(token, { decode = (value) => value } = {}) {\n  const target = new EventTarget();\n  const emit = (kind) => target.dispatchEvent(new PresenceEvent(`${token}:${kind}`));\n  return {\n    target,\n    decode,\n    connect(bootstrapMode) {\n      if (bootstrapMode === \"deferred\") queueMicrotask(() => emit(\"bootstrap\"));\n      else emit(\"bootstrap\");\n    },\n    emitUpdate() {\n      emit(\"update\");\n    },\n  };\n}\n\nexport async function observeChannel({ token, bootstrapMode }) {\n  const events = [];\n  const channel = createPresenceChannel(token);\n  channel.connect(bootstrapMode);\n  channel.target.addEventListener(\"presence\", (event) => events.push(event.detail));\n  await Promise.resolve();\n  channel.emitUpdate();\n  return { events };\n}\n",
+        "src/metrics-consumer.js": "import { observeChannel } from \"./channel.js\";\n\nexport function collectMetrics(token) {\n  // Metrics deliberately attach after the synchronous bootstrap and count deltas only.\n  return observeChannel({ token, bootstrapMode: \"synchronous\" });\n}\n",
+        "src/presence-panel.js": "import { createPresenceChannel } from \"./channel.js\";\nimport { subscribeChannel } from \"./subscription.js\";\n\nexport function createPresencePanel(publish) {\n  let current = null;\n  return {\n    show(channel, bootstrapMode = \"synchronous\") {\n      const previous = current;\n      const visit = { release: () => {} };\n      current = visit;\n      if (previous) previous.release();\n\n      const release = subscribeChannel(channel, bootstrapMode, (value) => {\n        if (current === visit) publish(value);\n      });\n      if (current === visit) visit.release = release;\n      else release();\n    },\n    close() {\n      const visit = current;\n      current = null;\n      if (visit) visit.release();\n    },\n  };\n}\n\nexport async function renderPresence(token, bootstrapMode) {\n  const events = [];\n  const panel = createPresencePanel((value) => events.push(value));\n  const channel = createPresenceChannel(token);\n  panel.show(channel, bootstrapMode);\n  await Promise.resolve();\n  channel.emitUpdate();\n  panel.close();\n  return { events };\n}\n",
+        "src/render-workspace.js": "import { collectMetrics } from \"./metrics-consumer.js\";\nimport { renderPresence } from \"./presence-panel.js\";\n\nexport async function render({ token, bootstrapMode }) {\n  const [presence, metrics] = await Promise.all([\n    renderPresence(token, bootstrapMode),\n    collectMetrics(token),\n  ]);\n  return { presence, metrics };\n}\n",
+        "src/subscription.js": "// The decoder may return a value or a Promise (compressed network frames).\n// EventTarget removal detaches reception; an already started decode still settles.\nexport function subscribeChannel(channel, bootstrapMode, receive) {\n  let active = true;\n  const listener = (event) => {\n    const decoded = channel.decode(event.detail);\n    const publish = (value) => {\n      if (active) receive(value);\n    };\n    if (decoded && typeof decoded.then === \"function\") decoded.then(publish);\n    else publish(decoded);\n  };\n  channel.target.addEventListener(\"presence\", listener);\n  channel.connect(bootstrapMode);\n  return () => {\n    active = false;\n    channel.target.removeEventListener(\"presence\", listener);\n  };\n}\n",
+        "src/workspace-navigation.js": "import { createPresencePanel } from \"./presence-panel.js\";\n\n// Presence publication can synchronously select a different room or hide the\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot).\n// Reusing a transport object on a later visit is supported by the workspace.\nexport function createWorkspaceNavigation(renderState) {\n  const panel = createPresencePanel((value) => renderState(value, navigation));\n  const navigation = {\n    select(channel, mode = \"synchronous\") { panel.show(channel, mode); },\n    hide() { panel.close(); },\n  };\n  return navigation;\n}\n"
+      },
+      "delivered_sha256s": [
+        "092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce",
+        "4a344162be345350744e4de69aeb9d51b8d11f805cc594c0392e26d5649535d1",
+        "8aacd6e164e2a8fc5c967472fac5b0b34b0b06a9879a206a213ab1f138e1460c",
+        "9db7de273ed19c3b2c1a15fb54e071117813d3f26ed7a4cb4f4ea2002211a784",
+        "d26b6b4ae031faf8ea65f3cdc25f5b9b0ef63577f7b7aa83cf7f7f54a13f3d79"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/channel.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/metrics-consumer.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/presence-panel.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/render-workspace.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/subscription.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/workspace-navigation.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "With synchronous bootstrap, opening a presence panel publishes the initial `token:bootstrap` state before later `token:update` events.",
+      "With deferred bootstrap, the panel still receives bootstrap and update events in their existing order.",
+      "A metrics collection still omits the synchronous bootstrap and counts only later deltas.",
+      "When bootstrap publication synchronously selects another room, the nested selection remains active after the outer `select` returns.",
+      "When bootstrap publication synchronously hides the panel, the panel remains hidden after the outer `select` returns.",
+      "After switching or hiding, settlement of decoding begun by the retired visit does not publish into that retired panel lifetime.",
+      "Reopening the same channel object creates a distinct active visit; completion from its earlier visit does not acquire authority from object equality.",
+      "Closing or superseding one visit removes that visit's listener without removing the listener installed by a nested or later visit."
+    ],
+    "forbidden_effects": [
+      "Do not change `src/metrics-consumer.js` or make its deliberate post-connect listener observe synchronous bootstrap.",
+      "Do not globally stop, disconnect, or invalidate a reusable channel object when retiring one panel visit.",
+      "Do not let an outer `show` overwrite a cleanup handle installed by synchronous nested navigation.",
+      "Do not let cleanup for an old visit remove or clear resources belonging to a newer visit.",
+      "Do not use channel-object equality as proof that an asynchronous result belongs to the current visit.",
+      "Do not change unrelated rendering, event payloads, bootstrap modes, or public navigation entry points."
+    ],
+    "lifecycle_identity": [
+      "Each invocation of `createPresencePanel(...).show(...)` is a distinct panel visit, even when it reuses the same channel object.",
+      "Only the current visit may retain panel ownership or publish asynchronously decoded results after callback-capable setup.",
+      "A nested `show` or `close` invoked during synchronous bootstrap publication supersedes the outer visit immediately.",
+      "Listener removal retires reception for that visit, but an already-started decode can still settle and therefore requires visit-specific publication authority."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "The presence-panel subscription must register its `presence` listener before invoking `channel.connect(bootstrapMode)`, so synchronous initial state is observed."
+      },
+      {
+        "id": "O2",
+        "text": "The metrics path must retain its intentional connect-before-listen behavior and continue excluding synchronous bootstrap events."
+      },
+      {
+        "id": "O3",
+        "text": "Panel setup must establish the new visit's ownership before the callback-capable connection step; synchronous `select` or `hide` triggered by publication must remain authoritative when the outer setup returns."
+      },
+      {
+        "id": "O4",
+        "text": "If synchronous nested navigation supersedes an outer visit before its subscription setup returns, the outer visit must clean up its own listener without replacing or removing the nested visit's cleanup ownership."
+      },
+      {
+        "id": "O5",
+        "text": "Cleanup must be scoped to the particular subscription/visit. A decode already started for a retired visit may settle, but must not publish as though that visit were still active."
+      },
+      {
+        "id": "O6",
+        "text": "Reusing the same transport/channel object on a later visit must remain supported; each visit must receive its own bootstrap and subsequent updates without reviving publication authority for an earlier visit."
+      },
+      {
+        "id": "O7",
+        "text": "Preserve the documented public functions and existing event ordering and decoding behavior except where lifecycle authority is required to prevent retired visits from affecting workspace navigation."
+      }
+    ],
+    "ordering_barriers": [
+      "For a presence-panel visit: establish visit ownership, attach the listener, then call `channel.connect(bootstrapMode)`.",
+      "Treat `channel.connect(...)` and the resulting `receive`/`publish` call as callback-capable boundaries because publication may synchronously invoke `navigation.select(...)` or `navigation.hide()`.",
+      "After callback-capable subscription setup returns, recheck that the initiating visit still owns the panel before installing its returned cleanup handle.",
+      "On supersession, retire the old visit before allowing later asynchronous decode completion to publish.",
+      "A newer visit's installation and cleanup ownership must happen before any stale outer setup resumes and attempts post-call assignment."
+    ],
+    "preservation": [
+      "Preserve synchronous and deferred bootstrap modes.",
+      "Preserve decoding of both immediate values and Promise-returning compressed frames.",
+      "Preserve later presence updates after the initial state.",
+      "Preserve `createPresencePanel` methods `show` and `close`, and workspace navigation methods `select` and `hide`.",
+      "Preserve supported reuse of a channel/transport object on later visits.",
+      "Preserve the metrics consumer's deliberate delta-only semantics.",
+      "Preserve independent presence and metrics results returned by workspace rendering."
+    ],
+    "scope": [
+      "Repair presence-panel subscription and lifecycle behavior in business code under `src/`, principally `src/subscription.js` and `src/presence-panel.js` as needed.",
+      "Keep `src/metrics-consumer.js` unchanged.",
+      "Preserve integration through `src/workspace-navigation.js` and `src/render-workspace.js`.",
+      "Do not modify tests, package configuration, or public-check documentation."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Immediately after opening the presence panel, the initial online-user state is\nsometimes missing even though later presence updates appear."
+      },
+      {
+        "file": "TASK",
+        "quote": "Fix the presence\npanel while preserving its existing behavior, including workspace navigation."
+      },
+      {
+        "file": "TASK",
+        "quote": "Do not change the metrics consumer."
+      },
+      {
+        "file": "src/channel.js",
+        "quote": "connect(bootstrapMode) {\n      if (bootstrapMode === \"deferred\") queueMicrotask(() => emit(\"bootstrap\"));\n      else emit(\"bootstrap\");\n    }"
+      },
+      {
+        "file": "src/subscription.js",
+        "quote": "// The decoder may return a value or a Promise (compressed network frames).\n// EventTarget removal detaches reception; an already started decode still settles."
+      },
+      {
+        "file": "src/subscription.js",
+        "quote": "channel.connect(bootstrapMode);\n  channel.target.addEventListener(\"presence\", listener);"
+      },
+      {
+        "file": "src/presence-panel.js",
+        "quote": "show(channel, bootstrapMode = \"synchronous\") {\n      release();\n      release = subscribeChannel(channel, bootstrapMode, publish);\n    }"
+      },
+      {
+        "file": "src/workspace-navigation.js",
+        "quote": "// Presence publication can synchronously select a different room or hide the\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot)."
+      },
+      {
+        "file": "src/workspace-navigation.js",
+        "quote": "// Reusing a transport object on a later visit is supported by the workspace."
+      },
+      {
+        "file": "src/metrics-consumer.js",
+        "quote": "// Metrics deliberately attach after the synchronous bootstrap and count deltas only."
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "These checks are required after an Action but do not test business behavior."
+      }
+    ],
+    "triggers": [
+      "Opening a presence panel with synchronous bootstrap.",
+      "Opening a presence panel with deferred bootstrap.",
+      "Receiving a presence event whose decoder returns an immediate value.",
+      "Receiving a presence event whose decoder returns a Promise.",
+      "Synchronous navigation to another room during bootstrap publication.",
+      "Synchronous hiding of the panel during bootstrap publication.",
+      "Closing or replacing a visit while decode work is in flight.",
+      "Reopening the same channel object in a later visit.",
+      "Collecting metrics concurrently with rendering presence."
+    ],
+    "unknowns": [
+      "The public sources do not specify rejection handling for a Promise returned by `channel.decode`.",
+      "The public sources do not define behavior when `channel.connect`, `channel.decode`, or `receive` throws synchronously.",
+      "No explicit disconnect operation exists, so cleanup authority is limited to listener removal and suppression of retired continuations.",
+      "The exact event sequence expected when publication recursively performs several nested `select`/`hide` operations is not stated beyond preserving the final authoritative navigation.",
+      "The public documents do not state whether `subscribeChannel` is itself a supported external API; its exported signature should therefore be preserved conservatively."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 1,
+  "diagnoses": [],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "finalized": true,
+  "first_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "repair_stop_reason": "oracle_accepted",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "307c20b23d34994cb10740debe3c2db3202ab91d1b797f261f46e2fd9c6f4374",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9994456889108
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "98e7b34790e1f93047616ab5a402e95d4ead9db1a95b35e951ebd07788d3b344",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 24576,
+        "input_tokens": 32184,
+        "output_tokens": 2787,
+        "reasoning_output_tokens": 1240,
+        "total_tokens": 34971
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "5c7e19ab0a580902daabec8f4a19756df6d3efa13fcf8affde48d98690c70b7b",
+      "seconds": 59.2805615728721,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 24576,
+        "input_tokens": 32184,
+        "output_tokens": 2787,
+        "reasoning_output_tokens": 1240,
+        "total_tokens": 34971
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "bfc574ad6384bbd2ad395a57d73a52c80df906802ed65434187db1d4a6251779",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9994980348274
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "9072a73529b9a38399d24f628cd4c48f501be86a5a71e3f70a76df8c25efc962",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 17692,
+        "output_tokens": 2592,
+        "reasoning_output_tokens": 1022,
+        "total_tokens": 20284
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "5c2956559d840e0c371f52885922d4afb49d9ed231dae07238dbdaefd11c77b1",
+      "seconds": 45.36701981443912,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 17692,
+        "output_tokens": 2592,
+        "reasoning_output_tokens": 1022,
+        "total_tokens": 20284
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "43af7373acb661d6bcf3de3876a082ceea3871d138ccd897c8c8dcb25b561e2e",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9991037007421
+          },
+          "number": 1,
+          "requests": 5,
+          "restart_reason": "initial",
+          "result_sha256": "0f55b3d7f1db2bb41c64440110697cb88258de77f536556ee6293fca0194c1e3",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 93952,
+        "input_tokens": 108998,
+        "output_tokens": 2809,
+        "reasoning_output_tokens": 1035,
+        "total_tokens": 111807
+      },
+      "requests": 5,
+      "reserved_requests": 24,
+      "result_sha256": "911a62f2a70e37740fc73fe2e66a0ba4586c2d124090cab5b56b444edd3f940c",
+      "seconds": 67.14240335766226,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 93952,
+        "input_tokens": 108998,
+        "output_tokens": 2809,
+        "reasoning_output_tokens": 1035,
+        "total_tokens": 111807
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "b5bc7f8eae1311cd873aff808da328678625e797a61204ec8095abd44b1457a5",
+      "seconds": 0.9917077859863639,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 0.8419848186895251,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "837309d5b0eb297cada83805f531a2b3aab980ef2d4ee2e9468652aef5ceea91",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9965928616002
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "2f7af18646005b42f77efcb7eabd704f68a038ef58a9dc7cccb4dbd97e9f6f7e",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 63180,
+        "output_tokens": 1501,
+        "reasoning_output_tokens": 386,
+        "total_tokens": 64681
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "2db2c83f4737bc9beb340c974eae8ac56932de4e737d775369f2f65b5f7e97c5",
+      "seconds": 34.61270500905812,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 63180,
+        "output_tokens": 1501,
+        "reasoning_output_tokens": 386,
+        "total_tokens": 64681
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "training_accepted": true
+}

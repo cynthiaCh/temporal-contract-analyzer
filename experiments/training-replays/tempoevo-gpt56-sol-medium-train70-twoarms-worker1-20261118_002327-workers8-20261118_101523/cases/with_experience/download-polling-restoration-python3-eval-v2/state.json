@@ -1,0 +1,458 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "501a9f3d5cc1c282406b69eb6f9e3a6a6be29dadfbbd45479f502b2937ef75c8",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "b2da36ea3cfe474b3989decfe362aa8e6cbd45ec24e6267964489e28d7396ae8",
+        "src/workflow.py": "8f690e5c1b87040bac94646bb14eb4fb81fde44956cbd504e24c0077fbc36fd2"
+      },
+      "candidate_sources": {
+        "README.md": "# Museum scan bundle preparation\nThe transport asynchronously fulfills false (pending) or true (ready). It can\nreport pending repeatedly. It does not issue retries itself. Retry callbacks are\nscheduled for a later event turn and can be cancelled; no real-time interval is\npart of this API. Render consumers never call back into this resource.\n\nThe foreground resource serves an opened document package. start, close, reopen\nand snapshot are its public commands. The adjacent workspace job has its own\nlifetime; its panel is only a display. Final owner disposal releases resources.\nSee the native resource classes and the workspace close implementation.\n\nBusiness context: Museum scan bundle preparation. The package token identifies the prepared artifact;\nforeground presentation and workspace preparation have separate owners.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"CPython 3.8.10\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "src/workflow.py": "# Host futures notify through the asyncio loop; timers are injected separately.\nclass Resource:\n    def __init__(self,host,token):\n        self.host,self.generation,self.timer,self.disposed=host,0,None,False\n        self.state=dict(visible=True,loading=False,retryScheduled=False,checkCount=0,completed=[],token=token)\n    def snapshot(self):\n        return dict(self.state,completed=list(self.state['completed']))\n    def publish(self):\n        if not self.disposed:self.host.publish(self.snapshot())\n    def cancel_retry(self):\n        if self.timer is not None:self.host.cancel(self.timer)\n        self.timer=None;self.state['retryScheduled']=False\n    def invalidate(self):\n        self.generation+=1\n        self.cancel_retry()\n        self.state['loading']=False\n    def start(self):\n        self.invalidate();self.state['visible']=True;self.check(self.generation)\n    def reopen(self,token):\n        self.invalidate();self.state['token']=token;self.state['visible']=True;self.check(self.generation)\n    def check(self,generation):\n        token=self.state['token'];self.state['loading']=True;self.state['checkCount']+=1;self.publish()\n        def response(future):\n            ready=future.result()\n            if self.disposed or generation!=self.generation:return\n            if ready is True:\n                self.cancel_retry();self.state['loading']=False\n                if token not in self.state['completed']:self.state['completed'].append(token)\n                self.publish()\n            else:self.pending(generation)\n        self.host.check(token).add_done_callback(response)\n    def schedule(self,generation):\n        self.state['retryScheduled']=True\n        def retry():\n            if self.disposed or generation!=self.generation:return\n            self.timer=None;self.state['retryScheduled']=False;self.check(generation)\n        self.timer=self.host.schedule(retry);self.publish()\n    def dispose(self):\n        self.disposed=True;self.generation+=1;self.cancel_retry()\nclass DialogResource(Resource):\n    def pending(self,generation):\n        self.schedule(generation)\n    def close(self):\n        self.state['visible']=False;self.invalidate();self.publish()\nclass WorkspaceJob(Resource):\n    def start(self):self.check(self.generation)\n    def pending(self,generation):self.schedule(generation)\n    def close(self):\n        self.state['visible']=False\n        pass\n        self.publish()\ndef create_resource(host,surface,token):\n    return (DialogResource if surface=='download' else WorkspaceJob)(host,token)\n"
+      },
+      "delivered_sha256s": [
+        "cb43d602785cb0eb722936571c4ec3478a32c58231315358895b2f8fcebcf3e0",
+        "bbd6eee9031ebf434c55cd29d1c35f132f9a7b79c441a16f3903e7d6992b822a",
+        "0624718ce36a7b9f19374275fafce28f2c117aa28ca07f5f96e96746b04a0938",
+        "129faf3f6bc67dd105ecfd0a7432adf34a6e7051ba434d534f060fe5cc7ee33a"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.py",
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "On start or reopen, the foreground resource begins a preparation check immediately and publishes loading/check-count state as it does today.",
+      "Each current false result schedules a later retry and does not add the package token to completed.",
+      "A scheduled retry rechecks lifecycle validity before starting another host check.",
+      "Only a current true result clears loading, records the captured package token once, and publishes completion.",
+      "Close, reopen, and disposal continue to invalidate obsolete foreground responses and cancel owned retries.",
+      "WorkspaceJob behavior remains unchanged."
+    ],
+    "forbidden_effects": [
+      "Do not record or deliver a package after a false pending result.",
+      "Do not allow a response or retry from an invalidated generation to check again or mutate current completion state.",
+      "Do not attribute an older check result to a replacement token supplied through reopen.",
+      "Do not change the separately owned WorkspaceJob or make closing its display cancel workspace-owned preparation.",
+      "Do not introduce a real-time polling interval; retries use the injected later-turn scheduler.",
+      "Do not modify tests, configuration, or public command interfaces."
+    ],
+    "lifecycle_identity": [
+      "Resource.generation identifies the current foreground run and is incremented by invalidate, reopen/start through invalidate, close through invalidate, and dispose.",
+      "The token captured when check begins identifies the artifact whose eventual ready result may be added to completed.",
+      "A response or scheduled retry belongs to a run only while its captured generation equals the resource's current generation and the resource is not disposed."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "For the foreground download resource, treat false as pending and schedule another preparation check through the existing injected scheduler."
+      },
+      {
+        "id": "O2",
+        "text": "Continue checking repeated pending results until the current run receives true, is invalidated, or is disposed."
+      },
+      {
+        "id": "O3",
+        "text": "Deliver completion only after a true result by adding the check's captured token to completed, without duplicates."
+      },
+      {
+        "id": "O4",
+        "text": "Preserve foreground lifecycle invalidation: close, replacement start/reopen, and disposal prevent obsolete responses and retry callbacks from continuing or completing work."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve immediate initial check entry, later-event-turn retry timing, snapshot copying, and the existing start, close, reopen, and snapshot public commands."
+      },
+      {
+        "id": "O6",
+        "text": "Limit the change to foreground pending handling; preserve the independently owned WorkspaceJob lifecycle and panel-close behavior."
+      }
+    ],
+    "ordering_barriers": [
+      "A host response must be resolved and validated against disposed and generation state before pending continuation or ready completion occurs.",
+      "A false result must schedule continuation without entering the true completion branch.",
+      "A retry callback must validate disposed and generation state before clearing retry state and invoking check again.",
+      "The true branch must cancel any owned retry before clearing loading and publishing completion.",
+      "The token used for completion must be captured when the corresponding check starts, before asynchronous host completion."
+    ],
+    "preservation": [
+      "Resource.start and Resource.reopen continue to invalidate prior work, make the resource visible, and invoke check directly.",
+      "check continues to set loading true, increment checkCount, and publish before calling the transport.",
+      "Ready completion continues to clear loading, deduplicate completed tokens, and publish.",
+      "snapshot continues to return a copied completed list.",
+      "DialogResource.close continues to hide and invalidate the foreground resource.",
+      "WorkspaceJob.close continues to hide only its display without cancelling workspace-owned preparation.",
+      "Resource.dispose continues to mark the resource disposed, advance generation, and cancel its retry."
+    ],
+    "scope": [
+      "In scope: false/pending handling for the foreground resource created for surface 'download'.",
+      "In scope: retry continuation until the current package becomes ready, subject to the existing foreground lifecycle.",
+      "Out of scope: WorkspaceJob pending behavior and ownership, transport implementation, scheduler timing policy, and new public commands."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "The museum scan bundle preparation service can now report that a package is still pending before it becomes ready. Update the foreground preparation client so it keeps checking pending preparation and delivers the package only after a ready status."
+      },
+      {
+        "file": "README.md",
+        "quote": "The transport asynchronously fulfills false (pending) or true (ready). It can\nreport pending repeatedly. It does not issue retries itself. Retry callbacks are\nscheduled for a later event turn and can be cancelled; no real-time interval is\npart of this API."
+      },
+      {
+        "file": "README.md",
+        "quote": "The foreground resource serves an opened document package. start, close, reopen\nand snapshot are its public commands. The adjacent workspace job has its own\nlifetime; its panel is only a display. Final owner disposal releases resources."
+      },
+      {
+        "file": "README.md",
+        "quote": "Business context: Museum scan bundle preparation. The package token identifies the prepared artifact;\nforeground presentation and workspace preparation have separate owners."
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "    def start(self):\n        self.invalidate();self.state['visible']=True;self.check(self.generation)\n    def reopen(self,token):\n        self.invalidate();self.state['token']=token;self.state['visible']=True;self.check(self.generation)"
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "    def check(self,generation):\n        token=self.state['token'];self.state['loading']=True;self.state['checkCount']+=1;self.publish()\n        def response(future):\n            ready=future.result()\n            if self.disposed or generation!=self.generation:return\n            if ready is True:\n                self.cancel_retry();self.state['loading']=False\n                if token not in self.state['completed']:self.state['completed'].append(token)\n                self.publish()\n            else:self.pending(generation)"
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "    def schedule(self,generation):\n        self.state['retryScheduled']=True\n        def retry():\n            if self.disposed or generation!=self.generation:return\n            self.timer=None;self.state['retryScheduled']=False;self.check(generation)\n        self.timer=self.host.schedule(retry);self.publish()"
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "class DialogResource(Resource):\n    def pending(self,generation):\n        self.state['loading']=False;self.publish()\n    def close(self):\n        self.state['visible']=False;self.invalidate();self.publish()"
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "class WorkspaceJob(Resource):\n    def start(self):self.check(self.generation)\n    def pending(self,generation):self.schedule(generation)\n    def close(self):\n        self.state['visible']=False\n        pass\n        self.publish()"
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "These checks are required after an Action but do not test business behavior."
+      }
+    ],
+    "triggers": [
+      "Resource.start() for the foreground download surface.",
+      "Resource.reopen(token) for the foreground download surface.",
+      "A current host check resolving false, indicating pending preparation.",
+      "A scheduled retry callback for the same live generation.",
+      "A current host check resolving true, indicating readiness.",
+      "Foreground close or final disposal, which invalidates continuation."
+    ],
+    "unknowns": [
+      "No retry delay, backoff strategy, attempt limit, or wall-clock deadline is specified.",
+      "Behavior for transport values other than exactly false or true is not specified by the public contract.",
+      "Transport exception handling is not specified.",
+      "The public sources do not define a separate delivery API; the existing completed-token state is the supplied representation of delivery.",
+      "No requirement is stated for coalescing checks across foreground and workspace owners.",
+      "The precise loading and retryScheduled presentation desired during every pending transition is not separately documented beyond the supplied state operations and later-turn retry model."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 1,
+  "diagnoses": [],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "finalized": true,
+  "first_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "repair_stop_reason": "oracle_accepted",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "570590f52647e44c66d8562811becc08d06591532fafaffffe24cbc04657af59",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9996694885194
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "4e69c29799e60c26cecb5c8c5b4899725436515d25d1f0156b913dc1d7db1fbe",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 22272,
+        "input_tokens": 27312,
+        "output_tokens": 1946,
+        "reasoning_output_tokens": 1075,
+        "total_tokens": 29258
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "9cb574048798526844834a7bc56ea7356887d861b0891d629b49c9562a52dc91",
+      "seconds": 45.71506233792752,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 22272,
+        "input_tokens": 27312,
+        "output_tokens": 1946,
+        "reasoning_output_tokens": 1075,
+        "total_tokens": 29258
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "ff50084fadd9122b181a2b169f637e0c3adbe617a87eca1f865cc2efb0029c8f",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9997561462224
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "1ab372890f167f3a2d4906640bf3f5ba47e35b6db12230a279dff87ac2ee26c8",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 15787,
+        "output_tokens": 1929,
+        "reasoning_output_tokens": 376,
+        "total_tokens": 17716
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "889e8c99ed42a7dc7f95e122ac379817ed83d212829b5ea4244098bb6c2f4bfc",
+      "seconds": 39.82466837763786,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 15787,
+        "output_tokens": 1929,
+        "reasoning_output_tokens": 376,
+        "total_tokens": 17716
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "transient_transport_error",
+          "input_sha256": "c7f9aa8328323486d220639e7928bdb240c9e7a4fc23e065b25b571315f239de",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9994220975786
+          },
+          "number": 1,
+          "requests": 5,
+          "restart_reason": "initial",
+          "result_sha256": "d6d2416693ba62e9bc8a26dfb829ba326527a369775e2fef67170abd46b0654a",
+          "status": "complete",
+          "valid": false
+        },
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "c7f9aa8328323486d220639e7928bdb240c9e7a4fc23e065b25b571315f239de",
+          "limits": {
+            "requests": 19,
+            "seconds": 538.4531184239313
+          },
+          "number": 2,
+          "requests": 9,
+          "restart_reason": "transient_transport",
+          "result_sha256": "a4ee1b328fe62edc30f9724777770669bb7b2aff632d2b7e5367778649b0d9f8",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 225664,
+        "input_tokens": 249590,
+        "output_tokens": 3308,
+        "reasoning_output_tokens": 895,
+        "total_tokens": 252898
+      },
+      "requests": 14,
+      "reserved_requests": 24,
+      "result_sha256": "7d44ce828b93839fb0fd4e13bb030914abec2c70018c4b166a4e5970096587af",
+      "seconds": 136.1383424643427,
+      "status": "complete",
+      "tokens": null,
+      "tool_policy_recoveries": 0,
+      "transport_retries": 1,
+      "unknown_usage_requests": 1,
+      "usage_incomplete": true
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "de8f7cf25820a5e87d797d645824aaa65b94f19ddb61b6e9555d9da60e262cf5",
+      "seconds": 0.8090711459517479,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 8.041108764708042,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "ff999b0530b5e3391664807a423fca38442afb59eac5f02721bf38ac851d84e1",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.997097431682
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "18773aed55fae954b5400d5162925b962dbf3e2071e9eaad312ccfa572780ad9",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 60147,
+        "output_tokens": 1627,
+        "reasoning_output_tokens": 345,
+        "total_tokens": 61774
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "75fa082648385f15ea3fa7e791eac068037f81bc32e0a3498fff09185f9c94ed",
+      "seconds": 33.813886957243085,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 60147,
+        "output_tokens": 1627,
+        "reasoning_output_tokens": 345,
+        "total_tokens": 61774
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "training_accepted": true
+}

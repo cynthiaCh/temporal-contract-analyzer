@@ -1,0 +1,1861 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "5f2cb6470c971b331e2bc2b351011bcbaf69cd0db27ad609b67a6fc753373438",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "4f6fd2b6ca636eae03099dbc7f195b0c74f48b5da4a5d7d2857289af395e7408",
+        "go.mod": "c401dcf1a00e2e75c0c64e0e240fa3b38d16779f8ef6dab9f351033c13cdc362",
+        "src/workflow.go": "c91fa8b6df74c70d927e46f194eec92624e9fded0ce3786ebfae0361855bf703"
+      },
+      "candidate_sources": {
+        "README.md": "# Harbor clearance review\n\n\nThe workspace edits persistent documents and submits snapshots to a review queue.\nThe public API is synchronous: open(id), edit(text), close(), submit(), dispose().\nReturning to a document creates a fresh editor visit and restores persisted text.\nThe adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable.\n\nThe coordinator owns editor visits; the acquired confirmation capability owns a view outlet. The document repository and durable queue are separate services. Component or native source defines the local service contracts.\nTheir local interface contracts define the behavior to preserve.\n\nThe injected store has read/write/subscribe, the queue has enqueue/list/subscribe,\nand timers have schedule(callback, delay)/cancel(handle). Render functions are\noutput sinks and do not call application code. Keep the workspace API and these\ninjected interfaces. A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace.\n\nTyped pointer visit and injected function callbacks; acquired capability uses pointer identity, never document-key equality.\n\nAn outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity. Native RPC only adapts timer and passive output/integration resource calls; storage, queue delivery, acquired outlet and command state execute in the target runtime.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Go 1.13.8\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "go.mod": "module synthetic/port-inspection\n\ngo 1.13\n",
+        "src/workflow.go": "package main\n\nimport \"sort\"\n\ntype Value map[string]interface{}\ntype Store struct { records map[string]string; listeners map[int]func(Value); serial, revision int }\nfunc NewStore(initial Value) *Store {\n    s:=&Store{records:map[string]string{},listeners:map[int]func(Value){}}\n    for id,text:=range initial { s.records[id]=text.(string) };return s\n}\nfunc(s *Store) Read(id string) string { return s.records[id] }\nfunc(s *Store) Subscribe(fn func(Value)) int { s.serial++;s.listeners[s.serial]=fn;return s.serial }\nfunc(s *Store) Stop(token int) { delete(s.listeners,token) }\nfunc(s *Store) Write(id,text string) Value {\n    s.records[id]=text;s.revision++;event:=Value{\"id\":id,\"text\":text,\"revision\":s.revision}\n    tokens:=[]int{};for token:=range s.listeners { tokens=append(tokens,token) };sort.Ints(tokens)\n    for _,token:=range tokens { if fn,ok:=s.listeners[token];ok { fn(event) } };return event\n}\ntype Receipt struct { ID string `json:\"id\"`; Text string `json:\"text\"` }\ntype Archive struct { receipts []Receipt;listeners map[int]func(Receipt);serial int }\nfunc(a *Archive) Subscribe(fn func(Receipt))int{if a.listeners==nil{a.listeners=map[int]func(Receipt){}};a.serial++;a.listeners[a.serial]=fn;return a.serial}\nfunc(a *Archive) Stop(token int){delete(a.listeners,token)}\nfunc(a *Archive) Capture(value Value) Receipt {\n    receipt:=Receipt{value[\"id\"].(string),value[\"text\"].(string)};a.receipts=append(a.receipts,receipt);tokens:=[]int{};for token:=range a.listeners{tokens=append(tokens,token)};sort.Ints(tokens);for _,token:=range tokens{if fn,ok:=a.listeners[token];ok{fn(receipt)}};return receipt\n}\nfunc(a *Archive) List() []Receipt { result:=[]Receipt{};return append(result,a.receipts...) }\ntype Environment interface {\n    Store() *Store\n    Schedule(func(),int) interface{}\n    Cancel(interface{})\n    Output(string,interface{})\n    Write(string,string)\n    Capture(Value) interface{}\n}\ntype Trailing struct { env Environment; delay int; work func(string); handle interface{}; pending *string }\nfunc NewTrailing(env Environment,delay int,work func(string)) *Trailing { return &Trailing{env:env,delay:delay,work:work} }\nfunc(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}\nfunc(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}\nfunc(t *Trailing) Cancel() { if t.handle!=nil {t.env.Cancel(t.handle)};t.handle=nil;t.pending=nil }\ntype Visit struct { id,text string; token int; task *Trailing }\ntype Confirmation struct{current func()*Visit;emit func(interface{});owner *Visit}\nfunc BindConfirmation(current func()*Visit,emit func(interface{}))*Confirmation{return &Confirmation{current,emit,current()}}\nfunc(c *Confirmation) Active()bool{return c.owner!=nil&&c.owner==c.current()}\nfunc(c *Confirmation) Show(receipt interface{}){if c.Active(){c.emit(receipt)}}\ntype Workspace struct { env Environment; current *Visit; navigation uint64 }\nfunc NewWorkspace(env Environment) *Workspace { return &Workspace{env:env} }\nfunc(w *Workspace) retire() {\n    leaving:=w.current;w.current=nil\n    if leaving!=nil { w.env.Store().Stop(leaving.token) };w.env.Output(\"document\",nil)\n    \n}\nfunc(w *Workspace) Open(id string) {\n    w.env.Output(\"notice\",nil);w.navigation++;request:=w.navigation;w.retire()\n    _=request\n    token:=w.env.Store().Subscribe(func(event Value){if event[\"id\"]==id {w.env.Output(\"status\",event)}})\n    task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})\n    w.current=&Visit{id,w.env.Store().Read(id),token,task};w.env.Output(\"document\",Value{\"id\":id,\"text\":w.current.text})\n}\nfunc(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.current.task.Push(text) }\nfunc(w *Workspace) Close() { w.env.Output(\"notice\",nil);w.navigation++;w.retire() }\nfunc(w *Workspace) Submit() interface{} {\n    confirmation:=BindConfirmation(func()*Visit{return w.current},func(receipt interface{}){w.env.Output(\"notice\",receipt)})\n    visit:=w.current;if visit==nil {return nil};snapshot:=Value{\"id\":visit.id,\"text\":visit.text}\n    \n    \n    \n    \n    receipt:=w.env.Capture(snapshot)\n    \n    confirmation.Show(receipt)\n    return receipt\n}\nfunc(w *Workspace) Dispose() { w.Close() }\ntype Preview struct { task *Trailing }\nfunc NewPreview(env Environment) *Preview {\n    return &Preview{NewTrailing(env,40,func(query string){env.Output(\"preview\",Value{\"query\":query})})}\n}\nfunc(p *Preview) Query(text string) { p.task.Push(text) }\nfunc(p *Preview) Hide() { p.task.Cancel() }\n"
+      },
+      "delivered_sha256s": [
+        "f9cdb044a25b4e1f32043f497b19131a637a36c2dd8a080c659dc3b125887f66",
+        "32cd803b00e8fad50322920726121bbc519acb0bbcb49bb3ac02f2334e72f5c1",
+        "2b46ebef0210d193cf3c224d408cd690d5870460673f7bc67205090a7ff7b310",
+        "8ce034522ca1b3d945f0a27901b32b03ee0b6b2cc8aacd52d51913f5cb6c2424",
+        "5021b7a9e46c944e052a63f3593cb22efe77d61409c357d6485915dc860e7390"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.go",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "5f2cb6470c971b331e2bc2b351011bcbaf69cd0db27ad609b67a6fc753373438",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "4f6fd2b6ca636eae03099dbc7f195b0c74f48b5da4a5d7d2857289af395e7408",
+        "go.mod": "c401dcf1a00e2e75c0c64e0e240fa3b38d16779f8ef6dab9f351033c13cdc362",
+        "src/workflow.go": "c91fa8b6df74c70d927e46f194eec92624e9fded0ce3786ebfae0361855bf703"
+      },
+      "candidate_sources": {
+        "README.md": "# Harbor clearance review\n\n\nThe workspace edits persistent documents and submits snapshots to a review queue.\nThe public API is synchronous: open(id), edit(text), close(), submit(), dispose().\nReturning to a document creates a fresh editor visit and restores persisted text.\nThe adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable.\n\nThe coordinator owns editor visits; the acquired confirmation capability owns a view outlet. The document repository and durable queue are separate services. Component or native source defines the local service contracts.\nTheir local interface contracts define the behavior to preserve.\n\nThe injected store has read/write/subscribe, the queue has enqueue/list/subscribe,\nand timers have schedule(callback, delay)/cancel(handle). Render functions are\noutput sinks and do not call application code. Keep the workspace API and these\ninjected interfaces. A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace.\n\nTyped pointer visit and injected function callbacks; acquired capability uses pointer identity, never document-key equality.\n\nAn outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity. Native RPC only adapts timer and passive output/integration resource calls; storage, queue delivery, acquired outlet and command state execute in the target runtime.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Go 1.13.8\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "go.mod": "module synthetic/port-inspection\n\ngo 1.13\n",
+        "src/workflow.go": "package main\n\nimport \"sort\"\n\ntype Value map[string]interface{}\ntype Store struct { records map[string]string; listeners map[int]func(Value); serial, revision int }\nfunc NewStore(initial Value) *Store {\n    s:=&Store{records:map[string]string{},listeners:map[int]func(Value){}}\n    for id,text:=range initial { s.records[id]=text.(string) };return s\n}\nfunc(s *Store) Read(id string) string { return s.records[id] }\nfunc(s *Store) Subscribe(fn func(Value)) int { s.serial++;s.listeners[s.serial]=fn;return s.serial }\nfunc(s *Store) Stop(token int) { delete(s.listeners,token) }\nfunc(s *Store) Write(id,text string) Value {\n    s.records[id]=text;s.revision++;event:=Value{\"id\":id,\"text\":text,\"revision\":s.revision}\n    tokens:=[]int{};for token:=range s.listeners { tokens=append(tokens,token) };sort.Ints(tokens)\n    for _,token:=range tokens { if fn,ok:=s.listeners[token];ok { fn(event) } };return event\n}\ntype Receipt struct { ID string `json:\"id\"`; Text string `json:\"text\"` }\ntype Archive struct { receipts []Receipt;listeners map[int]func(Receipt);serial int }\nfunc(a *Archive) Subscribe(fn func(Receipt))int{if a.listeners==nil{a.listeners=map[int]func(Receipt){}};a.serial++;a.listeners[a.serial]=fn;return a.serial}\nfunc(a *Archive) Stop(token int){delete(a.listeners,token)}\nfunc(a *Archive) Capture(value Value) Receipt {\n    receipt:=Receipt{value[\"id\"].(string),value[\"text\"].(string)};a.receipts=append(a.receipts,receipt);tokens:=[]int{};for token:=range a.listeners{tokens=append(tokens,token)};sort.Ints(tokens);for _,token:=range tokens{if fn,ok:=a.listeners[token];ok{fn(receipt)}};return receipt\n}\nfunc(a *Archive) List() []Receipt { result:=[]Receipt{};return append(result,a.receipts...) }\ntype Environment interface {\n    Store() *Store\n    Schedule(func(),int) interface{}\n    Cancel(interface{})\n    Output(string,interface{})\n    Write(string,string)\n    Capture(Value) interface{}\n}\ntype Trailing struct { env Environment; delay int; work func(string); handle interface{}; pending *string }\nfunc NewTrailing(env Environment,delay int,work func(string)) *Trailing { return &Trailing{env:env,delay:delay,work:work} }\nfunc(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}\nfunc(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}\nfunc(t *Trailing) Cancel() { if t.handle!=nil {t.env.Cancel(t.handle)};t.handle=nil;t.pending=nil }\ntype Visit struct { id,text string; token int; task *Trailing }\ntype Confirmation struct{current func()*Visit;emit func(interface{});owner *Visit}\nfunc BindConfirmation(current func()*Visit,emit func(interface{}))*Confirmation{return &Confirmation{current,emit,current()}}\nfunc(c *Confirmation) Active()bool{return c.owner!=nil&&c.owner==c.current()}\nfunc(c *Confirmation) Show(receipt interface{}){if c.Active(){c.emit(receipt)}}\ntype Workspace struct { env Environment; current *Visit; navigation uint64 }\nfunc NewWorkspace(env Environment) *Workspace { return &Workspace{env:env} }\nfunc(w *Workspace) retire() {\n    leaving:=w.current;w.current=nil\n    if leaving!=nil { w.env.Store().Stop(leaving.token) };w.env.Output(\"document\",nil)\n    \n}\nfunc(w *Workspace) Open(id string) {\n    w.env.Output(\"notice\",nil);w.navigation++;request:=w.navigation;w.retire()\n    _=request\n    token:=w.env.Store().Subscribe(func(event Value){if event[\"id\"]==id {w.env.Output(\"status\",event)}})\n    task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})\n    w.current=&Visit{id,w.env.Store().Read(id),token,task};w.env.Output(\"document\",Value{\"id\":id,\"text\":w.current.text})\n}\nfunc(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.current.task.Push(text) }\nfunc(w *Workspace) Close() { w.env.Output(\"notice\",nil);w.navigation++;w.retire() }\nfunc(w *Workspace) Submit() interface{} {\n    confirmation:=BindConfirmation(func()*Visit{return w.current},func(receipt interface{}){w.env.Output(\"notice\",receipt)})\n    visit:=w.current;if visit==nil {return nil};snapshot:=Value{\"id\":visit.id,\"text\":visit.text}\n    \n    \n    \n    \n    receipt:=w.env.Capture(snapshot)\n    \n    confirmation.Show(receipt)\n    return receipt\n}\nfunc(w *Workspace) Dispose() { w.Close() }\ntype Preview struct { task *Trailing }\nfunc NewPreview(env Environment) *Preview {\n    return &Preview{NewTrailing(env,40,func(query string){env.Output(\"preview\",Value{\"query\":query})})}\n}\nfunc(p *Preview) Query(text string) { p.task.Push(text) }\nfunc(p *Preview) Hide() { p.task.Cancel() }\n"
+      },
+      "delivered_sha256s": [
+        "f9cdb044a25b4e1f32043f497b19131a637a36c2dd8a080c659dc3b125887f66",
+        "32cd803b00e8fad50322920726121bbc519acb0bbcb49bb3ac02f2334e72f5c1",
+        "2b46ebef0210d193cf3c224d408cd690d5870460673f7bc67205090a7ff7b310",
+        "8ce034522ca1b3d945f0a27901b32b03ee0b6b2cc8aacd52d51913f5cb6c2424",
+        "5021b7a9e46c944e052a63f3593cb22efe77d61409c357d6485915dc860e7390"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.go",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 2,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "5f2cb6470c971b331e2bc2b351011bcbaf69cd0db27ad609b67a6fc753373438",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "4f6fd2b6ca636eae03099dbc7f195b0c74f48b5da4a5d7d2857289af395e7408",
+        "go.mod": "c401dcf1a00e2e75c0c64e0e240fa3b38d16779f8ef6dab9f351033c13cdc362",
+        "src/workflow.go": "c91fa8b6df74c70d927e46f194eec92624e9fded0ce3786ebfae0361855bf703"
+      },
+      "candidate_sources": {
+        "README.md": "# Harbor clearance review\n\n\nThe workspace edits persistent documents and submits snapshots to a review queue.\nThe public API is synchronous: open(id), edit(text), close(), submit(), dispose().\nReturning to a document creates a fresh editor visit and restores persisted text.\nThe adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable.\n\nThe coordinator owns editor visits; the acquired confirmation capability owns a view outlet. The document repository and durable queue are separate services. Component or native source defines the local service contracts.\nTheir local interface contracts define the behavior to preserve.\n\nThe injected store has read/write/subscribe, the queue has enqueue/list/subscribe,\nand timers have schedule(callback, delay)/cancel(handle). Render functions are\noutput sinks and do not call application code. Keep the workspace API and these\ninjected interfaces. A submission returns the queue receipt, or null when no\neditor is selected. Dispose detaches integrations before closing the workspace.\n\nTyped pointer visit and injected function callbacks; acquired capability uses pointer identity, never document-key equality.\n\nAn outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity. Native RPC only adapts timer and passive output/integration resource calls; storage, queue delivery, acquired outlet and command state execute in the target runtime.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Go 1.13.8\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "go.mod": "module synthetic/port-inspection\n\ngo 1.13\n",
+        "src/workflow.go": "package main\n\nimport \"sort\"\n\ntype Value map[string]interface{}\ntype Store struct { records map[string]string; listeners map[int]func(Value); serial, revision int }\nfunc NewStore(initial Value) *Store {\n    s:=&Store{records:map[string]string{},listeners:map[int]func(Value){}}\n    for id,text:=range initial { s.records[id]=text.(string) };return s\n}\nfunc(s *Store) Read(id string) string { return s.records[id] }\nfunc(s *Store) Subscribe(fn func(Value)) int { s.serial++;s.listeners[s.serial]=fn;return s.serial }\nfunc(s *Store) Stop(token int) { delete(s.listeners,token) }\nfunc(s *Store) Write(id,text string) Value {\n    s.records[id]=text;s.revision++;event:=Value{\"id\":id,\"text\":text,\"revision\":s.revision}\n    tokens:=[]int{};for token:=range s.listeners { tokens=append(tokens,token) };sort.Ints(tokens)\n    for _,token:=range tokens { if fn,ok:=s.listeners[token];ok { fn(event) } };return event\n}\ntype Receipt struct { ID string `json:\"id\"`; Text string `json:\"text\"` }\ntype Archive struct { receipts []Receipt;listeners map[int]func(Receipt);serial int }\nfunc(a *Archive) Subscribe(fn func(Receipt))int{if a.listeners==nil{a.listeners=map[int]func(Receipt){}};a.serial++;a.listeners[a.serial]=fn;return a.serial}\nfunc(a *Archive) Stop(token int){delete(a.listeners,token)}\nfunc(a *Archive) Capture(value Value) Receipt {\n    receipt:=Receipt{value[\"id\"].(string),value[\"text\"].(string)};a.receipts=append(a.receipts,receipt);tokens:=[]int{};for token:=range a.listeners{tokens=append(tokens,token)};sort.Ints(tokens);for _,token:=range tokens{if fn,ok:=a.listeners[token];ok{fn(receipt)}};return receipt\n}\nfunc(a *Archive) List() []Receipt { result:=[]Receipt{};return append(result,a.receipts...) }\ntype Environment interface {\n    Store() *Store\n    Schedule(func(),int) interface{}\n    Cancel(interface{})\n    Output(string,interface{})\n    Write(string,string)\n    Capture(Value) interface{}\n}\ntype Trailing struct { env Environment; delay int; work func(string); handle interface{}; pending *string }\nfunc NewTrailing(env Environment,delay int,work func(string)) *Trailing { return &Trailing{env:env,delay:delay,work:work} }\nfunc(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}\nfunc(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}\nfunc(t *Trailing) Cancel() { if t.handle!=nil {t.env.Cancel(t.handle)};t.handle=nil;t.pending=nil }\ntype Visit struct { id,text string; token int; task *Trailing }\ntype Confirmation struct{current func()*Visit;emit func(interface{});owner *Visit}\nfunc BindConfirmation(current func()*Visit,emit func(interface{}))*Confirmation{return &Confirmation{current,emit,current()}}\nfunc(c *Confirmation) Active()bool{return c.owner!=nil&&c.owner==c.current()}\nfunc(c *Confirmation) Show(receipt interface{}){if c.Active(){c.emit(receipt)}}\ntype Workspace struct { env Environment; current *Visit; navigation uint64 }\nfunc NewWorkspace(env Environment) *Workspace { return &Workspace{env:env} }\nfunc(w *Workspace) retire() {\n    leaving:=w.current;w.current=nil\n    if leaving!=nil { w.env.Store().Stop(leaving.token) };w.env.Output(\"document\",nil)\n    \n}\nfunc(w *Workspace) Open(id string) {\n    w.env.Output(\"notice\",nil);w.navigation++;request:=w.navigation;w.retire()\n    _=request\n    token:=w.env.Store().Subscribe(func(event Value){if event[\"id\"]==id {w.env.Output(\"status\",event)}})\n    task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})\n    w.current=&Visit{id,w.env.Store().Read(id),token,task};w.env.Output(\"document\",Value{\"id\":id,\"text\":w.current.text})\n}\nfunc(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.current.task.Push(text) }\nfunc(w *Workspace) Close() { w.env.Output(\"notice\",nil);w.navigation++;w.retire() }\nfunc(w *Workspace) Submit() interface{} {\n    confirmation:=BindConfirmation(func()*Visit{return w.current},func(receipt interface{}){w.env.Output(\"notice\",receipt)})\n    visit:=w.current;if visit==nil {return nil};snapshot:=Value{\"id\":visit.id,\"text\":visit.text}\n    \n    \n    \n    \n    receipt:=w.env.Capture(snapshot)\n    \n    confirmation.Show(receipt)\n    return receipt\n}\nfunc(w *Workspace) Dispose() { w.Close() }\ntype Preview struct { task *Trailing }\nfunc NewPreview(env Environment) *Preview {\n    return &Preview{NewTrailing(env,40,func(query string){env.Output(\"preview\",Value{\"query\":query})})}\n}\nfunc(p *Preview) Query(text string) { p.task.Push(text) }\nfunc(p *Preview) Hide() { p.task.Cancel() }\n"
+      },
+      "delivered_sha256s": [
+        "f9cdb044a25b4e1f32043f497b19131a637a36c2dd8a080c659dc3b125887f66",
+        "32cd803b00e8fad50322920726121bbc519acb0bbcb49bb3ac02f2334e72f5c1",
+        "2b46ebef0210d193cf3c224d408cd690d5870460673f7bc67205090a7ff7b310",
+        "8ce034522ca1b3d945f0a27901b32b03ee0b6b2cc8aacd52d51913f5cb6c2424",
+        "5021b7a9e46c944e052a63f3593cb22efe77d61409c357d6485915dc860e7390"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.go",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 3,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "Two or more edits less than 120 ms apart produce no early write; 120 ms after the last edit, exactly one write occurs with that edit's exact text.",
+      "A later edit before expiry cancels/restarts the prior timer rather than allowing the earlier deadline to write.",
+      "After one burst is saved, a later independent burst schedules and saves normally.",
+      "An empty string is retained as a valid pending value and written at expiry.",
+      "Opening or closing a visit does not redirect an already accepted edit to another document.",
+      "Submit remains synchronous and uses the current visit's in-memory text, including edits whose delayed persistence has not yet occurred.",
+      "Opening, closing, confirmation display, store subscriptions, and disposal retain their existing externally observable behavior except where delayed edit persistence necessarily changes store-write timing.",
+      "Preview queries still publish after 40 ms, hide still cancels unpublished preview work, and later preview queries remain usable."
+    ],
+    "forbidden_effects": [
+      "Do not write on every Edit call.",
+      "Do not write an older value after a newer edit has restarted the quiet interval.",
+      "Do not use truthiness to detect pending text; an empty string is valid.",
+      "Do not let navigation cause delayed work from one visit to write to the newly selected document.",
+      "Do not make open, edit, close, submit, dispose, or injected interfaces asynchronous.",
+      "Do not alter the adjacent search preview or its 40 ms behavior.",
+      "Do not change public APIs, injected interface shapes, confirmation ownership semantics, or queue submission receipts.",
+      "Do not change tests or configuration."
+    ],
+    "lifecycle_identity": [
+      "Each Open call creates a fresh *Visit identity, even when reopening the same document ID.",
+      "A trailing save belongs to the visit/document for which its task was constructed; document-key equality does not substitute for visit identity where pointer identity is required.",
+      "A Confirmation acquires the visit current when BindConfirmation is called and is active only while that same pointer remains current.",
+      "Retirement clears the current visit and detaches that visit's store subscription before publishing the empty document output."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Workspace.Edit must continue to update the selected visit's in-memory text synchronously, but must enqueue that exact text through the existing trailing-task utility instead of writing it immediately."
+      },
+      {
+        "id": "O2",
+        "text": "The editor trailing task must use a 120 ms delay measured from the latest edit in the current burst; every later edit before expiry replaces the pending text and restarts the interval."
+      },
+      {
+        "id": "O3",
+        "text": "At expiry, exactly the latest text from that burst must be written once to the document ID captured for the originating visit."
+      },
+      {
+        "id": "O4",
+        "text": "After a burst is consumed, the same editor behavior must remain reusable so subsequent bursts can be saved."
+      },
+      {
+        "id": "O5",
+        "text": "Valid empty text must be preserved and written; only the utility's existing nil pending sentinel denotes absence of work."
+      },
+      {
+        "id": "O6",
+        "text": "Delayed persistence must not change the synchronous signatures or return behavior of open, edit, close, submit, dispose, or the injected interfaces."
+      },
+      {
+        "id": "O7",
+        "text": "Submit must continue to capture the currently selected visit's in-memory id and text, return the queue receipt synchronously, return nil when no editor is selected, and show confirmation only through the capability acquired for the still-current visit."
+      },
+      {
+        "id": "O8",
+        "text": "Existing navigation behavior must remain: each opening creates a fresh visit, persisted text is restored, the prior store subscription is stopped on retirement, and delayed work must never be redirected to another document."
+      },
+      {
+        "id": "O9",
+        "text": "The Preview implementation and its 40 ms trailing behavior are outside this change and must remain unchanged."
+      },
+      {
+        "id": "O10",
+        "text": "Dispose must retain the documented ordering in which integrations are detached before the workspace is closed."
+      }
+    ],
+    "ordering_barriers": [
+      "On Edit, update Visit.text before scheduling its delayed persistence so synchronous Submit observes the latest accepted text.",
+      "On each trailing Push, cancel the prior handle before scheduling the replacement deadline.",
+      "On trailing Flush, capture the pending text and retire the batch's handle/pending state before invoking Write; callback-capable work cannot erase or consume a later batch.",
+      "On visit retirement, clear current authority and stop the leaving visit's store subscription before emitting the empty document state.",
+      "On Submit, acquire confirmation ownership for the current visit, form the snapshot from that visit, synchronously capture it, then show the receipt only if that acquired visit remains current.",
+      "On Dispose, detach integrations before performing close behavior."
+    ],
+    "preservation": [
+      "The public API remains synchronous: open(id), edit(text), close(), submit(), dispose().",
+      "Store read/write/subscribe, queue enqueue/list/subscribe, timer schedule/cancel, and render-output contracts remain unchanged.",
+      "Returning to a document creates a fresh editor visit and restores persisted text.",
+      "Submit returns its receipt, or nil when no editor is selected.",
+      "Confirmation capability continues to use pointer identity rather than document-key equality.",
+      "Store status publication and document/notice outputs retain their existing behavior except for the required delay and coalescing of edit-triggered writes.",
+      "Search preview retains its 40 ms quiet interval, cancellation on hide, and later reuse.",
+      "Exact text values, including the empty string, are preserved."
+    ],
+    "scope": [
+      "Change only editor edit persistence in src/workflow.go to use the already-created per-visit Trailing task.",
+      "The maintenance applies to coalescing Store writes caused by Workspace.Edit.",
+      "Workspace navigation, submission, confirmation, store subscriptions, disposal, and synchronous interfaces are preservation constraints.",
+      "Preview is expressly outside the maintenance change."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "The harbor clearance review editor currently writes on every keystroke. Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst."
+      },
+      {
+        "file": "TASK",
+        "quote": "Subsequent bursts must continue to save."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve other supported behavior and the synchronous public interfaces."
+      },
+      {
+        "file": "TASK",
+        "quote": "The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "The public API is synchronous: open(id), edit(text), close(), submit(), dispose()."
+      },
+      {
+        "file": "README.md",
+        "quote": "Returning to a document creates a fresh editor visit and restores persisted text."
+      },
+      {
+        "file": "README.md",
+        "quote": "The adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable."
+      },
+      {
+        "file": "README.md",
+        "quote": "Keep the workspace API and these injected interfaces."
+      },
+      {
+        "file": "README.md",
+        "quote": "A submission returns the queue receipt, or null when no editor is selected."
+      },
+      {
+        "file": "README.md",
+        "quote": "Dispose detaches integrations before closing the workspace."
+      },
+      {
+        "file": "README.md",
+        "quote": "Typed pointer visit and injected function callbacks; acquired capability uses pointer identity, never document-key equality."
+      },
+      {
+        "file": "README.md",
+        "quote": "Each opening creates a new identity."
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.env.Write(w.current.id,text) }"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}"
+      }
+    ],
+    "triggers": [
+      "Workspace.Edit(text) while a visit is current accepts text for delayed persistence.",
+      "A further edit before the deadline replaces pending text and restarts the 120 ms quiet interval.",
+      "The scheduled trailing callback expiring triggers one write for the burst.",
+      "A later edit after a completed flush begins a new independent burst.",
+      "Open, Close, Submit, and Dispose exercise preservation boundaries around pending or current editor state."
+    ],
+    "unknowns": [
+      "The public task and sources do not explicitly state whether Close/Open must flush a pending edit immediately, let its original 120 ms deadline complete, or treat navigation as cancellation. Preservation of accepted edits and document ownership forbids silent loss or redirection, but the precise lifecycle timing is unspecified.",
+      "The sources do not explicitly state whether Dispose must synchronously flush an accepted pending edit or may allow its already-scheduled write to complete after disposal; this must be reconciled with preserving persistence and detaching integrations before close.",
+      "No public source specifies behavior when Schedule, Cancel, Write, Capture, Output, or a subscriber callback panics.",
+      "No public source defines timer behavior for equal-deadline races between expiry and a concurrent edit; the API itself is synchronous, but timer serialization details are unspecified.",
+      "The task does not require changing status-output timing beyond the unavoidable consequence that store notifications caused by edits occur when the coalesced write occurs."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 3,
+  "diagnoses": [
+    {
+      "attempt": 2,
+      "candidate_only_contract_evidence": [],
+      "contract_after": {
+        "checkpoints": [
+          "Two or more edits less than 120 ms apart produce no early write; 120 ms after the last edit, exactly one write occurs with that edit's exact text.",
+          "A later edit before expiry cancels/restarts the prior timer rather than allowing the earlier deadline to write.",
+          "After one burst is saved, a later independent burst schedules and saves normally.",
+          "An empty string is retained as a valid pending value and written at expiry.",
+          "Opening or closing a visit does not redirect an already accepted edit to another document.",
+          "Submit remains synchronous and uses the current visit's in-memory text, including edits whose delayed persistence has not yet occurred.",
+          "Opening, closing, confirmation display, store subscriptions, and disposal retain their existing externally observable behavior except where delayed edit persistence necessarily changes store-write timing.",
+          "Preview queries still publish after 40 ms, hide still cancels unpublished preview work, and later preview queries remain usable."
+        ],
+        "forbidden_effects": [
+          "Do not write on every Edit call.",
+          "Do not write an older value after a newer edit has restarted the quiet interval.",
+          "Do not use truthiness to detect pending text; an empty string is valid.",
+          "Do not let navigation cause delayed work from one visit to write to the newly selected document.",
+          "Do not make open, edit, close, submit, dispose, or injected interfaces asynchronous.",
+          "Do not alter the adjacent search preview or its 40 ms behavior.",
+          "Do not change public APIs, injected interface shapes, confirmation ownership semantics, or queue submission receipts.",
+          "Do not change tests or configuration."
+        ],
+        "lifecycle_identity": [
+          "Each Open call creates a fresh *Visit identity, even when reopening the same document ID.",
+          "A trailing save belongs to the visit/document for which its task was constructed; document-key equality does not substitute for visit identity where pointer identity is required.",
+          "A Confirmation acquires the visit current when BindConfirmation is called and is active only while that same pointer remains current.",
+          "Retirement clears the current visit and detaches that visit's store subscription before publishing the empty document output."
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "text": "Workspace.Edit must continue to update the selected visit's in-memory text synchronously, but must enqueue that exact text through the existing trailing-task utility instead of writing it immediately."
+          },
+          {
+            "id": "O2",
+            "text": "The editor trailing task must use a 120 ms delay measured from the latest edit in the current burst; every later edit before expiry replaces the pending text and restarts the interval."
+          },
+          {
+            "id": "O3",
+            "text": "At expiry, exactly the latest text from that burst must be written once to the document ID captured for the originating visit."
+          },
+          {
+            "id": "O4",
+            "text": "After a burst is consumed, the same editor behavior must remain reusable so subsequent bursts can be saved."
+          },
+          {
+            "id": "O5",
+            "text": "Valid empty text must be preserved and written; only the utility's existing nil pending sentinel denotes absence of work."
+          },
+          {
+            "id": "O6",
+            "text": "Delayed persistence must not change the synchronous signatures or return behavior of open, edit, close, submit, dispose, or the injected interfaces."
+          },
+          {
+            "id": "O7",
+            "text": "Submit must continue to capture the currently selected visit's in-memory id and text, return the queue receipt synchronously, return nil when no editor is selected, and show confirmation only through the capability acquired for the still-current visit."
+          },
+          {
+            "id": "O8",
+            "text": "Existing navigation behavior must remain: each opening creates a fresh visit, persisted text is restored, the prior store subscription is stopped on retirement, and delayed work must never be redirected to another document."
+          },
+          {
+            "id": "O9",
+            "text": "The Preview implementation and its 40 ms trailing behavior are outside this change and must remain unchanged."
+          },
+          {
+            "id": "O10",
+            "text": "Dispose must retain the documented ordering in which integrations are detached before the workspace is closed."
+          }
+        ],
+        "ordering_barriers": [
+          "On Edit, update Visit.text before scheduling its delayed persistence so synchronous Submit observes the latest accepted text.",
+          "On each trailing Push, cancel the prior handle before scheduling the replacement deadline.",
+          "On trailing Flush, capture the pending text and retire the batch's handle/pending state before invoking Write; callback-capable work cannot erase or consume a later batch.",
+          "On visit retirement, clear current authority and stop the leaving visit's store subscription before emitting the empty document state.",
+          "On Submit, acquire confirmation ownership for the current visit, form the snapshot from that visit, synchronously capture it, then show the receipt only if that acquired visit remains current.",
+          "On Dispose, detach integrations before performing close behavior."
+        ],
+        "preservation": [
+          "The public API remains synchronous: open(id), edit(text), close(), submit(), dispose().",
+          "Store read/write/subscribe, queue enqueue/list/subscribe, timer schedule/cancel, and render-output contracts remain unchanged.",
+          "Returning to a document creates a fresh editor visit and restores persisted text.",
+          "Submit returns its receipt, or nil when no editor is selected.",
+          "Confirmation capability continues to use pointer identity rather than document-key equality.",
+          "Store status publication and document/notice outputs retain their existing behavior except for the required delay and coalescing of edit-triggered writes.",
+          "Search preview retains its 40 ms quiet interval, cancellation on hide, and later reuse.",
+          "Exact text values, including the empty string, are preserved."
+        ],
+        "scope": [
+          "Change only editor edit persistence in src/workflow.go to use the already-created per-visit Trailing task.",
+          "The maintenance applies to coalescing Store writes caused by Workspace.Edit.",
+          "Workspace navigation, submission, confirmation, store subscriptions, disposal, and synchronous interfaces are preservation constraints.",
+          "Preview is expressly outside the maintenance change."
+        ],
+        "supporting_evidence": [
+          {
+            "file": "TASK",
+            "quote": "The harbor clearance review editor currently writes on every keystroke. Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst."
+          },
+          {
+            "file": "TASK",
+            "quote": "Subsequent bursts must continue to save."
+          },
+          {
+            "file": "TASK",
+            "quote": "Preserve other supported behavior and the synchronous public interfaces."
+          },
+          {
+            "file": "TASK",
+            "quote": "The adjacent search preview is outside this maintenance change."
+          },
+          {
+            "file": "README.md",
+            "quote": "The public API is synchronous: open(id), edit(text), close(), submit(), dispose()."
+          },
+          {
+            "file": "README.md",
+            "quote": "Returning to a document creates a fresh editor visit and restores persisted text."
+          },
+          {
+            "file": "README.md",
+            "quote": "The adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable."
+          },
+          {
+            "file": "README.md",
+            "quote": "Keep the workspace API and these injected interfaces."
+          },
+          {
+            "file": "README.md",
+            "quote": "A submission returns the queue receipt, or null when no editor is selected."
+          },
+          {
+            "file": "README.md",
+            "quote": "Dispose detaches integrations before closing the workspace."
+          },
+          {
+            "file": "README.md",
+            "quote": "Typed pointer visit and injected function callbacks; acquired capability uses pointer identity, never document-key equality."
+          },
+          {
+            "file": "README.md",
+            "quote": "Each opening creates a new identity."
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "func(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.env.Write(w.current.id,text) }"
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})"
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "func(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}"
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "func(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}"
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "func NewPreview(env Environment) *Preview {\n    return &Preview{NewTrailing(env,40,func(query string){env.Output(\"preview\",Value{\"query\":query})})}\n}"
+          }
+        ],
+        "triggers": [
+          "Workspace.Edit(text) while a visit is current accepts text for delayed persistence.",
+          "A further edit before the deadline replaces pending text and restarts the 120 ms quiet interval.",
+          "The scheduled trailing callback expiring triggers one write for the burst.",
+          "A later edit after a completed flush begins a new independent burst.",
+          "Open, Close, Submit, and Dispose exercise preservation boundaries around pending or current editor state."
+        ],
+        "unknowns": [
+          "The public task and sources do not explicitly state whether Close/Open must flush a pending edit immediately, let its original 120 ms deadline complete, or treat navigation as cancellation. Preservation of accepted edits and document ownership forbids silent loss or redirection, but the precise lifecycle timing is unspecified.",
+          "The sources do not explicitly state whether Dispose must synchronously flush an accepted pending edit or may allow its already-scheduled write to complete after disposal; this must be reconciled with preserving persistence and detaching integrations before close.",
+          "No public source specifies behavior when Schedule, Cancel, Write, Capture, Output, or a subscriber callback panics.",
+          "No public source defines timer behavior for equal-deadline races between expiry and a concurrent edit; the API itself is synchronous, but timer serialization details are unspecified.",
+          "The task does not require changing status-output timing beyond the unavoidable consequence that store notifications caused by edits occur when the coalesced write occurs."
+        ]
+      },
+      "contract_changed": false,
+      "diagnosis": "unknown",
+      "explanation": "The previous candidate makes the only directly required business-code substitution: Edit still updates the visit text synchronously and then pushes the exact value through the already-created 120 ms per-visit trailing task. The supplied trailing utility cancels the prior handle, replaces pending text, clears batch state before invoking work, accepts empty strings through a pointer sentinel, and is reusable after Flush. Syntax passed. The bare failed acceptance verdict supplies no normative requirement and no failure cause, so it cannot establish either an implementation gap or a behavioral contract gap. The behavioral contract is therefore preserved unchanged.",
+      "remaining_unknowns": [
+        "The reason for the failed training acceptance verdict is unavailable and cannot be inferred from that verdict alone.",
+        "The public sources do not specify the exact pending-edit policy at Open, Close, or Dispose boundaries.",
+        "The public sources do not define whether Schedule may invoke its callback inline or how equal-deadline timer/edit races are serialized.",
+        "The public sources do not define panic behavior for injected callbacks or integrations."
+      ],
+      "restored_original_contract_evidence": false,
+      "routing_analysis": {
+        "contract": "Edit persistence is a reusable deferred trailing batch scoped to the visit created by Open: every accepted edit synchronously changes the visit snapshot, replaces the batch value, and restarts a 120 ms timer; expiry consumes the batch before writing its latest exact text to the document ID captured when the visit task was created. Navigation, submission, confirmation ownership, subscriptions, disposal ordering, synchronous APIs, and the independent 40 ms preview behavior remain preserved. Public sources leave the precise pending-edit policy at navigation/disposal boundaries and timer reentrancy/race semantics unspecified.",
+        "facts": [
+          {
+            "evidence": [
+              {
+                "file": "src/workflow.go",
+                "line": 61,
+                "quote": "task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})"
+              }
+            ],
+            "predicate": "shared_lifetime",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "src/workflow.go",
+                "line": 54,
+                "quote": "if leaving!=nil { w.env.Store().Stop(leaving.token) };w.env.Output(\"document\",nil)"
+              }
+            ],
+            "predicate": "observer_lifetime",
+            "state": "known"
+          },
+          {
+            "evidence": [],
+            "predicate": "attempt_resource",
+            "state": "unknown"
+          },
+          {
+            "evidence": [],
+            "predicate": "lazy_consumption",
+            "state": "unknown"
+          },
+          {
+            "evidence": [],
+            "predicate": "async_resume",
+            "state": "unknown"
+          },
+          {
+            "evidence": [
+              {
+                "file": "TASK",
+                "line": 1,
+                "quote": "after a 120 ms quiet interval write only the latest text in that editing burst"
+              },
+              {
+                "file": "src/workflow.go",
+                "line": 38,
+                "quote": "if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)"
+              }
+            ],
+            "predicate": "deferred_batch",
+            "state": "known"
+          },
+          {
+            "evidence": [],
+            "predicate": "boundary_persistence",
+            "state": "unknown"
+          },
+          {
+            "evidence": [
+              {
+                "file": "src/workflow.go",
+                "line": 68,
+                "quote": "visit:=w.current;if visit==nil {return nil};snapshot:=Value{\"id\":visit.id,\"text\":visit.text}"
+              }
+            ],
+            "predicate": "entry_snapshot",
+            "state": "known"
+          },
+          {
+            "evidence": [],
+            "predicate": "inline_reentry",
+            "state": "unknown"
+          },
+          {
+            "evidence": [
+              {
+                "file": "src/workflow.go",
+                "line": 41,
+                "quote": "if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil"
+              },
+              {
+                "file": "src/workflow.go",
+                "line": 42,
+                "quote": "if text!=nil { t.work(*text) }"
+              }
+            ],
+            "predicate": "effect_lifetimes",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 18,
+                "quote": "acquired capability uses pointer identity, never document-key equality."
+              }
+            ],
+            "predicate": "different_ownership_policy",
+            "state": "known"
+          },
+          {
+            "evidence": [],
+            "predicate": "discard_boundary_policy",
+            "state": "unknown"
+          },
+          {
+            "evidence": [
+              {
+                "file": "src/workflow.go",
+                "line": 61,
+                "quote": "task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})"
+              }
+            ],
+            "predicate": "no_lazy_shared_mechanism",
+            "state": "contradicted"
+          }
+        ],
+        "obligation_labels": [
+          {
+            "code": "R",
+            "evidence": [
+              {
+                "file": "TASK",
+                "line": 1,
+                "quote": "Subsequent bursts must continue to save."
+              }
+            ],
+            "statement": "The trailing editor task must remain reusable after each completed burst."
+          },
+          {
+            "code": "O",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 18,
+                "quote": "acquired capability uses pointer identity, never document-key equality."
+              },
+              {
+                "file": "README.md",
+                "line": 20,
+                "quote": "Each opening creates a new identity."
+              }
+            ],
+            "statement": "Visit and confirmation ownership follows fresh pointer identity, while delayed writes retain the originating document ID."
+          },
+          {
+            "code": "B",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 6,
+                "quote": "Returning to a document creates a fresh editor visit and restores persisted text."
+              }
+            ],
+            "statement": "Navigation is a lifecycle boundary that must preserve fresh visits and restored persisted text."
+          },
+          {
+            "code": "L",
+            "evidence": [
+              {
+                "file": "TASK",
+                "line": 1,
+                "quote": "after a 120 ms quiet interval write only the latest text in that editing burst"
+              }
+            ],
+            "statement": "The latest exact edit remains pending until the quiet interval expires."
+          },
+          {
+            "code": "I",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 5,
+                "quote": "The public API is synchronous: open(id), edit(text), close(), submit(), dispose()."
+              }
+            ],
+            "statement": "Edit and Submit retain synchronous in-memory behavior despite deferred persistence."
+          },
+          {
+            "code": "F",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 16,
+                "quote": "Dispose detaches integrations before closing the workspace."
+              }
+            ],
+            "statement": "Integration and subscription effects retain their documented lifecycle ordering."
+          },
+          {
+            "code": "A",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 7,
+                "quote": "The adjacent search preview publishes after a 40 ms quiet interval; hiding it"
+              },
+              {
+                "file": "README.md",
+                "line": 8,
+                "quote": "cancels unpublished work and later queries remain usable."
+              }
+            ],
+            "statement": "The adjacent preview's separate trailing task remains unchanged and reusable."
+          }
+        ],
+        "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+        "unknowns": [
+          "Whether Close or Open flushes, preserves until the original deadline, or cancels a pending edit is not expressly stated.",
+          "Whether Dispose synchronously flushes pending persistence is not expressly stated.",
+          "Whether Environment.Schedule can invoke callbacks inline is not stated.",
+          "Equal-deadline timer/edit serialization is not stated.",
+          "Injected callback panic behavior is not stated."
+        ]
+      },
+      "structured_delta": [],
+      "supporting_evidence": [
+        {
+          "file": "TASK",
+          "quote": "Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst."
+        },
+        {
+          "file": "TASK",
+          "quote": "Subsequent bursts must continue to save."
+        },
+        {
+          "file": "TASK",
+          "quote": "Preserve other supported behavior and the synchronous public interfaces."
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "func(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.current.task.Push(text) }"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }"
+        }
+      ],
+      "supporting_evidence_bindings": [
+        {
+          "file": "TASK",
+          "quote": "Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Subsequent bursts must continue to save.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Preserve other supported behavior and the synchronous public interfaces.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "func(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.current.task.Push(text) }",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        }
+      ],
+      "unused_routing_analysis": true
+    },
+    {
+      "attempt": 3,
+      "candidate_only_contract_evidence": [],
+      "contract_after": {
+        "checkpoints": [
+          "Two or more edits less than 120 ms apart produce no early write; 120 ms after the last edit, exactly one write occurs with that edit's exact text.",
+          "A later edit before expiry cancels/restarts the prior timer rather than allowing the earlier deadline to write.",
+          "After one burst is saved, a later independent burst schedules and saves normally.",
+          "An empty string is retained as a valid pending value and written at expiry.",
+          "Opening or closing a visit does not redirect an already accepted edit to another document.",
+          "Submit remains synchronous and uses the current visit's in-memory text, including edits whose delayed persistence has not yet occurred.",
+          "Opening, closing, confirmation display, store subscriptions, and disposal retain their existing externally observable behavior except where delayed edit persistence necessarily changes store-write timing.",
+          "Preview queries still publish after 40 ms, hide still cancels unpublished preview work, and later preview queries remain usable."
+        ],
+        "forbidden_effects": [
+          "Do not write on every Edit call.",
+          "Do not write an older value after a newer edit has restarted the quiet interval.",
+          "Do not use truthiness to detect pending text; an empty string is valid.",
+          "Do not let navigation cause delayed work from one visit to write to the newly selected document.",
+          "Do not make open, edit, close, submit, dispose, or injected interfaces asynchronous.",
+          "Do not alter the adjacent search preview or its 40 ms behavior.",
+          "Do not change public APIs, injected interface shapes, confirmation ownership semantics, or queue submission receipts.",
+          "Do not change tests or configuration."
+        ],
+        "lifecycle_identity": [
+          "Each Open call creates a fresh *Visit identity, even when reopening the same document ID.",
+          "A trailing save belongs to the visit/document for which its task was constructed; document-key equality does not substitute for visit identity where pointer identity is required.",
+          "A Confirmation acquires the visit current when BindConfirmation is called and is active only while that same pointer remains current.",
+          "Retirement clears the current visit and detaches that visit's store subscription before publishing the empty document output."
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "text": "Workspace.Edit must continue to update the selected visit's in-memory text synchronously, but must enqueue that exact text through the existing trailing-task utility instead of writing it immediately."
+          },
+          {
+            "id": "O2",
+            "text": "The editor trailing task must use a 120 ms delay measured from the latest edit in the current burst; every later edit before expiry replaces the pending text and restarts the interval."
+          },
+          {
+            "id": "O3",
+            "text": "At expiry, exactly the latest text from that burst must be written once to the document ID captured for the originating visit."
+          },
+          {
+            "id": "O4",
+            "text": "After a burst is consumed, the same editor behavior must remain reusable so subsequent bursts can be saved."
+          },
+          {
+            "id": "O5",
+            "text": "Valid empty text must be preserved and written; only the utility's existing nil pending sentinel denotes absence of work."
+          },
+          {
+            "id": "O6",
+            "text": "Delayed persistence must not change the synchronous signatures or return behavior of open, edit, close, submit, dispose, or the injected interfaces."
+          },
+          {
+            "id": "O7",
+            "text": "Submit must continue to capture the currently selected visit's in-memory id and text, return the queue receipt synchronously, return nil when no editor is selected, and show confirmation only through the capability acquired for the still-current visit."
+          },
+          {
+            "id": "O8",
+            "text": "Existing navigation behavior must remain: each opening creates a fresh visit, persisted text is restored, the prior store subscription is stopped on retirement, and delayed work must never be redirected to another document."
+          },
+          {
+            "id": "O9",
+            "text": "The Preview implementation and its 40 ms trailing behavior are outside this change and must remain unchanged."
+          },
+          {
+            "id": "O10",
+            "text": "Dispose must retain the documented ordering in which integrations are detached before the workspace is closed."
+          }
+        ],
+        "ordering_barriers": [
+          "On Edit, update Visit.text before scheduling its delayed persistence so synchronous Submit observes the latest accepted text.",
+          "On each trailing Push, cancel the prior handle before scheduling the replacement deadline.",
+          "On trailing Flush, capture the pending text and retire the batch's handle/pending state before invoking Write; callback-capable work cannot erase or consume a later batch.",
+          "On visit retirement, clear current authority and stop the leaving visit's store subscription before emitting the empty document state.",
+          "On Submit, acquire confirmation ownership for the current visit, form the snapshot from that visit, synchronously capture it, then show the receipt only if that acquired visit remains current.",
+          "On Dispose, detach integrations before performing close behavior."
+        ],
+        "preservation": [
+          "The public API remains synchronous: open(id), edit(text), close(), submit(), dispose().",
+          "Store read/write/subscribe, queue enqueue/list/subscribe, timer schedule/cancel, and render-output contracts remain unchanged.",
+          "Returning to a document creates a fresh editor visit and restores persisted text.",
+          "Submit returns its receipt, or nil when no editor is selected.",
+          "Confirmation capability continues to use pointer identity rather than document-key equality.",
+          "Store status publication and document/notice outputs retain their existing behavior except for the required delay and coalescing of edit-triggered writes.",
+          "Search preview retains its 40 ms quiet interval, cancellation on hide, and later reuse.",
+          "Exact text values, including the empty string, are preserved."
+        ],
+        "scope": [
+          "Change only editor edit persistence in src/workflow.go to use the already-created per-visit Trailing task.",
+          "The maintenance applies to coalescing Store writes caused by Workspace.Edit.",
+          "Workspace navigation, submission, confirmation, store subscriptions, disposal, and synchronous interfaces are preservation constraints.",
+          "Preview is expressly outside the maintenance change."
+        ],
+        "supporting_evidence": [
+          {
+            "file": "TASK",
+            "quote": "The harbor clearance review editor currently writes on every keystroke. Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst."
+          },
+          {
+            "file": "TASK",
+            "quote": "Subsequent bursts must continue to save."
+          },
+          {
+            "file": "TASK",
+            "quote": "Preserve other supported behavior and the synchronous public interfaces."
+          },
+          {
+            "file": "TASK",
+            "quote": "The adjacent search preview is outside this maintenance change."
+          },
+          {
+            "file": "README.md",
+            "quote": "The public API is synchronous: open(id), edit(text), close(), submit(), dispose()."
+          },
+          {
+            "file": "README.md",
+            "quote": "Returning to a document creates a fresh editor visit and restores persisted text."
+          },
+          {
+            "file": "README.md",
+            "quote": "The adjacent search preview publishes after a 40 ms quiet interval; hiding it\ncancels unpublished work and later queries remain usable."
+          },
+          {
+            "file": "README.md",
+            "quote": "Keep the workspace API and these injected interfaces."
+          },
+          {
+            "file": "README.md",
+            "quote": "A submission returns the queue receipt, or null when no editor is selected."
+          },
+          {
+            "file": "README.md",
+            "quote": "Dispose detaches integrations before closing the workspace."
+          },
+          {
+            "file": "README.md",
+            "quote": "Typed pointer visit and injected function callbacks; acquired capability uses pointer identity, never document-key equality."
+          },
+          {
+            "file": "README.md",
+            "quote": "Each opening creates a new identity."
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "func(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.env.Write(w.current.id,text) }"
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})"
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "func(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}"
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "func(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}"
+          }
+        ],
+        "triggers": [
+          "Workspace.Edit(text) while a visit is current accepts text for delayed persistence.",
+          "A further edit before the deadline replaces pending text and restarts the 120 ms quiet interval.",
+          "The scheduled trailing callback expiring triggers one write for the burst.",
+          "A later edit after a completed flush begins a new independent burst.",
+          "Open, Close, Submit, and Dispose exercise preservation boundaries around pending or current editor state."
+        ],
+        "unknowns": [
+          "The public task and sources do not explicitly state whether Close/Open must flush a pending edit immediately, let its original 120 ms deadline complete, or treat navigation as cancellation. Preservation of accepted edits and document ownership forbids silent loss or redirection, but the precise lifecycle timing is unspecified.",
+          "The sources do not explicitly state whether Dispose must synchronously flush an accepted pending edit or may allow its already-scheduled write to complete after disposal; this must be reconciled with preserving persistence and detaching integrations before close.",
+          "No public source specifies behavior when Schedule, Cancel, Write, Capture, Output, or a subscriber callback panics.",
+          "No public source defines timer behavior for equal-deadline races between expiry and a concurrent edit; the API itself is synchronous, but timer serialization details are unspecified.",
+          "The task does not require changing status-output timing beyond the unavoidable consequence that store notifications caused by edits occur when the coalesced write occurs."
+        ]
+      },
+      "contract_changed": false,
+      "diagnosis": "unknown",
+      "explanation": "The candidate performs the directly requested substitution: Edit updates the current visit's in-memory text and pushes it to the existing per-visit trailing task, whose 120 ms callback captures the visit's document ID. The public syntax check passes. The failed acceptance verdict discloses no cause, so it does not prove an implementation defect or a missing requirement. The invalid Preview citation from the prior output has been removed; no behavioral contract revision is justified.",
+      "remaining_unknowns": [
+        "The reason for the failed acceptance verdict is not disclosed.",
+        "The public sources do not settle pending-edit handling at Open, Close, or Dispose boundaries.",
+        "The public sources do not define equal-deadline timer races or synchronous/reentrant Schedule behavior.",
+        "No behavioral tests or runtime traces are supplied."
+      ],
+      "restored_original_contract_evidence": false,
+      "routing_analysis": {
+        "contract": "Workspace.Edit synchronously updates the active visit's in-memory text and pushes that value into the visit's existing 120 ms trailing task. Repeated edits replace pending text and restart the quiet interval; expiry writes the latest value once to the document ID captured when the visit opened, and cleared trailing state permits later bursts. Synchronous APIs, visit identity, submission and confirmation behavior, navigation subscriptions, disposal ordering, injected interfaces, and the preview's separate 40 ms behavior are preserved. Pending-edit boundary handling and timer race/reentrancy semantics remain unspecified.",
+        "facts": [
+          {
+            "evidence": [
+              {
+                "file": "src/workflow.go",
+                "line": 45,
+                "quote": "type Visit struct { id,text string; token int; task *Trailing }"
+              },
+              {
+                "file": "src/workflow.go",
+                "line": 60,
+                "quote": "w.current=&Visit{id,w.env.Store().Read(id),token,task};w.env.Output(\"document\",Value{\"id\":id,\"text\":w.current.text})"
+              }
+            ],
+            "predicate": "shared_lifetime",
+            "state": "known"
+          },
+          {
+            "evidence": [
+              {
+                "file": "src/workflow.go",
+                "line": 55,
+                "quote": "if leaving!=nil { w.env.Store().Stop(leaving.token) };w.env.Output(\"document\",nil)"
+              }
+            ],
+            "predicate": "observer_lifetime",
+            "state": "known"
+          },
+          {
+            "evidence": [],
+            "predicate": "attempt_resource",
+            "state": "unknown"
+          },
+          {
+            "evidence": [],
+            "predicate": "lazy_consumption",
+            "state": "unknown"
+          },
+          {
+            "evidence": [],
+            "predicate": "async_resume",
+            "state": "unknown"
+          },
+          {
+            "evidence": [
+              {
+                "file": "src/workflow.go",
+                "line": 37,
+                "quote": "type Trailing struct { env Environment; delay int; work func(string); handle interface{}; pending *string }"
+              },
+              {
+                "file": "src/workflow.go",
+                "line": 40,
+                "quote": "if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)"
+              }
+            ],
+            "predicate": "deferred_batch",
+            "state": "known"
+          },
+          {
+            "evidence": [],
+            "predicate": "boundary_persistence",
+            "state": "unknown"
+          },
+          {
+            "evidence": [
+              {
+                "file": "src/workflow.go",
+                "line": 65,
+                "quote": "visit:=w.current;if visit==nil {return nil};snapshot:=Value{\"id\":visit.id,\"text\":visit.text}"
+              }
+            ],
+            "predicate": "entry_snapshot",
+            "state": "known"
+          },
+          {
+            "evidence": [],
+            "predicate": "inline_reentry",
+            "state": "unknown"
+          },
+          {
+            "evidence": [],
+            "predicate": "effect_lifetimes",
+            "state": "unknown"
+          },
+          {
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 17,
+                "quote": "Typed pointer visit and injected function callbacks; acquired capability uses pointer identity, never document-key equality."
+              }
+            ],
+            "predicate": "different_ownership_policy",
+            "state": "known"
+          },
+          {
+            "evidence": [],
+            "predicate": "discard_boundary_policy",
+            "state": "unknown"
+          },
+          {
+            "evidence": [
+              {
+                "file": "src/workflow.go",
+                "line": 59,
+                "quote": "task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})"
+              }
+            ],
+            "predicate": "no_lazy_shared_mechanism",
+            "state": "contradicted"
+          }
+        ],
+        "obligation_labels": [
+          {
+            "code": "R",
+            "evidence": [
+              {
+                "file": "TASK",
+                "line": 1,
+                "quote": "Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst."
+              }
+            ],
+            "statement": "Replace immediate per-keystroke persistence with trailing coalescing."
+          },
+          {
+            "code": "O",
+            "evidence": [
+              {
+                "file": "src/workflow.go",
+                "line": 40,
+                "quote": "if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)"
+              }
+            ],
+            "statement": "Cancel the prior timer, replace pending text, and schedule from the latest edit."
+          },
+          {
+            "code": "B",
+            "evidence": [
+              {
+                "file": "src/workflow.go",
+                "line": 43,
+                "quote": "if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil"
+              }
+            ],
+            "statement": "Retire the consumed batch state before invoking its write callback."
+          },
+          {
+            "code": "L",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 5,
+                "quote": "Returning to a document creates a fresh editor visit and restores persisted text."
+              },
+              {
+                "file": "README.md",
+                "line": 19,
+                "quote": "Each opening creates a new identity."
+              }
+            ],
+            "statement": "A per-opening visit owns its editor task and document identity."
+          },
+          {
+            "code": "I",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 17,
+                "quote": "Typed pointer visit and injected function callbacks; acquired capability uses pointer identity, never document-key equality."
+              }
+            ],
+            "statement": "Confirmation authority is based on visit pointer identity."
+          },
+          {
+            "code": "F",
+            "evidence": [
+              {
+                "file": "TASK",
+                "line": 1,
+                "quote": "The adjacent search preview is outside this maintenance change."
+              }
+            ],
+            "statement": "Do not alter the adjacent preview."
+          },
+          {
+            "code": "A",
+            "evidence": [
+              {
+                "file": "README.md",
+                "line": 4,
+                "quote": "The public API is synchronous: open(id), edit(text), close(), submit(), dispose()."
+              },
+              {
+                "file": "README.md",
+                "line": 14,
+                "quote": "A submission returns the queue receipt, or null when no editor is selected."
+              }
+            ],
+            "statement": "Preserve synchronous public API and submission return behavior."
+          }
+        ],
+        "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+        "unknowns": [
+          "Whether navigation flushes, preserves, or cancels pending persistence is not explicit.",
+          "Whether disposal must synchronously flush pending editor work is not explicit.",
+          "Whether Schedule may invoke its callback inline is not explicit.",
+          "Equal-deadline timer/edit serialization is not specified.",
+          "Panic behavior of injected callbacks is not specified."
+        ]
+      },
+      "structured_delta": [],
+      "supporting_evidence": [
+        {
+          "file": "TASK",
+          "quote": "Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst."
+        },
+        {
+          "file": "TASK",
+          "quote": "Subsequent bursts must continue to save."
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "func(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.current.task.Push(text) }"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }"
+        }
+      ],
+      "supporting_evidence_bindings": [
+        {
+          "file": "TASK",
+          "quote": "Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Subsequent bursts must continue to save.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "func(w *Workspace) Edit(text string) { if w.current==nil {return};w.current.text=text;w.current.task.Push(text) }",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "task:=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        }
+      ],
+      "unused_routing_analysis": true
+    }
+  ],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": false,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": false,
+    "valid": true,
+    "verdict": "UNDERREACH"
+  },
+  "finalized": true,
+  "first_pass_attempt": null,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": false,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": false,
+    "valid": true,
+    "verdict": "UNDERREACH"
+  },
+  "preparation_warnings": [
+    {
+      "code": "unsupported_fact_unknown",
+      "predicate": "lazy_consumption",
+      "previous_state": "contradicted",
+      "stage": "diagnosis-3"
+    },
+    {
+      "attempt": 1,
+      "code": "invalid_preparation_output",
+      "error": "Unsupported public-source citation",
+      "stage": "diagnosis-3"
+    }
+  ],
+  "repair_stop_reason": "action_budget_exhausted",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "1c150a0aa5ff4d5547b1269a4f61b4631a28c95f1d532a439912c87d63a5816f",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9997342359275
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "1b899fdebedf100c1e22ee02605adf04c1d439939568850cc3a9cce5c21ef5d8",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 23168,
+        "input_tokens": 29149,
+        "output_tokens": 2889,
+        "reasoning_output_tokens": 1841,
+        "total_tokens": 32038
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "eaa312569127739ed8bf11071cd1e7121944e439e7b586410f59187e92d27b2d",
+      "seconds": 53.55289917718619,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 23168,
+        "input_tokens": 29149,
+        "output_tokens": 2889,
+        "reasoning_output_tokens": 1841,
+        "total_tokens": 32038
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "cacf5975c1925b0488572da434a38583d70181f6e31c05d82548bd05246a8670",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.999632421881
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "72300af93e2d0ba3341a5186c8f38a33e649c3dd4d461ed7505c47bcb3742938",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 15725,
+        "output_tokens": 2683,
+        "reasoning_output_tokens": 766,
+        "total_tokens": 18408
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "60f93271a12f1a52bb3ac1056256e32fc688b31ff4bd3e752ed686b7f3527689",
+      "seconds": 49.351735449396074,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 15725,
+        "output_tokens": 2683,
+        "reasoning_output_tokens": 766,
+        "total_tokens": 18408
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "9c4a692601e7e03a1d986596ef8108320b934669a21b76c00b9f1f490f04cbc7",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9994110912085
+          },
+          "number": 1,
+          "requests": 4,
+          "restart_reason": "initial",
+          "result_sha256": "21cc6a54b5f91df72b0d2cbead2e5b8f41b475a0a3ed943f36459cc0d6f1667f",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 68096,
+        "input_tokens": 81866,
+        "output_tokens": 978,
+        "reasoning_output_tokens": 356,
+        "total_tokens": 82844
+      },
+      "requests": 4,
+      "reserved_requests": 24,
+      "result_sha256": "9e810d97243cccbb1c8f787f2d3bec6b3ec3b115a44e9473146eb2df8412f267",
+      "seconds": 47.8774604992941,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 68096,
+        "input_tokens": 81866,
+        "output_tokens": 978,
+        "reasoning_output_tokens": 356,
+        "total_tokens": 82844
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "7c3e5ebc58a9f96de27955ce9b3f3d94b2d9c47a34357f2d7a821592cf1cc93d",
+      "seconds": 0.5028862999752164,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 2.851640942506492,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "diagnosis-2",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "4ae9617309b48f70d4ad818d54e6ea1bc9caf7e6f38f77ffae267a11d9618682",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9988857218996
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "7dfe4c3ccc7ad40c6dc532415dbbca3b27b64c335651a79723b4a07e5774d4bc",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-2",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 17586,
+        "output_tokens": 4332,
+        "reasoning_output_tokens": 895,
+        "total_tokens": 21918
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "9ad9f9b05365a42c8815beb51ccaca63ff796a2ad60a9b5f91ed7eda6f48adfb",
+      "seconds": 63.92020091973245,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 17586,
+        "output_tokens": 4332,
+        "reasoning_output_tokens": 895,
+        "total_tokens": 21918
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-2",
+      "executions": [
+        {
+          "failure_type": "transient_transport_error",
+          "input_sha256": "b19b8563f247d830e6e31cd718f0658d55bdc7f90042e730567ce47da84a0869",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.999453259632
+          },
+          "number": 1,
+          "requests": 3,
+          "restart_reason": "initial",
+          "result_sha256": "0ae0f02879b9e175d249ca7a45b5f7d103fc6e68a33c7d23fe93022f4ac4e012",
+          "status": "complete",
+          "valid": false
+        },
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "b19b8563f247d830e6e31cd718f0658d55bdc7f90042e730567ce47da84a0869",
+          "limits": {
+            "requests": 21,
+            "seconds": 563.329645305872
+          },
+          "number": 2,
+          "requests": 5,
+          "restart_reason": "transient_transport",
+          "result_sha256": "c5db57f36ae7625d9e815f82230cd953aedc00862c0b848d4d8927099d22d411",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-2",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 119552,
+        "input_tokens": 147108,
+        "output_tokens": 3069,
+        "reasoning_output_tokens": 2118,
+        "total_tokens": 150177
+      },
+      "requests": 8,
+      "reserved_requests": 24,
+      "result_sha256": "72b55bc90f630ed5868b70632c2f22e97728ef6054805a920259515f8a761b73",
+      "seconds": 96.27287163026631,
+      "status": "complete",
+      "tokens": null,
+      "tool_policy_recoveries": 0,
+      "transport_retries": 1,
+      "unknown_usage_requests": 1,
+      "usage_incomplete": true
+    },
+    {
+      "budget_group": "visible-2",
+      "key": "visible-2",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "7c3e5ebc58a9f96de27955ce9b3f3d94b2d9c47a34357f2d7a821592cf1cc93d",
+      "seconds": 0.5076137194409966,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-2",
+      "key": "acceptance-2",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 2.954956701025367,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "diagnosis-3",
+      "executions": [
+        {
+          "failure_type": "transient_transport_error",
+          "input_sha256": "f0c39e8aebf2672ea14e898b4226b0a8adb707ad6cf4a25b4910a5d5c434cc93",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.999083833769
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "b2d3377ecca826e2ed0f888955ceb2d1dda27b51a01a6e4dbb172a140246a821",
+          "status": "complete",
+          "valid": false
+        },
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "f0c39e8aebf2672ea14e898b4226b0a8adb707ad6cf4a25b4910a5d5c434cc93",
+          "limits": {
+            "requests": 10,
+            "seconds": 405.04258481040597
+          },
+          "number": 2,
+          "requests": 1,
+          "restart_reason": "transient_transport",
+          "result_sha256": "515dfd88903f0817d87bad901de5cfa6dedc0bbfa0dacf040df435a13fe0bb63",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-3",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 18176,
+        "input_tokens": 35176,
+        "output_tokens": 8820,
+        "reasoning_output_tokens": 655,
+        "total_tokens": 43996
+      },
+      "requests": 3,
+      "reserved_requests": 12,
+      "result_sha256": "77393f6bac61f0622c9e697c7bebf8f4e3546e312f7f7977cf40fb98f99aad18",
+      "seconds": 309.0317399725318,
+      "status": "complete",
+      "tokens": null,
+      "tool_policy_recoveries": 0,
+      "transport_retries": 1,
+      "unknown_usage_requests": 1,
+      "usage_incomplete": true
+    },
+    {
+      "budget_group": "diagnosis-3",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "6533e6d484500344225094283f9771f6ad06ad53000522738f36e69d2f3d89a3",
+          "limits": {
+            "requests": 9,
+            "seconds": 290.96693326625973
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "a9c4ed2721c455c0357f0410dc71ab8128851cf80f7fc59d508597d07bfbc62c",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-3-validation-correction",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 21120,
+        "output_tokens": 4246,
+        "reasoning_output_tokens": 892,
+        "total_tokens": 25366
+      },
+      "requests": 1,
+      "reserved_requests": 9,
+      "result_sha256": "f1fb4c87eacb19d4af7e5509f50d232977087cd67d609457a1a1129216fd7c50",
+      "seconds": 63.13267633225769,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 21120,
+        "output_tokens": 4246,
+        "reasoning_output_tokens": 892,
+        "total_tokens": 25366
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-3",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "0a886289ae26e8a593e42a7dbd2fba7b82378459e8b4449d2056005ea7b6fd23",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9992561023682
+          },
+          "number": 1,
+          "requests": 5,
+          "restart_reason": "initial",
+          "result_sha256": "167f563a70dc92faa340d664785f15094115b2d245823f19dc4315ace92ea50f",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-3",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 96256,
+        "input_tokens": 114730,
+        "output_tokens": 2784,
+        "reasoning_output_tokens": 1928,
+        "total_tokens": 117514
+      },
+      "requests": 5,
+      "reserved_requests": 24,
+      "result_sha256": "b1b9c26bc68786aad5ccaab267291e217524d31545af2492fa19b085c3f1eb55",
+      "seconds": 72.75058642495424,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 96256,
+        "input_tokens": 114730,
+        "output_tokens": 2784,
+        "reasoning_output_tokens": 1928,
+        "total_tokens": 117514
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-3",
+      "key": "visible-3",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "7c3e5ebc58a9f96de27955ce9b3f3d94b2d9c47a34357f2d7a821592cf1cc93d",
+      "seconds": 0.48403885774314404,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-3",
+      "key": "acceptance-3",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 2.8908884590491652,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "awaiting_expert_summary",
+  "stop_reason": "action_budget_exhausted",
+  "training_accepted": false
+}

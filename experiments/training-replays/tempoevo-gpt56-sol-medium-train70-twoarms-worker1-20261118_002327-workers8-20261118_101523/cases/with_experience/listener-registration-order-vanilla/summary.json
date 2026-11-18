@@ -1,0 +1,907 @@
+{
+  "acceptance_policy": "training_gold_and_required_visible",
+  "attempt_results": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "package.json": "b6b0f17dac4d0b749bcb9e534fa0dc50f69303a141fcb8acd8b9986ac1ded9d1",
+        "src/channel.js": "b6e69590b253b577aed53078e2f6b09caf62599cf4286a72dd28f9edc5647736",
+        "src/metrics-consumer.js": "73445d7fb5ede97450b4f339370c1f0987394808ce312bb0407694575b380213",
+        "src/presence-panel.js": "e88b4ae258446a1e6750985f1672c730fa8cbfb3581c4e6e30038aaa98a6043b",
+        "src/render-workspace.js": "0d1412acc6eeda2ea6fa3d1b50314be93fa28b7e74e124faec0354129aa19035",
+        "src/subscription.js": "24e37f76f8bb98237804a5f76bedb5ab2fce6421f197f1061aeb0122dd8f5d33",
+        "src/workspace-navigation.js": "3745d2d03240263eea523df10e5bf4d6b7c52aa20496406b1959035b2fe2040d"
+      },
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/channel.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/metrics-consumer.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/presence-panel.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/render-workspace.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/subscription.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/workspace-navigation.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "visible_passed": true
+    }
+  ],
+  "attempts_started": 1,
+  "candidate_learning_enabled": true,
+  "condition": "structured",
+  "contract_changes": 0,
+  "contract_review_policy": null,
+  "cumulative_action_request_cap": 72,
+  "cumulative_visible_pass": [
+    true,
+    true,
+    true
+  ],
+  "delivery": {
+    "experience_text": "Use the matched guidance together where supported by the current task and source. If advice conflicts, resolve it against the concrete requirements and explain the choice; do not combine incompatible obligations.\n\nMatched experience 092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce\n092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce:R01 [Applicability]\nSaving or subscription cleanup synchronously calls host listeners that may open another document or close the workspace.\n\n092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce:R02 [Event relation]\nCapture the old view and remove its current ownership. Finish final old-view effects, such as clearing its display, before callback-capable saving, or check authority for effects remaining after callbacks. An outer open rechecks its request identity after retirement.\n\n092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce:R03 [Preservation]\nNested open/close, nested editing and the new view's rendering remain authoritative. Disposal also cleans up captured resources rather than clearing objects installed by a callback.\n\n092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce:R04 [Exclusion]\nProtecting only final view installation can still leave a later stale clearing render. Do not require every host to detach first; notification order follows the current contract.\n\n092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce:R05 [Verification]\nInvoke open/close inside listeners for timer-driven and departure-driven saves. Check document output, subscriptions and nested edits after the outer call returns, through both direct calls and actual unmounting.\n\n\nMatched experience 4a344162be345350744e4de69aeb9d51b8d11f805cc594c0392e26d5649535d1\n4a344162be345350744e4de69aeb9d51b8d11f805cc594c0392e26d5649535d1:R01 [Applicability]\nApply when a first-match consumer owns a retained asynchronous source whose cleanup can suspend independently of consumer completion. TASK: \"Looking up an early matching record can leave the stream resource occupied. Repair the record scan in Controller in src/workflow.rb while preserving scan order and error behavior.\" README.md: \"Producer cleanup can suspend; the producer is retained independently of the consumer.\" Consumer termination alone therefore does not establish release of the owned resource.\n\n4a344162be345350744e4de69aeb9d51b8d11f805cc594c0392e26d5649535d1:R02 [Event relation]\nOn an early match, initiate the source's asynchronous close and publish terminal completion only after its callback completes. docs/host-api.md: \"first_match owns a supplied retained asynchronous record source and a supplied predicate.\" It also states: \"The source has next/aclose asynchronous operations; cancellation interrupts a suspended read, and cleanup may suspend.\" Original src/workflow.rb exposes the native close operation through \"@env.resolve('close',@key,nil)\". Use that completion boundary rather than a delay or merely returning from the scan.\n\nRetain the terminal guard and selected outcome before initiating callback-based cleanup. Original src/workflow.rb: \"return if @finishing;@finishing=true;@kind,@value,@failure=kind,value,error\". While finishing, prevent further reads and predicate work; repeated terminal entry must not initiate cleanup again or replace the selected outcome. Set done at the required cleanup completion boundary.\n\n4a344162be345350744e4de69aeb9d51b8d11f805cc594c0392e26d5649535d1:R03 [Preservation]\nRoute predicate failure and cancelled-read termination through owned-source cleanup while retaining the selected error or cancelled outcome. Original src/workflow.rb contains \"if row['cancelled'];finish('cancelled',nil,nil)\" and \"rescue => error;finish('error',nil,error);end\". Its predicate contains \"raise ArgumentError,'predicate failed' if config['predicateError']\". Cleanup must not silently replace these established outcomes.\n\nPreserve sequential predicate evaluation, first-match selection and exhaustion returning nil. Original src/workflow.rb: \"@predicate.call(row['value']) ? finish('return',row['value'],nil) : scan\" and \"elsif row['done'];finish('return',nil,nil)\". Preserve the existing non-nil configured-match condition, rather than introducing new matching semantics. The current predicate excludes nil matches; do not generalize a value-based exhaustion distinction to interfaces that permit nil matches.\n\n4a344162be345350744e4de69aeb9d51b8d11f805cc594c0392e26d5649535d1:R04 [Exclusion]\nKeep public methods, cancellation input and terminal snapshot shape. Original src/workflow.rb: \"def cancel;@env.output('cancelInput',@key,nil);end\" and \"def snapshot;s={done:@done};s.merge!({kind:@kind,value:@value,message:@failure&&@failure.message}) if @done;s;end\". TASK: \"Keep the documented public interfaces and unrelated behavior. Use only the Ruby standard library.\" Do not transfer shared-source reuse policies, visit identities, configuration-readiness APIs or network retry gates from unrelated consumers.\n\nCandidate limitations:\n- Only TASK and supplied public source/documents establish requirements; automatic contracts and frozen experiences are fallible guidance.\n- The documents do not specify cleanup-failure reporting or precedence over the selected result.\n- The documents do not establish whether explicit close is necessary after natural exhaustion.\n- The environment implementation and callback scheduling guarantees are not supplied.\n- Attempt 1 reports passing syntax and acceptance, with no behavioral observations establishing completeness, causality or cross-task benefit.\n- This reflection modifies no files and accesses no scorer, reference implementation or hidden tests.\n\n4a344162be345350744e4de69aeb9d51b8d11f805cc594c0392e26d5649535d1:R05 [Verification]\nVerify an early match with suspended close: cleanup begins, no further record is requested, snapshot remains incomplete, and releasing cleanup publishes the matching value. Repeat for predicate failure and cancellation during a suspended read, preserving the original message or cancelled kind. Check ordered nonmatches followed by a match, natural exhaustion returning nil, immediate cleanup completion, and repeated terminal entry. Preserve tests/configuration. VISIBLE_CHECKS.md: \"These checks are required after an Action but do not test business behavior.\" Syntax success alone does not establish resource release.\n\n\nMatched experience 8aacd6e164e2a8fc5c967472fac5b0b34b0b06a9879a206a213ab1f138e1460c\n8aacd6e164e2a8fc5c967472fac5b0b34b0b06a9879a206a213ab1f138e1460c:R01 [Applicability]\nA framework component or workspace wrapper exposes the coordinator. Correct direct calls do not establish correct component unmounting.\n\n8aacd6e164e2a8fc5c967472fac5b0b34b0b06a9879a206a213ab1f138e1460c:R02 [Event relation]\nFollow the current integration's actual call path for dispose, subscription removal and navigation ownership. Do not import lifecycle behavior from another framework version.\n\n8aacd6e164e2a8fc5c967472fac5b0b34b0b06a9879a206a213ab1f138e1460c:R03 [Preservation]\nPreserve the interfaces actually present: React effect cleanup, Vue 2 beforeDestroy, Vue 3 onBeforeUnmount/expose, jQuery events or the corresponding native entry points.\n\n8aacd6e164e2a8fc5c967472fac5b0b34b0b06a9879a206a213ab1f138e1460c:R04 [Exclusion]\nThese are alternatives from different cases, not requirements for one project to implement together. A native embedding does not imply a DOM or Promise runtime.\n\n8aacd6e164e2a8fc5c967472fac5b0b34b0b06a9879a206a213ab1f138e1460c:R05 [Verification]\nCheck both public coordinator calls and actual component unmounting. Navigate inside an unmount-triggered save and check the new view, externally callable APIs and resource release.\n\n\nMatched experience 9db7de273ed19c3b2c1a15fb54e071117813d3f26ed7a4cb4f4ea2002211a784\n9db7de273ed19c3b2c1a15fb54e071117813d3f26ed7a4cb4f4ea2002211a784:R01 [Applicability]\nA source may be reused across visits, attempts or selections of the same file object. Each opening has its own UI lifetime.\n\n9db7de273ed19c3b2c1a15fb54e071117813d3f26ed7a4cb4f4ea2002211a784:R02 [Event relation]\nControl effects with actual visit or attempt identity, not equality of files, channels or transport objects. Later visits obtain their own bootstrap and streaming updates.\n\n9db7de273ed19c3b2c1a15fb54e071117813d3f26ed7a4cb4f4ea2002211a784:R03 [Preservation]\nPreserve shared-source reuse, independent workspaces, subsequent valid uses and existing attempt management.\n\n9db7de273ed19c3b2c1a15fb54e071117813d3f26ed7a4cb4f4ea2002211a784:R04 [Exclusion]\nDo not permanently stop a shared source to suppress old results or let reopening the same object revive a retired visit's publication permission.\n\n9db7de273ed19c3b2c1a15fb54e071117813d3f26ed7a4cb4f4ea2002211a784:R05 [Verification]\nReopen the same object and channel, complete old decoding late and interleave two independent workspaces. Check isolation of old effects and continued operation of the new visit.\n\n\nMatched experience d26b6b4ae031faf8ea65f3cdc25f5b9b0ef63577f7b7aa83cf7f7f54a13f3d79\nd26b6b4ae031faf8ea65f3cdc25f5b9b0ef63577f7b7aa83cf7f7f54a13f3d79:R01 [Applicability]\nApply when a first-match scan owns a retained asynchronous source whose cleanup can suspend. TASK: \"Looking up an early matching record can leave the stream resource occupied. Repair the record scan in Controller in src/Workflow.java while preserving scan order and error behavior.\" docs/host-api.md: \"first_match owns a supplied retained asynchronous record source and a supplied predicate.\" Establish ownership from this evidence rather than interpreting independent retention as shared-consumer ownership.\n\nd26b6b4ae031faf8ea65f3cdc25f5b9b0ef63577f7b7aa83cf7f7f54a13f3d79:R02 [Event relation]\nSeparate selecting a terminal outcome from acknowledging completion. Initiate owned-source cleanup after accepting the terminal transition, and wait for cleanup before publishing that outcome. README.md: \"Producer cleanup can suspend; the producer is retained independently of the consumer.\" Original src/Workflow.java defines \"CompletableFuture<Object> cleanup=env.resolve(\\\"close\\\",key,null);\" and \"if(finishing)return;finishing=true;kind=terminal;result=value;failure=error;\". Retain the single-transition guard and use an actual cleanup-completion boundary rather than merely initiating close.\n\nCover early match, predicate failure, cancellation, and exhaustion through the owned resource's terminal path. Original src/Workflow.java routes cancellation and exhaustion with \"if(Boolean.TRUE.equals(row.get(\\\"cancelled\\\"))){finish(\\\"cancelled\\\",null,null);return;}if(Boolean.TRUE.equals(row.get(\\\"done\\\"))){finish(\\\"return\\\",null,null);return;}\" and routes predicate outcomes with \"try{if(predicate.test(row.get(\\\"value\\\")))finish(\\\"return\\\",row.get(\\\"value\\\"),null);else scan();}catch(Throwable error){finish(\\\"error\\\",null,error);}\". A common cleanup path avoids leaving failure or cancellation outside the release boundary. Explicit close on exhaustion is an ownership inference, not proof that exhaustion lacks internal cleanup.\n\nd26b6b4ae031faf8ea65f3cdc25f5b9b0ef63577f7b7aa83cf7f7f54a13f3d79:R03 [Preservation]\nPreserve sequential predicate evaluation, first-match selection, and terminal outcomes while inserting cleanup. Original src/Workflow.java: \"if(failure!=null)completion.completeExceptionally(failure);else if(kind.equals(\\\"cancelled\\\"))completion.completeExceptionally(new java.util.concurrent.CancellationException());else completion.complete(result);\". Preserve the predicate failure object, cancellation exception outcome, matching record value, and null exhaustion result; do not request another record after an accepted match.\n\nPreserve cancellation signalling and completion-gated snapshots. Original src/Workflow.java: \"case \\\"cancel\\\":env.output(\\\"cancelInput\\\",key,null);return null;\" and \"s.put(\\\"done\\\",completion!=null&&completion.isDone());\". Keep terminal snapshot details gated by completion, so pending cleanup does not expose a completed scan. TASK: \"Keep the documented public interfaces and unrelated behavior. Use only the Java standard library.\"\n\nd26b6b4ae031faf8ea65f3cdc25f5b9b0ef63577f7b7aa83cf7f7f54a13f3d79:R04 [Exclusion]\nDo not transfer observer-detachment or reusable-source preservation rules to a scan documented as owning its source. Conversely, do not generalize this owned-source close policy to unrelated shared consumers. Do not add form-readiness APIs, network modes, retry gates, or visit identities from the supplied related experiences.\n\nCandidate limitations:\n- Only TASK and supplied public documents/source establish requirements; automatic contracts and frozen experiences are fallible guidance.\n- The public sources do not specify cleanup-failure precedence, synchronous close failures, or exceptional next completion. Attempt 1 uses thenRun, which does not acknowledge exceptional cleanup; its acceptance does not resolve these cases.\n- Explicit close on exhaustion is a conservative ownership inference; the supplied documents do not establish whether exhaustion already releases the source internally.\n- Attempt 1 reports successful public compilation and acceptance without behavioral observations establishing completeness, causality, or cross-task benefit.\n- This reflection modifies no files and accesses no scorer, reference implementation, or hidden tests.\n\nd26b6b4ae031faf8ea65f3cdc25f5b9b0ef63577f7b7aa83cf7f7f54a13f3d79:R05 [Verification]\nUse controlled cleanup completion to check that an early match initiates release while completion remains pending, then publishes the matching value after cleanup completes. Repeat for predicate failure and cancellation, preserving their outcomes. Check false predicates retain read order, first match stops reads, and exhaustion returns null with the owned source released. Check snapshot completion gating and unchanged cancelInput signalling. VISIBLE_CHECKS.md: \"These checks are required after an Action but do not test business behavior.\" Run required compilation after an Action, preserve tests/configuration, and place generated artifacts outside the workspace.\n",
+    "provisional_sha256s": [],
+    "route": {
+      "checks": [
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "src/subscription.js",
+                  "line": 5,
+                  "quote": "const decoded = channel.decode(event.detail);"
+                },
+                {
+                  "file": "src/subscription.js",
+                  "line": 6,
+                  "quote": "if (decoded && typeof decoded.then === \"function\") decoded.then(receive);"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "src/subscription.js",
+                  "line": 5,
+                  "quote": "const decoded = channel.decode(event.detail);"
+                },
+                {
+                  "file": "src/subscription.js",
+                  "line": 6,
+                  "quote": "if (decoded && typeof decoded.then === \"function\") decoded.then(receive);"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "src/subscription.js",
+                  "line": 5,
+                  "quote": "const decoded = channel.decode(event.detail);"
+                },
+                {
+                  "file": "src/subscription.js",
+                  "line": 6,
+                  "quote": "if (decoded && typeof decoded.then === \"function\") decoded.then(receive);"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "src/subscription.js",
+                  "line": 2,
+                  "quote": "EventTarget removal detaches reception; an already started decode still settles."
+                },
+                {
+                  "file": "src/subscription.js",
+                  "line": 11,
+                  "quote": "return () => channel.target.removeEventListener(\"presence\", listener);"
+                }
+              ],
+              "predicate": "shared_lifetime",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "src/subscription.js",
+                  "line": 5,
+                  "quote": "const decoded = channel.decode(event.detail);"
+                },
+                {
+                  "file": "src/subscription.js",
+                  "line": 6,
+                  "quote": "if (decoded && typeof decoded.then === \"function\") decoded.then(receive);"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L",
+            "I"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "src/workspace-navigation.js",
+                  "line": 3,
+                  "quote": "Presence publication can synchronously select a different room or hide the"
+                },
+                {
+                  "file": "src/workspace-navigation.js",
+                  "line": 9,
+                  "quote": "select(channel, mode = \"synchronous\") { panel.show(channel, mode); }"
+                },
+                {
+                  "file": "src/workspace-navigation.js",
+                  "line": 10,
+                  "quote": "hide() { panel.close(); }"
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "src/workspace-navigation.js",
+                  "line": 3,
+                  "quote": "Presence publication can synchronously select a different room or hide the"
+                },
+                {
+                  "file": "src/workspace-navigation.js",
+                  "line": 9,
+                  "quote": "select(channel, mode = \"synchronous\") { panel.show(channel, mode); }"
+                },
+                {
+                  "file": "src/workspace-navigation.js",
+                  "line": 10,
+                  "quote": "hide() { panel.close(); }"
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "src/workspace-navigation.js",
+                  "line": 3,
+                  "quote": "Presence publication can synchronously select a different room or hide the"
+                },
+                {
+                  "file": "src/workspace-navigation.js",
+                  "line": 9,
+                  "quote": "select(channel, mode = \"synchronous\") { panel.show(channel, mode); }"
+                },
+                {
+                  "file": "src/workspace-navigation.js",
+                  "line": 10,
+                  "quote": "hide() { panel.close(); }"
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "L"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "src/subscription.js",
+                  "line": 2,
+                  "quote": "EventTarget removal detaches reception; an already started decode still settles."
+                },
+                {
+                  "file": "src/subscription.js",
+                  "line": 11,
+                  "quote": "return () => channel.target.removeEventListener(\"presence\", listener);"
+                }
+              ],
+              "predicate": "shared_lifetime",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "src/workspace-navigation.js",
+                  "line": 3,
+                  "quote": "Presence publication can synchronously select a different room or hide the"
+                },
+                {
+                  "file": "src/workspace-navigation.js",
+                  "line": 9,
+                  "quote": "select(channel, mode = \"synchronous\") { panel.show(channel, mode); }"
+                },
+                {
+                  "file": "src/workspace-navigation.js",
+                  "line": 10,
+                  "quote": "hide() { panel.close(); }"
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "L",
+            "I"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "src/subscription.js",
+                  "line": 2,
+                  "quote": "EventTarget removal detaches reception; an already started decode still settles."
+                },
+                {
+                  "file": "src/subscription.js",
+                  "line": 11,
+                  "quote": "return () => channel.target.removeEventListener(\"presence\", listener);"
+                }
+              ],
+              "predicate": "shared_lifetime",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "src/subscription.js",
+                  "line": 5,
+                  "quote": "const decoded = channel.decode(event.detail);"
+                },
+                {
+                  "file": "src/subscription.js",
+                  "line": 6,
+                  "quote": "if (decoded && typeof decoded.then === \"function\") decoded.then(receive);"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "src/subscription.js",
+                  "line": 5,
+                  "quote": "const decoded = channel.decode(event.detail);"
+                },
+                {
+                  "file": "src/subscription.js",
+                  "line": 6,
+                  "quote": "if (decoded && typeof decoded.then === \"function\") decoded.then(receive);"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        }
+      ],
+      "condition": "ROUTED",
+      "matched_count": 11,
+      "max_experiences": 5,
+      "omitted_memory_sha256s": [
+        "e3668cc751f87c073074960de1430fed92b72ce2aff28e7ce384115a1d2570a1",
+        "5021b7a9e46c944e052a63f3593cb22efe77d61409c357d6485915dc860e7390",
+        "75f102453389ebc800c48823317ff7d5ddb4454cecc596ec1ad538c29f8c4198",
+        "cb43d602785cb0eb722936571c4ec3478a32c58231315358895b2f8fcebcf3e0",
+        "bbd6eee9031ebf434c55cd29d1c35f132f9a7b79c441a16f3903e7d6992b822a",
+        "0624718ce36a7b9f19374275fafce28f2c117aa28ca07f5f96e96746b04a0938"
+      ],
+      "ranking": "label_jaccard_then_overlap_then_digest",
+      "reason": "unreviewed_analysis_source_premises",
+      "selected": null,
+      "selected_entries": [
+        {
+          "obligation_labels": [
+            "O",
+            "L",
+            "I"
+          ],
+          "sha256": "52cccf80b94f69b6708b797299d14ccb7d2a4ee121eadddff022848e0bfa61cf",
+          "text_sha256": "287efcb13d653ec39ccf630087f881d75c6e2a4fed77688ecacf4546f4290bdf",
+          "version": "single-file-v1"
+        },
+        {
+          "obligation_labels": [
+            "O",
+            "L"
+          ],
+          "sha256": "02fc60ff8b1cba333a7f17536af7219aeea71f005ec502207f277938537ced7e",
+          "text_sha256": "44b20b3b5792770cf1fb13490d592697dd89d50f7c7a76b6caf0e11cfd5d5688",
+          "version": "single-file-v1"
+        },
+        {
+          "obligation_labels": [
+            "O",
+            "L"
+          ],
+          "sha256": "7bf981bcdb016b5025ecec6d47b4fc3ed21a08c2e4fe042e5f589f901ba107ed",
+          "text_sha256": "b70df925676de7a8fe0b7119d5dd9a30ecd8d64572aedd39c1fe53f77548cf4a",
+          "version": "single-file-v1"
+        },
+        {
+          "obligation_labels": [
+            "L",
+            "I"
+          ],
+          "sha256": "82e2528ee9e402cf4a9a34c193f1085dec6f67eda555d8d076f8d840d17837e3",
+          "text_sha256": "cd13d778c499709b62c54a53c2ecc70cc1f51098a3d41bbb7dfc622483f7cc29",
+          "version": "single-file-v1"
+        },
+        {
+          "obligation_labels": [
+            "O",
+            "L"
+          ],
+          "sha256": "93de19385cb743cc450ccd5bb1c828c05a6f721d21adc29e9f1d60eb81e74617",
+          "text_sha256": "36735f324a0e09f2a6a34e3772a0d5f1d24d0cc0f9917c0b82b8448184707883",
+          "version": "single-file-v1"
+        }
+      ],
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "truncated_count": 6
+    },
+    "selected_sha256": null,
+    "selected_sha256s": [
+      "092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce",
+      "4a344162be345350744e4de69aeb9d51b8d11f805cc594c0392e26d5649535d1",
+      "8aacd6e164e2a8fc5c967472fac5b0b34b0b06a9879a206a213ab1f138e1460c",
+      "9db7de273ed19c3b2c1a15fb54e071117813d3f26ed7a4cb4f4ea2002211a784",
+      "d26b6b4ae031faf8ea65f3cdc25f5b9b0ef63577f7b7aa83cf7f7f54a13f3d79"
+    ]
+  },
+  "diagnoses": [],
+  "error": null,
+  "evaluation_split": null,
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "final_visible_passed": true,
+  "first_oracle_pass_attempt": 1,
+  "first_pass_attempt": 1,
+  "first_training_acceptance_attempt": 1,
+  "first_visible_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "held_out_eligible": false,
+  "known_tokens": 231743,
+  "learning_policy": "frozen",
+  "missing_action_evaluations": 0,
+  "mode": "learning",
+  "model": {
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "medium"
+  },
+  "model_profile": "sol56-medium",
+  "online_snapshot_sha256": null,
+  "per_attempt_acceptance": [
+    {
+      "feedback": {
+        "observations": [],
+        "passed": true,
+        "regressions": [],
+        "unknowns": [
+          "Only the acceptance verdict is available for feedback; no failure cause inferred."
+        ]
+      },
+      "passed": true,
+      "valid": true,
+      "verdict": "PASS"
+    }
+  ],
+  "per_attempt_oracle": [
+    {
+      "feedback": {
+        "observations": [],
+        "passed": true,
+        "regressions": [],
+        "unknowns": [
+          "Only the acceptance verdict is available for feedback; no failure cause inferred."
+        ]
+      },
+      "passed": true,
+      "valid": true,
+      "verdict": "PASS"
+    }
+  ],
+  "per_round_evaluations": [
+    {
+      "result": {
+        "observations": [
+          {
+            "check": "syntax:src/channel.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/metrics-consumer.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/presence-panel.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/render-workspace.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/subscription.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/workspace-navigation.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "passed": true,
+        "regressions": [],
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ],
+        "valid": true
+      },
+      "stage": "visible-1"
+    },
+    {
+      "result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "stage": "acceptance-1"
+    }
+  ],
+  "preparation_corrections": 0,
+  "preparation_validation_policy": "advisory-source-validation-v1",
+  "preparation_warnings": [],
+  "protocol": "tempoevo-trajectory-v12",
+  "reflection_updates": [
+    {
+      "name": "success",
+      "publication_kind": null,
+      "update": {
+        "change_summary": [
+          "Retained the primary lineage's core obligations: listener-before-startup ordering, provisional visit ownership before callback-capable startup, reconciliation of a cleanup handle returned after nested navigation, visit-scoped late-result suppression, same-channel reopening, and preservation of the metrics consumer.",
+          "Changed applicability from full-frame snapshot freshness to the narrower source-supported presence lifecycle: synchronous bootstrap, navigation reentry, reusable channels, and decoding that may settle after retirement.",
+          "Removed the unsupported per-visit arrival-order watermark and freshness obligations. The supplied TASK and public sources establish no ordering rule among asynchronously decoded presence events.",
+          "Added an explicit preservation boundary for the deliberate metrics connect-before-listen behavior and clarified that cleanup removes only the originating subscription rather than globally invalidating the reusable channel."
+        ],
+        "failure_attribution": "not_applicable",
+        "operation": "revise",
+        "reason": "The closest existing guidance is candidate-c74ac7e89370f376a10037e61f952581, which already covers this task's startup registration, navigation reentry, cleanup-handle reconciliation, asynchronous retirement, same-channel reopening, and metrics isolation. Revision is required because that experience additionally imposes full-frame arrival-order freshness using evidence not present in the supplied TASK or public sources. Attempt 1 passed, so no implementation or experience failure is established; the update narrows the guidance to normative evidence.",
+        "supporting_attempts": [
+          1
+        ],
+        "target_sha256s": [
+          "2b46ebef0210d193cf3c224d408cd690d5870460673f7bc67205090a7ff7b310"
+        ]
+      }
+    }
+  ],
+  "repair_stop_reason": "oracle_accepted",
+  "requests": 9,
+  "required_visible_checks": true,
+  "split_status": "unverified_no_independent_split_evidence",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "307c20b23d34994cb10740debe3c2db3202ab91d1b797f261f46e2fd9c6f4374",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9994456889108
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "98e7b34790e1f93047616ab5a402e95d4ead9db1a95b35e951ebd07788d3b344",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 24576,
+        "input_tokens": 32184,
+        "output_tokens": 2787,
+        "reasoning_output_tokens": 1240,
+        "total_tokens": 34971
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "5c7e19ab0a580902daabec8f4a19756df6d3efa13fcf8affde48d98690c70b7b",
+      "seconds": 59.2805615728721,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 24576,
+        "input_tokens": 32184,
+        "output_tokens": 2787,
+        "reasoning_output_tokens": 1240,
+        "total_tokens": 34971
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "bfc574ad6384bbd2ad395a57d73a52c80df906802ed65434187db1d4a6251779",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9994980348274
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "9072a73529b9a38399d24f628cd4c48f501be86a5a71e3f70a76df8c25efc962",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 17692,
+        "output_tokens": 2592,
+        "reasoning_output_tokens": 1022,
+        "total_tokens": 20284
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "5c2956559d840e0c371f52885922d4afb49d9ed231dae07238dbdaefd11c77b1",
+      "seconds": 45.36701981443912,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 17692,
+        "output_tokens": 2592,
+        "reasoning_output_tokens": 1022,
+        "total_tokens": 20284
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "43af7373acb661d6bcf3de3876a082ceea3871d138ccd897c8c8dcb25b561e2e",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9991037007421
+          },
+          "number": 1,
+          "requests": 5,
+          "restart_reason": "initial",
+          "result_sha256": "0f55b3d7f1db2bb41c64440110697cb88258de77f536556ee6293fca0194c1e3",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 93952,
+        "input_tokens": 108998,
+        "output_tokens": 2809,
+        "reasoning_output_tokens": 1035,
+        "total_tokens": 111807
+      },
+      "requests": 5,
+      "reserved_requests": 24,
+      "result_sha256": "911a62f2a70e37740fc73fe2e66a0ba4586c2d124090cab5b56b444edd3f940c",
+      "seconds": 67.14240335766226,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 93952,
+        "input_tokens": 108998,
+        "output_tokens": 2809,
+        "reasoning_output_tokens": 1035,
+        "total_tokens": 111807
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "b5bc7f8eae1311cd873aff808da328678625e797a61204ec8095abd44b1457a5",
+      "seconds": 0.9917077859863639,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 0.8419848186895251,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "837309d5b0eb297cada83805f531a2b3aab980ef2d4ee2e9468652aef5ceea91",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9965928616002
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "2f7af18646005b42f77efcb7eabd704f68a038ef58a9dc7cccb4dbd97e9f6f7e",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 63180,
+        "output_tokens": 1501,
+        "reasoning_output_tokens": 386,
+        "total_tokens": 64681
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "2db2c83f4737bc9beb340c974eae8ac56932de4e737d775369f2f65b5f7e97c5",
+      "seconds": 34.61270500905812,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 63180,
+        "output_tokens": 1501,
+        "reasoning_output_tokens": 386,
+        "total_tokens": 64681
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "tool_policy_recoveries": 0,
+  "training_accepted": true,
+  "transport_executions": 4,
+  "transport_retries": 0,
+  "unknown_request_stages": [],
+  "unknown_usage_requests": 0,
+  "unstarted_actions": 2,
+  "usage_incomplete": false,
+  "valid_attempts": 1,
+  "visible_passed": true
+}

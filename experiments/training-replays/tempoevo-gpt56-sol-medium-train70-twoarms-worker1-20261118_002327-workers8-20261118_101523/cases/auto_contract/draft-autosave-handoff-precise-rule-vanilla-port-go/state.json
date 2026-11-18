@@ -1,0 +1,1286 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "5578949efe2a325a4a962f1f013180d31855a67001910242aa84cef60f704359",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "8e4d1187aef61f84697a095737757708ec13fbb97851f94a02512116894c1d5e",
+        "docs/host-api.md": "aa49039b3634175a433555774eb01de7f4da933865199503971a085c04b35f9b",
+        "package-lock.json": "2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59",
+        "package.json": "66db10140e649e83eadde7fe04cb4ccb1467c20f5a7db2117520ab1572467f1a",
+        "src/workflow.go": "7283888c13aa6a9240915e853d4eecfa43b1fe01df73ef30cba0bba37f8072f1"
+      },
+      "candidate_sources": {
+        "README.md": "Harbor logistics — A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: coordinator dictionary\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Go 1.13.8\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide(). Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled. Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription. A store listener may call navigation synchronously. All source identities/text and status payloads retain original semantics.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.go": "package main\nimport \"sort\"\ntype Value map[string]interface{}\ntype Store struct { records map[string]string; listeners map[int]func(Value); serial, revision int }\nfunc NewStore(initial Value) *Store {\n    s:=&Store{records:map[string]string{},listeners:map[int]func(Value){}}\n    for id,text:=range initial { s.records[id]=text.(string) };return s\n}\nfunc(s *Store) Read(id string) string { return s.records[id] }\nfunc(s *Store) Subscribe(fn func(Value)) int { s.serial++;s.listeners[s.serial]=fn;return s.serial }\nfunc(s *Store) Stop(token int) { delete(s.listeners,token) }\nfunc(s *Store) Write(id,text string) Value {\n    s.records[id]=text;s.revision++;event:=Value{\"id\":id,\"text\":text,\"revision\":s.revision}\n    tokens:=[]int{};for token:=range s.listeners { tokens=append(tokens,token) };sort.Ints(tokens)\n    for _,token:=range tokens { if fn,ok:=s.listeners[token];ok { fn(event) } };return event\n}\n\ntype Environment interface { Store() *Store; Schedule(func(),int) interface{}; Cancel(interface{}); Output(string,interface{}); Write(string,string) }\ntype Trailing struct { env Environment; delay int; work func(string); handle interface{}; pending *string }\nfunc NewTrailing(env Environment,delay int,work func(string)) *Trailing { return &Trailing{env:env,delay:delay,work:work} }\nfunc(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}\nfunc(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}\nfunc(t *Trailing) Cancel() { if t.handle!=nil {t.env.Cancel(t.handle)};t.handle=nil;t.pending=nil }\n\ntype Badge struct{env Environment;id string;buffer *Trailing;token int}\nfunc NewBadge(env Environment,id string,buffer *Trailing)*Badge{token:=env.Store().Subscribe(func(e Value){if e[\"id\"]==id{env.Output(\"status\",e)}});return &Badge{env,id,buffer,token}}\nfunc(b *Badge)detach(){b.env.Store().Stop(b.token)}\ntype BufferBank struct{entries map[string]*Trailing}\nfunc(b *BufferBank)get(env Environment,id string)*Trailing{if b.entries==nil{b.entries=map[string]*Trailing{}};if b.entries[id]==nil{b.entries[id]=NewTrailing(env,120,func(text string){env.Write(id,text)})};return b.entries[id]}\ntype Workspace struct{env Environment;current *Badge;generation uint64;buffers map[string]*Trailing}\nfunc NewWorkspace(env Environment)*Workspace{return &Workspace{env:env,buffers:map[string]*Trailing{},}}\nfunc(w *Workspace)retire(){old:=w.current;w.current=nil;if old!=nil&&!false{old.detach()};w.env.Output(\"document\",nil);if old!=nil{};if old!=nil&&false{old.detach()}}\nfunc(w *Workspace)Open(id string){w.generation++;request:=w.generation;w.retire();if true&&request!=w.generation{return};buffer:=func()*Trailing{if w.buffers[id]==nil{w.buffers[id]=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})};return w.buffers[id]}();w.current=NewBadge(w.env,id,buffer);w.env.Output(\"document\",Value{\"id\":id,\"text\":w.env.Store().Read(id)})}\nfunc(w *Workspace)Edit(text string){view:=w.current;if view!=nil{view.buffer.Push(text)}}\nfunc(w *Workspace)Close(){w.generation++;w.retire()}\nfunc(w *Workspace)Dispose(){w.Close()}\ntype Preview struct{task *Trailing}\nfunc NewPreview(env Environment)*Preview{return &Preview{NewTrailing(env,40,func(query string){env.Output(\"preview\",Value{\"query\":query})})}}\nfunc(p *Preview)Query(text string){p.task.Push(text)}\nfunc(p *Preview)Hide(){p.task.Cancel()}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.go",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "5578949efe2a325a4a962f1f013180d31855a67001910242aa84cef60f704359",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "8e4d1187aef61f84697a095737757708ec13fbb97851f94a02512116894c1d5e",
+        "docs/host-api.md": "aa49039b3634175a433555774eb01de7f4da933865199503971a085c04b35f9b",
+        "package-lock.json": "2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59",
+        "package.json": "66db10140e649e83eadde7fe04cb4ccb1467c20f5a7db2117520ab1572467f1a",
+        "src/workflow.go": "7283888c13aa6a9240915e853d4eecfa43b1fe01df73ef30cba0bba37f8072f1"
+      },
+      "candidate_sources": {
+        "README.md": "Harbor logistics — A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: coordinator dictionary\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Go 1.13.8\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide(). Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled. Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription. A store listener may call navigation synchronously. All source identities/text and status payloads retain original semantics.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.go": "package main\nimport \"sort\"\ntype Value map[string]interface{}\ntype Store struct { records map[string]string; listeners map[int]func(Value); serial, revision int }\nfunc NewStore(initial Value) *Store {\n    s:=&Store{records:map[string]string{},listeners:map[int]func(Value){}}\n    for id,text:=range initial { s.records[id]=text.(string) };return s\n}\nfunc(s *Store) Read(id string) string { return s.records[id] }\nfunc(s *Store) Subscribe(fn func(Value)) int { s.serial++;s.listeners[s.serial]=fn;return s.serial }\nfunc(s *Store) Stop(token int) { delete(s.listeners,token) }\nfunc(s *Store) Write(id,text string) Value {\n    s.records[id]=text;s.revision++;event:=Value{\"id\":id,\"text\":text,\"revision\":s.revision}\n    tokens:=[]int{};for token:=range s.listeners { tokens=append(tokens,token) };sort.Ints(tokens)\n    for _,token:=range tokens { if fn,ok:=s.listeners[token];ok { fn(event) } };return event\n}\n\ntype Environment interface { Store() *Store; Schedule(func(),int) interface{}; Cancel(interface{}); Output(string,interface{}); Write(string,string) }\ntype Trailing struct { env Environment; delay int; work func(string); handle interface{}; pending *string }\nfunc NewTrailing(env Environment,delay int,work func(string)) *Trailing { return &Trailing{env:env,delay:delay,work:work} }\nfunc(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}\nfunc(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}\nfunc(t *Trailing) Cancel() { if t.handle!=nil {t.env.Cancel(t.handle)};t.handle=nil;t.pending=nil }\n\ntype Badge struct{env Environment;id string;buffer *Trailing;token int}\nfunc NewBadge(env Environment,id string,buffer *Trailing)*Badge{token:=env.Store().Subscribe(func(e Value){if e[\"id\"]==id{env.Output(\"status\",e)}});return &Badge{env,id,buffer,token}}\nfunc(b *Badge)detach(){b.env.Store().Stop(b.token)}\ntype BufferBank struct{entries map[string]*Trailing}\nfunc(b *BufferBank)get(env Environment,id string)*Trailing{if b.entries==nil{b.entries=map[string]*Trailing{}};if b.entries[id]==nil{b.entries[id]=NewTrailing(env,120,func(text string){env.Write(id,text)})};return b.entries[id]}\ntype Workspace struct{env Environment;current *Badge;generation uint64;buffers map[string]*Trailing}\nfunc NewWorkspace(env Environment)*Workspace{return &Workspace{env:env,buffers:map[string]*Trailing{},}}\nfunc(w *Workspace)retire(){old:=w.current;w.current=nil;if old!=nil&&!false{old.detach()};w.env.Output(\"document\",nil);if old!=nil{};if old!=nil&&false{old.detach()}}\nfunc(w *Workspace)Open(id string){w.generation++;request:=w.generation;w.retire();if true&&request!=w.generation{return};buffer:=func()*Trailing{if w.buffers[id]==nil{w.buffers[id]=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})};return w.buffers[id]}();w.current=NewBadge(w.env,id,buffer);w.env.Output(\"document\",Value{\"id\":id,\"text\":w.env.Store().Read(id)})}\nfunc(w *Workspace)Edit(text string){view:=w.current;if view!=nil{view.buffer.Push(text)}}\nfunc(w *Workspace)Close(){w.generation++;w.retire()}\nfunc(w *Workspace)Dispose(){w.Close()}\ntype Preview struct{task *Trailing}\nfunc NewPreview(env Environment)*Preview{return &Preview{NewTrailing(env,40,func(query string){env.Output(\"preview\",Value{\"query\":query})})}}\nfunc(p *Preview)Query(text string){p.task.Push(text)}\nfunc(p *Preview)Hide(){p.task.Cancel()}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.go",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 2,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "5578949efe2a325a4a962f1f013180d31855a67001910242aa84cef60f704359",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "8e4d1187aef61f84697a095737757708ec13fbb97851f94a02512116894c1d5e",
+        "docs/host-api.md": "aa49039b3634175a433555774eb01de7f4da933865199503971a085c04b35f9b",
+        "package-lock.json": "2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59",
+        "package.json": "66db10140e649e83eadde7fe04cb4ccb1467c20f5a7db2117520ab1572467f1a",
+        "src/workflow.go": "ec9fffb5a252ca141c12f8a7239e08a0c2f683447e2d36871a0471fe724459da"
+      },
+      "candidate_sources": {
+        "README.md": "Harbor logistics — A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: coordinator dictionary\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Go 1.13.8\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide(). Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled. Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription. A store listener may call navigation synchronously. All source identities/text and status payloads retain original semantics.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.go": "package main\nimport \"sort\"\ntype Value map[string]interface{}\ntype Store struct { records map[string]string; listeners map[int]func(Value); serial, revision int }\nfunc NewStore(initial Value) *Store {\n    s:=&Store{records:map[string]string{},listeners:map[int]func(Value){}}\n    for id,text:=range initial { s.records[id]=text.(string) };return s\n}\nfunc(s *Store) Read(id string) string { return s.records[id] }\nfunc(s *Store) Subscribe(fn func(Value)) int { s.serial++;s.listeners[s.serial]=fn;return s.serial }\nfunc(s *Store) Stop(token int) { delete(s.listeners,token) }\nfunc(s *Store) Write(id,text string) Value {\n    s.records[id]=text;s.revision++;event:=Value{\"id\":id,\"text\":text,\"revision\":s.revision}\n    tokens:=[]int{};for token:=range s.listeners { tokens=append(tokens,token) };sort.Ints(tokens)\n    for _,token:=range tokens { if fn,ok:=s.listeners[token];ok { fn(event) } };return event\n}\n\ntype Environment interface { Store() *Store; Schedule(func(),int) interface{}; Cancel(interface{}); Output(string,interface{}); Write(string,string) }\ntype Trailing struct { env Environment; delay int; work func(string); handle interface{}; pending *string }\nfunc NewTrailing(env Environment,delay int,work func(string)) *Trailing { return &Trailing{env:env,delay:delay,work:work} }\nfunc(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}\nfunc(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}\nfunc(t *Trailing) Cancel() { if t.handle!=nil {t.env.Cancel(t.handle)};t.handle=nil;t.pending=nil }\n\ntype Badge struct{env Environment;id string;buffer *Trailing;token int}\nfunc NewBadge(env Environment,id string,buffer *Trailing)*Badge{token:=env.Store().Subscribe(func(e Value){if e[\"id\"]==id{env.Output(\"status\",e)}});return &Badge{env,id,buffer,token}}\nfunc(b *Badge)detach(){b.env.Store().Stop(b.token)}\ntype BufferBank struct{entries map[string]*Trailing}\nfunc(b *BufferBank)get(env Environment,id string)*Trailing{if b.entries==nil{b.entries=map[string]*Trailing{}};if b.entries[id]==nil{b.entries[id]=NewTrailing(env,120,func(text string){env.Write(id,text)})};return b.entries[id]}\ntype Workspace struct{env Environment;current *Badge;generation uint64;buffers map[string]*Trailing}\nfunc NewWorkspace(env Environment)*Workspace{return &Workspace{env:env,buffers:map[string]*Trailing{},}}\nfunc(w *Workspace)retire(){old:=w.current;w.current=nil;if old!=nil&&!false{old.detach()};w.env.Output(\"document\",nil);if old!=nil{};if old!=nil&&false{old.detach()}}\nfunc(w *Workspace)Open(id string){w.generation++;request:=w.generation;w.retire();if true&&request!=w.generation{return};buffer:=func()*Trailing{if w.buffers[id]==nil{w.buffers[id]=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})};return w.buffers[id]}();w.current=NewBadge(w.env,id,buffer);w.env.Output(\"document\",Value{\"id\":id,\"text\":w.env.Store().Read(id)})}\nfunc(w *Workspace)Edit(text string){\n    if w.current!=nil { w.current.buffer.Push(text) }\n}\nfunc(w *Workspace)Close(){w.generation++;w.retire()}\nfunc(w *Workspace)Dispose(){w.Close()}\ntype Preview struct{task *Trailing}\nfunc NewPreview(env Environment)*Preview{return &Preview{NewTrailing(env,40,func(query string){env.Output(\"preview\",Value{\"query\":query})})}}\nfunc(p *Preview)Query(text string){p.task.Push(text)}\nfunc(p *Preview)Hide(){p.task.Cancel()}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.go",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 3,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "After each edit, verify no store write occurs before the document buffer's 120 ms quiet interval expires.",
+      "At the end of a 120 ms quiet interval, verify exactly the latest text from that editing burst is written for the edited document.",
+      "After one burst saves, verify a later burst for the same document can independently schedule and complete another save.",
+      "Verify navigation, close, and badge retirement do not discard a pending document-buffer save.",
+      "Verify search-preview query and hide behavior remain unchanged, including its separate 40 ms trailing task.",
+      "Run the public Go syntax/build check after any Action, placing compiled outputs and caches under /tmp."
+    ],
+    "forbidden_effects": [
+      "Do not write to the store on every workspace edit.",
+      "Do not emit intermediate texts from one editing burst after they have been superseded.",
+      "Do not cancel or transfer document-buffer ownership merely because the current Badge is detached, the document is closed, or another document is opened.",
+      "Do not change the search preview, its 40 ms quiet interval, or hide cancellation behavior.",
+      "Do not change public workspace, preview, store, environment, output, source-text, identity, or status-payload semantics.",
+      "Do not modify tests, configuration, lockfiles, documentation, or files outside business code under /workspace."
+    ],
+    "lifecycle_identity": [
+      "Each document's trailing save buffer is identified by document id and owned by the workspace coordinator dictionary, independently of the current Badge.",
+      "Reopening the same document reuses its coordinator-owned buffer so pending work and future save bursts retain document identity.",
+      "A Badge owns only its live store subscription; retiring it must not retire the document buffer.",
+      "The trailing task clears its completed pending state before invoking the save callback, allowing synchronous callback activity to establish a distinct subsequent burst."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Workspace edits must be submitted to the existing per-document trailing task instead of being written to the store immediately."
+      },
+      {
+        "id": "O2",
+        "text": "For each editing burst, the document buffer must wait for 120 ms of quiet and then write only the latest submitted text."
+      },
+      {
+        "id": "O3",
+        "text": "Each later edit before expiry must replace the pending text and restart the 120 ms quiet interval."
+      },
+      {
+        "id": "O4",
+        "text": "After a burst has saved, subsequent bursts must remain schedulable and save normally."
+      },
+      {
+        "id": "O5",
+        "text": "Pending document-buffer work must persist independently of current-view Badge retirement, navigation, close, and reopen, because the coordinator dictionary owns document buffers."
+      },
+      {
+        "id": "O6",
+        "text": "Before invoking a save callback, the trailing task must make the completed timer/pending state inactive so synchronous store listeners or navigation cannot corrupt the completed burst or prevent later bursts."
+      },
+      {
+        "id": "O7",
+        "text": "All other editor behavior and public interfaces must be preserved, including document/status output semantics and synchronous store listener behavior."
+      },
+      {
+        "id": "O8",
+        "text": "The adjacent search preview must remain outside the maintenance change."
+      }
+    ],
+    "ordering_barriers": [
+      "An edit schedules or reschedules its document's trailing task; no corresponding store write occurs until that task reaches its 120 ms quiet boundary.",
+      "On expiry, the trailing task cancels/clears its active handle and pending value before invoking the environment write callback.",
+      "The save callback may synchronously notify store listeners and trigger navigation; buffer state must already be ready for reentrant or later edits.",
+      "Current-view retirement detaches the Badge subscription and clears the document output, but it does not cancel the coordinator-owned document trailing task."
+    ],
+    "preservation": [
+      "Preserve createWorkspace open(id), edit(text), close(), and dispose() interfaces.",
+      "Preserve createSearchPreview query(text) and hide() behavior without maintenance changes.",
+      "Preserve synchronous store read, write, and subscribe behavior.",
+      "Preserve document and status output payload identities and text semantics.",
+      "Preserve Badge subscription detachment when its view is retired.",
+      "Preserve document-buffer ownership in the coordinator dictionary and preview ownership of its separate quiet interval."
+    ],
+    "scope": [
+      "Change only workspace draft-edit persistence in src/workflow.go so edits use the existing 120 ms trailing-task mechanism.",
+      "The affected lifecycle includes editing bursts, timer replacement, timer expiry, synchronous save callbacks, navigation, close, reopen, and disposal insofar as they interact with coordinator-owned document buffers.",
+      "Search preview behavior is explicitly out of scope."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "The workspace draft editor currently writes to the store on every keystroke."
+      },
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst."
+      },
+      {
+        "file": "TASK",
+        "quote": "Subsequent bursts\nmust continue to save."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve the editor's other behavior and public interfaces."
+      },
+      {
+        "file": "TASK",
+        "quote": "The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "Harbor logistics — A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: coordinator dictionary"
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide(). Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription. A store listener may call navigation synchronously."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "All source identities/text and status payloads retain original semantics."
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(w *Workspace)Edit(text string){view:=w.current;if view!=nil{w.env.Write(view.id,text)}}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "if w.buffers[id]==nil{w.buffers[id]=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})};return w.buffers[id]"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func NewPreview(env Environment)*Preview{return &Preview{NewTrailing(env,40,func(query string){env.Output(\"preview\",Value{\"query\":query})})}}"
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "The external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior."
+      }
+    ],
+    "triggers": [
+      "Calling Workspace.Edit(text) while a document Badge is current begins or extends that document's editing burst.",
+      "A further edit for the same document before timer expiry replaces the pending text and restarts the quiet interval.",
+      "Expiry after 120 ms without a further edit triggers one save of the latest pending text.",
+      "Opening, closing, disposing, or synchronously navigating can retire the current Badge but must not cancel a coordinator-owned pending document save.",
+      "A later edit after a completed save begins a new burst."
+    ],
+    "unknowns": [
+      "The public sources do not specify whether Dispose permanently forbids later method calls; no new post-disposal behavior should be invented.",
+      "The public sources do not specify timer behavior when a new edit occurs at exactly the expiry boundary; preserve the existing Environment and Trailing ordering semantics.",
+      "The public sources do not define error or panic handling for Environment.Schedule, Cancel, Write, Output, or listener callbacks; do not introduce new semantics.",
+      "The public sources do not state whether unchanged text should be deduplicated across separate bursts; therefore each completed burst should retain the existing trailing-task write semantics."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 3,
+  "diagnoses": [
+    {
+      "attempt": 2,
+      "candidate_only_contract_evidence": [],
+      "contract_after": {
+        "checkpoints": [
+          "After each edit, verify no store write occurs before the document buffer's 120 ms quiet interval expires.",
+          "At the end of a 120 ms quiet interval, verify exactly the latest text from that editing burst is written for the edited document.",
+          "After one burst saves, verify a later burst for the same document can independently schedule and complete another save.",
+          "Verify navigation, close, and badge retirement do not discard a pending document-buffer save.",
+          "Verify search-preview query and hide behavior remain unchanged, including its separate 40 ms trailing task.",
+          "Run the public Go syntax/build check after any Action, placing compiled outputs and caches under /tmp."
+        ],
+        "forbidden_effects": [
+          "Do not write to the store on every workspace edit.",
+          "Do not emit intermediate texts from one editing burst after they have been superseded.",
+          "Do not cancel or transfer document-buffer ownership merely because the current Badge is detached, the document is closed, or another document is opened.",
+          "Do not change the search preview, its 40 ms quiet interval, or hide cancellation behavior.",
+          "Do not change public workspace, preview, store, environment, output, source-text, identity, or status-payload semantics.",
+          "Do not modify tests, configuration, lockfiles, documentation, or files outside business code under /workspace."
+        ],
+        "lifecycle_identity": [
+          "Each document's trailing save buffer is identified by document id and owned by the workspace coordinator dictionary, independently of the current Badge.",
+          "Reopening the same document reuses its coordinator-owned buffer so pending work and future save bursts retain document identity.",
+          "A Badge owns only its live store subscription; retiring it must not retire the document buffer.",
+          "The trailing task clears its completed pending state before invoking the save callback, allowing synchronous callback activity to establish a distinct subsequent burst."
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "text": "Workspace edits must be submitted to the existing per-document trailing task instead of being written to the store immediately."
+          },
+          {
+            "id": "O2",
+            "text": "For each editing burst, the document buffer must wait for 120 ms of quiet and then write only the latest submitted text."
+          },
+          {
+            "id": "O3",
+            "text": "Each later edit before expiry must replace the pending text and restart the 120 ms quiet interval."
+          },
+          {
+            "id": "O4",
+            "text": "After a burst has saved, subsequent bursts must remain schedulable and save normally."
+          },
+          {
+            "id": "O5",
+            "text": "Pending document-buffer work must persist independently of current-view Badge retirement, navigation, close, and reopen, because the coordinator dictionary owns document buffers."
+          },
+          {
+            "id": "O6",
+            "text": "Before invoking a save callback, the trailing task must make the completed timer/pending state inactive so synchronous store listeners or navigation cannot corrupt the completed burst or prevent later bursts."
+          },
+          {
+            "id": "O7",
+            "text": "All other editor behavior and public interfaces must be preserved, including document/status output semantics and synchronous store listener behavior."
+          },
+          {
+            "id": "O8",
+            "text": "The adjacent search preview must remain outside the maintenance change."
+          }
+        ],
+        "ordering_barriers": [
+          "An edit schedules or reschedules its document's trailing task; no corresponding store write occurs until that task reaches its 120 ms quiet boundary.",
+          "On expiry, the trailing task cancels/clears its active handle and pending value before invoking the environment write callback.",
+          "The save callback may synchronously notify store listeners and trigger navigation; buffer state must already be ready for reentrant or later edits.",
+          "Current-view retirement detaches the Badge subscription and clears the document output, but it does not cancel the coordinator-owned document trailing task."
+        ],
+        "preservation": [
+          "Preserve createWorkspace open(id), edit(text), close(), and dispose() interfaces.",
+          "Preserve createSearchPreview query(text) and hide() behavior without maintenance changes.",
+          "Preserve synchronous store read, write, and subscribe behavior.",
+          "Preserve document and status output payload identities and text semantics.",
+          "Preserve Badge subscription detachment when its view is retired.",
+          "Preserve document-buffer ownership in the coordinator dictionary and preview ownership of its separate quiet interval."
+        ],
+        "scope": [
+          "Change only workspace draft-edit persistence in src/workflow.go so edits use the existing 120 ms trailing-task mechanism.",
+          "The affected lifecycle includes editing bursts, timer replacement, timer expiry, synchronous save callbacks, navigation, close, reopen, and disposal insofar as they interact with coordinator-owned document buffers.",
+          "Search preview behavior is explicitly out of scope."
+        ],
+        "supporting_evidence": [
+          {
+            "file": "TASK",
+            "quote": "The workspace draft editor currently writes to the store on every keystroke."
+          },
+          {
+            "file": "TASK",
+            "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst."
+          },
+          {
+            "file": "TASK",
+            "quote": "Subsequent bursts\nmust continue to save."
+          },
+          {
+            "file": "TASK",
+            "quote": "Preserve the editor's other behavior and public interfaces."
+          },
+          {
+            "file": "TASK",
+            "quote": "The adjacent search preview is outside this maintenance change."
+          },
+          {
+            "file": "README.md",
+            "quote": "Harbor logistics — A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: coordinator dictionary"
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide(). Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription. A store listener may call navigation synchronously."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "All source identities/text and status payloads retain original semantics."
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "func(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}"
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "func(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}"
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "func(w *Workspace)Edit(text string){view:=w.current;if view!=nil{w.env.Write(view.id,text)}}"
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "if w.buffers[id]==nil{w.buffers[id]=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})};return w.buffers[id]"
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "func NewPreview(env Environment)*Preview{return &Preview{NewTrailing(env,40,func(query string){env.Output(\"preview\",Value{\"query\":query})})}}"
+          },
+          {
+            "file": "VISIBLE_CHECKS.md",
+            "quote": "The external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior."
+          }
+        ],
+        "triggers": [
+          "Calling Workspace.Edit(text) while a document Badge is current begins or extends that document's editing burst.",
+          "A further edit for the same document before timer expiry replaces the pending text and restarts the quiet interval.",
+          "Expiry after 120 ms without a further edit triggers one save of the latest pending text.",
+          "Opening, closing, disposing, or synchronously navigating can retire the current Badge but must not cancel a coordinator-owned pending document save.",
+          "A later edit after a completed save begins a new burst."
+        ],
+        "unknowns": [
+          "The public sources do not specify whether Dispose permanently forbids later method calls; no new post-disposal behavior should be invented.",
+          "The public sources do not specify timer behavior when a new edit occurs at exactly the expiry boundary; preserve the existing Environment and Trailing ordering semantics.",
+          "The public sources do not define error or panic handling for Environment.Schedule, Cancel, Write, Output, or listener callbacks; do not introduce new semantics.",
+          "The public sources do not state whether unchanged text should be deduplicated across separate bursts; therefore each completed burst should retain the existing trailing-task write semantics."
+        ]
+      },
+      "contract_changed": false,
+      "diagnosis": "unknown",
+      "explanation": "The behavioral contract remains grounded in the original task and public sources and needs no revision. The previous candidate changes Workspace.Edit from an immediate write to view.buffer.Push(text), while the existing per-document buffer uses a 120 ms Trailing task and Flush clears its state before invoking the write callback. That is consistent with the stated obligations. The only reported public observation is a passing syntax check, and the failed acceptance verdict supplies no failure cause. It therefore cannot establish either an implementation gap or a contract gap.",
+      "remaining_unknowns": [
+        "The cause of the failed acceptance verdict is unavailable and cannot be inferred from the verdict alone.",
+        "The supplied observations do not exercise the 120 ms quiet interval, latest-text coalescing, later bursts, navigation, close, reopen, or synchronous callback reentry.",
+        "The public sources do not specify behavior for an edit exactly concurrent with timer expiry.",
+        "The public sources do not define error or panic behavior for environment operations or callbacks."
+      ],
+      "restored_original_contract_evidence": false,
+      "routing_analysis": null,
+      "structured_delta": [],
+      "supporting_evidence": [
+        {
+          "file": "TASK",
+          "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst."
+        },
+        {
+          "file": "TASK",
+          "quote": "Subsequent bursts\nmust continue to save."
+        },
+        {
+          "file": "TASK",
+          "quote": "Preserve the editor's other behavior and public interfaces."
+        },
+        {
+          "file": "TASK",
+          "quote": "The adjacent search preview is outside this maintenance change."
+        },
+        {
+          "file": "src/workflow.go",
+          "quote": "func(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}"
+        },
+        {
+          "file": "src/workflow.go",
+          "quote": "func(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}"
+        },
+        {
+          "file": "src/workflow.go",
+          "quote": "if w.buffers[id]==nil{w.buffers[id]=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})};return w.buffers[id]"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "func(w *Workspace)Edit(text string){view:=w.current;if view!=nil{view.buffer.Push(text)}}"
+        },
+        {
+          "file": "docs/host-api.md",
+          "quote": "Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription. A store listener may call navigation synchronously."
+        }
+      ],
+      "supporting_evidence_bindings": [
+        {
+          "file": "TASK",
+          "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Subsequent bursts\nmust continue to save.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Preserve the editor's other behavior and public interfaces.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "The adjacent search preview is outside this maintenance change.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "src/workflow.go",
+          "quote": "func(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "src/workflow.go",
+          "quote": "func(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "src/workflow.go",
+          "quote": "if w.buffers[id]==nil{w.buffers[id]=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})};return w.buffers[id]",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "func(w *Workspace)Edit(text string){view:=w.current;if view!=nil{view.buffer.Push(text)}}",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "docs/host-api.md",
+          "quote": "Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription. A store listener may call navigation synchronously.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        }
+      ],
+      "unused_routing_analysis": false
+    },
+    {
+      "attempt": 3,
+      "candidate_only_contract_evidence": [],
+      "contract_after": {
+        "checkpoints": [
+          "After each edit, verify no store write occurs before the document buffer's 120 ms quiet interval expires.",
+          "At the end of a 120 ms quiet interval, verify exactly the latest text from that editing burst is written for the edited document.",
+          "After one burst saves, verify a later burst for the same document can independently schedule and complete another save.",
+          "Verify navigation, close, and badge retirement do not discard a pending document-buffer save.",
+          "Verify search-preview query and hide behavior remain unchanged, including its separate 40 ms trailing task.",
+          "Run the public Go syntax/build check after any Action, placing compiled outputs and caches under /tmp."
+        ],
+        "forbidden_effects": [
+          "Do not write to the store on every workspace edit.",
+          "Do not emit intermediate texts from one editing burst after they have been superseded.",
+          "Do not cancel or transfer document-buffer ownership merely because the current Badge is detached, the document is closed, or another document is opened.",
+          "Do not change the search preview, its 40 ms quiet interval, or hide cancellation behavior.",
+          "Do not change public workspace, preview, store, environment, output, source-text, identity, or status-payload semantics.",
+          "Do not modify tests, configuration, lockfiles, documentation, or files outside business code under /workspace."
+        ],
+        "lifecycle_identity": [
+          "Each document's trailing save buffer is identified by document id and owned by the workspace coordinator dictionary, independently of the current Badge.",
+          "Reopening the same document reuses its coordinator-owned buffer so pending work and future save bursts retain document identity.",
+          "A Badge owns only its live store subscription; retiring it must not retire the document buffer.",
+          "The trailing task clears its completed pending state before invoking the save callback, allowing synchronous callback activity to establish a distinct subsequent burst."
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "text": "Workspace edits must be submitted to the existing per-document trailing task instead of being written to the store immediately."
+          },
+          {
+            "id": "O2",
+            "text": "For each editing burst, the document buffer must wait for 120 ms of quiet and then write only the latest submitted text."
+          },
+          {
+            "id": "O3",
+            "text": "Each later edit before expiry must replace the pending text and restart the 120 ms quiet interval."
+          },
+          {
+            "id": "O4",
+            "text": "After a burst has saved, subsequent bursts must remain schedulable and save normally."
+          },
+          {
+            "id": "O5",
+            "text": "Pending document-buffer work must persist independently of current-view Badge retirement, navigation, close, and reopen, because the coordinator dictionary owns document buffers."
+          },
+          {
+            "id": "O6",
+            "text": "Before invoking a save callback, the trailing task must make the completed timer/pending state inactive so synchronous store listeners or navigation cannot corrupt the completed burst or prevent later bursts."
+          },
+          {
+            "id": "O7",
+            "text": "All other editor behavior and public interfaces must be preserved, including document/status output semantics and synchronous store listener behavior."
+          },
+          {
+            "id": "O8",
+            "text": "The adjacent search preview must remain outside the maintenance change."
+          }
+        ],
+        "ordering_barriers": [
+          "An edit schedules or reschedules its document's trailing task; no corresponding store write occurs until that task reaches its 120 ms quiet boundary.",
+          "On expiry, the trailing task cancels/clears its active handle and pending value before invoking the environment write callback.",
+          "The save callback may synchronously notify store listeners and trigger navigation; buffer state must already be ready for reentrant or later edits.",
+          "Current-view retirement detaches the Badge subscription and clears the document output, but it does not cancel the coordinator-owned document trailing task."
+        ],
+        "preservation": [
+          "Preserve createWorkspace open(id), edit(text), close(), and dispose() interfaces.",
+          "Preserve createSearchPreview query(text) and hide() behavior without maintenance changes.",
+          "Preserve synchronous store read, write, and subscribe behavior.",
+          "Preserve document and status output payload identities and text semantics.",
+          "Preserve Badge subscription detachment when its view is retired.",
+          "Preserve document-buffer ownership in the coordinator dictionary and preview ownership of its separate quiet interval."
+        ],
+        "scope": [
+          "Change only workspace draft-edit persistence in src/workflow.go so edits use the existing 120 ms trailing-task mechanism.",
+          "The affected lifecycle includes editing bursts, timer replacement, timer expiry, synchronous save callbacks, navigation, close, reopen, and disposal insofar as they interact with coordinator-owned document buffers.",
+          "Search preview behavior is explicitly out of scope."
+        ],
+        "supporting_evidence": [
+          {
+            "file": "TASK",
+            "quote": "The workspace draft editor currently writes to the store on every keystroke."
+          },
+          {
+            "file": "TASK",
+            "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst."
+          },
+          {
+            "file": "TASK",
+            "quote": "Subsequent bursts\nmust continue to save."
+          },
+          {
+            "file": "TASK",
+            "quote": "Preserve the editor's other behavior and public interfaces."
+          },
+          {
+            "file": "TASK",
+            "quote": "The adjacent search preview is outside this maintenance change."
+          },
+          {
+            "file": "README.md",
+            "quote": "Harbor logistics — A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: coordinator dictionary"
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide(). Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription. A store listener may call navigation synchronously."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "All source identities/text and status payloads retain original semantics."
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "func(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}"
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "func(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}"
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "func(w *Workspace)Edit(text string){view:=w.current;if view!=nil{w.env.Write(view.id,text)}}"
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "if w.buffers[id]==nil{w.buffers[id]=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})};return w.buffers[id]"
+          },
+          {
+            "file": "src/workflow.go",
+            "quote": "func NewPreview(env Environment)*Preview{return &Preview{NewTrailing(env,40,func(query string){env.Output(\"preview\",Value{\"query\":query})})}}"
+          },
+          {
+            "file": "VISIBLE_CHECKS.md",
+            "quote": "The external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior."
+          }
+        ],
+        "triggers": [
+          "Calling Workspace.Edit(text) while a document Badge is current begins or extends that document's editing burst.",
+          "A further edit for the same document before timer expiry replaces the pending text and restarts the quiet interval.",
+          "Expiry after 120 ms without a further edit triggers one save of the latest pending text.",
+          "Opening, closing, disposing, or synchronously navigating can retire the current Badge but must not cancel a coordinator-owned pending document save.",
+          "A later edit after a completed save begins a new burst."
+        ],
+        "unknowns": [
+          "The public sources do not specify whether Dispose permanently forbids later method calls; no new post-disposal behavior should be invented.",
+          "The public sources do not specify timer behavior when a new edit occurs at exactly the expiry boundary; preserve the existing Environment and Trailing ordering semantics.",
+          "The public sources do not define error or panic handling for Environment.Schedule, Cancel, Write, Output, or listener callbacks; do not introduce new semantics.",
+          "The public sources do not state whether unchanged text should be deduplicated across separate bursts; therefore each completed burst should retain the existing trailing-task write semantics."
+        ]
+      },
+      "contract_changed": false,
+      "diagnosis": "implementation_gap",
+      "explanation": "The behavioral contract already matches the original task and public documentation, so no contract revision is warranted. The supplied public source still implements Workspace.Edit as an immediate environment write, even though the existing per-document 120 ms Trailing buffer is available through the current Badge. That is an implementation gap against O1–O4. The failed acceptance verdict supplies no additional requirement or reliable failure cause, and the passing syntax observation establishes only syntax validity.",
+      "remaining_unknowns": [
+        "The acceptance feedback does not reveal which business scenario failed and cannot establish a new requirement.",
+        "The public sources do not specify behavior for calls made after Dispose.",
+        "The exact ordering of an edit occurring at the same instant as timer expiry remains governed by the existing Environment implementation.",
+        "Error and panic behavior of environment operations and callbacks is unspecified."
+      ],
+      "restored_original_contract_evidence": false,
+      "routing_analysis": null,
+      "structured_delta": [],
+      "supporting_evidence": [
+        {
+          "file": "TASK",
+          "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst."
+        },
+        {
+          "file": "TASK",
+          "quote": "Subsequent bursts\nmust continue to save."
+        },
+        {
+          "file": "src/workflow.go",
+          "quote": "func(w *Workspace)Edit(text string){view:=w.current;if view!=nil{w.env.Write(view.id,text)}}"
+        },
+        {
+          "file": "src/workflow.go",
+          "quote": "func(w *Workspace)Open(id string){w.generation++;request:=w.generation;w.retire();if true&&request!=w.generation{return};buffer:=func()*Trailing{if w.buffers[id]==nil{w.buffers[id]=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})};return w.buffers[id]}();w.current=NewBadge(w.env,id,buffer);w.env.Output(\"document\",Value{\"id\":id,\"text\":w.env.Store().Read(id)})}"
+        },
+        {
+          "file": "src/workflow.go",
+          "quote": "func(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}"
+        },
+        {
+          "file": "docs/host-api.md",
+          "quote": "Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription. A store listener may call navigation synchronously."
+        }
+      ],
+      "supporting_evidence_bindings": [
+        {
+          "file": "TASK",
+          "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Subsequent bursts\nmust continue to save.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "src/workflow.go",
+          "quote": "func(w *Workspace)Edit(text string){view:=w.current;if view!=nil{w.env.Write(view.id,text)}}",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "src/workflow.go",
+          "quote": "func(w *Workspace)Open(id string){w.generation++;request:=w.generation;w.retire();if true&&request!=w.generation{return};buffer:=func()*Trailing{if w.buffers[id]==nil{w.buffers[id]=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})};return w.buffers[id]}();w.current=NewBadge(w.env,id,buffer);w.env.Output(\"document\",Value{\"id\":id,\"text\":w.env.Store().Read(id)})}",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "src/workflow.go",
+          "quote": "func(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "docs/host-api.md",
+          "quote": "Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription. A store listener may call navigation synchronously.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        }
+      ],
+      "unused_routing_analysis": false
+    }
+  ],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": false,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": false,
+    "valid": true,
+    "verdict": "UNDERREACH"
+  },
+  "finalized": true,
+  "first_pass_attempt": null,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": false,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": false,
+    "valid": true,
+    "verdict": "UNDERREACH"
+  },
+  "repair_stop_reason": "action_budget_exhausted",
+  "stages": [
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "10de658c9c5d52417660d4d76ebe9d2c8586fbcd4be5ed385db4cbf877d53b8e",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9998069247231
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "09bfb174f12b0831337e8b11e377ace787c9318d8b62175a677dbbc1669a6bd3",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 0,
+        "input_tokens": 12253,
+        "output_tokens": 1931,
+        "reasoning_output_tokens": 262,
+        "total_tokens": 14184
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "265e1d4ca7f3373096c579e28fffd7990a7fec51be8492663f0129b60c380bae",
+      "seconds": 56.79030541796237,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 0,
+        "input_tokens": 12253,
+        "output_tokens": 1931,
+        "reasoning_output_tokens": 262,
+        "total_tokens": 14184
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "7deef6deef6d1df3f2fc5cb130c008a89970ee93e22c65af6809c6aa7c68f289",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9993652207777
+          },
+          "number": 1,
+          "requests": 4,
+          "restart_reason": "initial",
+          "result_sha256": "4bc00569738da8ea5e237f7a4295a3cd731dc1386184e59067785b554e74591f",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 46336,
+        "input_tokens": 66043,
+        "output_tokens": 965,
+        "reasoning_output_tokens": 390,
+        "total_tokens": 67008
+      },
+      "requests": 4,
+      "reserved_requests": 24,
+      "result_sha256": "a244a10d32c028166c532c1e7b6a3de7be9c2d3981140fe3fc5ea59a84943819",
+      "seconds": 56.82917509134859,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 46336,
+        "input_tokens": 66043,
+        "output_tokens": 965,
+        "reasoning_output_tokens": 390,
+        "total_tokens": 67008
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "7c3e5ebc58a9f96de27955ce9b3f3d94b2d9c47a34357f2d7a821592cf1cc93d",
+      "seconds": 0.48598290514200926,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 2.0301884915679693,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "diagnosis-2",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "5435b30e46583f91c7ae934fa1e305b9199306be34a6acec1d08e2b1b8016776",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9992461232468
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "d6f0463ecdbecdaa608572ad219b5ac02ab13c544ae93c736c6b2e8a00bf7333",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-2",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 0,
+        "input_tokens": 16569,
+        "output_tokens": 2333,
+        "reasoning_output_tokens": 126,
+        "total_tokens": 18902
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "c86c1ec3e742fba140bb96ec3a703100ca6df9a24639e500c7a11a83096477d7",
+      "seconds": 49.89864426013082,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 0,
+        "input_tokens": 16569,
+        "output_tokens": 2333,
+        "reasoning_output_tokens": 126,
+        "total_tokens": 18902
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-2",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "084cff617e9d8e02235c93f52995886c9385cae29b2ecd975684a87269db855f",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9994310969487
+          },
+          "number": 1,
+          "requests": 5,
+          "restart_reason": "initial",
+          "result_sha256": "bfc66164cf89567ca823ae4d2adefed9a23b8f8f76b4a2e0c90205ccf85c3a33",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-2",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 66688,
+        "input_tokens": 85886,
+        "output_tokens": 3808,
+        "reasoning_output_tokens": 3034,
+        "total_tokens": 89694
+      },
+      "requests": 5,
+      "reserved_requests": 24,
+      "result_sha256": "128027a2da8e58f5d2389cb5791d48e88224ff184c17650e98c14f7213d717c1",
+      "seconds": 82.49970799591392,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 66688,
+        "input_tokens": 85886,
+        "output_tokens": 3808,
+        "reasoning_output_tokens": 3034,
+        "total_tokens": 89694
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-2",
+      "key": "visible-2",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "7c3e5ebc58a9f96de27955ce9b3f3d94b2d9c47a34357f2d7a821592cf1cc93d",
+      "seconds": 0.49617700278759,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-2",
+      "key": "acceptance-2",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 2.0780905671417713,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "diagnosis-3",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "5435b30e46583f91c7ae934fa1e305b9199306be34a6acec1d08e2b1b8016776",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9991893777624
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "49d05ff79f396e9a9b964c2c8edfdc83cdd72118282731c733fce784a8f0bb28",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-3",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 0,
+        "input_tokens": 16574,
+        "output_tokens": 2239,
+        "reasoning_output_tokens": 88,
+        "total_tokens": 18813
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "84ccb3b2788d5902e4a075e29575a5ac95749e0abb26c2929e8c7e05e2e2d47f",
+      "seconds": 55.05402676388621,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 0,
+        "input_tokens": 16574,
+        "output_tokens": 2239,
+        "reasoning_output_tokens": 88,
+        "total_tokens": 18813
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-3",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "084cff617e9d8e02235c93f52995886c9385cae29b2ecd975684a87269db855f",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9992442084476
+          },
+          "number": 1,
+          "requests": 5,
+          "restart_reason": "initial",
+          "result_sha256": "9087976489d9b23b83dd099a798e12a7dd135226b5076fbc28fe8f653db3f07f",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-3",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 64512,
+        "input_tokens": 83441,
+        "output_tokens": 1723,
+        "reasoning_output_tokens": 1063,
+        "total_tokens": 85164
+      },
+      "requests": 5,
+      "reserved_requests": 24,
+      "result_sha256": "30a20a27a959be8018bd980b4f559ba8f16122354d50671ab678860510cd6e83",
+      "seconds": 65.8642392931506,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 64512,
+        "input_tokens": 83441,
+        "output_tokens": 1723,
+        "reasoning_output_tokens": 1063,
+        "total_tokens": 85164
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-3",
+      "key": "visible-3",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "7c3e5ebc58a9f96de27955ce9b3f3d94b2d9c47a34357f2d7a821592cf1cc93d",
+      "seconds": 0.5057321507483721,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-3",
+      "key": "acceptance-3",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 2.129311740398407,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "awaiting_expert_summary",
+  "stop_reason": "action_budget_exhausted",
+  "training_accepted": false
+}

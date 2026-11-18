@@ -1,0 +1,862 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/editor.js\n+++ candidate/src/editor.js\n@@ -1,27 +1,56 @@\n import { attachSaveStatus } from \"./save-status.js\";\n+import { createTrailingTask } from \"./trailing-task.js\";\n \n export function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n   let current = null;\n-  function close() {\n+  let navigationRevision = 0;\n+\n+  function retireCurrent(request) {\n     const leaving = current;\n     current = null;\n-    if (leaving) leaving.stop();\n-    renderDocument(null);\n+    if (leaving) {\n+      leaving.stop();\n+      leaving.save.flush();\n+    }\n+    if (request === navigationRevision) renderDocument(null);\n   }\n+\n+  function close() {\n+    const request = ++navigationRevision;\n+    retireCurrent(request);\n+  }\n+\n   return {\n     open(id) {\n-      close();\n-      current = { id, text: store.read(id), visit: {}, stop: attachSaveStatus(store, id, renderStatus) };\n-      renderDocument({ id, text: current.text });\n+      const request = ++navigationRevision;\n+      retireCurrent(request);\n+      if (request !== navigationRevision) return;\n+\n+      const visit = {};\n+      const opened = {\n+        id,\n+        text: store.read(id),\n+        visit,\n+        save: createTrailingTask((savedId, text) => store.write(savedId, text), 120, timers),\n+        stop: attachSaveStatus(store, id, renderStatus),\n+      };\n+      current = opened;\n+      renderDocument({ id, text: opened.text });\n     },\n     edit(text) {\n       if (!current) return;\n       current.text = text;\n-      store.write(current.id, text);\n+      current.save.push(current.id, text);\n     },\n     selection() {\n       return current && { id: current.id, text: current.text, visit: current.visit };\n     },\n+    flush() {\n+      if (current) current.save.flush();\n+    },\n+    isVisitActive(visit) {\n+      return current !== null && current.visit === visit;\n+    },\n     close,\n   };\n }\n--- original/src/workspace.js\n+++ candidate/src/workspace.js\n@@ -11,8 +11,9 @@\n     submit() {\n       const origin = editor.selection();\n       if (!origin) return null;\n+      editor.flush();\n       const receipt = archive.capture({ id: origin.id, text: origin.text });\n-      renderSubmission(receipt);\n+      if (editor.isVisitActive(origin.visit)) renderSubmission(receipt);\n       return receipt;\n     },\n   };\n",
+        "from_previous": "--- previous/src/editor.js\n+++ candidate/src/editor.js\n@@ -1,27 +1,56 @@\n import { attachSaveStatus } from \"./save-status.js\";\n+import { createTrailingTask } from \"./trailing-task.js\";\n \n export function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n   let current = null;\n-  function close() {\n+  let navigationRevision = 0;\n+\n+  function retireCurrent(request) {\n     const leaving = current;\n     current = null;\n-    if (leaving) leaving.stop();\n-    renderDocument(null);\n+    if (leaving) {\n+      leaving.stop();\n+      leaving.save.flush();\n+    }\n+    if (request === navigationRevision) renderDocument(null);\n   }\n+\n+  function close() {\n+    const request = ++navigationRevision;\n+    retireCurrent(request);\n+  }\n+\n   return {\n     open(id) {\n-      close();\n-      current = { id, text: store.read(id), visit: {}, stop: attachSaveStatus(store, id, renderStatus) };\n-      renderDocument({ id, text: current.text });\n+      const request = ++navigationRevision;\n+      retireCurrent(request);\n+      if (request !== navigationRevision) return;\n+\n+      const visit = {};\n+      const opened = {\n+        id,\n+        text: store.read(id),\n+        visit,\n+        save: createTrailingTask((savedId, text) => store.write(savedId, text), 120, timers),\n+        stop: attachSaveStatus(store, id, renderStatus),\n+      };\n+      current = opened;\n+      renderDocument({ id, text: opened.text });\n     },\n     edit(text) {\n       if (!current) return;\n       current.text = text;\n-      store.write(current.id, text);\n+      current.save.push(current.id, text);\n     },\n     selection() {\n       return current && { id: current.id, text: current.text, visit: current.visit };\n     },\n+    flush() {\n+      if (current) current.save.flush();\n+    },\n+    isVisitActive(visit) {\n+      return current !== null && current.visit === visit;\n+    },\n     close,\n   };\n }\n--- previous/src/workspace.js\n+++ candidate/src/workspace.js\n@@ -11,8 +11,9 @@\n     submit() {\n       const origin = editor.selection();\n       if (!origin) return null;\n+      editor.flush();\n       const receipt = archive.capture({ id: origin.id, text: origin.text });\n-      renderSubmission(receipt);\n+      if (editor.isVisitActive(origin.visit)) renderSubmission(receipt);\n       return receipt;\n     },\n   };\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [],
+        "coverage": [
+          {
+            "path": "src/draft-store.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/editor.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/receipt-archive.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/save-status.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/search-preview.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/timers.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/trailing-task.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/workspace.js",
+            "status": "parsed"
+          }
+        ],
+        "events": [
+          {
+            "arguments": [
+              "id",
+              "text"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "records.set",
+            "column": 6,
+            "conditions": [],
+            "end_column": 27,
+            "end_line": 11,
+            "id": "src/draft-store.js::e11",
+            "kind": "call",
+            "line": 11,
+            "path": "src/draft-store.js",
+            "receiver": "records",
+            "scope": "<module>/createDraftStore/write",
+            "text": "records.set(id, text)"
+          },
+          {
+            "column": 12,
+            "conditions": [
+              "ForOfStatement path; execution/repetition not proven"
+            ],
+            "end_column": 35,
+            "end_line": 14,
+            "expression": "listeners.has(listener)",
+            "id": "src/draft-store.js::e15",
+            "kind": "guard",
+            "line": 14,
+            "path": "src/draft-store.js",
+            "scope": "<module>/createDraftStore/write",
+            "text": "listeners.has(listener)"
+          },
+          {
+            "arguments": [
+              "event"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "listener",
+            "column": 37,
+            "conditions": [
+              "ForOfStatement path; execution/repetition not proven",
+              "if listeners.has(listener)"
+            ],
+            "end_column": 52,
+            "end_line": 14,
+            "id": "src/draft-store.js::e17",
+            "kind": "call",
+            "line": 14,
+            "path": "src/draft-store.js",
+            "receiver": "",
+            "scope": "<module>/createDraftStore/write",
+            "text": "listener(event)"
+          },
+          {
+            "column": 31,
+            "conditions": [],
+            "end_column": 40,
+            "end_line": 5,
+            "id": "src/workspace.js::e1",
+            "kind": "function_definition",
+            "line": 5,
+            "path": "src/workspace.js",
+            "scope": "<module>/createWorkspace/<callback>",
+            "text": "event => "
+          },
+          {
+            "callee": "store.subscribe",
+            "column": 31,
+            "conditions": [],
+            "end_column": 40,
+            "end_line": 5,
+            "id": "src/workspace.js::e2",
+            "kind": "callback_argument",
+            "line": 5,
+            "path": "src/workspace.js",
+            "scope": "<module>/createWorkspace",
+            "text": "event => "
+          },
+          {
+            "arguments": [
+              "event",
+              "navigation"
+            ],
+            "binding": "parameter_callback",
+            "callee": "onSaved",
+            "column": 40,
+            "conditions": [],
+            "end_column": 66,
+            "end_line": 5,
+            "id": "src/workspace.js::e3",
+            "kind": "call",
+            "line": 5,
+            "path": "src/workspace.js",
+            "receiver": "",
+            "scope": "<module>/createWorkspace/<callback>",
+            "text": "onSaved(event, navigation)"
+          },
+          {
+            "arguments": [
+              "event => onSaved(event, navigation)"
+            ],
+            "binding": "parameter_member",
+            "callee": "store.subscribe",
+            "column": 15,
+            "conditions": [],
+            "end_column": 67,
+            "end_line": 5,
+            "id": "src/workspace.js::e4",
+            "kind": "call",
+            "line": 5,
+            "path": "src/workspace.js",
+            "receiver": "store",
+            "scope": "<module>/createWorkspace",
+            "text": "store.subscribe(event => onSaved(event, navigation))"
+          },
+          {
+            "column": 4,
+            "conditions": [],
+            "end_column": 13,
+            "end_line": 8,
+            "id": "src/workspace.js::e8",
+            "kind": "function_definition",
+            "line": 8,
+            "path": "src/workspace.js",
+            "scope": "<module>/createWorkspace/open",
+            "text": "open(id) "
+          },
+          {
+            "column": 4,
+            "conditions": [],
+            "end_column": 12,
+            "end_line": 10,
+            "id": "src/workspace.js::e13",
+            "kind": "function_definition",
+            "line": 10,
+            "path": "src/workspace.js",
+            "scope": "<module>/createWorkspace/close",
+            "text": "close() "
+          },
+          {
+            "awaited": false,
+            "column": 12,
+            "conditions": [],
+            "end_column": 39,
+            "end_line": 12,
+            "id": "src/workspace.js::e18",
+            "kind": "write",
+            "line": 12,
+            "operator": "=",
+            "path": "src/workspace.js",
+            "scope": "<module>/createWorkspace/submit",
+            "target": "origin",
+            "text": "origin = editor.selection()"
+          },
+          {
+            "column": 10,
+            "conditions": [],
+            "end_column": 17,
+            "end_line": 13,
+            "expression": "!origin",
+            "id": "src/workspace.js::e19",
+            "kind": "guard",
+            "line": 13,
+            "path": "src/workspace.js",
+            "scope": "<module>/createWorkspace/submit",
+            "text": "!origin"
+          },
+          {
+            "arguments": [
+              "{ id: origin.id, text: origin.text }"
+            ],
+            "binding": "parameter_member",
+            "callee": "archive.capture",
+            "column": 22,
+            "conditions": [],
+            "end_column": 75,
+            "end_line": 14,
+            "id": "src/workspace.js::e21",
+            "kind": "call",
+            "line": 14,
+            "path": "src/workspace.js",
+            "receiver": "archive",
+            "scope": "<module>/createWorkspace/submit",
+            "text": "archive.capture({ id: origin.id, text: origin.text })"
+          },
+          {
+            "awaited": false,
+            "column": 12,
+            "conditions": [],
+            "end_column": 75,
+            "end_line": 14,
+            "id": "src/workspace.js::e22",
+            "kind": "write",
+            "line": 14,
+            "operator": "=",
+            "path": "src/workspace.js",
+            "scope": "<module>/createWorkspace/submit",
+            "target": "receipt",
+            "text": "receipt = archive.capture({ id: origin.id, text: origin.text })"
+          },
+          {
+            "arguments": [
+              "receipt"
+            ],
+            "binding": "parameter_callback",
+            "callee": "renderSubmission",
+            "column": 6,
+            "conditions": [],
+            "end_column": 31,
+            "end_line": 15,
+            "id": "src/workspace.js::e23",
+            "kind": "call",
+            "line": 15,
+            "path": "src/workspace.js",
+            "receiver": "",
+            "scope": "<module>/createWorkspace/submit",
+            "text": "renderSubmission(receipt)"
+          }
+        ],
+        "findings": [
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "回调未位于另一个嵌套函数体，且此前未发现 await/yield；只是源码上的候选直接通知路径。名称、循环元素和路径可达性未作类型/控制流证明，未证明它与其他文件中的订阅者是同一实例。",
+            "evidence": [
+              "src/draft-store.js::e11",
+              "src/draft-store.js::e15",
+              "src/draft-store.js::e17"
+            ],
+            "message": "成员写入或集合/持久化名称调用之后，同一非 async 函数直接调用参数回调或循环取出的可调用项。",
+            "path": "src/draft-store.js",
+            "review_question": "该调用是否通知外部消费者？消费者能否在返回前重新进入当前对象？调用后继续使用的状态是否仍有效，最新请求如何决定优先级？",
+            "rule": "state-write-inline-notification",
+            "scope": "<module>/createDraftStore/write"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "只关联当前注册实参及其回调作用域；没有把嵌套定时/Promise 回调内的操作算成直接调用。登记 API 名称不证明通知是同步的，对象转交不证明下游调用其方法；与写入端是否连通需核查。",
+            "evidence": [
+              "src/workspace.js::e4",
+              "src/workspace.js::e1",
+              "src/workspace.js::e2",
+              "src/workspace.js::e3",
+              "src/workspace.js::e8",
+              "src/workspace.js::e13"
+            ],
+            "message": "登记的回调体直接出现状态切换名称调用，或把具有状态切换方法的同作用域对象传给其他调用。",
+            "path": "src/workspace.js",
+            "review_question": "通知是否可能同步到达？接收者能否重入打开、关闭或切换操作？若外层调用随后恢复，应保留哪一次请求的状态？",
+            "rule": "callback-reentrant-transition",
+            "scope": "<module>/createWorkspace/<callback>"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "基于同一函数内原始变量/成员引用与源码顺序，未见变量重新赋值；不证明深拷贝、不可变、对象别名稳定或跨分支数据流。归档与显示名称只是用途线索，不自动判定生命周期必须不同。",
+            "evidence": [
+              "src/workspace.js::e18",
+              "src/workspace.js::e19",
+              "src/workspace.js::e22",
+              "src/workspace.js::e21",
+              "src/workspace.js::e23"
+            ],
+            "message": "局部捕获值被归档/持久化名称调用消费；该值或调用返回值随后被界面/发布名称调用消费。",
+            "path": "src/workspace.js",
+            "review_question": "数据应绑定操作入口的哪份值？中间调用能否触发回调、编辑或导航？持久效果与显示效果是否共享失效条件？当前标识相同是否足以代表同一次访问，现有身份判断在重开后仍成立吗？",
+            "rule": "snapshot-output-lifetime-split",
+            "scope": "<module>/createWorkspace/submit"
+          }
+        ],
+        "limitations": [
+          "Syntax facts, candidate call links and review hints are not verified contracts, bugs, severity or difficulty scores.",
+          "API names are clues. Types, aliases, control flow, dynamic dispatch and callback targets are not fully resolved.",
+          "Local order is lexical order within a block; branches, exceptions, loops, short-circuiting and execution remain unchecked.",
+          "await may suspend; cancellation does not imply completed work or cleanup. Listener removal does not cancel work already started.",
+          "if/try/finally syntax does not prove adequate protection. The absence of hints does not imply safety.",
+          "No hidden scorers, reference patches, model results or human profiles are read. Operators must verify input provenance."
+        ],
+        "relations": [
+          {
+            "after": "src/workspace.js::e22",
+            "before": "src/workspace.js::e21",
+            "kind": "rhs_before_assignment",
+            "qualification": "Assignment occurs after successful RHS evaluation; call return alone does not imply asynchronous work completion."
+          },
+          {
+            "after": "src/draft-store.js::e17",
+            "before": "src/draft-store.js::e11",
+            "kind": "lexical_write_before_direct_call",
+            "qualification": "Source order in one function; path execution, callback type and reentry remain unproven."
+          },
+          {
+            "after": "src/workspace.js::e23",
+            "before": "src/workspace.js::e18",
+            "kind": "lexical_capture_before_consumer",
+            "qualification": "Local source references and lexical order; ownership, immutability and reachability remain unproven."
+          }
+        ],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "parsed",
+        "target_definitions": []
+      },
+      "sources": {
+        "README.md": "# Document drafts and submission receipts\n\nThe workspace edits persistent document drafts. `open(id)`, `edit(text)`, `close()`\nand `submit()` are synchronous; `dispose()` detaches integrations and closes.\nWhen close/open returns, the departed document's last accepted edit is readable\nfrom the store. A close/open request retires its previous save badge immediately.\nReopening a document restores its saved text in a new editor visit.\n\nThe store writes a record before notifying subscribers inline. `onSaved` may\nnavigate or edit through the supplied workspace API. Navigation precedence is\nordered by request start: a request that starts later wins even when an earlier\nrequest returns afterward. Render functions and the receipt archive are output\nsinks and never call back into the workspace.\n\n`submit()` accepts the document and latest text selected at its call entry. With\nno selection it returns null and creates no receipt. Otherwise it creates exactly\none immutable archive receipt and returns it before the call ends. Accepted text\nmust be persisted before the archive captures the receipt. Later edits or\nnavigation cannot change that receipt's document, text, or obligation to exist.\nSubmitting does not itself navigate. Its visible submission notice belongs only\nto the editor visit that accepted the action: it may appear only if that same\nvisit is still active when the notice is emitted. Reopening the same document\ncreates a different visit. Any navigation clears the previous submission notice.\nAn uninterrupted submit must still show its receipt. Further edits remain usable.\n\nThe archive provides `capture({id, text})` and `list()`; receipts hold immutable\ncopies. The store provides `read`, `write`, and `subscribe`; timers provide\n`schedule(callback, delay)` and `cancel(handle)`. Keep these interfaces and the\nworkspace API. The public renderer arguments remain document, save event, or\nreceipt values (null clears a document/notice).\n\nThe adjacent search preview publishes after a 40 ms quiet interval. Hiding it\ndiscards an unpublished query, and a later query starts fresh work.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\n  \"name\": \"document-submit-snapshot-fixture\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+        "src/draft-store.js": "// A synchronous workspace store, independent of whether an editor is visible.\n// Notifications run inline after the record is written. Subscribers may detach\n// or subscribe while a notification is being delivered.\nexport function createDraftStore(initial = {}) {\n  const records = new Map(Object.entries(initial));\n  const listeners = new Set();\n  let revision = 0;\n  return {\n    read(id) { return records.get(id) ?? \"\"; },\n    write(id, text) {\n      records.set(id, text);\n      const event = { id, text, revision: ++revision };\n      for (const listener of [...listeners]) {\n        if (listeners.has(listener)) listener(event);\n      }\n      return event;\n    },\n    subscribe(listener) {\n      listeners.add(listener);\n      return () => listeners.delete(listener);\n    },\n  };\n}\n",
+        "src/editor.js": "import { attachSaveStatus } from \"./save-status.js\";\n\nexport function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n  let current = null;\n  function close() {\n    const leaving = current;\n    current = null;\n    if (leaving) leaving.stop();\n    renderDocument(null);\n  }\n  return {\n    open(id) {\n      close();\n      current = { id, text: store.read(id), visit: {}, stop: attachSaveStatus(store, id, renderStatus) };\n      renderDocument({ id, text: current.text });\n    },\n    edit(text) {\n      if (!current) return;\n      current.text = text;\n      store.write(current.id, text);\n    },\n    selection() {\n      return current && { id: current.id, text: current.text, visit: current.visit };\n    },\n    close,\n  };\n}\n",
+        "src/receipt-archive.js": "// A downstream consumer: archived submissions are value snapshots, not live\n// references to a draft. capture/list never invoke application integrations.\nexport function createReceiptArchive() {\n  const receipts = [];\n  return {\n    capture({ id, text }) {\n      const receipt = Object.freeze({ id, text });\n      receipts.push(receipt);\n      return receipt;\n    },\n    list() { return receipts.map(receipt => ({ ...receipt })); },\n  };\n}\n",
+        "src/save-status.js": "// A mounted document's save badge. A close/open request retires the departing\n// badge immediately: it must produce no further output, including during that\n// navigation call. Saving the document itself is a separate workspace concern.\nexport function attachSaveStatus(store, id, renderStatus) {\n  return store.subscribe(event => {\n    if (event.id === id) renderStatus(event);\n  });\n}\n",
+        "src/search-preview.js": "import { createTrailingTask } from \"./trailing-task.js\";\n\nexport function createSearchPreview({ timers, publish }) {\n  const task = createTrailingTask(query => publish({ query }), 40, timers);\n  return {\n    query(text) { task.push(text); },\n    // A hidden preview has no use for a pending query; reopen starts fresh.\n    hide() { task.cancel(); },\n  };\n}\n",
+        "src/timers.js": "export const browserTimers = {\n  schedule(callback, delay) { return setTimeout(callback, delay); },\n  cancel(handle) { clearTimeout(handle); },\n};\n",
+        "src/trailing-task.js": "import { browserTimers } from \"./timers.js\";\n\n// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.\n// Retire the old batch before invoking work, which can enqueue another batch.\nexport function createTrailingTask(work, delay, timers = browserTimers) {\n  let handle = null;\n  let pending = null;\n  function flush() {\n    if (handle !== null) timers.cancel(handle);\n    handle = null;\n    const args = pending;\n    pending = null;\n    if (args !== null) work(...args);\n  }\n  return {\n    push(...args) {\n      if (handle !== null) timers.cancel(handle);\n      pending = args;\n      handle = timers.schedule(flush, delay);\n    },\n    flush,\n    cancel() {\n      if (handle !== null) timers.cancel(handle);\n      handle = null;\n      pending = null;\n    },\n  };\n}\n",
+        "src/workspace.js": "import { createDraftEditor } from \"./editor.js\";\n\nexport function createWorkspace({ store, archive, timers, renderDocument, renderStatus,\n  renderSubmission = () => {}, onSaved = () => {} }) {\n  const stop = store.subscribe(event => onSaved(event, navigation));\n  const editor = createDraftEditor({ store, timers, renderDocument, renderStatus });\n  const navigation = {\n    open(id) { renderSubmission(null); editor.open(id); },\n    edit(text) { editor.edit(text); },\n    close() { renderSubmission(null); editor.close(); },\n    submit() {\n      const origin = editor.selection();\n      if (!origin) return null;\n      const receipt = archive.capture({ id: origin.id, text: origin.text });\n      renderSubmission(receipt);\n      return receipt;\n    },\n  };\n  return { ...navigation, dispose() { stop(); navigation.close(); } };\n}\n"
+      },
+      "task": "The workspace draft editor currently writes to the store on every keystroke.\nCoalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces.\nThe adjacent search preview is outside this maintenance change.\n"
+    },
+    "source_sha256": "2dc45bf6b4f381a3284617be100eca0b506ae4fbeef34984f451fb3d25ac04ba",
+    "task_id": "document-submit-snapshot-vanilla"
+  },
+  "experience": {
+    "excludes": [
+      "discard_boundary_policy"
+    ],
+    "labels": [
+      "R",
+      "O",
+      "B",
+      "L",
+      "I",
+      "F"
+    ],
+    "limitations": [
+      "This guidance applies when lifecycle boundaries require pending accepted work to be persisted; it does not apply where the documented boundary policy intentionally discards pending work, such as src/search-preview.js: \"A hidden preview has no use for a pending query; reopen starts fresh.\"",
+      "The public sources do not specify recovery behavior when timers, store writes, subscriber callbacks, renderers, or archive capture throw.",
+      "The exact ordering of a new edit against an already-runnable timer callback is unspecified beyond quiet-interval coalescing.",
+      "Acceptance attempt 1 supports this combined design once, but does not establish causality or cross-task generality."
+    ],
+    "requires": [
+      "observer_lifetime",
+      "deferred_batch",
+      "boundary_persistence",
+      "entry_snapshot",
+      "inline_reentry",
+      "effect_lifetimes",
+      "different_ownership_policy"
+    ],
+    "rules": [
+      {
+        "body": "Apply this pattern when accepted edits are deferred into a quiet-interval batch, lifecycle methods remain synchronous, pending edits must survive navigation boundaries, persistence can notify reentrant subscribers inline, and a downstream action captures an entry snapshot with independently scoped durable and visible effects. TASK requires: \"after a 120 ms quiet interval, write only the latest text in that editing burst. Subsequent bursts must continue to save.\"",
+        "category": "applicability"
+      },
+      {
+        "body": "Represent each active editing burst with the existing trailing-task mechanism. Every accepted edit updates the active visit's in-memory text immediately and pushes the document id and latest text with a 120 ms delay, replacing the prior scheduled handle for that burst. Do not write once per keystroke.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Retire a pending batch before invoking persistence so an inline subscriber that edits reentrantly creates a distinct later batch. Preserve src/trailing-task.js: \"Retire the old batch before invoking work, which can enqueue another batch.\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "At open, close, or disposal, first detach the departing visit's save-status observer, then synchronously flush its pending accepted edit. This preserves README.md: \"When close/open returns, the departed document's last accepted edit is readable from the store\" while satisfying src/save-status.js: \"A close/open request retires the departing badge immediately: it must produce no further output, including during that navigation call.\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "Give each navigation request a monotonically ordered start identity. After any inline persistence notification, an earlier request must verify that it still owns navigation before installing or rendering editor state, because README.md states: \"a request that starts later wins even when an earlier request returns afterward.\"",
+        "category": "preservation"
+      },
+      {
+        "body": "Give every successful open a unique visit identity rather than using only the document id. Reopening the same id must create a new visit, and any navigation must clear the prior submission notice at its start.",
+        "category": "preservation"
+      },
+      {
+        "body": "At submit entry, capture the selected id, text, and visit. If there is no selection, return null without persistence for submission or archive capture. Otherwise flush accepted text before capture, create exactly one immutable receipt from the entry id and text, and return it even if inline persistence caused later editing or navigation.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Separate the lifetimes of submission effects: the immutable receipt is obligated once submit accepts the entry snapshot, while the visible notice may be emitted only if the exact captured visit remains active after capture. Do not suppress the receipt merely because the notice became invalid.",
+        "category": "preservation"
+      },
+      {
+        "body": "Preserve the synchronous workspace methods and the existing store, archive, timer, renderer, and trailing-task interfaces. Leave adjacent search-preview behavior unchanged, as TASK says: \"The adjacent search preview is outside this maintenance change.\"",
+        "category": "exclusion"
+      },
+      {
+        "body": "Verify that rapid edits produce one latest-text write after 120 ms, a later burst saves independently, open/close synchronously persists the departed edit without a retired badge update, reentrant navigation honors later-start precedence, submit persists before exactly one capture, reopened same-id visits suppress an old notice, further edits remain usable, and JavaScript syntax passes without workspace-generated caches or binaries.",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "On each accepted edit, update the active visit’s in-memory text immediately, replace any pending save for that burst, and schedule the latest text with a 120 ms delay.",
+      "When the scheduled burst fires, retire that pending batch before calling store.write so an inline subscriber that edits again creates a distinct later burst.",
+      "Before close/open returns, synchronously persist any pending last accepted edit for the departed document; retire its save-status subscription before that write can notify subscribers.",
+      "At submit entry, capture the selected document, text, and visit. If there is no selection, return null without writing a receipt.",
+      "Before archive.capture during submit, ensure the entry snapshot’s accepted text has been persisted. Inline onSaved navigation or editing during that persistence must not cancel or alter the required receipt.",
+      "After capture, emit the submission notice only if the exact entry visit remains active; return the immutable receipt even if the notice is suppressed.",
+      "On open, close, and dispose, cancel or consume pending timer work so it cannot later write stale text or emit output for a retired visit.",
+      "Verify JavaScript syntax after any Action without placing generated caches or compiled artifacts in the workspace."
+    ],
+    "forbidden_effects": [
+      "Do not continue writing to the store once per keystroke.",
+      "Do not allow a canceled or already-flushed burst to write later.",
+      "Do not let an earlier open/close request resume after inline notification and replace state established by a later-started navigation request.",
+      "Do not emit save-status output from a departed document during or after its retirement.",
+      "Do not create a receipt when submit has no selection, omit an accepted receipt because persistence caused reentrant navigation, or create more than one receipt for one submit.",
+      "Do not show a submission notice for a different editor visit, including a reopened visit of the same document.",
+      "Do not change the search preview, trailing-task public behavior, renderer argument shapes, archive/store/timer interfaces, or workspace API.",
+      "Do not modify tests or configuration."
+    ],
+    "lifecycle_identity": [
+      "An editing burst is the currently pending trailing-task batch; after it is retired, a reentrant or later edit belongs to a new burst.",
+      "An editor visit is the unique visit object created by each successful open, not merely the document id; reopening the same id creates a different visit.",
+      "Navigation precedence is identified by request start order; a later-started open or close owns the resulting editor state even if an earlier request resumes afterward.",
+      "A submission is bound to the document, text, and visit selected at submit call entry; its receipt lifetime is independent of whether that visit remains visible."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Coalesce edits for the active document into bursts and, after 120 ms with no newer edit in that burst, call store.write exactly for the latest text; later bursts remain independently saveable."
+      },
+      {
+        "id": "O2",
+        "text": "Preserve synchronous lifecycle durability: when close or open returns, the departed document’s last accepted edit is readable from the store, even if its trailing delay had not elapsed."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve reentrant navigation precedence across inline store notifications: a navigation request started later wins, and resumed earlier work must not overwrite its editor, document rendering, or status lifecycle."
+      },
+      {
+        "id": "O4",
+        "text": "Retire the departing visit’s save badge immediately on close/open so persistence performed during navigation cannot render status for that retired badge."
+      },
+      {
+        "id": "O5",
+        "text": "Submit accepts the entry selection. Pending accepted text must be persisted before capture; an accepted submit creates and returns exactly one immutable receipt containing the entry id and text regardless of later edits or navigation."
+      },
+      {
+        "id": "O6",
+        "text": "A submit notice is emitted only while the same entry visit is still active; any navigation clears the prior notice, reopening the same id is a new visit, and an uninterrupted submit still shows its receipt."
+      },
+      {
+        "id": "O7",
+        "text": "Preserve synchronous public methods and the existing workspace, store, archive, timer, renderer, and trailing-task interfaces; further edits must remain usable after saves and submissions."
+      },
+      {
+        "id": "O8",
+        "text": "Limit the maintenance change to workspace draft editing behavior; leave the adjacent search preview unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "A newer edit must cancel/replace the prior scheduled handle before scheduling the 120 ms quiet interval.",
+      "The pending burst must be cleared before store.write invokes inline subscribers, allowing reentrant edits to schedule fresh work safely.",
+      "For close/open, badge retirement and pending-save ownership must be established before store.write can notify onSaved; the departed text must be stored before the navigation call returns.",
+      "For submit, entry selection precedes persistence; persistence precedes archive.capture; capture precedes any permitted renderSubmission(receipt).",
+      "Any navigation clears the previous submission notice at its start.",
+      "dispose detaches the workspace integration and closes the editor while still preserving the pending departed edit."
+    ],
+    "preservation": [
+      "open(id), edit(text), close(), submit(), and dispose() remain synchronous.",
+      "Reopening a document restores its saved text in a new editor visit.",
+      "Store records are written before subscribers are notified inline.",
+      "Subscribers may detach or subscribe during notification, and onSaved may navigate or edit through the workspace API.",
+      "Render functions and archive capture/list remain non-callback output sinks as documented.",
+      "Submitting does not itself navigate; later editing remains usable.",
+      "The archive retains immutable value snapshots and list returns copies.",
+      "The existing trailing-task semantics remain: coalescing until quiet, cancel discarding work, flush running it now, and retiring the old batch before invoking work."
+    ],
+    "scope": [
+      "Change business code only under /workspace, principally draft-editor/workspace integration needed to coalesce draft persistence safely.",
+      "Use the existing createTrailingTask utility with a 120 ms draft-save delay.",
+      "Preserve behavior at callback-capable store.write boundaries and synchronous navigation/submission boundaries.",
+      "Exclude src/search-preview.js behavior from this maintenance change."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "The workspace draft editor currently writes to the store on every keystroke.\nCoalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces.\nThe adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "When close/open returns, the departed document's last accepted edit is readable\nfrom the store. A close/open request retires its previous save badge immediately.\nReopening a document restores its saved text in a new editor visit."
+      },
+      {
+        "file": "README.md",
+        "quote": "The store writes a record before notifying subscribers inline. `onSaved` may\nnavigate or edit through the supplied workspace API. Navigation precedence is\nordered by request start: a request that starts later wins even when an earlier\nrequest returns afterward."
+      },
+      {
+        "file": "README.md",
+        "quote": "`submit()` accepts the document and latest text selected at its call entry. With\nno selection it returns null and creates no receipt. Otherwise it creates exactly\none immutable archive receipt and returns it before the call ends. Accepted text\nmust be persisted before the archive captures the receipt. Later edits or\nnavigation cannot change that receipt's document, text, or obligation to exist."
+      },
+      {
+        "file": "README.md",
+        "quote": "Its visible submission notice belongs only\nto the editor visit that accepted the action: it may appear only if that same\nvisit is still active when the notice is emitted. Reopening the same document\ncreates a different visit. Any navigation clears the previous submission notice.\nAn uninterrupted submit must still show its receipt. Further edits remain usable."
+      },
+      {
+        "file": "src/trailing-task.js",
+        "quote": "// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.\n// Retire the old batch before invoking work, which can enqueue another batch."
+      },
+      {
+        "file": "src/draft-store.js",
+        "quote": "// Notifications run inline after the record is written. Subscribers may detach\n// or subscribe while a notification is being delivered."
+      },
+      {
+        "file": "src/save-status.js",
+        "quote": "// A mounted document's save badge. A close/open request retires the departing\n// badge immediately: it must produce no further output, including during that\n// navigation call. Saving the document itself is a separate workspace concern."
+      },
+      {
+        "file": "src/receipt-archive.js",
+        "quote": "// A downstream consumer: archived submissions are value snapshots, not live\n// references to a draft. capture/list never invoke application integrations."
+      }
+    ],
+    "triggers": [
+      "An edit accepted while an editor visit is active starts or extends a draft-save burst.",
+      "Expiration of 120 ms without a newer edit triggers persistence of that burst’s latest text.",
+      "A subsequent edit after a burst has saved starts a fresh burst.",
+      "open, close, submit, and dispose trigger lifecycle handling of any pending accepted edit.",
+      "store.write synchronously triggers subscriber callbacks, including onSaved, which may reenter editing or navigation."
+    ],
+    "unknowns": [
+      "The public documents do not specify exception recovery if timers, store.write, subscriber callbacks, renderers, or archive.capture throw.",
+      "The exact timer behavior at the boundary where a new edit and the 120 ms callback become runnable is not specified beyond quiet-interval coalescing.",
+      "No return value for open, edit, close, or dispose is normatively specified beyond their synchronous completion; submit’s return behavior is specified.",
+      "No requirement specifies persisting edits that occur with no active editor selection; the current editor ignores them."
+    ]
+  },
+  "final_training_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "On each accepted edit, update the active visit’s in-memory text immediately, replace any pending save for that burst, and schedule the latest text with a 120 ms delay.",
+      "When the scheduled burst fires, retire that pending batch before calling store.write so an inline subscriber that edits again creates a distinct later burst.",
+      "Before close/open returns, synchronously persist any pending last accepted edit for the departed document; retire its save-status subscription before that write can notify subscribers.",
+      "At submit entry, capture the selected document, text, and visit. If there is no selection, return null without writing a receipt.",
+      "Before archive.capture during submit, ensure the entry snapshot’s accepted text has been persisted. Inline onSaved navigation or editing during that persistence must not cancel or alter the required receipt.",
+      "After capture, emit the submission notice only if the exact entry visit remains active; return the immutable receipt even if the notice is suppressed.",
+      "On open, close, and dispose, cancel or consume pending timer work so it cannot later write stale text or emit output for a retired visit.",
+      "Verify JavaScript syntax after any Action without placing generated caches or compiled artifacts in the workspace."
+    ],
+    "forbidden_effects": [
+      "Do not continue writing to the store once per keystroke.",
+      "Do not allow a canceled or already-flushed burst to write later.",
+      "Do not let an earlier open/close request resume after inline notification and replace state established by a later-started navigation request.",
+      "Do not emit save-status output from a departed document during or after its retirement.",
+      "Do not create a receipt when submit has no selection, omit an accepted receipt because persistence caused reentrant navigation, or create more than one receipt for one submit.",
+      "Do not show a submission notice for a different editor visit, including a reopened visit of the same document.",
+      "Do not change the search preview, trailing-task public behavior, renderer argument shapes, archive/store/timer interfaces, or workspace API.",
+      "Do not modify tests or configuration."
+    ],
+    "lifecycle_identity": [
+      "An editing burst is the currently pending trailing-task batch; after it is retired, a reentrant or later edit belongs to a new burst.",
+      "An editor visit is the unique visit object created by each successful open, not merely the document id; reopening the same id creates a different visit.",
+      "Navigation precedence is identified by request start order; a later-started open or close owns the resulting editor state even if an earlier request resumes afterward.",
+      "A submission is bound to the document, text, and visit selected at submit call entry; its receipt lifetime is independent of whether that visit remains visible."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Coalesce edits for the active document into bursts and, after 120 ms with no newer edit in that burst, call store.write exactly for the latest text; later bursts remain independently saveable."
+      },
+      {
+        "id": "O2",
+        "text": "Preserve synchronous lifecycle durability: when close or open returns, the departed document’s last accepted edit is readable from the store, even if its trailing delay had not elapsed."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve reentrant navigation precedence across inline store notifications: a navigation request started later wins, and resumed earlier work must not overwrite its editor, document rendering, or status lifecycle."
+      },
+      {
+        "id": "O4",
+        "text": "Retire the departing visit’s save badge immediately on close/open so persistence performed during navigation cannot render status for that retired badge."
+      },
+      {
+        "id": "O5",
+        "text": "Submit accepts the entry selection. Pending accepted text must be persisted before capture; an accepted submit creates and returns exactly one immutable receipt containing the entry id and text regardless of later edits or navigation."
+      },
+      {
+        "id": "O6",
+        "text": "A submit notice is emitted only while the same entry visit is still active; any navigation clears the prior notice, reopening the same id is a new visit, and an uninterrupted submit still shows its receipt."
+      },
+      {
+        "id": "O7",
+        "text": "Preserve synchronous public methods and the existing workspace, store, archive, timer, renderer, and trailing-task interfaces; further edits must remain usable after saves and submissions."
+      },
+      {
+        "id": "O8",
+        "text": "Limit the maintenance change to workspace draft editing behavior; leave the adjacent search preview unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "A newer edit must cancel/replace the prior scheduled handle before scheduling the 120 ms quiet interval.",
+      "The pending burst must be cleared before store.write invokes inline subscribers, allowing reentrant edits to schedule fresh work safely.",
+      "For close/open, badge retirement and pending-save ownership must be established before store.write can notify onSaved; the departed text must be stored before the navigation call returns.",
+      "For submit, entry selection precedes persistence; persistence precedes archive.capture; capture precedes any permitted renderSubmission(receipt).",
+      "Any navigation clears the previous submission notice at its start.",
+      "dispose detaches the workspace integration and closes the editor while still preserving the pending departed edit."
+    ],
+    "preservation": [
+      "open(id), edit(text), close(), submit(), and dispose() remain synchronous.",
+      "Reopening a document restores its saved text in a new editor visit.",
+      "Store records are written before subscribers are notified inline.",
+      "Subscribers may detach or subscribe during notification, and onSaved may navigate or edit through the workspace API.",
+      "Render functions and archive capture/list remain non-callback output sinks as documented.",
+      "Submitting does not itself navigate; later editing remains usable.",
+      "The archive retains immutable value snapshots and list returns copies.",
+      "The existing trailing-task semantics remain: coalescing until quiet, cancel discarding work, flush running it now, and retiring the old batch before invoking work."
+    ],
+    "scope": [
+      "Change business code only under /workspace, principally draft-editor/workspace integration needed to coalesce draft persistence safely.",
+      "Use the existing createTrailingTask utility with a 120 ms draft-save delay.",
+      "Preserve behavior at callback-capable store.write boundaries and synchronous navigation/submission boundaries.",
+      "Exclude src/search-preview.js behavior from this maintenance change."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "The workspace draft editor currently writes to the store on every keystroke.\nCoalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces.\nThe adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "When close/open returns, the departed document's last accepted edit is readable\nfrom the store. A close/open request retires its previous save badge immediately.\nReopening a document restores its saved text in a new editor visit."
+      },
+      {
+        "file": "README.md",
+        "quote": "The store writes a record before notifying subscribers inline. `onSaved` may\nnavigate or edit through the supplied workspace API. Navigation precedence is\nordered by request start: a request that starts later wins even when an earlier\nrequest returns afterward."
+      },
+      {
+        "file": "README.md",
+        "quote": "`submit()` accepts the document and latest text selected at its call entry. With\nno selection it returns null and creates no receipt. Otherwise it creates exactly\none immutable archive receipt and returns it before the call ends. Accepted text\nmust be persisted before the archive captures the receipt. Later edits or\nnavigation cannot change that receipt's document, text, or obligation to exist."
+      },
+      {
+        "file": "README.md",
+        "quote": "Its visible submission notice belongs only\nto the editor visit that accepted the action: it may appear only if that same\nvisit is still active when the notice is emitted. Reopening the same document\ncreates a different visit. Any navigation clears the previous submission notice.\nAn uninterrupted submit must still show its receipt. Further edits remain usable."
+      },
+      {
+        "file": "src/trailing-task.js",
+        "quote": "// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.\n// Retire the old batch before invoking work, which can enqueue another batch."
+      },
+      {
+        "file": "src/draft-store.js",
+        "quote": "// Notifications run inline after the record is written. Subscribers may detach\n// or subscribe while a notification is being delivered."
+      },
+      {
+        "file": "src/save-status.js",
+        "quote": "// A mounted document's save badge. A close/open request retires the departing\n// badge immediately: it must produce no further output, including during that\n// navigation call. Saving the document itself is a separate workspace concern."
+      },
+      {
+        "file": "src/receipt-archive.js",
+        "quote": "// A downstream consumer: archived submissions are value snapshots, not live\n// references to a draft. capture/list never invoke application integrations."
+      }
+    ],
+    "triggers": [
+      "An edit accepted while an editor visit is active starts or extends a draft-save burst.",
+      "Expiration of 120 ms without a newer edit triggers persistence of that burst’s latest text.",
+      "A subsequent edit after a burst has saved starts a fresh burst.",
+      "open, close, submit, and dispose trigger lifecycle handling of any pending accepted edit.",
+      "store.write synchronously triggers subscriber callbacks, including onSaved, which may reenter editing or navigation."
+    ],
+    "unknowns": [
+      "The public documents do not specify exception recovery if timers, store.write, subscriber callbacks, renderers, or archive.capture throw.",
+      "The exact timer behavior at the boundary where a new edit and the 120 ms callback become runnable is not specified beyond quiet-interval coalescing.",
+      "No return value for open, edit, close, or dispose is normatively specified beyond their synchronous completion; submit’s return behavior is specified.",
+      "No requirement specifies persisting edits that occur with no active editor selection; the current editor ignores them."
+    ]
+  },
+  "origin": "success",
+  "reflection_update": {
+    "change_summary": [
+      "Created one cohesive reusable lineage for deferred draft persistence across synchronous lifecycle boundaries, inline reentrant notifications, and submission effects with distinct receipt and notice lifetimes.",
+      "No existing experience was available in the frozen experience_catalog or related_experiences, so there was no closest lineage whose obligations could be retained, revised, or merged.",
+      "The entry incorporates all source-supported preservation boundaries demonstrated by attempt 1: 120 ms burst coalescing, subsequent-burst reuse, flush-on-navigation durability, observer retirement, later-started navigation precedence, entry-snapshot submission, immutable receipt creation, visit-scoped notice rendering, interface preservation, and search-preview exclusion."
+    ],
+    "failure_attribution": "not_applicable",
+    "operation": "new",
+    "reason": "The frozen experience_catalog and complete related_experiences are empty. Successful attempt 1 supplies evidence for a reusable combined mechanism that cannot be attached to or merged with an existing lineage; the acceptance result is supporting evidence only and is not treated as proof of causality.",
+    "supporting_attempts": [
+      1
+    ],
+    "target_sha256s": []
+  },
+  "related_experiences": [],
+  "source_sha256": "2dc45bf6b4f381a3284617be100eca0b506ae4fbeef34984f451fb3d25ac04ba",
+  "status": "awaiting_content_review",
+  "task": "The workspace draft editor currently writes to the store on every keystroke.\nCoalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces.\nThe adjacent search preview is outside this maintenance change.\n",
+  "training_accepted": true,
+  "trajectory": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "49ae5dc19a1fde09b6dc65f83037a0de8776a79251ee9093d708430d8baffb25",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "package.json": "7968474458dcf456cbb060ca9e73eb116b34cd99db4ab07f78638ff78a2f6265",
+        "src/draft-store.js": "09006335ff67882ae7089c32e3943e3fd945c8357cca0cfd94052d4e36c7aea1",
+        "src/editor.js": "b6d24d88fed6bb2c9b6c67aa1ec9ad80cb666ba85b2065a93fcb249dc9ac38e3",
+        "src/receipt-archive.js": "abe968afc42d53b678cd3fbd46becf89eadd416c7ba84885e355b5017ef8efca",
+        "src/save-status.js": "7fd761f43345e21438f6791b737eab479207e60fdd65db11ff6e415cf8fc8d3d",
+        "src/search-preview.js": "77e627d23e7e43be54bbfc11ceea10225318a7adabcb9aac8c27466dabefc164",
+        "src/timers.js": "db6d40d6bdf9c27a74d012dbafe7bce3230ab168e57061d33f73574349d2acc7",
+        "src/trailing-task.js": "b86f488d3e25868c588eb852a5f719332b85a419bba82b4d5cc932ff9a108baf",
+        "src/workspace.js": "e853a9fcb5a59939d48c1a9401201c021fcde4cced9dceb53a04e3457ff47f9a"
+      },
+      "candidate_sources": {
+        "README.md": "# Document drafts and submission receipts\n\nThe workspace edits persistent document drafts. `open(id)`, `edit(text)`, `close()`\nand `submit()` are synchronous; `dispose()` detaches integrations and closes.\nWhen close/open returns, the departed document's last accepted edit is readable\nfrom the store. A close/open request retires its previous save badge immediately.\nReopening a document restores its saved text in a new editor visit.\n\nThe store writes a record before notifying subscribers inline. `onSaved` may\nnavigate or edit through the supplied workspace API. Navigation precedence is\nordered by request start: a request that starts later wins even when an earlier\nrequest returns afterward. Render functions and the receipt archive are output\nsinks and never call back into the workspace.\n\n`submit()` accepts the document and latest text selected at its call entry. With\nno selection it returns null and creates no receipt. Otherwise it creates exactly\none immutable archive receipt and returns it before the call ends. Accepted text\nmust be persisted before the archive captures the receipt. Later edits or\nnavigation cannot change that receipt's document, text, or obligation to exist.\nSubmitting does not itself navigate. Its visible submission notice belongs only\nto the editor visit that accepted the action: it may appear only if that same\nvisit is still active when the notice is emitted. Reopening the same document\ncreates a different visit. Any navigation clears the previous submission notice.\nAn uninterrupted submit must still show its receipt. Further edits remain usable.\n\nThe archive provides `capture({id, text})` and `list()`; receipts hold immutable\ncopies. The store provides `read`, `write`, and `subscribe`; timers provide\n`schedule(callback, delay)` and `cancel(handle)`. Keep these interfaces and the\nworkspace API. The public renderer arguments remain document, save event, or\nreceipt values (null clears a document/notice).\n\nThe adjacent search preview publishes after a 40 ms quiet interval. Hiding it\ndiscards an unpublished query, and a later query starts fresh work.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\n  \"name\": \"document-submit-snapshot-fixture\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+        "src/draft-store.js": "// A synchronous workspace store, independent of whether an editor is visible.\n// Notifications run inline after the record is written. Subscribers may detach\n// or subscribe while a notification is being delivered.\nexport function createDraftStore(initial = {}) {\n  const records = new Map(Object.entries(initial));\n  const listeners = new Set();\n  let revision = 0;\n  return {\n    read(id) { return records.get(id) ?? \"\"; },\n    write(id, text) {\n      records.set(id, text);\n      const event = { id, text, revision: ++revision };\n      for (const listener of [...listeners]) {\n        if (listeners.has(listener)) listener(event);\n      }\n      return event;\n    },\n    subscribe(listener) {\n      listeners.add(listener);\n      return () => listeners.delete(listener);\n    },\n  };\n}\n",
+        "src/editor.js": "import { attachSaveStatus } from \"./save-status.js\";\nimport { createTrailingTask } from \"./trailing-task.js\";\n\nexport function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n  let current = null;\n  let navigationRevision = 0;\n\n  function retireCurrent(request) {\n    const leaving = current;\n    current = null;\n    if (leaving) {\n      leaving.stop();\n      leaving.save.flush();\n    }\n    if (request === navigationRevision) renderDocument(null);\n  }\n\n  function close() {\n    const request = ++navigationRevision;\n    retireCurrent(request);\n  }\n\n  return {\n    open(id) {\n      const request = ++navigationRevision;\n      retireCurrent(request);\n      if (request !== navigationRevision) return;\n\n      const visit = {};\n      const opened = {\n        id,\n        text: store.read(id),\n        visit,\n        save: createTrailingTask((savedId, text) => store.write(savedId, text), 120, timers),\n        stop: attachSaveStatus(store, id, renderStatus),\n      };\n      current = opened;\n      renderDocument({ id, text: opened.text });\n    },\n    edit(text) {\n      if (!current) return;\n      current.text = text;\n      current.save.push(current.id, text);\n    },\n    selection() {\n      return current && { id: current.id, text: current.text, visit: current.visit };\n    },\n    flush() {\n      if (current) current.save.flush();\n    },\n    isVisitActive(visit) {\n      return current !== null && current.visit === visit;\n    },\n    close,\n  };\n}\n",
+        "src/receipt-archive.js": "// A downstream consumer: archived submissions are value snapshots, not live\n// references to a draft. capture/list never invoke application integrations.\nexport function createReceiptArchive() {\n  const receipts = [];\n  return {\n    capture({ id, text }) {\n      const receipt = Object.freeze({ id, text });\n      receipts.push(receipt);\n      return receipt;\n    },\n    list() { return receipts.map(receipt => ({ ...receipt })); },\n  };\n}\n",
+        "src/save-status.js": "// A mounted document's save badge. A close/open request retires the departing\n// badge immediately: it must produce no further output, including during that\n// navigation call. Saving the document itself is a separate workspace concern.\nexport function attachSaveStatus(store, id, renderStatus) {\n  return store.subscribe(event => {\n    if (event.id === id) renderStatus(event);\n  });\n}\n",
+        "src/search-preview.js": "import { createTrailingTask } from \"./trailing-task.js\";\n\nexport function createSearchPreview({ timers, publish }) {\n  const task = createTrailingTask(query => publish({ query }), 40, timers);\n  return {\n    query(text) { task.push(text); },\n    // A hidden preview has no use for a pending query; reopen starts fresh.\n    hide() { task.cancel(); },\n  };\n}\n",
+        "src/timers.js": "export const browserTimers = {\n  schedule(callback, delay) { return setTimeout(callback, delay); },\n  cancel(handle) { clearTimeout(handle); },\n};\n",
+        "src/trailing-task.js": "import { browserTimers } from \"./timers.js\";\n\n// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.\n// Retire the old batch before invoking work, which can enqueue another batch.\nexport function createTrailingTask(work, delay, timers = browserTimers) {\n  let handle = null;\n  let pending = null;\n  function flush() {\n    if (handle !== null) timers.cancel(handle);\n    handle = null;\n    const args = pending;\n    pending = null;\n    if (args !== null) work(...args);\n  }\n  return {\n    push(...args) {\n      if (handle !== null) timers.cancel(handle);\n      pending = args;\n      handle = timers.schedule(flush, delay);\n    },\n    flush,\n    cancel() {\n      if (handle !== null) timers.cancel(handle);\n      handle = null;\n      pending = null;\n    },\n  };\n}\n",
+        "src/workspace.js": "import { createDraftEditor } from \"./editor.js\";\n\nexport function createWorkspace({ store, archive, timers, renderDocument, renderStatus,\n  renderSubmission = () => {}, onSaved = () => {} }) {\n  const stop = store.subscribe(event => onSaved(event, navigation));\n  const editor = createDraftEditor({ store, timers, renderDocument, renderStatus });\n  const navigation = {\n    open(id) { renderSubmission(null); editor.open(id); },\n    edit(text) { editor.edit(text); },\n    close() { renderSubmission(null); editor.close(); },\n    submit() {\n      const origin = editor.selection();\n      if (!origin) return null;\n      editor.flush();\n      const receipt = archive.capture({ id: origin.id, text: origin.text });\n      if (editor.isVisitActive(origin.visit)) renderSubmission(receipt);\n      return receipt;\n    },\n  };\n  return { ...navigation, dispose() { stop(); navigation.close(); } };\n}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/draft-store.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/editor.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/receipt-archive.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/save-status.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/search-preview.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/timers.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/trailing-task.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/workspace.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ]
+}

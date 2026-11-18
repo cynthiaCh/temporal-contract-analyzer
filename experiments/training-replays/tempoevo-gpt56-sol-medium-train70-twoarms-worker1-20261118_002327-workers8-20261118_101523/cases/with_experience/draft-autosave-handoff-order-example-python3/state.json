@@ -1,0 +1,491 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "f6155ef95bf1af65f6abd216f26bff2c750d276b2871075ed923d84f0896d33d",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "b2da36ea3cfe474b3989decfe362aa8e6cbd45ec24e6267964489e28d7396ae8",
+        "docs/host-api.md": "3e0bc0b0bd7a4facd4b5135f81f947636e682f22c5b56c7782500db6fb061211",
+        "src/workflow.py": "7618129595d2979ca954c370f130fd828963fe652bf771358b2f1fc3aedbdb9b"
+      },
+      "candidate_sources": {
+        "README.md": "# Botanical collection annotations\n\n\nThe workspace API drives a document editor and its save badge. The workspace store\nholds draft text across navigation and closed editor views. Returning to a document\nrestores the user's last edit. Save integrations receive committed records and may\nselect another document synchronously. Later navigation means the navigation request that starts later takes precedence, even if an earlier request returns afterward. For example, if open(B) starts and saving the departed A invokes a callback that calls open(C), C remains selected after the callback and the outer open(B) return. If that callback calls close() instead, the editor remains closed after the outer open(B) returns. These are navigation results, independent of when the departed document's save occurs.\nWhen close/open returns, the departed document's last accepted edit is available\nthrough the store, even if the next view selects a different document.\n\n`createSearchPreview` is an adjacent transient search panel. It publishes after a\n40 ms quiet interval; hiding it discards an unpublished query. It can be reused.\n\nThe public methods are synchronous. Output render functions observe state; navigation\ncomes through the workspace API, including its `onSaved` integration. `store` provides\n`read`, `write` and `subscribe`; `timers` provides `schedule(callback, delay)` and\n`cancel(handle)`. Production timers use the browser's timers. Keep these interfaces.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"CPython 3.8.10\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "docs/host-api.md": "# Host integration\n\nopen(id), edit(text), close() and dispose() are synchronous entry points.\nThe store owns persisted document records independently of any mounted view.\nStore delivery writes first, snapshots subscriptions, and skips removed listeners.\nonSaved is called inline and can navigate or edit; rendering is an output sink.\nEvery open creates a fresh visit and subscription, including same-key reopen.\nInjected timers provide schedule(callback,delay) and cancel(handle).\nThe preview is transient and independent of the editor's persistence policy.\n",
+        "src/workflow.py": "from dataclasses import dataclass\nclass Store:\n    def __init__(self, records):\n        self.records = dict(records)\n        self.listeners = {}\n        self.serial = self.revision = 0\n\n    def read(self, key):\n        return self.records.get(key, '')\n\n    def subscribe(self, listener):\n        self.serial += 1\n        token = self.serial\n        self.listeners[token] = listener\n        return token\n\n    def stop(self, token):\n        self.listeners.pop(token, None)\n\n    def write(self, key, text):\n        self.records[key] = text\n        self.revision += 1\n        event = dict(id=key, text=text, revision=self.revision)\n        for token, listener in list(self.listeners.items()):\n            if token in self.listeners:\n                listener(event)\n        return event\n\n\nclass Trailing:\n    def __init__(self, env, delay, work):\n        self.env, self.delay, self.work = env, delay, work\n        self.handle = self.pending = None\n\n    def push(self, value):\n        if self.handle is not None:\n            self.env.cancel(self.handle)\n        self.pending = value\n        self.handle = self.env.schedule(self.flush, self.delay)\n\n    def flush(self):\n        if self.handle is not None:\n            self.env.cancel(self.handle)\n        value = self.pending\n        self.handle = self.pending = None\n        if value is not None:\n            self.work(value)\n\n    def cancel(self):\n        if self.handle is not None:\n            self.env.cancel(self.handle)\n        self.handle = self.pending = None\n\n\n\n@dataclass\nclass Visit:\n    env: object\n    id: str\n    token: int\n    task: Trailing\n\n    def accept(self, text):\n        self.task.push(text)\n\n    def depart(self):\n        self.env.store.stop(self.token)\n        self.env.output('document', None)\n        self.task.flush()\n\nclass Workspace:\n    def __init__(self, env):\n        self.env, self.current, self.generation = env, None, 0\n\n    def retire(self):\n        old, self.current = self.current, None\n        if old:\n            old.depart()\n        else:\n            self.env.output('document', None)\n\n    def open(self, key):\n        self.generation += 1\n        ticket = self.generation\n        self.retire()\n        if ticket != self.generation:\n            return\n        token = self.env.store.subscribe(lambda e: self.env.output('status', e) if e['id'] == key else None)\n        task = Trailing(self.env, 120, lambda text: self.env.write(key, text))\n        self.current = Visit(self.env, key, token, task)\n        self.env.output('document', dict(id=key, text=self.env.store.read(key)))\n\n    def edit(self, text):\n        selected = self.current\n        if selected:\n            selected.accept(text)\n\n    def close(self):\n        self.generation += 1\n        self.retire()\n\n    def dispose(self):\n        self.close()\n\nclass Preview:\n    def __init__(self, env):\n        self.task = Trailing(env, 40, lambda q: env.output('preview', dict(query=q)))\n    def query(self, text):\n        self.task.push(text)\n    def hide(self):\n        self.task.cancel()\n"
+      },
+      "delivered_sha256s": [
+        "05474d7458ec9802a644ec0df4f601850e0ab513d5509d0f1a36f461542a61d1",
+        "0f8afbd1eddfaabc061888be095cb69ebafb33e3f68d3ea9f481752f73e75b64",
+        "c8e38b6f8a680f012db4bd5030c99007bb5e65ff85ac5bc828499e6cbb59721f",
+        "be9c359d47a93207b30dae1a27bbea96c05c50f94dc354ea1e880ba1a17ff6ac",
+        "bc00e7137461c55ede04dfd3a6376615561a7552bd46b7141fb8dd4ad78aa29d"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.py",
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "Before 120 ms of uninterrupted quiet, an active editing burst has not written to the store.",
+      "At the 120 ms quiet boundary, exactly one write occurs for the burst, using its latest text and the document that accepted it.",
+      "After one burst flushes, a later burst can independently schedule and complete another save.",
+      "Before close, replacement open, or dispose returns, the departing visit's latest pending edit has been flushed once and is readable from the store.",
+      "If a departure write synchronously starts newer navigation, the newer open or close remains authoritative after the outer request returns.",
+      "A same-key reopen creates a fresh visit and subscription and renders the newly saved text.",
+      "Search preview still publishes after 40 ms of quiet, hide discards an unpublished query, and later queries remain usable."
+    ],
+    "forbidden_effects": [
+      "Do not write once per edit within a burst.",
+      "Do not save delayed text to whichever document happens to be current when the timer fires.",
+      "Do not lose a pending accepted edit when a visit closes, is replaced, or is disposed.",
+      "Do not allow an outer navigation continuation to overwrite or reopen after newer navigation begins inside an inline save integration.",
+      "Do not emit save-status output through a subscription removed when its visit began departing.",
+      "Do not change the synchronous public entry points or the store and timer interfaces.",
+      "Do not alter the adjacent search preview's 40 ms timing, hide cancellation, or reuse behavior."
+    ],
+    "lifecycle_identity": [
+      "Each Workspace.open call establishes a fresh Visit, Trailing task, and store subscription, including reopening the same key.",
+      "Pending editor work belongs to the visit and document that accepted the edit.",
+      "Departure captures and retires the old visit before its pending write can invoke integrations; cleanup applies to that captured visit, not a successor.",
+      "Workspace generation/ticket identity determines navigation authority: a request that starts later supersedes an older continuation.",
+      "The store persists document records independently of whether any visit is mounted."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Workspace.edit must enqueue the selected visit's text through the existing Trailing utility with a 120 ms delay instead of writing immediately."
+      },
+      {
+        "id": "O2",
+        "text": "Each edit in an unflushed burst must replace the pending text and restart the quiet-period deadline, so only the latest text is written after 120 ms without another edit."
+      },
+      {
+        "id": "O3",
+        "text": "After a flush consumes one burst, the same visit must remain able to accept and save subsequent bursts."
+      },
+      {
+        "id": "O4",
+        "text": "The delayed write must remain bound to the document visit that accepted the edit; editing with no current visit remains a no-op."
+      },
+      {
+        "id": "O5",
+        "text": "When a visit departs because of open, close, or dispose, its pending edit must be flushed exactly once before the synchronous operation returns, making that edit available through the store."
+      },
+      {
+        "id": "O6",
+        "text": "Departure must retire the old visit and stop its subscription before its flush can synchronously invoke integrations; obsolete outer navigation must recheck authority before installing or rendering a destination."
+      },
+      {
+        "id": "O7",
+        "text": "Store writes, events, subscription snapshot-and-membership delivery, document rendering, status filtering by document id, and synchronous public interfaces must otherwise retain their existing behavior."
+      },
+      {
+        "id": "O8",
+        "text": "Preview behavior is unchanged: it uses its independent 40 ms trailing task, hide cancels unpublished work, and the preview remains reusable."
+      }
+    ],
+    "ordering_barriers": [
+      "On Trailing.push, cancel an existing handle before replacing pending text and scheduling the new 120 ms deadline.",
+      "On Trailing.flush, cancel/clear timer ownership and remove the pending value before invoking callback-capable write work, preventing nested activity from consuming the same burst twice or erasing later work.",
+      "On departure, set Workspace.current to None, stop the captured visit's subscription, and clear the departing document output before flushing its pending write, so inline navigation cannot leave stale view effects.",
+      "Flush a departing visit before an outer open reads and renders the destination record, which is required for immediate same-key restoration.",
+      "After callback-capable departure flushing, compare the open request's ticket with the current generation before subscribing, installing, or rendering its destination.",
+      "Store.write must update the record before synchronously delivering its event to still-registered listeners."
+    ],
+    "preservation": [
+      "Keep Workspace.open, edit, close, and dispose synchronous.",
+      "Keep Store.read, write, subscribe, and stop behavior and event fields id, text, and revision.",
+      "Keep timer injection through schedule(callback, delay) and cancel(handle).",
+      "Keep document output payloads as None when cleared and dictionaries containing id and text when opened.",
+      "Keep status output limited to matching document ids and ensure departed subscriptions no longer deliver.",
+      "Keep fresh visits and subscriptions for every open, including same-key reopen.",
+      "Keep later-started navigation authoritative during synchronous onSaved reentry.",
+      "Keep Preview independent from editor persistence."
+    ],
+    "scope": [
+      "Change only botanical annotation editor autosave behavior in src/workflow.py.",
+      "Use the existing Trailing utility for 120 ms trailing coalescing.",
+      "Cover edits, quiet-period saves, visit departure through open/close/dispose, and synchronous save-listener reentry needed to preserve documented behavior.",
+      "Exclude changes to the adjacent search preview."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "The botanical collection annotations currently writes on every edit. Coalesce edits using the existing trailing utility: after a 120 ms quiet interval, write only the latest text in that editing burst. Subsequent bursts must continue to save. Preserve other behavior and public interfaces. The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "Returning to a document restores the user's last edit."
+      },
+      {
+        "file": "README.md",
+        "quote": "Save integrations receive committed records and may select another document synchronously."
+      },
+      {
+        "file": "README.md",
+        "quote": "Later navigation means the navigation request that starts later takes precedence, even if an earlier request returns afterward."
+      },
+      {
+        "file": "README.md",
+        "quote": "When close/open returns, the departed document's last accepted edit is available\nthrough the store, even if the next view selects a different document."
+      },
+      {
+        "file": "README.md",
+        "quote": "It publishes after a\n40 ms quiet interval; hiding it discards an unpublished query. It can be reused."
+      },
+      {
+        "file": "README.md",
+        "quote": "The public methods are synchronous."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "open(id), edit(text), close() and dispose() are synchronous entry points."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Store delivery writes first, snapshots subscriptions, and skips removed listeners."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "onSaved is called inline and can navigate or edit; rendering is an output sink."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Every open creates a fresh visit and subscription, including same-key reopen."
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "self.pending = value\n        self.handle = self.env.schedule(self.flush, self.delay)"
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "value = self.pending\n        self.handle = self.pending = None\n        if value is not None:\n            self.work(value)"
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "if ticket != self.generation:\n            return"
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "task = Trailing(self.env, 120, lambda text: self.env.write(key, text))"
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "self.task = Trailing(env, 40, lambda q: env.output('preview', dict(query=q)))"
+      }
+    ],
+    "triggers": [
+      "Workspace.edit(text) while a visit is selected starts or resets that visit's 120 ms quiet interval.",
+      "Expiration of the latest scheduled editor timer flushes the current burst.",
+      "Workspace.open(key), Workspace.close(), and Workspace.dispose() trigger departure handling for the current visit.",
+      "Store.write synchronously triggers subscribed listeners, which may reenter workspace navigation or editing.",
+      "Preview.query and Preview.hide continue to trigger only the independent preview trailing-task behavior."
+    ],
+    "unknowns": [
+      "Behavior for None as editor text is unspecified; the supplied Trailing implementation uses None as its no-pending sentinel.",
+      "Timer cancellation races and ordering of independently scheduled callbacks at the same deadline are unspecified.",
+      "Exceptions from store listeners, output sinks, timer operations, or write work are unspecified.",
+      "No retry or failure behavior for persistence is specified.",
+      "Reentry is explicitly established for onSaved/store delivery; callbacks from rendering, timer scheduling/cancellation, and subscription cleanup are not established."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 1,
+  "diagnoses": [],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "finalized": true,
+  "first_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "repair_stop_reason": "oracle_accepted",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "de05198cda1ed39fe4382fec421b1a1a1cb650a0a1ee2f28905a43e3f664f905",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9995278101414
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "6e1a6a64948644d2483c04c97bce55ff6202fe27d2b3b625a03a18cad2581a30",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 22656,
+        "input_tokens": 28290,
+        "output_tokens": 2315,
+        "reasoning_output_tokens": 747,
+        "total_tokens": 30605
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "da69a860e2e68a3b23d40f02d559196b049c56ce24c219ce2ff89ac1e2e1bcd2",
+      "seconds": 47.68686620052904,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 22656,
+        "input_tokens": 28290,
+        "output_tokens": 2315,
+        "reasoning_output_tokens": 747,
+        "total_tokens": 30605
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "3683ef806eac0cefe2d3b087f900d7058d060588fea07e123ff568cf7bc7c9d9",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9998021041974
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "88f37eef4cc1e5406f8435f85a0db8fd0eb5161e133af3dd3daf5b49727e5b04",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 19359,
+        "output_tokens": 1975,
+        "reasoning_output_tokens": 250,
+        "total_tokens": 21334
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "5fb2b23e3bd745fb84b0ad02a034c822677e7b4682c40e3ced4aff177f75ff88",
+      "seconds": 38.69949690531939,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 19359,
+        "output_tokens": 1975,
+        "reasoning_output_tokens": 250,
+        "total_tokens": 21334
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "aec7f732a4b5c8c30a90c88a8dbead95075a93a4ed4ea05eddbed037bced83d0",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9995063859969
+          },
+          "number": 1,
+          "requests": 5,
+          "restart_reason": "initial",
+          "result_sha256": "95a7a0abd0cb2bd8b6c3075d75e6d9344818fb91ac817610bb2d9620635e99e7",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 103680,
+        "input_tokens": 121033,
+        "output_tokens": 3092,
+        "reasoning_output_tokens": 1199,
+        "total_tokens": 124125
+      },
+      "requests": 5,
+      "reserved_requests": 24,
+      "result_sha256": "b794ae11dcdfbf625bb068ff5faafb31e3697f62274773a868d0d5e15723041f",
+      "seconds": 75.32176983449608,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 103680,
+        "input_tokens": 121033,
+        "output_tokens": 3092,
+        "reasoning_output_tokens": 1199,
+        "total_tokens": 124125
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "de8f7cf25820a5e87d797d645824aaa65b94f19ddb61b6e9555d9da60e262cf5",
+      "seconds": 0.47100319154560566,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 4.637591688893735,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "ba5cfd12159c0a82cc01e75121c8cff18f9affafcaca2b0f04a09208f31c91c1",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9955444671214
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "44f2498d236efcc6a5afa867a1c8d3dcd38e213905586cfb0bbd09c6d5ff3ae6",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 77230,
+        "output_tokens": 2164,
+        "reasoning_output_tokens": 869,
+        "total_tokens": 79394
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "43b9f39533614480f2f3ef3314bb3cb23c4f234716516b8ffc5ac70950665aae",
+      "seconds": 39.1038572024554,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 77230,
+        "output_tokens": 2164,
+        "reasoning_output_tokens": 869,
+        "total_tokens": 79394
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "training_accepted": true
+}

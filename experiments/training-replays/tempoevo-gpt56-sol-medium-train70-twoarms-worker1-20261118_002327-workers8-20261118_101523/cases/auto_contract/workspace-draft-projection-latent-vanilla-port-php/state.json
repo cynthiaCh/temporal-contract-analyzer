@@ -1,0 +1,1256 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "c7dc9051d02c83a98207b5f53ff4b6c8b84febc2b2d2c02246b673ea5d9f6aa1",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "025b3c84bd17b27eba12f2c299aada316781fcb6ba66ab4beddcb44bb0281991",
+        "docs/host-api.md": "60a861fbdd51f1781d1f2fdd34f386df2a4a6c1b7f55ce66426e683a523cd038",
+        "package-lock.json": "2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59",
+        "package.json": "66db10140e649e83eadde7fe04cb4ccb1467c20f5a7db2117520ab1572467f1a",
+        "src/workflow.php": "196831952b4261d88bf5abf05682b0057eab8aad2ddee27ef1fa680dafd0cedc"
+      },
+      "candidate_sources": {
+        "README.md": "Hotel coordination — Document body, per-document buffer and navigation outline are separate responsibilities. Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"PHP 7.4.3\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "Store reads values and synchronously notifies saved integrations. Workspace exposes select(id), edit(text), close(), selection(), dispose(). Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail. Injected scheduler offers cancellable timer handles. Search preview is an adjacent transient consumer.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.php": "<?php\nclass Store {\n    private $records, $listeners = [], $serial = 0, $revision = 0;\n    function __construct($records) { $this->records = $records; }\n    function read($id) { return $this->records[$id] ?? ''; }\n    function subscribe($fn) { $token = ++$this->serial; $this->listeners[$token] = $fn; return $token; }\n    function stop($token) { unset($this->listeners[$token]); }\n    function write($id, $text) {\n        $this->records[$id] = $text;\n        $event = ['id'=>$id, 'text'=>$text, 'revision'=>++$this->revision];\n        foreach ($this->listeners as $token=>$fn) if (isset($this->listeners[$token])) $fn($event);\n        return $event;\n    }\n}\nclass Trailing {\n    private $env, $delay, $work, $handle = null, $pending = null;\n    function __construct($env, $delay, $work) { $this->env=$env; $this->delay=$delay; $this->work=$work; }\n    function push($value) {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=$value;\n        $this->handle=$this->env->schedule(function() { $this->flush(); }, $this->delay);\n    }\n    function flush() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $value=$this->pending; $this->pending=null; $this->handle=null;\n        if ($value !== null) ($this->work)($value);\n    }\n    function cancel() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=null; $this->handle=null;\n    }\n}\n\nclass Badge {public $id,$buffer,$visit;private $env,$token;function __construct($env,$id,$buffer){$this->env=$env;$this->id=$id;$this->buffer=$buffer;$this->token=$env->store->subscribe(function($e)use($env,$id){if($e['id']===$id)$env->output('status',$e);});}function detach(){$this->env->store->stop($this->token);}}\nclass BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}\nclass Editor {private $env;public $current=null,$generation=0;private $bank;function __construct($env){$this->env=$env;$this->bank=new BufferBank();}\n private function retire(){$old=$this->current;$this->current=null;if($old&&!false)$old->detach();$this->env->output('document',null);if($old){}if($old&&false)$old->detach();}\n function open($id,$visit){$request=++$this->generation;$this->retire();if(true&&$request!==$this->generation)return;$buffer=$this->bank->get($this->env,$id);$this->current=new Badge($this->env,$id,$buffer);$this->current->visit=$visit;$this->env->output('document',['id'=>$id,'visit'=>$visit,'text'=>$this->env->store->read($id)]);}\n function edit($text){$view=$this->current;if($view){$view->buffer->push($text);}}function close(){++$this->generation;$this->retire();}function dispose(){$this->close();}\n}\nclass Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}\n\nclass Projection {private $env,$selected=null,$trail=[];function __construct($env){$this->env=$env;}function publish(){$this->env->output('projection',['selected'=>$this->selected,'trail'=>$this->trail]);}function commit($v){$this->selected=$v;$this->trail[]=$v;$this->publish();}function clear(){$this->selected=null;$this->publish();}}\nclass Workspace {private $editor,$projection,$epoch=0,$visit=0;function __construct($env){$this->editor=new Editor($env);$this->projection=new Projection($env);}function selection(){$c=$this->editor->current;return $c?['id'=>$c->id,'visit'=>$c->visit]:null;}function select($id){$mine=++$this->epoch;$v=++$this->visit;$this->editor->open($id,$v);if(true)$this->projection->commit(['id'=>$id,'visit'=>$v]);}function edit($t){$this->editor->edit($t);}function close(){$mine=++$this->epoch;$this->editor->close();if(true)$this->projection->clear();}function dispose(){$this->close();}}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.php",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "c7dc9051d02c83a98207b5f53ff4b6c8b84febc2b2d2c02246b673ea5d9f6aa1",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "025b3c84bd17b27eba12f2c299aada316781fcb6ba66ab4beddcb44bb0281991",
+        "docs/host-api.md": "60a861fbdd51f1781d1f2fdd34f386df2a4a6c1b7f55ce66426e683a523cd038",
+        "package-lock.json": "2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59",
+        "package.json": "66db10140e649e83eadde7fe04cb4ccb1467c20f5a7db2117520ab1572467f1a",
+        "src/workflow.php": "196831952b4261d88bf5abf05682b0057eab8aad2ddee27ef1fa680dafd0cedc"
+      },
+      "candidate_sources": {
+        "README.md": "Hotel coordination — Document body, per-document buffer and navigation outline are separate responsibilities. Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"PHP 7.4.3\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "Store reads values and synchronously notifies saved integrations. Workspace exposes select(id), edit(text), close(), selection(), dispose(). Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail. Injected scheduler offers cancellable timer handles. Search preview is an adjacent transient consumer.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.php": "<?php\nclass Store {\n    private $records, $listeners = [], $serial = 0, $revision = 0;\n    function __construct($records) { $this->records = $records; }\n    function read($id) { return $this->records[$id] ?? ''; }\n    function subscribe($fn) { $token = ++$this->serial; $this->listeners[$token] = $fn; return $token; }\n    function stop($token) { unset($this->listeners[$token]); }\n    function write($id, $text) {\n        $this->records[$id] = $text;\n        $event = ['id'=>$id, 'text'=>$text, 'revision'=>++$this->revision];\n        foreach ($this->listeners as $token=>$fn) if (isset($this->listeners[$token])) $fn($event);\n        return $event;\n    }\n}\nclass Trailing {\n    private $env, $delay, $work, $handle = null, $pending = null;\n    function __construct($env, $delay, $work) { $this->env=$env; $this->delay=$delay; $this->work=$work; }\n    function push($value) {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=$value;\n        $this->handle=$this->env->schedule(function() { $this->flush(); }, $this->delay);\n    }\n    function flush() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $value=$this->pending; $this->pending=null; $this->handle=null;\n        if ($value !== null) ($this->work)($value);\n    }\n    function cancel() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=null; $this->handle=null;\n    }\n}\n\nclass Badge {public $id,$buffer,$visit;private $env,$token;function __construct($env,$id,$buffer){$this->env=$env;$this->id=$id;$this->buffer=$buffer;$this->token=$env->store->subscribe(function($e)use($env,$id){if($e['id']===$id)$env->output('status',$e);});}function detach(){$this->env->store->stop($this->token);}}\nclass BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}\nclass Editor {private $env;public $current=null,$generation=0;private $bank;function __construct($env){$this->env=$env;$this->bank=new BufferBank();}\n private function retire(){$old=$this->current;$this->current=null;if($old&&!false)$old->detach();$this->env->output('document',null);if($old){}if($old&&false)$old->detach();}\n function open($id,$visit){$request=++$this->generation;$this->retire();if(true&&$request!==$this->generation)return;$buffer=$this->bank->get($this->env,$id);$this->current=new Badge($this->env,$id,$buffer);$this->current->visit=$visit;$this->env->output('document',['id'=>$id,'visit'=>$visit,'text'=>$this->env->store->read($id)]);}\n function edit($text){$view=$this->current;if($view){$view->buffer->push($text);}}function close(){++$this->generation;$this->retire();}function dispose(){$this->close();}\n}\nclass Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}\n\nclass Projection {private $env,$selected=null,$trail=[];function __construct($env){$this->env=$env;}function publish(){$this->env->output('projection',['selected'=>$this->selected,'trail'=>$this->trail]);}function commit($v){$this->selected=$v;$this->trail[]=$v;$this->publish();}function clear(){$this->selected=null;$this->publish();}}\nclass Workspace {private $editor,$projection,$epoch=0,$visit=0;function __construct($env){$this->editor=new Editor($env);$this->projection=new Projection($env);}function selection(){$c=$this->editor->current;return $c?['id'=>$c->id,'visit'=>$c->visit]:null;}function select($id){$mine=++$this->epoch;$v=++$this->visit;$this->editor->open($id,$v);if(true)$this->projection->commit(['id'=>$id,'visit'=>$v]);}function edit($t){$this->editor->edit($t);}function close(){$mine=++$this->epoch;$this->editor->close();if(true)$this->projection->clear();}function dispose(){$this->close();}}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.php",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 2,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "c7dc9051d02c83a98207b5f53ff4b6c8b84febc2b2d2c02246b673ea5d9f6aa1",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "025b3c84bd17b27eba12f2c299aada316781fcb6ba66ab4beddcb44bb0281991",
+        "docs/host-api.md": "60a861fbdd51f1781d1f2fdd34f386df2a4a6c1b7f55ce66426e683a523cd038",
+        "package-lock.json": "2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59",
+        "package.json": "66db10140e649e83eadde7fe04cb4ccb1467c20f5a7db2117520ab1572467f1a",
+        "src/workflow.php": "196831952b4261d88bf5abf05682b0057eab8aad2ddee27ef1fa680dafd0cedc"
+      },
+      "candidate_sources": {
+        "README.md": "Hotel coordination — Document body, per-document buffer and navigation outline are separate responsibilities. Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"PHP 7.4.3\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "Store reads values and synchronously notifies saved integrations. Workspace exposes select(id), edit(text), close(), selection(), dispose(). Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail. Injected scheduler offers cancellable timer handles. Search preview is an adjacent transient consumer.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.php": "<?php\nclass Store {\n    private $records, $listeners = [], $serial = 0, $revision = 0;\n    function __construct($records) { $this->records = $records; }\n    function read($id) { return $this->records[$id] ?? ''; }\n    function subscribe($fn) { $token = ++$this->serial; $this->listeners[$token] = $fn; return $token; }\n    function stop($token) { unset($this->listeners[$token]); }\n    function write($id, $text) {\n        $this->records[$id] = $text;\n        $event = ['id'=>$id, 'text'=>$text, 'revision'=>++$this->revision];\n        foreach ($this->listeners as $token=>$fn) if (isset($this->listeners[$token])) $fn($event);\n        return $event;\n    }\n}\nclass Trailing {\n    private $env, $delay, $work, $handle = null, $pending = null;\n    function __construct($env, $delay, $work) { $this->env=$env; $this->delay=$delay; $this->work=$work; }\n    function push($value) {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=$value;\n        $this->handle=$this->env->schedule(function() { $this->flush(); }, $this->delay);\n    }\n    function flush() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $value=$this->pending; $this->pending=null; $this->handle=null;\n        if ($value !== null) ($this->work)($value);\n    }\n    function cancel() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=null; $this->handle=null;\n    }\n}\n\nclass Badge {public $id,$buffer,$visit;private $env,$token;function __construct($env,$id,$buffer){$this->env=$env;$this->id=$id;$this->buffer=$buffer;$this->token=$env->store->subscribe(function($e)use($env,$id){if($e['id']===$id)$env->output('status',$e);});}function detach(){$this->env->store->stop($this->token);}}\nclass BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}\nclass Editor {private $env;public $current=null,$generation=0;private $bank;function __construct($env){$this->env=$env;$this->bank=new BufferBank();}\n private function retire(){$old=$this->current;$this->current=null;if($old&&!false)$old->detach();$this->env->output('document',null);if($old){}if($old&&false)$old->detach();}\n function open($id,$visit){$request=++$this->generation;$this->retire();if(true&&$request!==$this->generation)return;$buffer=$this->bank->get($this->env,$id);$this->current=new Badge($this->env,$id,$buffer);$this->current->visit=$visit;$this->env->output('document',['id'=>$id,'visit'=>$visit,'text'=>$this->env->store->read($id)]);}\n function edit($text){$view=$this->current;if($view){$view->buffer->push($text);}}function close(){++$this->generation;$this->retire();}function dispose(){$this->close();}\n}\nclass Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}\n\nclass Projection {private $env,$selected=null,$trail=[];function __construct($env){$this->env=$env;}function publish(){$this->env->output('projection',['selected'=>$this->selected,'trail'=>$this->trail]);}function commit($v){$this->selected=$v;$this->trail[]=$v;$this->publish();}function clear(){$this->selected=null;$this->publish();}}\nclass Workspace {private $editor,$projection,$epoch=0,$visit=0;function __construct($env){$this->editor=new Editor($env);$this->projection=new Projection($env);}function selection(){$c=$this->editor->current;return $c?['id'=>$c->id,'visit'=>$c->visit]:null;}function select($id){$mine=++$this->epoch;$v=++$this->visit;$this->editor->open($id,$v);if(true)$this->projection->commit(['id'=>$id,'visit'=>$v]);}function edit($t){$this->editor->edit($t);}function close(){$mine=++$this->epoch;$this->editor->close();if(true)$this->projection->clear();}function dispose(){$this->close();}}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.php",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 3,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "After changing business code, run the public PHP syntax check under PHP 7.4 compatibility; this confirms syntax only, not business behavior.",
+      "Verify a burst of edits produces no immediate store write and exactly one eventual write containing the latest text after 120 ms of inactivity.",
+      "Verify pending saves remain associated with their originating document across select(), close(), and re-selection boundaries.",
+      "Verify selection, document output, projection commits, breadcrumb history, and visit identifiers retain their existing observable ordering and values.",
+      "Verify search preview still uses its existing 40 ms trailing task and hide() cancellation behavior."
+    ],
+    "forbidden_effects": [
+      "Do not change search preview timing, coalescing, output shape, or cancellation behavior.",
+      "Do not merge autosave state across different document identifiers.",
+      "Do not discard a pending document save merely because the user selects another document or closes the editor.",
+      "Do not cause an autosave for an old document to overwrite or otherwise target the currently selected document.",
+      "Do not weaken synchronous Store::write notification behavior or suppress saved-integration callbacks.",
+      "Do not change navigation output ordering, projection breadcrumb retention, or visit allocation.",
+      "Do not edit tests, configuration, dependency manifests, public documentation, or evaluator artifacts."
+    ],
+    "lifecycle_identity": [
+      "Each select() retains a newly incremented visit identifier shared by that visit's document output, selection(), and committed projection entry.",
+      "Autosave ownership is by document identifier through BufferBank; a delayed save must retain the identifier captured for that document rather than derive identity from Editor::$current when it fires.",
+      "Revisiting the same document reuses that document's trailing buffer, so edits within the active pending interval coalesce for that document.",
+      "Projection trail entries remain copied visit records and are not retroactively changed by later selection, closure, editing, or autosave."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Editor::edit must enqueue the current document's text into its existing 120 ms Trailing buffer instead of calling the workspace write operation immediately."
+      },
+      {
+        "id": "O2",
+        "text": "For multiple edits to the same document before 120 ms of inactivity, cancel the prior timer and persist only the latest text once the trailing timer fires."
+      },
+      {
+        "id": "O3",
+        "text": "Maintain independent pending autosave state per document so navigation between documents neither combines their edits nor redirects a delayed write."
+      },
+      {
+        "id": "O4",
+        "text": "Preserve pending document persistence across existing navigation and editor retirement: selecting another document or closing the editor must not implicitly cancel the per-document pending save."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve Store::write semantics: when the delayed save occurs, it updates the addressed record, increments revision, synchronously notifies subscribed integrations, and returns the event as before."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve current navigation behavior, including document retirement/output, synchronous opening and reading, visit numbering, projection commit/clear behavior, and retained projection breadcrumb trail."
+      },
+      {
+        "id": "O7",
+        "text": "Leave Preview unchanged, including its separate 40 ms trailing timing and hide() cancellation."
+      }
+    ],
+    "ordering_barriers": [
+      "Within Trailing::push, any prior handle is cancelled before the latest pending value is installed and a replacement 120 ms timer is scheduled.",
+      "When the autosave timer fires, the pending value is cleared from the trailing task before its work callback invokes the store write.",
+      "A delayed save writes to Store before Store synchronously invokes saved-integration listeners for that event.",
+      "Workspace::select retains the existing sequence: allocate epoch/visit, open the editor and emit the document, then commit and publish the projection breadcrumb.",
+      "Workspace::close retains the existing sequence: advance epoch, close/retire the editor and emit a null document, then clear and publish projection selection.",
+      "Navigation triggered synchronously by a Store::write listener is allowed to complete during the delayed save notification; the autosave callback must not subsequently apply stale navigation or projection state."
+    ],
+    "preservation": [
+      "Existing public Workspace methods and their observable shapes remain: select(id), edit(text), close(), selection(), and dispose().",
+      "A selected document is still read from Store and emitted with id, visit, and text when opened.",
+      "Badge subscription and detachment behavior remains tied to the active document view.",
+      "Projection commit still appends each selected visit to trail; clear removes only selected and retains the breadcrumb archive.",
+      "Store revision numbering and synchronous listener notification remain unchanged.",
+      "Per-document buffers continue to be retained by BufferBank and reused by document identifier.",
+      "Search preview remains an adjacent, independent transient consumer."
+    ],
+    "scope": [
+      "Modify only editor autosave business behavior in /workspace/src/workflow.php.",
+      "Use the existing Trailing and BufferBank facilities for the editor's 120 ms per-document coalescing where appropriate.",
+      "Preserve the surrounding Store, navigation, projection, visit, and preview contracts unless the minimal autosave wiring requires interaction with them."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "The editor currently writes to the workspace store on every edit. Change editor autosave to coalesce a burst of input: after 120 ms without another edit, save only its latest text."
+      },
+      {
+        "file": "TASK",
+        "quote": "Reuse the existing trailing-task utility where appropriate."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve the workspace's existing navigation and persistence behavior."
+      },
+      {
+        "file": "TASK",
+        "quote": "Keep search preview behavior unchanged; its timing is outside this maintenance task."
+      },
+      {
+        "file": "README.md",
+        "quote": "Hotel coordination — Document body, per-document buffer and navigation outline are separate responsibilities. Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Store reads values and synchronously notifies saved integrations."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Injected scheduler offers cancellable timer handles. Search preview is an adjacent transient consumer."
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "class BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function edit($text){$view=$this->current;if($view){$this->env->write($view->id,$text);}}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function push($value) {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=$value;\n        $this->handle=$this->env->schedule(function() { $this->flush(); }, $this->delay);\n    }"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function write($id, $text) {\n        $this->records[$id] = $text;\n        $event = ['id'=>$id, 'text'=>$text, 'revision'=>++$this->revision];\n        foreach ($this->listeners as $token=>$fn) if (isset($this->listeners[$token])) $fn($event);\n        return $event;\n    }"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "class Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "class Projection {private $env,$selected=null,$trail=[];function __construct($env){$this->env=$env;}function publish(){$this->env->output('projection',['selected'=>$this->selected,'trail'=>$this->trail]);}function commit($v){$this->selected=$v;$this->trail[]=$v;$this->publish();}function clear(){$this->selected=null;$this->publish();}}"
+      }
+    ],
+    "triggers": [
+      "Calling Workspace::edit while a document is current schedules or replaces that document's 120 ms trailing autosave.",
+      "A full 120 ms interval without another edit for that same document triggers persistence of its latest pending text.",
+      "Calling Workspace::select retires the current view and opens a newly numbered visit without cancelling another document's pending autosave.",
+      "Calling Workspace::close or dispose retires the active view and clears current projection selection without cancelling document-owned pending persistence.",
+      "Store::write synchronously triggers subscribed saved integrations, which may navigate while the autosave callback is executing."
+    ],
+    "unknowns": [
+      "The public sources do not define scheduler behavior when cancellation races with a callback that has already begun; implementation must rely only on the provided cancellable-handle interface and Trailing's existing guards.",
+      "The public sources do not specify whether equal consecutive text values should be deduplicated; the stated requirement is burst coalescing, so no additional value-based deduplication is established.",
+      "The public sources do not specify an explicit final flush on process shutdown; existing per-document trailing behavior and navigation persistence should be preserved without inventing a new shutdown protocol.",
+      "The public sources do not define exception handling for scheduler, output, store, or listener callbacks; no new exception-swallowing or recovery requirement is established.",
+      "Public checks validate PHP syntax but do not establish business correctness."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 3,
+  "diagnoses": [
+    {
+      "attempt": 2,
+      "candidate_only_contract_evidence": [],
+      "contract_after": {
+        "checkpoints": [
+          "After changing business code, run the public PHP syntax check under PHP 7.4 compatibility; this confirms syntax only, not business behavior.",
+          "Verify a burst of edits produces no immediate store write and exactly one eventual write containing the latest text after 120 ms of inactivity.",
+          "Verify pending saves remain associated with their originating document across select(), close(), and re-selection boundaries.",
+          "Verify selection, document output, projection commits, breadcrumb history, and visit identifiers retain their existing observable ordering and values.",
+          "Verify search preview still uses its existing 40 ms trailing task and hide() cancellation behavior."
+        ],
+        "forbidden_effects": [
+          "Do not change search preview timing, coalescing, output shape, or cancellation behavior.",
+          "Do not merge autosave state across different document identifiers.",
+          "Do not discard a pending document save merely because the user selects another document or closes the editor.",
+          "Do not cause an autosave for an old document to overwrite or otherwise target the currently selected document.",
+          "Do not weaken synchronous Store::write notification behavior or suppress saved-integration callbacks.",
+          "Do not change navigation output ordering, projection breadcrumb retention, or visit allocation.",
+          "Do not edit tests, configuration, dependency manifests, public documentation, or evaluator artifacts."
+        ],
+        "lifecycle_identity": [
+          "Each select() retains a newly incremented visit identifier shared by that visit's document output, selection(), and committed projection entry.",
+          "Autosave ownership is by document identifier through BufferBank; a delayed save must retain the identifier captured for that document rather than derive identity from Editor::$current when it fires.",
+          "Revisiting the same document reuses that document's trailing buffer, so edits within the active pending interval coalesce for that document.",
+          "Projection trail entries remain copied visit records and are not retroactively changed by later selection, closure, editing, or autosave."
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "text": "Editor::edit must enqueue the current document's text into its existing 120 ms Trailing buffer instead of calling the workspace write operation immediately."
+          },
+          {
+            "id": "O2",
+            "text": "For multiple edits to the same document before 120 ms of inactivity, cancel the prior timer and persist only the latest text once the trailing timer fires."
+          },
+          {
+            "id": "O3",
+            "text": "Maintain independent pending autosave state per document so navigation between documents neither combines their edits nor redirects a delayed write."
+          },
+          {
+            "id": "O4",
+            "text": "Preserve pending document persistence across existing navigation and editor retirement: selecting another document or closing the editor must not implicitly cancel the per-document pending save."
+          },
+          {
+            "id": "O5",
+            "text": "Preserve Store::write semantics: when the delayed save occurs, it updates the addressed record, increments revision, synchronously notifies subscribed integrations, and returns the event as before."
+          },
+          {
+            "id": "O6",
+            "text": "Preserve current navigation behavior, including document retirement/output, synchronous opening and reading, visit numbering, projection commit/clear behavior, and retained projection breadcrumb trail."
+          },
+          {
+            "id": "O7",
+            "text": "Leave Preview unchanged, including its separate 40 ms trailing timing and hide() cancellation."
+          }
+        ],
+        "ordering_barriers": [
+          "Within Trailing::push, any prior handle is cancelled before the latest pending value is installed and a replacement 120 ms timer is scheduled.",
+          "When the autosave timer fires, the pending value is cleared from the trailing task before its work callback invokes the store write.",
+          "A delayed save writes to Store before Store synchronously invokes saved-integration listeners for that event.",
+          "Workspace::select retains the existing sequence: allocate epoch/visit, open the editor and emit the document, then commit and publish the projection breadcrumb.",
+          "Workspace::close retains the existing sequence: advance epoch, close/retire the editor and emit a null document, then clear and publish projection selection.",
+          "Navigation triggered synchronously by a Store::write listener is allowed to complete during the delayed save notification; the autosave callback must not subsequently apply stale navigation or projection state."
+        ],
+        "preservation": [
+          "Existing public Workspace methods and their observable shapes remain: select(id), edit(text), close(), selection(), and dispose().",
+          "A selected document is still read from Store and emitted with id, visit, and text when opened.",
+          "Badge subscription and detachment behavior remains tied to the active document view.",
+          "Projection commit still appends each selected visit to trail; clear removes only selected and retains the breadcrumb archive.",
+          "Store revision numbering and synchronous listener notification remain unchanged.",
+          "Per-document buffers continue to be retained by BufferBank and reused by document identifier.",
+          "Search preview remains an adjacent, independent transient consumer."
+        ],
+        "scope": [
+          "Modify only editor autosave business behavior in /workspace/src/workflow.php.",
+          "Use the existing Trailing and BufferBank facilities for the editor's 120 ms per-document coalescing where appropriate.",
+          "Preserve the surrounding Store, navigation, projection, visit, and preview contracts unless the minimal autosave wiring requires interaction with them."
+        ],
+        "supporting_evidence": [
+          {
+            "file": "TASK",
+            "quote": "The editor currently writes to the workspace store on every edit. Change editor autosave to coalesce a burst of input: after 120 ms without another edit, save only its latest text."
+          },
+          {
+            "file": "TASK",
+            "quote": "Reuse the existing trailing-task utility where appropriate."
+          },
+          {
+            "file": "TASK",
+            "quote": "Preserve the workspace's existing navigation and persistence behavior."
+          },
+          {
+            "file": "TASK",
+            "quote": "Keep search preview behavior unchanged; its timing is outside this maintenance task."
+          },
+          {
+            "file": "README.md",
+            "quote": "Hotel coordination — Document body, per-document buffer and navigation outline are separate responsibilities. Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "Store reads values and synchronously notifies saved integrations."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "Injected scheduler offers cancellable timer handles. Search preview is an adjacent transient consumer."
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "class BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}"
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "function edit($text){$view=$this->current;if($view){$this->env->write($view->id,$text);}}"
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "function push($value) {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=$value;\n        $this->handle=$this->env->schedule(function() { $this->flush(); }, $this->delay);\n    }"
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "function write($id, $text) {\n        $this->records[$id] = $text;\n        $event = ['id'=>$id, 'text'=>$text, 'revision'=>++$this->revision];\n        foreach ($this->listeners as $token=>$fn) if (isset($this->listeners[$token])) $fn($event);\n        return $event;\n    }"
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "class Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}"
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "class Projection {private $env,$selected=null,$trail=[];function __construct($env){$this->env=$env;}function publish(){$this->env->output('projection',['selected'=>$this->selected,'trail'=>$this->trail]);}function commit($v){$this->selected=$v;$this->trail[]=$v;$this->publish();}function clear(){$this->selected=null;$this->publish();}}"
+          }
+        ],
+        "triggers": [
+          "Calling Workspace::edit while a document is current schedules or replaces that document's 120 ms trailing autosave.",
+          "A full 120 ms interval without another edit for that same document triggers persistence of its latest pending text.",
+          "Calling Workspace::select retires the current view and opens a newly numbered visit without cancelling another document's pending autosave.",
+          "Calling Workspace::close or dispose retires the active view and clears current projection selection without cancelling document-owned pending persistence.",
+          "Store::write synchronously triggers subscribed saved integrations, which may navigate while the autosave callback is executing."
+        ],
+        "unknowns": [
+          "The public sources do not define scheduler behavior when cancellation races with a callback that has already begun; implementation must rely only on the provided cancellable-handle interface and Trailing's existing guards.",
+          "The public sources do not specify whether equal consecutive text values should be deduplicated; the stated requirement is burst coalescing, so no additional value-based deduplication is established.",
+          "The public sources do not specify an explicit final flush on process shutdown; existing per-document trailing behavior and navigation persistence should be preserved without inventing a new shutdown protocol.",
+          "The public sources do not define exception handling for scheduler, output, store, or listener callbacks; no new exception-swallowing or recovery requirement is established.",
+          "Public checks validate PHP syntax but do not establish business correctness."
+        ]
+      },
+      "contract_changed": false,
+      "diagnosis": "unknown",
+      "explanation": "No behavioral contract revision is justified. The previous candidate replaces the immediate write with a push to the current view's existing per-document 120 ms trailing buffer, while leaving navigation, Store, Projection, and Preview code unchanged. That visibly aligns with the original obligations. The only reported check confirms syntax, and the unexplained failed acceptance verdict is neither a business requirement nor evidence identifying a particular implementation defect. Therefore neither an implementation gap nor a contract gap can be established from the supplied public evidence.",
+      "remaining_unknowns": [
+        "The acceptance failure cause is unavailable and cannot be inferred from the verdict alone.",
+        "No public behavioral check demonstrates whether the candidate passes burst coalescing, cross-document navigation, close, re-selection, or synchronous listener-reentry scenarios.",
+        "Scheduler cancellation behavior when a callback has already begun remains unspecified by the public sources."
+      ],
+      "restored_original_contract_evidence": false,
+      "routing_analysis": null,
+      "structured_delta": [],
+      "supporting_evidence": [
+        {
+          "file": "TASK",
+          "quote": "Change editor autosave to coalesce a burst of input: after 120 ms without another edit, save only its latest text."
+        },
+        {
+          "file": "TASK",
+          "quote": "Reuse the existing trailing-task utility where appropriate."
+        },
+        {
+          "file": "TASK",
+          "quote": "Preserve the workspace's existing navigation and persistence behavior."
+        },
+        {
+          "file": "TASK",
+          "quote": "Keep search preview behavior unchanged; its timing is outside this maintenance task."
+        },
+        {
+          "file": "src/workflow.php",
+          "quote": "class BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "function edit($text){$view=$this->current;if($view){$view->buffer->push($text);}}"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "class Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}"
+        }
+      ],
+      "supporting_evidence_bindings": [
+        {
+          "file": "TASK",
+          "quote": "Change editor autosave to coalesce a burst of input: after 120 ms without another edit, save only its latest text.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Reuse the existing trailing-task utility where appropriate.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Preserve the workspace's existing navigation and persistence behavior.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Keep search preview behavior unchanged; its timing is outside this maintenance task.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "src/workflow.php",
+          "quote": "class BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "function edit($text){$view=$this->current;if($view){$view->buffer->push($text);}}",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "class Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        }
+      ],
+      "unused_routing_analysis": false
+    },
+    {
+      "attempt": 3,
+      "candidate_only_contract_evidence": [],
+      "contract_after": {
+        "checkpoints": [
+          "After changing business code, run the public PHP syntax check under PHP 7.4 compatibility; this confirms syntax only, not business behavior.",
+          "Verify a burst of edits produces no immediate store write and exactly one eventual write containing the latest text after 120 ms of inactivity.",
+          "Verify pending saves remain associated with their originating document across select(), close(), and re-selection boundaries.",
+          "Verify selection, document output, projection commits, breadcrumb history, and visit identifiers retain their existing observable ordering and values.",
+          "Verify search preview still uses its existing 40 ms trailing task and hide() cancellation behavior."
+        ],
+        "forbidden_effects": [
+          "Do not change search preview timing, coalescing, output shape, or cancellation behavior.",
+          "Do not merge autosave state across different document identifiers.",
+          "Do not discard a pending document save merely because the user selects another document or closes the editor.",
+          "Do not cause an autosave for an old document to overwrite or otherwise target the currently selected document.",
+          "Do not weaken synchronous Store::write notification behavior or suppress saved-integration callbacks.",
+          "Do not change navigation output ordering, projection breadcrumb retention, or visit allocation.",
+          "Do not edit tests, configuration, dependency manifests, public documentation, or evaluator artifacts."
+        ],
+        "lifecycle_identity": [
+          "Each select() retains a newly incremented visit identifier shared by that visit's document output, selection(), and committed projection entry.",
+          "Autosave ownership is by document identifier through BufferBank; a delayed save must retain the identifier captured for that document rather than derive identity from Editor::$current when it fires.",
+          "Revisiting the same document reuses that document's trailing buffer, so edits within the active pending interval coalesce for that document.",
+          "Projection trail entries remain copied visit records and are not retroactively changed by later selection, closure, editing, or autosave."
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "text": "Editor::edit must enqueue the current document's text into its existing 120 ms Trailing buffer instead of calling the workspace write operation immediately."
+          },
+          {
+            "id": "O2",
+            "text": "For multiple edits to the same document before 120 ms of inactivity, cancel the prior timer and persist only the latest text once the trailing timer fires."
+          },
+          {
+            "id": "O3",
+            "text": "Maintain independent pending autosave state per document so navigation between documents neither combines their edits nor redirects a delayed write."
+          },
+          {
+            "id": "O4",
+            "text": "Preserve pending document persistence across existing navigation and editor retirement: selecting another document or closing the editor must not implicitly cancel the per-document pending save."
+          },
+          {
+            "id": "O5",
+            "text": "Preserve Store::write semantics: when the delayed save occurs, it updates the addressed record, increments revision, synchronously notifies subscribed integrations, and returns the event as before."
+          },
+          {
+            "id": "O6",
+            "text": "Preserve current navigation behavior, including document retirement/output, synchronous opening and reading, visit numbering, projection commit/clear behavior, and retained projection breadcrumb trail."
+          },
+          {
+            "id": "O7",
+            "text": "Leave Preview unchanged, including its separate 40 ms trailing timing and hide() cancellation."
+          }
+        ],
+        "ordering_barriers": [
+          "Within Trailing::push, any prior handle is cancelled before the latest pending value is installed and a replacement 120 ms timer is scheduled.",
+          "When the autosave timer fires, the pending value is cleared from the trailing task before its work callback invokes the store write.",
+          "A delayed save writes to Store before Store synchronously invokes saved-integration listeners for that event.",
+          "Workspace::select retains the existing sequence: allocate epoch/visit, open the editor and emit the document, then commit and publish the projection breadcrumb.",
+          "Workspace::close retains the existing sequence: advance epoch, close/retire the editor and emit a null document, then clear and publish projection selection.",
+          "Navigation triggered synchronously by a Store::write listener is allowed to complete during the delayed save notification; the autosave callback must not subsequently apply stale navigation or projection state."
+        ],
+        "preservation": [
+          "Existing public Workspace methods and their observable shapes remain: select(id), edit(text), close(), selection(), and dispose().",
+          "A selected document is still read from Store and emitted with id, visit, and text when opened.",
+          "Badge subscription and detachment behavior remains tied to the active document view.",
+          "Projection commit still appends each selected visit to trail; clear removes only selected and retains the breadcrumb archive.",
+          "Store revision numbering and synchronous listener notification remain unchanged.",
+          "Per-document buffers continue to be retained by BufferBank and reused by document identifier.",
+          "Search preview remains an adjacent, independent transient consumer."
+        ],
+        "scope": [
+          "Modify only editor autosave business behavior in /workspace/src/workflow.php.",
+          "Use the existing Trailing and BufferBank facilities for the editor's 120 ms per-document coalescing where appropriate.",
+          "Preserve the surrounding Store, navigation, projection, visit, and preview contracts unless the minimal autosave wiring requires interaction with them."
+        ],
+        "supporting_evidence": [
+          {
+            "file": "TASK",
+            "quote": "The editor currently writes to the workspace store on every edit. Change editor autosave to coalesce a burst of input: after 120 ms without another edit, save only its latest text."
+          },
+          {
+            "file": "TASK",
+            "quote": "Reuse the existing trailing-task utility where appropriate."
+          },
+          {
+            "file": "TASK",
+            "quote": "Preserve the workspace's existing navigation and persistence behavior."
+          },
+          {
+            "file": "TASK",
+            "quote": "Keep search preview behavior unchanged; its timing is outside this maintenance task."
+          },
+          {
+            "file": "README.md",
+            "quote": "Hotel coordination — Document body, per-document buffer and navigation outline are separate responsibilities. Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "Store reads values and synchronously notifies saved integrations."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "Injected scheduler offers cancellable timer handles. Search preview is an adjacent transient consumer."
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "class BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}"
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "function edit($text){$view=$this->current;if($view){$this->env->write($view->id,$text);}}"
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "function push($value) {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=$value;\n        $this->handle=$this->env->schedule(function() { $this->flush(); }, $this->delay);\n    }"
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "function write($id, $text) {\n        $this->records[$id] = $text;\n        $event = ['id'=>$id, 'text'=>$text, 'revision'=>++$this->revision];\n        foreach ($this->listeners as $token=>$fn) if (isset($this->listeners[$token])) $fn($event);\n        return $event;\n    }"
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "class Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}"
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "class Projection {private $env,$selected=null,$trail=[];function __construct($env){$this->env=$env;}function publish(){$this->env->output('projection',['selected'=>$this->selected,'trail'=>$this->trail]);}function commit($v){$this->selected=$v;$this->trail[]=$v;$this->publish();}function clear(){$this->selected=null;$this->publish();}}"
+          }
+        ],
+        "triggers": [
+          "Calling Workspace::edit while a document is current schedules or replaces that document's 120 ms trailing autosave.",
+          "A full 120 ms interval without another edit for that same document triggers persistence of its latest pending text.",
+          "Calling Workspace::select retires the current view and opens a newly numbered visit without cancelling another document's pending autosave.",
+          "Calling Workspace::close or dispose retires the active view and clears current projection selection without cancelling document-owned pending persistence.",
+          "Store::write synchronously triggers subscribed saved integrations, which may navigate while the autosave callback is executing."
+        ],
+        "unknowns": [
+          "The public sources do not define scheduler behavior when cancellation races with a callback that has already begun; implementation must rely only on the provided cancellable-handle interface and Trailing's existing guards.",
+          "The public sources do not specify whether equal consecutive text values should be deduplicated; the stated requirement is burst coalescing, so no additional value-based deduplication is established.",
+          "The public sources do not specify an explicit final flush on process shutdown; existing per-document trailing behavior and navigation persistence should be preserved without inventing a new shutdown protocol.",
+          "The public sources do not define exception handling for scheduler, output, store, or listener callbacks; no new exception-swallowing or recovery requirement is established.",
+          "Public checks validate PHP syntax but do not establish business correctness."
+        ]
+      },
+      "contract_changed": false,
+      "diagnosis": "unknown",
+      "explanation": "The behavioral contract remains supported by the original task and public sources, so no contract revision is justified. The previous candidate changes Editor::edit from an immediate write to pushing text into the current document's existing per-document Trailing buffer, while leaving navigation, Store, projection, and Preview code unchanged. That appears consistent with the stated obligations, and the only reported public check passed. The failed acceptance verdict supplies no failure cause and therefore cannot establish an implementation gap or a new requirement.",
+      "remaining_unknowns": [
+        "The acceptance failure has no disclosed behavioral observation, so its cause cannot be classified from normative public evidence.",
+        "No public behavioral test result establishes whether the candidate's delayed autosave behavior succeeds or fails at runtime.",
+        "Scheduler cancellation races, equal-value handling, shutdown flushing, and callback exception behavior remain unspecified by the public sources."
+      ],
+      "restored_original_contract_evidence": false,
+      "routing_analysis": null,
+      "structured_delta": [],
+      "supporting_evidence": [
+        {
+          "file": "TASK",
+          "quote": "Change editor autosave to coalesce a burst of input: after 120 ms without another edit, save only its latest text."
+        },
+        {
+          "file": "TASK",
+          "quote": "Reuse the existing trailing-task utility where appropriate."
+        },
+        {
+          "file": "TASK",
+          "quote": "Preserve the workspace's existing navigation and persistence behavior."
+        },
+        {
+          "file": "TASK",
+          "quote": "Keep search preview behavior unchanged; its timing is outside this maintenance task."
+        },
+        {
+          "file": "src/workflow.php",
+          "quote": "class BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "function edit($text){$view=$this->current;if($view){$view->buffer->push($text);}}"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "class Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}"
+        }
+      ],
+      "supporting_evidence_bindings": [
+        {
+          "file": "TASK",
+          "quote": "Change editor autosave to coalesce a burst of input: after 120 ms without another edit, save only its latest text.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Reuse the existing trailing-task utility where appropriate.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Preserve the workspace's existing navigation and persistence behavior.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Keep search preview behavior unchanged; its timing is outside this maintenance task.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "src/workflow.php",
+          "quote": "class BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "function edit($text){$view=$this->current;if($view){$view->buffer->push($text);}}",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "class Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        }
+      ],
+      "unused_routing_analysis": false
+    }
+  ],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": false,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": false,
+    "valid": true,
+    "verdict": "UNDERREACH"
+  },
+  "finalized": true,
+  "first_pass_attempt": null,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": false,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": false,
+    "valid": true,
+    "verdict": "UNDERREACH"
+  },
+  "repair_stop_reason": "action_budget_exhausted",
+  "stages": [
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "532c70a261da772b2e0fbb906da76363989685e24c239816647451125930ff27",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9996154243127
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "50ebc760d5764235aa1f4d716976dd080c0abb1874f829965b3bb9e889c56394",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 12493,
+        "output_tokens": 2241,
+        "reasoning_output_tokens": 299,
+        "total_tokens": 14734
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "a70a191ec2813e33091992f875110f662311313b47b9d47cedc9b52e2d856aeb",
+      "seconds": 50.379107262939215,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 12493,
+        "output_tokens": 2241,
+        "reasoning_output_tokens": 299,
+        "total_tokens": 14734
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "34f2ec27f10374a1cc17025f8200d92b2776d32393bc644f167d1d99d9a784fc",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9996589282528
+          },
+          "number": 1,
+          "requests": 7,
+          "restart_reason": "initial",
+          "result_sha256": "2ff63edd222610065aa1fbe283d50136454a3eda2d4cbaa5203b990d29073925",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 116480,
+        "input_tokens": 127969,
+        "output_tokens": 2292,
+        "reasoning_output_tokens": 492,
+        "total_tokens": 130261
+      },
+      "requests": 7,
+      "reserved_requests": 24,
+      "result_sha256": "39ecb87b869f19f7c381e8dacd8b8a6be700786fd97eb539f34e0c1a2e106445",
+      "seconds": 87.38290643040091,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 116480,
+        "input_tokens": 127969,
+        "output_tokens": 2292,
+        "reasoning_output_tokens": 492,
+        "total_tokens": 130261
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "5bba7cb3dba180fe89970abaf3ef7f8a27ca318d9bc8e6f0c8fcdcea0e1e72dd",
+      "seconds": 0.5126614170148969,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 1.821396197192371,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "diagnosis-2",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "ec40d0b6ae663dad495216c096f9d5038b15aaab71e3f36e52c765672be1e23b",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9991208054125
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "21b6cdd2655bab6e7226890966aeb3e3d3cf8de3baebe6af2070afd71086aa6d",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-2",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 17292,
+        "output_tokens": 2632,
+        "reasoning_output_tokens": 204,
+        "total_tokens": 19924
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "b7c55e8e09338287c466ba7cff0dd7a198b98c8559fcd3e3f4ac4f03e68fd572",
+      "seconds": 44.138683792203665,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 17292,
+        "output_tokens": 2632,
+        "reasoning_output_tokens": 204,
+        "total_tokens": 19924
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-2",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "85858a5f928f7dbb5c4606bad957b49ca2a2cfb75e05e3fb2e056f1c897fcb84",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9991529230028
+          },
+          "number": 1,
+          "requests": 4,
+          "restart_reason": "initial",
+          "result_sha256": "ba0517a3717022e08588a1a57d3353f6e85e59203e9a83d2f0cb87bd756d2bfb",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-2",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 58752,
+        "input_tokens": 69310,
+        "output_tokens": 1432,
+        "reasoning_output_tokens": 536,
+        "total_tokens": 70742
+      },
+      "requests": 4,
+      "reserved_requests": 24,
+      "result_sha256": "c23db2ff4767ff41fd8a5af42783092f45565716c111ecabc02c036da0346ad4",
+      "seconds": 43.11256648506969,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 58752,
+        "input_tokens": 69310,
+        "output_tokens": 1432,
+        "reasoning_output_tokens": 536,
+        "total_tokens": 70742
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-2",
+      "key": "visible-2",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "5bba7cb3dba180fe89970abaf3ef7f8a27ca318d9bc8e6f0c8fcdcea0e1e72dd",
+      "seconds": 0.4834860498085618,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-2",
+      "key": "acceptance-2",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 1.7083086557686329,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "diagnosis-3",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "ec40d0b6ae663dad495216c096f9d5038b15aaab71e3f36e52c765672be1e23b",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9992071604356
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "6c5edb1428cc0609de45d3e6edb27cd0ba0e2bc14c5e9d44de000c240be72d99",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-3",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 17292,
+        "output_tokens": 2612,
+        "reasoning_output_tokens": 185,
+        "total_tokens": 19904
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "5266825f5b5f7cf7529eaa45d1af27d58ca834724684b02b6c276dbb0926796c",
+      "seconds": 44.70170486345887,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 17292,
+        "output_tokens": 2612,
+        "reasoning_output_tokens": 185,
+        "total_tokens": 19904
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-3",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "85858a5f928f7dbb5c4606bad957b49ca2a2cfb75e05e3fb2e056f1c897fcb84",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9991051591933
+          },
+          "number": 1,
+          "requests": 4,
+          "restart_reason": "initial",
+          "result_sha256": "ded97113c320082cbc69a3ec4ce3e6b1620c2d2e90413698d4e19585944d3cda",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-3",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 58752,
+        "input_tokens": 69942,
+        "output_tokens": 1609,
+        "reasoning_output_tokens": 627,
+        "total_tokens": 71551
+      },
+      "requests": 4,
+      "reserved_requests": 24,
+      "result_sha256": "ea443a02a8efec33b89c862d4a7593fd2dcc02b472b00a6b5d1cf2e91dcec3be",
+      "seconds": 47.86838554777205,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 58752,
+        "input_tokens": 69942,
+        "output_tokens": 1609,
+        "reasoning_output_tokens": 627,
+        "total_tokens": 71551
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-3",
+      "key": "visible-3",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "5bba7cb3dba180fe89970abaf3ef7f8a27ca318d9bc8e6f0c8fcdcea0e1e72dd",
+      "seconds": 0.5103815048933029,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-3",
+      "key": "acceptance-3",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 1.7103062560781837,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "awaiting_expert_summary",
+  "stop_reason": "action_budget_exhausted",
+  "training_accepted": false
+}

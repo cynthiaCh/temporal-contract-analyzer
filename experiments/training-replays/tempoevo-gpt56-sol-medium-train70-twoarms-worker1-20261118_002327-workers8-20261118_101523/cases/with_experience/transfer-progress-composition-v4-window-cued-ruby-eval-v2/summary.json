@@ -1,0 +1,2555 @@
+{
+  "acceptance_policy": "training_gold_and_required_visible",
+  "attempt_results": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "d4c875259a8d3ffc6747c46e80eb55699b63c6bf88baf6017e06830d7ec93f3f",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "eb8499af9ac2b1d9d01c38559168e889245c375b35faf97e6129db6b6cd2f458",
+        "src/workflow.rb": "272d0517b55b8497b484123782b8419d03ac3851c260d8431bf5023cd1290c38"
+      },
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.rb",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "visible_passed": true
+    }
+  ],
+  "attempts_started": 1,
+  "candidate_learning_enabled": true,
+  "condition": "structured",
+  "contract_changes": 0,
+  "contract_review_policy": null,
+  "cumulative_action_request_cap": 72,
+  "cumulative_visible_pass": [
+    true,
+    true,
+    true
+  ],
+  "delivery": {
+    "experience_text": "Use the matched guidance together where supported by the current task and source. If advice conflicts, resolve it against the concrete requirements and explain the choice; do not combine incompatible obligations.\n\nMatched experience 77c68e0f51d195985b1ffb123979ed2c80b9a1736302f9949e38bf08649913c1\n77c68e0f51d195985b1ffb123979ed2c80b9a1736302f9949e38bf08649913c1:R01 [Applicability]\nApply when a shared progress source serves distinct visits and attempts, startup can emit synchronously, full-frame decoding may finish later, and history and presentation have different lifetimes. README.md: \"Selecting a file creates a visit. Retry replaces the physical attempt without\\nopening another visit. Selecting the same file object again opens a new visit.\" README.md: \"The source is shared by attempts and visits for that file. start may emit cached\\npackets synchronously; decoding yields a full frame, immediately or later.\\nDecode completion order can differ from packet arrival order.\" Confirm these premises and the target's display-order requirement before applying freshness suppression.\n\n77c68e0f51d195985b1ffb123979ed2c80b9a1736302f9949e38bf08649913c1:R02 [Event relation]\nRegister panel reception before invoking startup, preserving later streaming. Original src/workflow.go: \"env.Call(\\\"start\\\",file.Token);subscription=env.Call(\\\"listen\\\",file.Token,callback)\". TASK: \"Restore the initial progress update without changing the public\\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior.\" Make retirement effective during startup so subsequent packets cannot start new work through an obsolete subscription, even before the outer startup returns. Keep already admitted decoding separate from that admission decision.\n\nWhen the task requires full-frame freshness, assign ordering at packet reception before decoding or callback-capable work. Scope ordering to the display owner, including attempts sharing one visit. After a newer frame has been published, suppress older frames only from presentation. Recheck both visit authority and publication order after audit callbacks; commit the publication watermark before calling the display sink, which may reenter delivery. TASK: \"Full\\nprogress frames may decode out of order; do not allow an older frame to roll the\\ncurrent display backward.\" README.md: \"A full frame replaces displayed state; loaded values can decrease or reset.\" Reception order, rather than loaded magnitude or completion order, determines freshness. Buffering every result until arrival order can be reconstructed is not required.\n\n77c68e0f51d195985b1ffb123979ed2c80b9a1736302f9949e38bf08649913c1:R03 [Preservation]\nKeep audit completion independent of display permission. Capture the originating file, attempt and visit; retain the existing audit effect for each admitted decode, including completion after hide, replacement, cancellation or disposal. Audit before deciding whether to paint, then recheck visit authority and freshness because audit may synchronously navigate or complete another decode. README.md: \"recordProgress appends transfer history; showProgress paints the open panel.\" Original src/workflow.go: \"deliver:=func(frame interface{}){;audit(frame);view(frame,order)}\". A stale display frame still retains its history effect.\n\nCoordinate ownership across callback-capable startup and cleanup. Publish cleanup ownership before startup callbacks can navigate; reconcile the returned handle without overwriting resources installed by newer navigation. Remove old resources from current ownership before canceling them, and recheck the navigation request after cleanup returns. Cancel captured retired resources and preserve repeated cleanup behavior. README.md: \"One startup window is relevant to this maintenance request: start may emit\\nmore than one packet synchronously. A showProgress callback may select or hide\\nanother visit before start returns, while its caller has not yet received the\\nreturned cleanup handle.\" README.md: \"Removing a listener commits removal before calling the host detach callback;\\nthat callback may synchronously select, hide or dispose. Repeated removal is\\ninert. Host callbacks execute synchronously unless explicitly deferred.\" Preserve cancellation order from src/workflow.go: \"h.CancelContext();h.Stop();h.Env.Call(\\\"cancel\\\",h.File.Token,h.Number)\". A provisional handle is an implementation option, not a required public API.\n\nKeep an accepted retry bound to its entry visit and file across cancellation reentry. Cancel the previous attempt before enqueueing, retain the accepted command's record and attempt creation, cancel its resulting attempt if its visit has ended, and publish its queued notice only while that visit remains current. Original src/workflow.go: \"v.Handle.Cancel();accepted:=v;h:=s.enqueue(accepted,\\\"retry\\\");if s.current(accepted){accepted.Handle=h}else{h.Cancel()};if s.current(accepted){s.notice(accepted,h)}\". Preserve record-before-transport ordering, independent session counters and disposal. Preserve the exact queue fields from src/workflow.go: \"entry:=map[string]interface{}{\\\"fileId\\\":v.File.ID,\\\"attemptId\\\":n,\\\"visitId\\\":v.ID,\\\"kind\\\":kind}\" and notice fields: \"map[string]interface{}{\\\"fileId\\\":v.File.ID,\\\"attemptId\\\":h.Number,\\\"visitId\\\":v.ID,\\\"status\\\":\\\"queued\\\"}\".\n\n77c68e0f51d195985b1ffb123979ed2c80b9a1736302f9949e38bf08649913c1:R04 [Exclusion]\nDo not generalize panel reception or freshness changes to diagnostic consumers, introduce numeric monotonicity, extend queue records, or discard required audit. README.md: \"The same source service also has a diagnostic consumer, Telemetry/\\ncollectProgressTelemetry, whose existing live delta observations are separate\\nfrom the panel. Keep its existing behavior during this maintenance.\" README.md: \"Queue records are {fileId, attemptId, visitId, kind}\\nunless a separate authorization adds byteCount from file.size.\" Conversely, do not transfer an earlier task's absence of out-of-order display requirements into a target whose TASK explicitly requires freshness protection.\n\nCandidate limitations:\n- Only TASK and the supplied public documents and source establish requirements. Automatic contracts, prior experiences and evaluation observations do not.\n- Attempt 1 reports passing syntax and acceptance checks, but supplies no behavioral observations establishing completeness, causality or cross-task benefit.\n- Rejected decoding, adapter exceptions and physical transfer completion are outside the documented model.\n- Cancellation does not establish a requirement to discard decoding already accepted by an older attempt while its visit remains current.\n- The earlier experience's lack of a freshness requirement applied to its earlier sources. This task explicitly requires freshness protection; that difference does not invalidate the earlier task's boundary.\n- No workspace files were modified and no scorer, reference implementation or hidden tests were accessed.\n\n77c68e0f51d195985b1ffb123979ed2c80b9a1736302f9949e38bf08649913c1:R05 [Verification]\nCheck cached startup and later streaming; immediate and deferred decoding; newer-then-older completion with both audit effects retained; and later packets whose loaded values decrease. Exercise nested delivery from audit and display callbacks to verify authority checks and watermark commitment. Navigate during startup, emit another packet before startup returns, and verify retired admission, cleanup, newer ownership and subsequent delivery. Complete admitted decoding after hide, replacement and disposal; reopen the identical file as a new visit. Exercise navigation from unlisten and cancellation, accepted entry-bound retries, retired queued-notice suppression, repeated cleanup, independent sessions, unchanged payloads and unchanged telemetry. These checks follow TASK's preservation and freshness requirements and README.md's synchronous callback model. VISIBLE_CHECKS.md: \"These checks are required after an Action but do not test business behavior.\"\n\n\nMatched experience 6fcd6376641fabd68811e2b973e73444b5f602f80ab32d029097d93133147320\n6fcd6376641fabd68811e2b973e73444b5f602f80ab32d029097d93133147320:R01 [Applicability]\nApply when a reusable progress source serves distinct visits and attempts, startup can emit synchronously, decoding can finish later, and retained audit differs from visible presentation. README.md: \"The same file and source can be reused\\nby multiple panel visits. Each selected or retried attempt starts one subscription.\" Confirm these premises in each target system.\n\n6fcd6376641fabd68811e2b973e73444b5f602f80ab32d029097d93133147320:R02 [Event relation]\nRegister reception before starting the source, preserving subsequent streaming and public interfaces. Original src/workflow.py invokes \"        env.call('start',file['token'])\\n        subscription=env.call('listen',file['token'],callback)\". README.md states: \"Starting a view of the stream may synchronously\\nemit its cached progress event; further progress events arrive on the same target.\"\n\nCheck originating subscription and visit eligibility before decoding each packet. Retirement immediately prevents subsequent admission, including additional packets emitted before startup returns; do not depend solely on physical listener removal. README.md: \"A retired visit\\naccepts no new progress events.\"\n\n6fcd6376641fabd68811e2b973e73444b5f602f80ab32d029097d93133147320:R03 [Preservation]\nSeparate admission, retained audit and visible publication. Record each admitted event exactly once when decoding completes, including after retirement or disposal; check originating visit validity before visible publication. README.md: \"Every accepted progress event is recorded exactly once when decoding\\nfinishes, including work accepted before the visit closes.\" It also states: \"Removing a listener does not retract a decode\\nthat already started. Closing or replacing the visit stops visible progress;\\nnew visits remain live.\" Reopening the identical file creates a distinct visit.\n\nCoordinate cleanup and ownership across callback-capable startup and cancellation. Retire old ownership before cleanup can reenter navigation; when an older operation resumes, prevent it from overwriting newer ownership and clean up its retired resources. Preserve idempotent cancellation and disposal. README.md: \"Selection and hiding may themselves cancel an old handle and synchronously\\nreceive newer navigation; the newer navigation keeps ownership.\" Also: \"Disposal removes subscriptions and cancels transfers; work already accepted\\nfor audit remains retained.\" A provisional cleanup handle is an implementation option, not a mandated public interface.\n\nKeep accepted retries bound to their entry file and visit. Cancel the prior transfer before enqueueing, preserve exactly one accepted command and record across cancellation navigation, cancel the resulting transfer if its visit ended, and suppress retired queued notices. README.md: \"The accepted old retry must still enqueue and record once after such navigation.\\nIts newly created transfer is canceled immediately if its visit has ended; this\\ndoes not remove its retained queue record.\" Also: \"Queued notices are visible output: a notice\\nfrom a retired visit must not be sent, including after reopening the same file.\" Preserve independent workspace counters and cancellation.\n\n6fcd6376641fabd68811e2b973e73444b5f602f80ab32d029097d93133147320:R04 [Exclusion]\nKeep the repair within reception and necessary lifecycle coordination. Preserve queue and notice shapes and adapter interfaces. README.md: \"Every queue record remains exactly `{fileId, attemptId, visitId, kind}`;\" and \"Notices remain\\n`{fileId, attemptId, visitId, status: \\\"queued\\\"}`.\" Do not introduce decode freshness suppression without a target-specific requirement: VISIBLE_CHECKS.md states, \"These maintenance examples do not impose composition-specific out-of-order display rules.\" Do not transfer unrelated diagnostic-consumer policies into this repair.\n\nCandidate limitations:\n- Evidence is the supplied original TASK and public documents/code; automatic contracts, experience text and evaluation observations do not establish requirements.\n- TASK: \"Restore the initial update while preserving the existing transfer, retry, navigation, cleanup and audit behavior, ordinary streaming and subsequent uses. The queue-record format is outside this fix.\"\n- VISIBLE_CHECKS.md: \"These maintenance examples do not impose composition-specific out-of-order display rules.\" No arrival-order suppression or numeric monotonicity requirement is established.\n- Decoder failures, adapter exceptions and visibility of already accepted decoding from a canceled attempt whose visit remains current are unspecified.\n- Attempt 1 supports the reflection context but its passing examples do not establish complete correctness, causality or cross-task benefit. No implementation failure is established.\n- Diagnostic-consumer requirements from other experiences are not established for this public source. No files were modified.\n\n6fcd6376641fabd68811e2b973e73444b5f602f80ab32d029097d93133147320:R05 [Verification]\nVerify cached startup and later streaming, immediate and deferred decoding, retained audit after hide/disposal, and new delivery after same-file reopening. Exercise synchronous hide, switch and reopening during startup, with subsequent packets before the outer startup returns: retired listeners must reject new admission while previously admitted decoding retains audit. Separately verify newer ownership after cancellation reentry, accepted entry-bound retry recording and cancellation, current queued notices, repeated cleanup, workspace independence and unchanged record shapes. These checkpoints follow README.md's documented lifecycle; they do not prescribe an order among independently completing decodes.\n\n\nMatched experience 6dca1fc16aa5e7cc79660bf098beac72edffa9aed4e86dceda44d1800261f778\n6dca1fc16aa5e7cc79660bf098beac72edffa9aed4e86dceda44d1800261f778:R01 [Applicability]\nApply when progress reception serves distinct visits and physical attempts, startup can emit synchronously, decoding may finish later, and audit and presentation have different lifetimes. README.md: \"Selecting a file creates a visit. Retry replaces the physical attempt without\\nopening another visit. Selecting the same file object again opens a new visit.\" README.md: \"The source is shared by attempts and visits for that file. start may emit cached\\npackets synchronously; decoding yields a full frame, immediately or later.\\nDecode completion order can differ from packet arrival order.\" Confirm these premises before transferring this guidance.\n\n6dca1fc16aa5e7cc79660bf098beac72edffa9aed4e86dceda44d1800261f778:R02 [Event relation]\nInstall panel reception before starting the source, while preserving subsequent streaming and source reuse. Original src/workflow.rb: \"env.call('start',file['token']);subscription=env.call('listen',file['token'],callback)\". Guard admission using the originating subscription and visit, including during startup before the outer caller receives its handle. README.md: \"One startup window is relevant to this maintenance request: start may emit\\nmore than one packet synchronously. A showProgress callback may select or hide\\nanother visit before start returns, while its caller has not yet received the\\nreturned cleanup handle.\" Retirement must prevent subsequent admission without relying solely on eventual physical cleanup.\n\nWhere the task explicitly requires protection against out-of-order full frames, capture reception order before decoding and retain a publication watermark for the visit, spanning its retries. Publish an eligible completion only if it cannot replace a newer frame already displayed. Commit the watermark before invoking callback-capable presentation so reentrant publication cannot restore older authority. TASK: \"Full\\nprogress frames may decode out of order; do not allow an older frame to roll the\\ncurrent display backward.\" Compare reception order rather than numeric progress: README.md states, \"A full frame replaces displayed state; loaded values can decrease or reset.\" Continue auditing suppressed older completions.\n\n6dca1fc16aa5e7cc79660bf098beac72edffa9aed4e86dceda44d1800261f778:R03 [Preservation]\nBind accepted decoding to its originating file, attempt and visit. Preserve its audit effect when decoding completes, including after cancellation or retirement, then recheck visit eligibility before visible publication. Original src/workflow.rb: \"deliver=->(frame){ audit.call(frame);view.call(frame,order)}\" and \"->(frame,order){@env.call('showProgress',{fileId:v.file['id'],attemptId:n,frame:frame}) if current(v)}\". README.md: \"recordProgress appends transfer history; showProgress paints the open panel.\" Because audit callbacks may navigate synchronously, an admission-time validity check cannot replace the publication-time check. Already accepted decoding is not automatically ineligible for display solely because retry canceled its attempt while the visit remains current.\n\nEstablish cleanup ownership before callback-capable startup, remove captured old ownership before cancellation, and recheck authority after callbacks. An older startup must clean its own retired resources without overwriting newer navigation. Original src/workflow.rb: \"@serial+=1;request=@serial;old=@visit;@visit=nil;release(old) if old\\n  return nil if @disposed||@serial!=request\". Preserve removal commitment and idempotence: README.md states, \"Removing a listener commits removal before calling the host detach callback;\\nthat callback may synchronously select, hide or dispose. Repeated removal is\\ninert. Host callbacks execute synchronously unless explicitly deferred.\" Keep cancellation and disposal independent for each workspace.\n\nKeep an accepted retry bound to its entry visit across cancellation callbacks. Cancel the prior handle before enqueueing; preserve its one queue record and transfer construction even if cancellation navigates; cancel the resulting transfer if its visit ended and suppress retired queued notices. Original src/workflow.rb: \"v.handle.cancel\\n  accepted=v;h=enqueue(accepted,'retry');if current(accepted);accepted.handle=h;else;h.cancel;end;notice(accepted,h) if current(accepted);h\". Preserve queue recording before transfer construction and existing counters. Original src/workflow.rb: \"@attempts+=1;n=@attempts;entry={fileId:v.file['id'],attemptId:n,visitId:v.id,kind:kind};;@env.call('record',entry)\".\n\n6dca1fc16aa5e7cc79660bf098beac72edffa9aed4e86dceda44d1800261f778:R04 [Exclusion]\nKeep freshness filtering specific to the panel requirement; do not transfer it to unrelated consumers or tasks without supporting evidence. Preserve public queue and notice fields and adapter interfaces. README.md: \"Queue records are {fileId, attemptId, visitId, kind}\\nunless a separate authorization adds byteCount from file.size.\" No separate authorization is supplied. Preserve diagnostic behavior, including its existing startup sequence: README.md states, \"The same source service also has a diagnostic consumer, Telemetry/\\ncollectProgressTelemetry, whose existing live delta observations are separate\\nfrom the panel. Keep its existing behavior during this maintenance.\"\n\nCandidate limitations:\n- Only TASK and the supplied public README.md and src/workflow.rb establish requirements. Automatic contracts, frozen experiences and evaluation observations are guidance.\n- Attempt 1 passed the reported syntax check and acceptance verdict. No behavioral observations establish complete correctness, causality or cross-task effectiveness.\n- README.md states: \"A decode result resolves once; rejected decode and physical transfer completion are outside this embedding's model.\" Adapter exception behavior is unspecified.\n- An older completion need not be suppressed merely because a newer packet is still decoding. The documented requirement prevents rollback after a newer frame has been displayed.\n- Provisional handles, generation counters and sequence counters are implementation options, not required public interfaces.\n\n6dca1fc16aa5e7cc79660bf098beac72edffa9aed4e86dceda44d1800261f778:R05 [Verification]\nVerify cached startup and later streaming; immediate and deferred decoding; newer completion followed by older completion with both audits retained; and a later-received lower loaded value replacing an earlier display. Verify freshness across retries and reentrant publication, including navigation during recordProgress. During startup, hide, switch or reopen from showProgress and emit further packets before startup returns: retired admission must stop, accepted audits must remain, and newer ownership must survive. Exercise navigation during cancellation and listener removal, accepted entry-bound retries, current queued notices, same-file reopening, repeated cleanup, disposal, workspace independence, unchanged record shapes and unchanged Telemetry behavior. TASK: \"Preserve ordinary streaming, diagnostic telemetry,\\nand subsequent uses.\"\n\n\nMatched experience cee153e498e5a17c34bdc3c38b488b584b11a5c521164878785bc582aa87293d\ncee153e498e5a17c34bdc3c38b488b584b11a5c521164878785bc582aa87293d:R01 [Applicability]\nApply when progress reception serves distinct visits and attempts, startup can emit synchronously, decoding may finish later, and history and presentation have different lifetimes. README.md: \"Selecting a file creates a visit. Retry replaces the physical attempt without\\nopening another visit. Selecting the same file again does open another visit.\" README.md: \"The feed object is shared by attempts and visits for that file. Its `start()`\\nmethod may synchronously emit cached data, and `decode(packet)` may return a\\nvalue or a Promise.\" Confirm the target's explicit display-order requirement before transferring freshness filtering.\n\ncee153e498e5a17c34bdc3c38b488b584b11a5c521164878785bc582aa87293d:R02 [Event relation]\nInstall panel reception before callback-capable startup, preserving later streaming and reusable sources. Original src/progress.js: \"  feed.start();\\n  feed.target.addEventListener(\\\"progress\\\", listener);\" TASK: \"A transfer with a warm progress source shows no initial progress until a later\\npacket arrives.\" Check originating subscription and visit eligibility before decoding each packet. Retirement must stop new admission during startup even when physical cleanup is not yet available. README.md: \"One startup window is relevant to this maintenance request: `start()` may emit\\nmore than one packet synchronously. A `showProgress` callback may select or hide\\nanother visit before `start()` returns, while its caller has not yet received\\nthe returned cleanup handle.\"\n\nFor explicit full-frame freshness requirements, capture reception order before decoding or callback-capable processing. Scope publication ordering to the visit, spanning retries. Suppress an older completion from presentation after a newer-received frame has been published, while retaining both history effects. Recheck authority and freshness after the history callback; commit publication ordering before invoking presentation, which may reenter delivery. TASK: \"Full\\nprogress frames may decode out of order; do not allow an older frame to roll the\\ncurrent display backward.\" README.md: \"Retry replaces the physical attempt without\\nopening another visit.\" Do not compare numeric progress values or require suppression merely because a newer packet remains pending.\n\ncee153e498e5a17c34bdc3c38b488b584b11a5c521164878785bc582aa87293d:R03 [Preservation]\nSeparate packet admission, retained history and visible publication. Bind admitted decoding to its originating file and attempt; retain its history effect on completion even after cancellation, hiding, replacement or disposal. Original src/progress.js: \"    const deliver = frame => { record(frame); receive(frame); };\" README.md: \"`recordProgress` appends transfer history. `showProgress` paints the panel.\" Recheck visit authority after recording because host callbacks may navigate synchronously. Original src/queue.js: \"      if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });\" Cancellation of an attempt alone does not revoke presentation of already admitted decoding while its visit remains current and its frame remains eligible.\n\nCoordinate cleanup ownership across synchronous startup, listener removal and cancellation. Retire captured ownership before releasing resources; after callbacks return, verify that an older operation cannot overwrite newer navigation. Original src/panel.js: \"  const previous = state.current;\\n  state.current = null;\\n  if (previous) releaseVisit(previous);\\n  if (state.disposed || state.nextVisit !== requestId) return null;\" Preserve removal commitment and repeated-removal behavior. src/progress-source.js: \"// Removal commits before notifying the host. The host callback is synchronous\\n// and may call workspace.select(...) or workspace.hide(). Repeated removal is inert.\" Preserve abort, progress cleanup and cancellation notification order from src/transfer.js: \"  controller.signal.addEventListener(\\\"abort\\\", () => {\\n    stopProgress();\\n    onCancel({ file, attemptId, signal: controller.signal });\\n  }, { once: true });\" Reconcile resources returned after retirement without replacing newer ownership.\n\nKeep an accepted retry bound to its entry visit and file across cancellation callbacks. Cancel the previous attempt before enqueueing; preserve the accepted retry's record and transfer construction even if cancellation navigates; cancel the resulting retired handle and suppress its queued notice. Original src/retry.js: \"  const previous = visit.handle;\\n  previous.cancel();\\n  const handle = enqueueTransfer(state, visit, \\\"retry\\\");\\n  if (state.current === visit) visit.handle = handle;\\n  else handle.cancel();\\n  if (state.current === visit) publishQueued(state, visit, handle);\" Preserve queue recording before transfer construction, independent workspace counters and idempotent disposal. src/queue.js: \"// Queue records are retained even when their originating panel visit ends.\"\n\ncee153e498e5a17c34bdc3c38b488b584b11a5c521164878785bc582aa87293d:R04 [Exclusion]\nKeep the repair specific to panel reception and necessary lifecycle/freshness coordination. Preserve adapter interfaces and payloads. src/queue.js: \"  return { fileId: file.id, attemptId, visitId, kind };\" src/notice.js: \"  state.showQueued({ fileId: visit.file.id, attemptId: handle.attemptId,\\n    visitId: visit.id, status: \\\"queued\\\" });\" Preserve diagnostic startup ordering and live decoded-delta handling rather than applying the panel's bootstrap or freshness policy globally. src/telemetry.js: \"// Diagnostics count live deltas only. A cached bootstrap is panel state, not a delta.\" Its existing sequence is \"  feed.start();\\n  feed.target.addEventListener(\\\"progress\\\", listener);\" README.md: \"It is not the panel and must keep its existing behavior while the panel defect\\nis repaired.\" This preserves that consumer's own bootstrap exclusion; it does not establish a new global classification of packets emitted by other users of the shared target.\n\nCandidate limitations:\n- Only TASK and supplied public documents/code establish requirements. Frozen experiences, automatic contracts and evaluation observations are fallible guidance.\n- Attempt 1 reports passing syntax checks and acceptance, but supplies no behavioral observations proving completeness, causality or cross-task effectiveness.\n- Decoder rejection, malformed thenables, adapter exceptions and physical transfer completion have no specified recovery policy.\n- Reception order is the supported interpretation of frame age; no public source specifies frame sequence metadata or numeric monotonicity.\n- Provisional handles, generation counters and publication watermarks are implementation options, not mandated public interfaces.\n- No files were modified, and no scorer, reference implementation or hidden tests were accessed.\n\ncee153e498e5a17c34bdc3c38b488b584b11a5c521164878785bc582aa87293d:R05 [Verification]\nVerify cached startup and later streaming, immediate and deferred decoding, newer publication followed by older completion with both history effects retained, and later-received lower-valued frames. Check ordering across retries and nested delivery/navigation from history and presentation callbacks. During startup, hide, switch or reopen the same file, then emit another packet before startup returns: retired reception must stop new decoding while admitted history remains retained. Exercise navigation during listener removal and cancellation, entry-bound retries, retired-notice suppression, repeated cleanup, disposal, independent workspaces, unchanged payloads and unchanged telemetry. TASK: \"Preserve ordinary streaming, diagnostic telemetry,\\nand subsequent uses.\" Treat syntax checks separately from behavior: VISIBLE_CHECKS.md: \"These checks are required after an Action but do not test business behavior.\"\n\n\nMatched experience 78616bbce7c537e7b3a3bdc31ff765c79152aaf344a6831281305ac9387ec652\n78616bbce7c537e7b3a3bdc31ff765c79152aaf344a6831281305ac9387ec652:R01 [Applicability]\nApply when a shared progress source serves distinct visits and physical attempts, startup can synchronously emit packets, full-frame decoding can finish later, and history and visible output have different lifetimes. README.md: \"Selecting a file creates a visit. Retry replaces the physical attempt without\\nopening another visit. Selecting the same file object again opens a new visit.\" README.md: \"The source is shared by attempts and visits for that file. start may emit cached\\npackets synchronously; decoding yields a full frame, immediately or later.\\nDecode completion order can differ from packet arrival order.\" Confirm these premises and the target's explicit freshness requirement before applying.\n\n78616bbce7c537e7b3a3bdc31ff765c79152aaf344a6831281305ac9387ec652:R02 [Event relation]\nRegister panel reception before starting the source, preserving subsequent streaming and reuse. Original src/workflow.php has \"$env->call('start',$file->token);$subscription=$env->call('listen',$file->token,$callback);\" Check subscription cancellation and originating visit eligibility before admitting each packet to decoding. Logical retirement must reject further packets even while synchronous startup has not returned its handle. README.md: \"One startup window is relevant to this maintenance request: start may emit\\nmore than one packet synchronously. A showProgress callback may select or hide\\nanother visit before start returns, while its caller has not yet received the\\nreturned cleanup handle.\"\n\nSeparate reception order, audit completion and visible publication. Bind admitted decoding to its original file, attempt and visit; retain its audit once on completion even after cancellation, navigation or disposal. Original src/workflow.php executes \"$audit($frame);$view($frame,$order);\" and records progress using \"['fileId'=>$v->file->id,'attemptId'=>$n,'frame'=>$frame]\". Recheck originating visit eligibility after auditing because host callbacks can navigate. For targets requiring full-frame freshness, assign reception sequence within the visit, spanning retries, and publish only completions newer than the last displayed sequence. Recheck freshness after audit callbacks, which may synchronously deliver newer progress, and advance displayed sequence before invoking the display callback. TASK: \"Full\\nprogress frames may decode out of order; do not allow an older frame to roll the\\ncurrent display backward.\" README.md: \"A full frame replaces displayed state; loaded values can decrease or reset.\" Compare reception sequence rather than loaded values; stale display suppression must not suppress audit.\n\n78616bbce7c537e7b3a3bdc31ff765c79152aaf344a6831281305ac9387ec652:R03 [Preservation]\nPreserve newer navigation across callback-capable startup and cleanup. Retire old ownership before canceling captured resources, recheck request identity after callbacks, and prevent resumed older work from overwriting or canceling newer resources. Original src/workflow.php uses \"$request=++$this->registry->serial;$old=$this->registry->visit;$this->registry->visit=null;if($old)$this->release($old);if($this->registry->disposed||$this->registry->serial!==$request)return null;\" Coordinate cleanup while startup has not returned, without requiring a particular internal mechanism. README.md: \"Removing a listener commits removal before calling the host detach callback;\\nthat callback may synchronously select, hide or dispose. Repeated removal is\\ninert. Host callbacks execute synchronously unless explicitly deferred.\" Preserve idempotent cancellation and disposal. Keep accepted retry work bound to its entry visit and file: cancel the preceding attempt before enqueueing, retain the accepted command and record across cancellation reentry, cancel its resulting handle if its visit ended, and suppress its retired queued notice. Original src/workflow.php: \"$v->handle->cancel(); $accepted=$v;$h=$this->enqueue($accepted,'retry');if($this->current($accepted))$accepted->handle=$h;else $h->cancel();if($this->current($accepted))$this->notice($accepted,$h);\"\n\n78616bbce7c537e7b3a3bdc31ff765c79152aaf344a6831281305ac9387ec652:R04 [Exclusion]\nPreserve queue recording before transfer startup, adapter interfaces, payload identities, per-workspace counters and ordinary streaming. TASK: \"Restore the initial progress update without changing the public\\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior.\" Original src/workflow.php constructs \"$entry=['fileId'=>$v->file->id,'attemptId'=>$n,'visitId'=>$v->id,'kind'=>$kind];\" and queued notices as \"['fileId'=>$v->file->id,'attemptId'=>$h->number,'visitId'=>$v->id,'status'=>'queued']\". Do not add queue fields under this repair. Keep panel freshness changes separate from diagnostic behavior. README.md: \"The same source service also has a diagnostic consumer, Telemetry/\\ncollectProgressTelemetry, whose existing live delta observations are separate\\nfrom the panel. Keep its existing behavior during this maintenance.\" Do not transfer the panel's startup or freshness policy to Telemetry.\n\nCandidate limitations:\n- Only TASK and supplied public documents/code establish requirements. Automatic contracts, prior experiences and evaluation observations are fallible guidance.\n- Attempt 1 reports passing syntax and acceptance checks, but provides no behavioral observations establishing completeness, causality or cross-task benefit.\n- README.md states: \"A decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime.\" Adapter exception recovery is unspecified.\n- Reception-order display suppression applies where full-frame freshness is required; it must not be generalized to diagnostic delta consumers or used to suppress retained audit.\n- Cleanup coordination and reception sequencing are implementation choices; the sources do not mandate a particular provisional-handle interface.\n- No files were modified during this reflection.\n\n78616bbce7c537e7b3a3bdc31ff765c79152aaf344a6831281305ac9387ec652:R05 [Verification]\nVerify cached startup and later streaming; immediate and deferred decoding; reverse decode completion with both audits retained and no older display replacement; legitimate decreases in newer frames; and freshness across retries in one visit. Exercise navigation from recordProgress and showProgress, including newer progress delivered during auditing. During multi-packet synchronous startup, hide, switch, reopen the identical file or dispose: retired reception must stop while already admitted audit remains associated with its original identity. Exercise navigation during listener detachment and cancellation; confirm newer ownership, accepted retry recording, cancellation of retired resulting transfers, current queued notices, repeated cleanup, independent workspaces and unchanged queue/notice shapes. Verify diagnostic live delta observations remain unchanged. These checkpoints derive from TASK's freshness and preservation requirements, README.md's synchronous callback model, and the original src/workflow.php lifecycle; passing syntax alone does not establish them.\n",
+    "provisional_sha256s": [],
+    "route": {
+      "checks": [
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L",
+            "I",
+            "A"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 8,
+                  "quote": "The source is shared by attempts and visits for that file."
+                },
+                {
+                  "file": "README.md",
+                  "line": 21,
+                  "quote": "The same source service also has a diagnostic consumer, Telemetry/"
+                }
+              ],
+              "predicate": "shared_lifetime",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 38,
+                  "quote": "Transport receives a physical cancellation observer corresponding to the"
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 29,
+                  "quote": "@attempts+=1;n=@attempts"
+                }
+              ],
+              "predicate": "attempt_resource",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "src/workflow.rb",
+                  "line": 30,
+                  "quote": "attemptId:n,frame:frame}) if current(v)"
+                },
+                {
+                  "file": "README.md",
+                  "line": 6,
+                  "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without"
+                }
+              ],
+              "predicate": "entry_snapshot",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 11,
+                  "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+                },
+                {
+                  "file": "README.md",
+                  "line": 22,
+                  "quote": "collectProgressTelemetry, whose existing live delta observations are separate"
+                }
+              ],
+              "predicate": "effect_lifetimes",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L",
+            "I",
+            "A"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 8,
+                  "quote": "The source is shared by attempts and visits for that file."
+                },
+                {
+                  "file": "README.md",
+                  "line": 21,
+                  "quote": "The same source service also has a diagnostic consumer, Telemetry/"
+                }
+              ],
+              "predicate": "shared_lifetime",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 38,
+                  "quote": "Transport receives a physical cancellation observer corresponding to the"
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 29,
+                  "quote": "@attempts+=1;n=@attempts"
+                }
+              ],
+              "predicate": "attempt_resource",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "src/workflow.rb",
+                  "line": 30,
+                  "quote": "attemptId:n,frame:frame}) if current(v)"
+                },
+                {
+                  "file": "README.md",
+                  "line": 6,
+                  "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without"
+                }
+              ],
+              "predicate": "entry_snapshot",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 11,
+                  "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+                },
+                {
+                  "file": "README.md",
+                  "line": 22,
+                  "quote": "collectProgressTelemetry, whose existing live delta observations are separate"
+                }
+              ],
+              "predicate": "effect_lifetimes",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L",
+            "I",
+            "A"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 8,
+                  "quote": "The source is shared by attempts and visits for that file."
+                },
+                {
+                  "file": "README.md",
+                  "line": 21,
+                  "quote": "The same source service also has a diagnostic consumer, Telemetry/"
+                }
+              ],
+              "predicate": "shared_lifetime",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 38,
+                  "quote": "Transport receives a physical cancellation observer corresponding to the"
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 29,
+                  "quote": "@attempts+=1;n=@attempts"
+                }
+              ],
+              "predicate": "attempt_resource",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "src/workflow.rb",
+                  "line": 30,
+                  "quote": "attemptId:n,frame:frame}) if current(v)"
+                },
+                {
+                  "file": "README.md",
+                  "line": 6,
+                  "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without"
+                }
+              ],
+              "predicate": "entry_snapshot",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 11,
+                  "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+                },
+                {
+                  "file": "README.md",
+                  "line": 22,
+                  "quote": "collectProgressTelemetry, whose existing live delta observations are separate"
+                }
+              ],
+              "predicate": "effect_lifetimes",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L",
+            "I",
+            "A"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 8,
+                  "quote": "The source is shared by attempts and visits for that file."
+                },
+                {
+                  "file": "README.md",
+                  "line": 21,
+                  "quote": "The same source service also has a diagnostic consumer, Telemetry/"
+                }
+              ],
+              "predicate": "shared_lifetime",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 38,
+                  "quote": "Transport receives a physical cancellation observer corresponding to the"
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 29,
+                  "quote": "@attempts+=1;n=@attempts"
+                }
+              ],
+              "predicate": "attempt_resource",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "src/workflow.rb",
+                  "line": 30,
+                  "quote": "attemptId:n,frame:frame}) if current(v)"
+                },
+                {
+                  "file": "README.md",
+                  "line": 6,
+                  "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without"
+                }
+              ],
+              "predicate": "entry_snapshot",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 11,
+                  "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+                },
+                {
+                  "file": "README.md",
+                  "line": 22,
+                  "quote": "collectProgressTelemetry, whose existing live delta observations are separate"
+                }
+              ],
+              "predicate": "effect_lifetimes",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L",
+            "I",
+            "A"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 8,
+                  "quote": "The source is shared by attempts and visits for that file."
+                },
+                {
+                  "file": "README.md",
+                  "line": 21,
+                  "quote": "The same source service also has a diagnostic consumer, Telemetry/"
+                }
+              ],
+              "predicate": "shared_lifetime",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 38,
+                  "quote": "Transport receives a physical cancellation observer corresponding to the"
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 29,
+                  "quote": "@attempts+=1;n=@attempts"
+                }
+              ],
+              "predicate": "attempt_resource",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "src/workflow.rb",
+                  "line": 30,
+                  "quote": "attemptId:n,frame:frame}) if current(v)"
+                },
+                {
+                  "file": "README.md",
+                  "line": 6,
+                  "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without"
+                }
+              ],
+              "predicate": "entry_snapshot",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 11,
+                  "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+                },
+                {
+                  "file": "README.md",
+                  "line": 22,
+                  "quote": "collectProgressTelemetry, whose existing live delta observations are separate"
+                }
+              ],
+              "predicate": "effect_lifetimes",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "L",
+            "I"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 38,
+                  "quote": "Transport receives a physical cancellation observer corresponding to the"
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 29,
+                  "quote": "@attempts+=1;n=@attempts"
+                }
+              ],
+              "predicate": "attempt_resource",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 11,
+                  "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+                },
+                {
+                  "file": "README.md",
+                  "line": 22,
+                  "quote": "collectProgressTelemetry, whose existing live delta observations are separate"
+                }
+              ],
+              "predicate": "effect_lifetimes",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 38,
+                  "quote": "Transport receives a physical cancellation observer corresponding to the"
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 29,
+                  "quote": "@attempts+=1;n=@attempts"
+                }
+              ],
+              "predicate": "attempt_resource",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L",
+            "I"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 38,
+                  "quote": "Transport receives a physical cancellation observer corresponding to the"
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 29,
+                  "quote": "@attempts+=1;n=@attempts"
+                }
+              ],
+              "predicate": "attempt_resource",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L",
+            "I",
+            "A"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 11,
+                  "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+                },
+                {
+                  "file": "README.md",
+                  "line": 22,
+                  "quote": "collectProgressTelemetry, whose existing live delta observations are separate"
+                }
+              ],
+              "predicate": "effect_lifetimes",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L",
+            "I",
+            "A"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 8,
+                  "quote": "The source is shared by attempts and visits for that file."
+                },
+                {
+                  "file": "README.md",
+                  "line": 21,
+                  "quote": "The same source service also has a diagnostic consumer, Telemetry/"
+                }
+              ],
+              "predicate": "shared_lifetime",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 38,
+                  "quote": "Transport receives a physical cancellation observer corresponding to the"
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 29,
+                  "quote": "@attempts+=1;n=@attempts"
+                }
+              ],
+              "predicate": "attempt_resource",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "src/workflow.rb",
+                  "line": 30,
+                  "quote": "attemptId:n,frame:frame}) if current(v)"
+                },
+                {
+                  "file": "README.md",
+                  "line": 6,
+                  "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without"
+                }
+              ],
+              "predicate": "entry_snapshot",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 11,
+                  "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+                },
+                {
+                  "file": "README.md",
+                  "line": 22,
+                  "quote": "collectProgressTelemetry, whose existing live delta observations are separate"
+                }
+              ],
+              "predicate": "effect_lifetimes",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L",
+            "I",
+            "F"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "src/workflow.rb",
+                  "line": 30,
+                  "quote": "attemptId:n,frame:frame}) if current(v)"
+                },
+                {
+                  "file": "README.md",
+                  "line": 6,
+                  "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without"
+                }
+              ],
+              "predicate": "entry_snapshot",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 38,
+                  "quote": "Transport receives a physical cancellation observer corresponding to the"
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 29,
+                  "quote": "@attempts+=1;n=@attempts"
+                }
+              ],
+              "predicate": "attempt_resource",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 8,
+                  "quote": "The source is shared by attempts and visits for that file."
+                },
+                {
+                  "file": "README.md",
+                  "line": 21,
+                  "quote": "The same source service also has a diagnostic consumer, Telemetry/"
+                }
+              ],
+              "predicate": "shared_lifetime",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "I",
+            "A"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "src/workflow.rb",
+                  "line": 30,
+                  "quote": "attemptId:n,frame:frame}) if current(v)"
+                },
+                {
+                  "file": "README.md",
+                  "line": 6,
+                  "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without"
+                }
+              ],
+              "predicate": "entry_snapshot",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "L",
+            "I",
+            "A"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "src/workflow.rb",
+                  "line": 30,
+                  "quote": "attemptId:n,frame:frame}) if current(v)"
+                },
+                {
+                  "file": "README.md",
+                  "line": 6,
+                  "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without"
+                }
+              ],
+              "predicate": "entry_snapshot",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "L",
+            "I",
+            "A"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "src/workflow.rb",
+                  "line": 30,
+                  "quote": "attemptId:n,frame:frame}) if current(v)"
+                },
+                {
+                  "file": "README.md",
+                  "line": 6,
+                  "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without"
+                }
+              ],
+              "predicate": "entry_snapshot",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L",
+            "I"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "L",
+            "I"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 11,
+                  "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+                },
+                {
+                  "file": "README.md",
+                  "line": 22,
+                  "quote": "collectProgressTelemetry, whose existing live delta observations are separate"
+                }
+              ],
+              "predicate": "effect_lifetimes",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "src/workflow.rb",
+                  "line": 30,
+                  "quote": "attemptId:n,frame:frame}) if current(v)"
+                },
+                {
+                  "file": "README.md",
+                  "line": 6,
+                  "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without"
+                }
+              ],
+              "predicate": "entry_snapshot",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "L",
+            "I"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 11,
+                  "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+                },
+                {
+                  "file": "README.md",
+                  "line": 22,
+                  "quote": "collectProgressTelemetry, whose existing live delta observations are separate"
+                }
+              ],
+              "predicate": "effect_lifetimes",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "I",
+            "A"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "src/workflow.rb",
+                  "line": 30,
+                  "quote": "attemptId:n,frame:frame}) if current(v)"
+                },
+                {
+                  "file": "README.md",
+                  "line": 6,
+                  "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without"
+                }
+              ],
+              "predicate": "entry_snapshot",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "L"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 8,
+                  "quote": "The source is shared by attempts and visits for that file."
+                },
+                {
+                  "file": "README.md",
+                  "line": 21,
+                  "quote": "The same source service also has a diagnostic consumer, Telemetry/"
+                }
+              ],
+              "predicate": "shared_lifetime",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O",
+            "L",
+            "I"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 38,
+                  "quote": "Transport receives a physical cancellation observer corresponding to the"
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 29,
+                  "quote": "@attempts+=1;n=@attempts"
+                }
+              ],
+              "predicate": "attempt_resource",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "I",
+            "A"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "src/workflow.rb",
+                  "line": 30,
+                  "quote": "attemptId:n,frame:frame}) if current(v)"
+                },
+                {
+                  "file": "README.md",
+                  "line": 6,
+                  "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without"
+                }
+              ],
+              "predicate": "entry_snapshot",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 17,
+                  "quote": "more than one packet synchronously. A showProgress callback may select or hide"
+                },
+                {
+                  "file": "README.md",
+                  "line": 26,
+                  "quote": "that callback may synchronously select, hide or dispose."
+                }
+              ],
+              "predicate": "inline_reentry",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "I",
+            "A"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "src/workflow.rb",
+                  "line": 30,
+                  "quote": "attemptId:n,frame:frame}) if current(v)"
+                },
+                {
+                  "file": "README.md",
+                  "line": 6,
+                  "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without"
+                }
+              ],
+              "predicate": "entry_snapshot",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "L",
+            "I"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 8,
+                  "quote": "The source is shared by attempts and visits for that file."
+                },
+                {
+                  "file": "README.md",
+                  "line": 21,
+                  "quote": "The same source service also has a diagnostic consumer, Telemetry/"
+                }
+              ],
+              "predicate": "shared_lifetime",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "L"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 8,
+                  "quote": "The source is shared by attempts and visits for that file."
+                },
+                {
+                  "file": "README.md",
+                  "line": 21,
+                  "quote": "The same source service also has a diagnostic consumer, Telemetry/"
+                }
+              ],
+              "predicate": "shared_lifetime",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 22,
+                  "quote": "collectProgressTelemetry, whose existing live delta observations are separate"
+                },
+                {
+                  "file": "README.md",
+                  "line": 35,
+                  "quote": "token, callback token) returns a subscription"
+                }
+              ],
+              "predicate": "observer_lifetime",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 38,
+                  "quote": "Transport receives a physical cancellation observer corresponding to the"
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 29,
+                  "quote": "@attempts+=1;n=@attempts"
+                }
+              ],
+              "predicate": "attempt_resource",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "L",
+            "A"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 8,
+                  "quote": "The source is shared by attempts and visits for that file."
+                },
+                {
+                  "file": "README.md",
+                  "line": 21,
+                  "quote": "The same source service also has a diagnostic consumer, Telemetry/"
+                }
+              ],
+              "predicate": "shared_lifetime",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 22,
+                  "quote": "collectProgressTelemetry, whose existing live delta observations are separate"
+                },
+                {
+                  "file": "README.md",
+                  "line": 35,
+                  "quote": "token, callback token) returns a subscription"
+                }
+              ],
+              "predicate": "observer_lifetime",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 38,
+                  "quote": "Transport receives a physical cancellation observer corresponding to the"
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 29,
+                  "quote": "@attempts+=1;n=@attempts"
+                }
+              ],
+              "predicate": "attempt_resource",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "O"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "F"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "L",
+            "I",
+            "A"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 11,
+                  "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+                },
+                {
+                  "file": "README.md",
+                  "line": 22,
+                  "quote": "collectProgressTelemetry, whose existing live delta observations are separate"
+                }
+              ],
+              "predicate": "effect_lifetimes",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "L",
+            "I",
+            "A"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 8,
+                  "quote": "The source is shared by attempts and visits for that file."
+                },
+                {
+                  "file": "README.md",
+                  "line": 21,
+                  "quote": "The same source service also has a diagnostic consumer, Telemetry/"
+                }
+              ],
+              "predicate": "shared_lifetime",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 11,
+                  "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+                },
+                {
+                  "file": "README.md",
+                  "line": 22,
+                  "quote": "collectProgressTelemetry, whose existing live delta observations are separate"
+                }
+              ],
+              "predicate": "effect_lifetimes",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "L",
+            "I"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 37,
+                  "quote": "completion invokes the bound native closure on an explicit later host turn."
+                },
+                {
+                  "file": "src/workflow.rb",
+                  "line": 18,
+                  "quote": "value=env.call('decode',file['token'],packet,env.bind(deliver))"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 11,
+                  "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+                },
+                {
+                  "file": "README.md",
+                  "line": 22,
+                  "quote": "collectProgressTelemetry, whose existing live delta observations are separate"
+                }
+              ],
+              "predicate": "effect_lifetimes",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        }
+      ],
+      "condition": "ROUTED",
+      "matched_count": 38,
+      "max_experiences": 5,
+      "omitted_memory_sha256s": [
+        "2b46ebef0210d193cf3c224d408cd690d5870460673f7bc67205090a7ff7b310",
+        "8ce034522ca1b3d945f0a27901b32b03ee0b6b2cc8aacd52d51913f5cb6c2424",
+        "0eb9f0eed8d81d6243641548ce5b24ac86e02a272a28fd0d6e27c107bcd652c9",
+        "b470b9906940cd4fc90dd20201cf69a5c82cff16c7d4dd4fe2172f46ec9dc116",
+        "aa804d58eb2e74ac8b73e1eae1b41291a885cd4725f050e10923c514c10fe370",
+        "092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce",
+        "b53135c6d70ccfd182e8ede45edccf20afe9a634e53ce19ffa62e24496fedc0f",
+        "e674d9c3e84a302fa3aea69789cc2d962616a40c69926bfc357cf885cede0e94",
+        "d7cb9da9dcefa3c18aa791c278931df92a5f95efa3e1a2185d319ecaee7fbb36",
+        "129faf3f6bc67dd105ecfd0a7432adf34a6e7051ba434d534f060fe5cc7ee33a",
+        "4a344162be345350744e4de69aeb9d51b8d11f805cc594c0392e26d5649535d1",
+        "f41a506d3bbf02c7525371e89a29acd61feec74f10a741a5742cb9de750db720",
+        "c663bf5de4a4125debe922e1b353af248b9d52f5686c435dbc281f672977d9c6",
+        "0fc8a5990bced16aa7fa3c6d82becd3a9ec1a453e6f5648e12dee31967e7b640",
+        "a61888fc25043255da3bcb32237113aacae934551481da4cb97ab786557ae90f",
+        "5a88131f3e427c50284581514ed898a85feefc0f9ecfccfede6d0436afa11589",
+        "540afef243f6a3d3c82d188bdfdeda7ceb328db2fb0fb35df0e7c4fd519bdc15",
+        "722b82960892efbb479e9b3a583e36eedd7a028da0ed9e96cc8f07a6e48308ca",
+        "e0e19b9f080397cee6acfb1277706af34bc6969547eb0c33a71ca5a0770e64c0",
+        "8aacd6e164e2a8fc5c967472fac5b0b34b0b06a9879a206a213ab1f138e1460c",
+        "9db7de273ed19c3b2c1a15fb54e071117813d3f26ed7a4cb4f4ea2002211a784",
+        "d26b6b4ae031faf8ea65f3cdc25f5b9b0ef63577f7b7aa83cf7f7f54a13f3d79",
+        "a2f0ca620853422a4ab88de8b097f21f3a7e7ec6012f217ceb3ccde0a79a8826",
+        "f98985c0ad8b79240331d5ec7deaeddcfd3515f6a3971b46b46691e6272a90da",
+        "98295aa2919059b252b315192210813df312e80c68473cfb51d4056f44860fbd",
+        "e3668cc751f87c073074960de1430fed92b72ce2aff28e7ce384115a1d2570a1",
+        "5021b7a9e46c944e052a63f3593cb22efe77d61409c357d6485915dc860e7390",
+        "5112cee6c7f5007a9a56db2158eee5943a2d5069008754f4665f242a34229b8f",
+        "75f102453389ebc800c48823317ff7d5ddb4454cecc596ec1ad538c29f8c4198",
+        "cb43d602785cb0eb722936571c4ec3478a32c58231315358895b2f8fcebcf3e0",
+        "6cd9c152e8f43aa9b7324cbed5d56edfdd1744d5f497afc0b744c2fc7e8dda2f",
+        "bbd6eee9031ebf434c55cd29d1c35f132f9a7b79c441a16f3903e7d6992b822a",
+        "0624718ce36a7b9f19374275fafce28f2c117aa28ca07f5f96e96746b04a0938"
+      ],
+      "ranking": "label_jaccard_then_overlap_then_digest",
+      "reason": "unreviewed_analysis_source_premises",
+      "selected": null,
+      "selected_entries": [
+        {
+          "obligation_labels": [
+            "O",
+            "L",
+            "I",
+            "A"
+          ],
+          "sha256": "0dd4fbadc8352f4a1ac802712b6337fdf8b8a652ccc8244ca49f693aedf20e26",
+          "text_sha256": "161afdfacd25b5b13579f91be786f60387dffeeefebef56e014ec7c9352bc14c",
+          "version": "single-file-v1"
+        },
+        {
+          "obligation_labels": [
+            "O",
+            "L",
+            "I",
+            "A"
+          ],
+          "sha256": "3d6a36491ea86935372ec9451dd815a57144be5d003fdbda8ffde37ff8cd4979",
+          "text_sha256": "04af1533e4fe1b7ad98030f1b892b16fe367863117df7282cb4e8e0538fe98cb",
+          "version": "single-file-v1"
+        },
+        {
+          "obligation_labels": [
+            "O",
+            "L",
+            "I",
+            "A"
+          ],
+          "sha256": "718763f4fe679735999c712b0ace44f5b3f0af4177fbf705c9eaf5a3a3fd7550",
+          "text_sha256": "aa56b3cd7fafc6047108379d143d8588b9347de9e044bac3c68da714faf99477",
+          "version": "single-file-v1"
+        },
+        {
+          "obligation_labels": [
+            "O",
+            "L",
+            "I",
+            "A"
+          ],
+          "sha256": "728672874ab7f825ef95fc7d0a291e8836729e294c865095af6c61e7aa2c42f9",
+          "text_sha256": "8eb4dad8a46fdff46cbb8b18523a6b57d9e513839faea18d39d07b6ba46e08ac",
+          "version": "single-file-v1"
+        },
+        {
+          "obligation_labels": [
+            "O",
+            "L",
+            "I",
+            "A"
+          ],
+          "sha256": "916ad89e0303da812bdde0b9b203cab2ce05cc63e68c4d9574274faace958b22",
+          "text_sha256": "f11ced99347494e68067b0344971832ae4ad8cbe0e54a707818ca3c53a45aec7",
+          "version": "single-file-v1"
+        }
+      ],
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "truncated_count": 33
+    },
+    "selected_sha256": null,
+    "selected_sha256s": [
+      "77c68e0f51d195985b1ffb123979ed2c80b9a1736302f9949e38bf08649913c1",
+      "6fcd6376641fabd68811e2b973e73444b5f602f80ab32d029097d93133147320",
+      "6dca1fc16aa5e7cc79660bf098beac72edffa9aed4e86dceda44d1800261f778",
+      "cee153e498e5a17c34bdc3c38b488b584b11a5c521164878785bc582aa87293d",
+      "78616bbce7c537e7b3a3bdc31ff765c79152aaf344a6831281305ac9387ec652"
+    ]
+  },
+  "diagnoses": [],
+  "error": null,
+  "evaluation_split": {
+    "independence": {
+      "new20": "no detected prior development exposure in bounded audit",
+      "retained10": "previously exposed regression cohort",
+      "unseen": false
+    },
+    "registry_sha256": "6ea2444ea329ace6c882b53e6e1072cb2f15fd19cd600cab4120a82c45718f50",
+    "role": "training",
+    "testing_policy": {
+      "actions": 1,
+      "gold": "final_only",
+      "learning": false
+    }
+  },
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "final_visible_passed": true,
+  "first_oracle_pass_attempt": 1,
+  "first_pass_attempt": 1,
+  "first_training_acceptance_attempt": 1,
+  "first_visible_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "held_out_eligible": false,
+  "known_tokens": 388543,
+  "learning_policy": "frozen",
+  "missing_action_evaluations": 0,
+  "mode": "learning",
+  "model": {
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "medium"
+  },
+  "model_profile": "sol56-medium",
+  "online_snapshot_sha256": null,
+  "per_attempt_acceptance": [
+    {
+      "feedback": {
+        "observations": [],
+        "passed": true,
+        "regressions": [],
+        "unknowns": [
+          "Only the acceptance verdict is available for feedback; no failure cause inferred."
+        ]
+      },
+      "passed": true,
+      "valid": true,
+      "verdict": "PASS"
+    }
+  ],
+  "per_attempt_oracle": [
+    {
+      "feedback": {
+        "observations": [],
+        "passed": true,
+        "regressions": [],
+        "unknowns": [
+          "Only the acceptance verdict is available for feedback; no failure cause inferred."
+        ]
+      },
+      "passed": true,
+      "valid": true,
+      "verdict": "PASS"
+    }
+  ],
+  "per_round_evaluations": [
+    {
+      "result": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.rb",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "passed": true,
+        "regressions": [],
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ],
+        "valid": true
+      },
+      "stage": "visible-1"
+    },
+    {
+      "result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "stage": "acceptance-1"
+    }
+  ],
+  "preparation_corrections": 0,
+  "preparation_validation_policy": "advisory-source-validation-v1",
+  "preparation_warnings": [],
+  "protocol": "tempoevo-trajectory-v12",
+  "reflection_updates": [
+    {
+      "name": "success",
+      "publication_kind": null,
+      "update": {
+        "change_summary": [],
+        "deduplication": "exact_normalized_content",
+        "failure_attribution": "not_applicable",
+        "operation": "evidence",
+        "reason": "The implemented Ruby attempt directly matches the existing guidance and passed the reported checks. The original TASK, README.md, and src/workflow.rb establish no correction or additional reusable obligation, while the acceptance verdict alone does not prove causality, completeness, or cross-task effectiveness.",
+        "supporting_attempts": [
+          1
+        ],
+        "target_sha256s": [
+          "6dca1fc16aa5e7cc79660bf098beac72edffa9aed4e86dceda44d1800261f778"
+        ]
+      }
+    }
+  ],
+  "repair_stop_reason": "oracle_accepted",
+  "requests": 12,
+  "required_visible_checks": true,
+  "split_status": "unverified_no_independent_split_evidence",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "3241da1d5da5994bf7a536063a6823692f2b603c29ecf72c7b21a996ffe6d797",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9996524779126
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "42adfad351cb1405cf3c9f999c3a5070e44c7bf73e9da8c2be93b484fc896408",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 23296,
+        "input_tokens": 29491,
+        "output_tokens": 2838,
+        "reasoning_output_tokens": 1208,
+        "total_tokens": 32329
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "1c59176ba3858c89cbf18a21d35c0a83f7f7b4fb1eb3c549a869007525daacdf",
+      "seconds": 55.267792855389416,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 23296,
+        "input_tokens": 29491,
+        "output_tokens": 2838,
+        "reasoning_output_tokens": 1208,
+        "total_tokens": 32329
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "1b239c4b0a557fc5b42a8a61b2b5aeec80ff248ae045af99d0d31367546640d0",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9998081261292
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "1ab14e5490a21b84c00d98213c5ae5446dc4a0ee4f49813ba79481639838c521",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 20473,
+        "output_tokens": 2628,
+        "reasoning_output_tokens": 71,
+        "total_tokens": 23101
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "abfb6e95d9141fb6c82a06b6c83a876fcc48ca085296dc4115796591c80ef9a8",
+      "seconds": 57.19814940728247,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 20473,
+        "output_tokens": 2628,
+        "reasoning_output_tokens": 71,
+        "total_tokens": 23101
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "ebae6c960315cbc3b64d4fbf53b7892a46780bd696c6d57d83cb39c0c55a107b",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9996304940432
+          },
+          "number": 1,
+          "requests": 8,
+          "restart_reason": "initial",
+          "result_sha256": "c866d0698362f267b4e2614d850dacbe55b3c5d641ec54bd9fb090c674edfb00",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 218112,
+        "input_tokens": 245391,
+        "output_tokens": 8851,
+        "reasoning_output_tokens": 3788,
+        "total_tokens": 254242
+      },
+      "requests": 8,
+      "reserved_requests": 24,
+      "result_sha256": "c812a651e1c1120afa00f9a3dc50feb2ea50c9ec84f656e528ba92d763f074cf",
+      "seconds": 151.32730531413108,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 218112,
+        "input_tokens": 245391,
+        "output_tokens": 8851,
+        "reasoning_output_tokens": 3788,
+        "total_tokens": 254242
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "b6bc50ab0dc1b9450b6df76ce9299ec5f17408978e8b3631c8feaa7e30891382",
+      "seconds": 0.5550377918407321,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 1.9031403362751007,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "cbd81c0404fddda87da532b4330c1e0b8cfc1c1d73998df49751e6cf46131c77",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9946622261778
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "bc4722149dbfb4f2285c6b403ef68f34ef62cddea3caae45209f746090ecffa7",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 77024,
+        "output_tokens": 1847,
+        "reasoning_output_tokens": 166,
+        "total_tokens": 78871
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "065ea4ed2f6a7c3c209fbb7380b22bca5e1bd6b9808e70fd2be22b1bd03d3aef",
+      "seconds": 47.80236754659563,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 77024,
+        "output_tokens": 1847,
+        "reasoning_output_tokens": 166,
+        "total_tokens": 78871
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "tool_policy_recoveries": 0,
+  "training_accepted": true,
+  "transport_executions": 4,
+  "transport_retries": 0,
+  "unknown_request_stages": [],
+  "unknown_usage_requests": 0,
+  "unstarted_actions": 2,
+  "usage_incomplete": false,
+  "valid_attempts": 1,
+  "visible_passed": true
+}

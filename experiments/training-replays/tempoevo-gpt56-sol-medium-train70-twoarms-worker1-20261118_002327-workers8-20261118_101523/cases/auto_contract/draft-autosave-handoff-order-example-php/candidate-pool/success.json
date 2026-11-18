@@ -1,0 +1,538 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/workflow.php\n+++ candidate/src/workflow.php\n@@ -39,8 +39,8 @@\n         $this->stop=function() use ($env, $token) { $env->store->stop($token); };\n         $this->task=new Trailing($env,120,function($text) use ($env,$id) { $env->write($id,$text); });\n     }\n-    function accept($text) { $this->env->write($this->id,$text); }\n-    function depart() { ($this->stop)();$this->env->output('document',null); }\n+    function accept($text) { $this->task->push($text); }\n+    function depart() { ($this->stop)();$this->env->output('document',null);$this->task->flush(); }\n }\n class Workspace {\n     private $env, $current=null, $generation=0;\n",
+        "from_previous": "--- previous/src/workflow.php\n+++ candidate/src/workflow.php\n@@ -39,8 +39,8 @@\n         $this->stop=function() use ($env, $token) { $env->store->stop($token); };\n         $this->task=new Trailing($env,120,function($text) use ($env,$id) { $env->write($id,$text); });\n     }\n-    function accept($text) { $this->env->write($this->id,$text); }\n-    function depart() { ($this->stop)();$this->env->output('document',null); }\n+    function accept($text) { $this->task->push($text); }\n+    function depart() { ($this->stop)();$this->env->output('document',null);$this->task->flush(); }\n }\n class Workspace {\n     private $env, $current=null, $generation=0;\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [],
+        "coverage": [
+          {
+            "path": "src/workflow.php",
+            "status": "unsupported_language"
+          }
+        ],
+        "events": [],
+        "findings": [],
+        "limitations": [
+          "Syntax facts, candidate call links and review hints are not verified contracts, bugs, severity or difficulty scores.",
+          "API names are clues. Types, aliases, control flow, dynamic dispatch and callback targets are not fully resolved.",
+          "Local order is lexical order within a block; branches, exceptions, loops, short-circuiting and execution remain unchecked.",
+          "await may suspend; cancellation does not imply completed work or cleanup. Listener removal does not cancel work already started.",
+          "if/try/finally syntax does not prove adequate protection. The absence of hints does not imply safety.",
+          "No hidden scorers, reference patches, model results or human profiles are read. Operators must verify input provenance."
+        ],
+        "relations": [],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "partial",
+        "target_definitions": []
+      },
+      "sources": {
+        "README.md": "# Hotel incident worksheet\n\n\nThe workspace API drives a document editor and its save badge. The workspace store\nholds draft text across navigation and closed editor views. Returning to a document\nrestores the user's last edit. Save integrations receive committed records and may\nselect another document synchronously. Later navigation means the navigation request that starts later takes precedence, even if an earlier request returns afterward. For example, if open(B) starts and saving the departed A invokes a callback that calls open(C), C remains selected after the callback and the outer open(B) return. If that callback calls close() instead, the editor remains closed after the outer open(B) returns. These are navigation results, independent of when the departed document's save occurs.\nWhen close/open returns, the departed document's last accepted edit is available\nthrough the store, even if the next view selects a different document.\n\n`createSearchPreview` is an adjacent transient search panel. It publishes after a\n40 ms quiet interval; hiding it discards an unpublished query. It can be reused.\n\nThe public methods are synchronous. Output render functions observe state; navigation\ncomes through the workspace API, including its `onSaved` integration. `store` provides\n`read`, `write` and `subscribe`; `timers` provides `schedule(callback, delay)` and\n`cancel(handle)`. Production timers use the browser's timers. Keep these interfaces.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"PHP 7.4.3\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "docs/host-api.md": "# Host integration\n\nopen(id), edit(text), close() and dispose() are synchronous entry points.\nThe store owns persisted document records independently of any mounted view.\nStore delivery writes first, snapshots subscriptions, and skips removed listeners.\nonSaved is called inline and can navigate or edit; rendering is an output sink.\nEvery open creates a fresh visit and subscription, including same-key reopen.\nInjected timers provide schedule(callback,delay) and cancel(handle).\nThe preview is transient and independent of the editor's persistence policy.\n",
+        "src/workflow.php": "<?php\nclass Store {\n    private $records, $listeners = [], $serial = 0, $revision = 0;\n    function __construct($records) { $this->records = $records; }\n    function read($id) { return $this->records[$id] ?? ''; }\n    function subscribe($fn) { $token = ++$this->serial; $this->listeners[$token] = $fn; return $token; }\n    function stop($token) { unset($this->listeners[$token]); }\n    function write($id, $text) {\n        $this->records[$id] = $text;\n        $event = ['id'=>$id, 'text'=>$text, 'revision'=>++$this->revision];\n        foreach ($this->listeners as $token=>$fn) if (isset($this->listeners[$token])) $fn($event);\n        return $event;\n    }\n}\nclass Trailing {\n    private $env, $delay, $work, $handle = null, $pending = null;\n    function __construct($env, $delay, $work) { $this->env=$env; $this->delay=$delay; $this->work=$work; }\n    function push($value) {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=$value;\n        $this->handle=$this->env->schedule(function() { $this->flush(); }, $this->delay);\n    }\n    function flush() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $value=$this->pending; $this->pending=null; $this->handle=null;\n        if ($value !== null) ($this->work)($value);\n    }\n    function cancel() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=null; $this->handle=null;\n    }\n}\n\nclass Visit {\n    private $env, $id, $stop, $task;\n    function __construct($env, $id) {\n        $this->env=$env; $this->id=$id;\n        $token=$env->store->subscribe(function($e) use ($env, $id) { if ($e['id']===$id) $env->output('status',$e); });\n        $this->stop=function() use ($env, $token) { $env->store->stop($token); };\n        $this->task=new Trailing($env,120,function($text) use ($env,$id) { $env->write($id,$text); });\n    }\n    function accept($text) { $this->env->write($this->id,$text); }\n    function depart() { ($this->stop)();$this->env->output('document',null); }\n}\nclass Workspace {\n    private $env, $current=null, $generation=0;\n    function __construct($env) { $this->env=$env; }\n    private function retire() { $old=$this->current; $this->current=null; if ($old) $old->depart(); else $this->env->output('document',null); }\n    function open($id) { $ticket=++$this->generation; $this->retire(); if ($ticket!==$this->generation) return; $this->current=new Visit($this->env,$id); $this->env->output('document',['id'=>$id,'text'=>$this->env->store->read($id)]); }\n    function edit($text) { $selected=$this->current; if ($selected) $selected->accept($text); }\n    function close() { ++$this->generation; $this->retire(); }\n    function dispose() { $this->close(); }\n}\nclass Preview {\n    private $task;\n    function __construct($env) { $this->task=new Trailing($env,40,function($q) use ($env) { $env->output('preview',['query'=>$q]); }); }\n    function query($text) { $this->task->push($text); }\n    function hide() { $this->task->cancel(); }\n}\n"
+      },
+      "task": "The hotel incident worksheet currently writes on every edit. Coalesce edits using the existing trailing utility: after a 120 ms quiet interval, write only the latest text in that editing burst. Subsequent bursts must continue to save. Preserve other behavior and public interfaces. The adjacent search preview is outside this maintenance change.\n"
+    },
+    "source_sha256": "309e3248a8c0638a8adee4e71f0f518039dff72647de3d7f9dc3407f1a9c5472",
+    "task_id": "draft-autosave-handoff-order-example-php"
+  },
+  "experience": {
+    "excludes": [
+      "async_resume",
+      "lazy_consumption",
+      "discard_boundary_policy",
+      "different_ownership_policy",
+      "no_lazy_shared_mechanism"
+    ],
+    "labels": [
+      "O",
+      "B",
+      "L",
+      "I",
+      "F"
+    ],
+    "limitations": [
+      "This guidance assumes synchronous entry points and inline save callbacks; it does not establish behavior for asynchronous navigation or store delivery.",
+      "The public sources do not specify exception handling for store writes, timer operations, output sinks, or integration callbacks.",
+      "The concrete environment write implementation and committed-record shape are outside the supplied public sources.",
+      "A successful attempt plus a syntax check does not prove the guidance generalizes to other timer, callback, or ownership models."
+    ],
+    "requires": [
+      "deferred_batch",
+      "boundary_persistence",
+      "inline_reentry",
+      "observer_lifetime",
+      "effect_lifetimes"
+    ],
+    "rules": [
+      {
+        "body": "Apply this pattern when edits owned by a document visit must use trailing coalescing during the visit, while synchronous open, close, or dispose boundaries must make the latest accepted edit durable before returning.",
+        "category": "applicability"
+      },
+      {
+        "body": "Give each visit its own trailing task, bound to that visit's document identity, and push every accepted edit into it with the required quiet interval; replacing a pending edit must cancel the prior timer so only the latest value in the burst is committed.",
+        "category": "event_relation"
+      },
+      {
+        "body": "A completed trailing flush must clear its handle and pending value so a later burst in the same visit can schedule and complete another save.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Before retiring a visit, remove its subscription and detach it from the workspace; then synchronously flush its pending trailing value so the departed document is durable and no retired timer or observer remains active.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Guard an outer navigation with a monotonically increasing generation or equivalent precedence token. Because an inline save callback may call open or close during retirement, the outer operation must check its token after retirement and must not render or select its original target if a later navigation has started.",
+        "category": "preservation"
+      },
+      {
+        "body": "Every open, including a same-key reopen, must allocate a fresh visit, subscription, and visit-owned trailing task; never reuse the retired visit merely because the document key matches.",
+        "category": "preservation"
+      },
+      {
+        "body": "Preserve synchronous public methods, store delivery semantics, output-only rendering, and committed-record callbacks; the persistence change must not redesign the injected store or timer interfaces.",
+        "category": "preservation"
+      },
+      {
+        "body": "Do not apply the editor's retirement-flush policy to an adjacent transient preview whose documented boundary policy discards unpublished work; preserve its independent 40 ms trailing delay, hide cancellation, and reusability.",
+        "category": "exclusion"
+      },
+      {
+        "body": "Verify no write occurs before 120 ms of quiet, one write uses the latest text in a burst, and a later burst saves independently.",
+        "category": "verification"
+      },
+      {
+        "body": "Verify open, close, and dispose synchronously persist the departed visit's latest accepted edit, including cases where the inline save callback starts a later open or close that must retain precedence.",
+        "category": "verification"
+      },
+      {
+        "body": "Verify same-key reopening creates a fresh subscription and task, retired callbacks cannot write again, and the independent preview behavior remains unchanged.",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "After one or more edits in a visit, verify no store write occurs before 120 ms of quiet and exactly one write then occurs with the latest text.",
+      "After a completed save, verify a later editing burst schedules and completes another save.",
+      "Before close() or open() returns, verify the departed document’s latest accepted edit is readable from the store.",
+      "Exercise an inline onSaved callback that calls open(C) while an outer open(B) is retiring A; C must remain selected.",
+      "Exercise an inline onSaved callback that calls close() while an outer open(B) is retiring A; the editor must remain closed.",
+      "Reopen the same document key and verify a fresh visit and subscription are created.",
+      "Run the public PHP syntax check after any Action.",
+      "Confirm Preview still publishes after 40 ms of quiet, hide() discards an unpublished query, and the preview remains reusable."
+    ],
+    "forbidden_effects": [
+      "Do not write to the store on every edit.",
+      "Do not save an intermediate value from an editing burst after a later value has been accepted in that burst.",
+      "Do not allow a canceled or superseded trailing callback to perform an additional stale write.",
+      "Do not let completion of an earlier open() overwrite navigation or closure initiated later by an inline save callback.",
+      "Do not lose the departed document’s latest accepted edit when opening another document, closing, or disposing.",
+      "Do not reuse a departed Visit or its subscription for a later open, including a same-key reopen.",
+      "Do not change the adjacent Preview behavior or its 40 ms delay.",
+      "Do not change the synchronous public interfaces or the injected store/timer interfaces."
+    ],
+    "lifecycle_identity": [
+      "Each open(id) creates a fresh Visit and fresh store subscription, even when reopening the same id.",
+      "A pending edit belongs to the Visit and document id that accepted it; retirement must commit it to that departed document, not to a newly selected document.",
+      "Retiring or disposing a Visit must prevent its timer and subscription from remaining active after retirement.",
+      "The Preview trailing task has an independent lifecycle and is outside this maintenance change."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Workspace edits must be coalesced with the existing trailing utility using a 120 ms quiet interval."
+      },
+      {
+        "id": "O2",
+        "text": "Within one editing burst, only the latest accepted text may be written after the quiet interval."
+      },
+      {
+        "id": "O3",
+        "text": "After one burst saves, subsequent bursts in the same visit must continue to save."
+      },
+      {
+        "id": "O4",
+        "text": "When open(), close(), or dispose() retires a visit, that document’s latest accepted edit must be committed and available through the store before the synchronous operation returns."
+      },
+      {
+        "id": "O5",
+        "text": "Inline save integration may navigate or edit; a navigation request started later must retain precedence over an earlier outer navigation after the callback returns."
+      },
+      {
+        "id": "O6",
+        "text": "Every open, including a same-key reopen, must create a fresh visit and subscription while retired subscriptions are removed."
+      },
+      {
+        "id": "O7",
+        "text": "Existing Store delivery semantics, rendering roles, and public synchronous interfaces must be preserved."
+      },
+      {
+        "id": "O8",
+        "text": "Preview behavior must remain unchanged because it is outside the maintenance change."
+      }
+    ],
+    "ordering_barriers": [
+      "An accepted edit updates the pending trailing value; a later edit in the same burst supersedes that value before any write.",
+      "A normal burst write occurs only after 120 ms without another edit.",
+      "Retirement must make the departed document’s latest accepted edit durable before open(), close(), or dispose() returns.",
+      "Retirement cleanup and document rendering must be ordered so an inline save callback’s later open() or close() cannot be overwritten by the earlier outer operation.",
+      "Store delivery writes the record before notifying a snapshot of subscriptions, and listeners removed before their turn are skipped.",
+      "A superseded timer handle must be canceled before scheduling its replacement; retirement must neutralize the pending handle so it cannot write again."
+    ],
+    "preservation": [
+      "Returning to a document restores its last edit from the store.",
+      "Later-started navigation takes precedence over earlier navigation even when saving the departed document invokes reentrant navigation.",
+      "close() leaves the editor closed, open(id) renders the selected stored document, and dispose() retains close semantics.",
+      "Save integrations receive committed records and onSaved remains inline and callback-capable.",
+      "Output functions remain observation sinks; navigation continues through the Workspace API.",
+      "Store records remain independent of mounted views, and store subscription delivery behavior remains unchanged.",
+      "The public methods and injected store/timer interfaces remain synchronous and unchanged.",
+      "Preview retains its 40 ms trailing publication, hide cancellation, and reusability."
+    ],
+    "scope": [
+      "Change only editor persistence for Visit/Workspace edits in src/workflow.php.",
+      "Use the existing Trailing utility for 120 ms edit coalescing.",
+      "Account for synchronous retirement and reentrant onSaved navigation.",
+      "Exclude Preview behavior and public interface redesign."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "The hotel incident worksheet currently writes on every edit. Coalesce edits using the existing trailing utility: after a 120 ms quiet interval, write only the latest text in that editing burst."
+      },
+      {
+        "file": "TASK",
+        "quote": "Subsequent bursts must continue to save. Preserve other behavior and public interfaces."
+      },
+      {
+        "file": "TASK",
+        "quote": "The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "Returning to a document restores the user's last edit."
+      },
+      {
+        "file": "README.md",
+        "quote": "Later navigation means the navigation request that starts later takes precedence, even if an earlier request returns afterward."
+      },
+      {
+        "file": "README.md",
+        "quote": "When close/open returns, the departed document's last accepted edit is available\nthrough the store, even if the next view selects a different document."
+      },
+      {
+        "file": "README.md",
+        "quote": "`createSearchPreview` is an adjacent transient search panel. It publishes after a\n40 ms quiet interval; hiding it discards an unpublished query. It can be reused."
+      },
+      {
+        "file": "README.md",
+        "quote": "The public methods are synchronous. Output render functions observe state; navigation\ncomes through the workspace API, including its `onSaved` integration."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Store delivery writes first, snapshots subscriptions, and skips removed listeners."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "onSaved is called inline and can navigate or edit; rendering is an output sink."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Every open creates a fresh visit and subscription, including same-key reopen."
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "$this->task=new Trailing($env,120,function($text) use ($env,$id) { $env->write($id,$text); });"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function accept($text) { $this->env->write($this->id,$text); }"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function push($value) {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=$value;\n        $this->handle=$this->env->schedule(function() { $this->flush(); }, $this->delay);\n    }"
+      }
+    ],
+    "triggers": [
+      "Visit::accept($text), reached through Workspace::edit($text), starts or refreshes the 120 ms trailing save.",
+      "The scheduled trailing callback commits the latest pending text after the quiet interval.",
+      "Workspace::open($id), close(), and dispose() retire the current visit and therefore require pending-edit handling before return.",
+      "An inline onSaved integration invoked by env->write may reenter Workspace navigation or editing.",
+      "Preview::query($text) and Preview::hide() remain independent existing triggers."
+    ],
+    "unknowns": [
+      "The public sources do not define the concrete env->write implementation or the exact committed-record shape delivered to onSaved.",
+      "The public sources do not specify an error/exception policy for store writes, timer operations, output sinks, or integration callbacks.",
+      "The public sources require observable navigation outcomes but do not mandate a particular internal sequencing implementation for retirement, rendering, flushing, and subscription removal.",
+      "No public behavioral test suite is supplied; VISIBLE_CHECKS.md describes syntax/build checks only."
+    ]
+  },
+  "final_training_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "After one or more edits in a visit, verify no store write occurs before 120 ms of quiet and exactly one write then occurs with the latest text.",
+      "After a completed save, verify a later editing burst schedules and completes another save.",
+      "Before close() or open() returns, verify the departed document’s latest accepted edit is readable from the store.",
+      "Exercise an inline onSaved callback that calls open(C) while an outer open(B) is retiring A; C must remain selected.",
+      "Exercise an inline onSaved callback that calls close() while an outer open(B) is retiring A; the editor must remain closed.",
+      "Reopen the same document key and verify a fresh visit and subscription are created.",
+      "Run the public PHP syntax check after any Action.",
+      "Confirm Preview still publishes after 40 ms of quiet, hide() discards an unpublished query, and the preview remains reusable."
+    ],
+    "forbidden_effects": [
+      "Do not write to the store on every edit.",
+      "Do not save an intermediate value from an editing burst after a later value has been accepted in that burst.",
+      "Do not allow a canceled or superseded trailing callback to perform an additional stale write.",
+      "Do not let completion of an earlier open() overwrite navigation or closure initiated later by an inline save callback.",
+      "Do not lose the departed document’s latest accepted edit when opening another document, closing, or disposing.",
+      "Do not reuse a departed Visit or its subscription for a later open, including a same-key reopen.",
+      "Do not change the adjacent Preview behavior or its 40 ms delay.",
+      "Do not change the synchronous public interfaces or the injected store/timer interfaces."
+    ],
+    "lifecycle_identity": [
+      "Each open(id) creates a fresh Visit and fresh store subscription, even when reopening the same id.",
+      "A pending edit belongs to the Visit and document id that accepted it; retirement must commit it to that departed document, not to a newly selected document.",
+      "Retiring or disposing a Visit must prevent its timer and subscription from remaining active after retirement.",
+      "The Preview trailing task has an independent lifecycle and is outside this maintenance change."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Workspace edits must be coalesced with the existing trailing utility using a 120 ms quiet interval."
+      },
+      {
+        "id": "O2",
+        "text": "Within one editing burst, only the latest accepted text may be written after the quiet interval."
+      },
+      {
+        "id": "O3",
+        "text": "After one burst saves, subsequent bursts in the same visit must continue to save."
+      },
+      {
+        "id": "O4",
+        "text": "When open(), close(), or dispose() retires a visit, that document’s latest accepted edit must be committed and available through the store before the synchronous operation returns."
+      },
+      {
+        "id": "O5",
+        "text": "Inline save integration may navigate or edit; a navigation request started later must retain precedence over an earlier outer navigation after the callback returns."
+      },
+      {
+        "id": "O6",
+        "text": "Every open, including a same-key reopen, must create a fresh visit and subscription while retired subscriptions are removed."
+      },
+      {
+        "id": "O7",
+        "text": "Existing Store delivery semantics, rendering roles, and public synchronous interfaces must be preserved."
+      },
+      {
+        "id": "O8",
+        "text": "Preview behavior must remain unchanged because it is outside the maintenance change."
+      }
+    ],
+    "ordering_barriers": [
+      "An accepted edit updates the pending trailing value; a later edit in the same burst supersedes that value before any write.",
+      "A normal burst write occurs only after 120 ms without another edit.",
+      "Retirement must make the departed document’s latest accepted edit durable before open(), close(), or dispose() returns.",
+      "Retirement cleanup and document rendering must be ordered so an inline save callback’s later open() or close() cannot be overwritten by the earlier outer operation.",
+      "Store delivery writes the record before notifying a snapshot of subscriptions, and listeners removed before their turn are skipped.",
+      "A superseded timer handle must be canceled before scheduling its replacement; retirement must neutralize the pending handle so it cannot write again."
+    ],
+    "preservation": [
+      "Returning to a document restores its last edit from the store.",
+      "Later-started navigation takes precedence over earlier navigation even when saving the departed document invokes reentrant navigation.",
+      "close() leaves the editor closed, open(id) renders the selected stored document, and dispose() retains close semantics.",
+      "Save integrations receive committed records and onSaved remains inline and callback-capable.",
+      "Output functions remain observation sinks; navigation continues through the Workspace API.",
+      "Store records remain independent of mounted views, and store subscription delivery behavior remains unchanged.",
+      "The public methods and injected store/timer interfaces remain synchronous and unchanged.",
+      "Preview retains its 40 ms trailing publication, hide cancellation, and reusability."
+    ],
+    "scope": [
+      "Change only editor persistence for Visit/Workspace edits in src/workflow.php.",
+      "Use the existing Trailing utility for 120 ms edit coalescing.",
+      "Account for synchronous retirement and reentrant onSaved navigation.",
+      "Exclude Preview behavior and public interface redesign."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "The hotel incident worksheet currently writes on every edit. Coalesce edits using the existing trailing utility: after a 120 ms quiet interval, write only the latest text in that editing burst."
+      },
+      {
+        "file": "TASK",
+        "quote": "Subsequent bursts must continue to save. Preserve other behavior and public interfaces."
+      },
+      {
+        "file": "TASK",
+        "quote": "The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "Returning to a document restores the user's last edit."
+      },
+      {
+        "file": "README.md",
+        "quote": "Later navigation means the navigation request that starts later takes precedence, even if an earlier request returns afterward."
+      },
+      {
+        "file": "README.md",
+        "quote": "When close/open returns, the departed document's last accepted edit is available\nthrough the store, even if the next view selects a different document."
+      },
+      {
+        "file": "README.md",
+        "quote": "`createSearchPreview` is an adjacent transient search panel. It publishes after a\n40 ms quiet interval; hiding it discards an unpublished query. It can be reused."
+      },
+      {
+        "file": "README.md",
+        "quote": "The public methods are synchronous. Output render functions observe state; navigation\ncomes through the workspace API, including its `onSaved` integration."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Store delivery writes first, snapshots subscriptions, and skips removed listeners."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "onSaved is called inline and can navigate or edit; rendering is an output sink."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Every open creates a fresh visit and subscription, including same-key reopen."
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "$this->task=new Trailing($env,120,function($text) use ($env,$id) { $env->write($id,$text); });"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function accept($text) { $this->env->write($this->id,$text); }"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function push($value) {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=$value;\n        $this->handle=$this->env->schedule(function() { $this->flush(); }, $this->delay);\n    }"
+      }
+    ],
+    "triggers": [
+      "Visit::accept($text), reached through Workspace::edit($text), starts or refreshes the 120 ms trailing save.",
+      "The scheduled trailing callback commits the latest pending text after the quiet interval.",
+      "Workspace::open($id), close(), and dispose() retire the current visit and therefore require pending-edit handling before return.",
+      "An inline onSaved integration invoked by env->write may reenter Workspace navigation or editing.",
+      "Preview::query($text) and Preview::hide() remain independent existing triggers."
+    ],
+    "unknowns": [
+      "The public sources do not define the concrete env->write implementation or the exact committed-record shape delivered to onSaved.",
+      "The public sources do not specify an error/exception policy for store writes, timer operations, output sinks, or integration callbacks.",
+      "The public sources require observable navigation outcomes but do not mandate a particular internal sequencing implementation for retirement, rendering, flushing, and subscription removal.",
+      "No public behavioral test suite is supplied; VISIBLE_CHECKS.md describes syntax/build checks only."
+    ]
+  },
+  "origin": "success",
+  "reflection_update": {
+    "change_summary": [
+      "Added new reusable guidance for visit-owned trailing persistence with synchronous boundary flushing and later-started navigation precedence.",
+      "No existing or related experience was supplied, so there is no lineage that can be revised or merged; the guidance captures an independent composite mechanism evidenced by the public task, README, host API, and accepted attempt 1.",
+      "The guidance retains all applicable obligations: 120 ms latest-value coalescing, repeatable later bursts, durable retirement, inline reentry precedence, fresh visits and subscriptions, synchronous interfaces, store semantics, and unchanged preview behavior."
+    ],
+    "failure_attribution": "not_applicable",
+    "operation": "new",
+    "reason": "Attempt 1 was accepted after changing Visit::accept to push into its existing 120 ms Trailing task and flushing that visit on departure. The public sources additionally require synchronous retirement durability, fresh visits, inline callback navigation precedence, and preservation of the independent preview policy. With an empty experience catalog and no related experiences, new guidance is necessary.",
+    "supporting_attempts": [
+      1
+    ],
+    "target_sha256s": []
+  },
+  "related_experiences": [],
+  "source_sha256": "309e3248a8c0638a8adee4e71f0f518039dff72647de3d7f9dc3407f1a9c5472",
+  "status": "awaiting_content_review",
+  "task": "The hotel incident worksheet currently writes on every edit. Coalesce edits using the existing trailing utility: after a 120 ms quiet interval, write only the latest text in that editing burst. Subsequent bursts must continue to save. Preserve other behavior and public interfaces. The adjacent search preview is outside this maintenance change.\n",
+  "training_accepted": true,
+  "trajectory": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "9f9b13bf5570ab4d3cc02979635321843afe3b603bf261444000d412ad27902f",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "1c25feae92e5ccaaa29df212b9f248f07a4d723dd9f2ce1dcbea10574b64af52",
+        "docs/host-api.md": "3e0bc0b0bd7a4facd4b5135f81f947636e682f22c5b56c7782500db6fb061211",
+        "src/workflow.php": "74b6582d5a843c84bcc44e2596668eb11c113ee2f10d2a98602e200aa12c973d"
+      },
+      "candidate_sources": {
+        "README.md": "# Hotel incident worksheet\n\n\nThe workspace API drives a document editor and its save badge. The workspace store\nholds draft text across navigation and closed editor views. Returning to a document\nrestores the user's last edit. Save integrations receive committed records and may\nselect another document synchronously. Later navigation means the navigation request that starts later takes precedence, even if an earlier request returns afterward. For example, if open(B) starts and saving the departed A invokes a callback that calls open(C), C remains selected after the callback and the outer open(B) return. If that callback calls close() instead, the editor remains closed after the outer open(B) returns. These are navigation results, independent of when the departed document's save occurs.\nWhen close/open returns, the departed document's last accepted edit is available\nthrough the store, even if the next view selects a different document.\n\n`createSearchPreview` is an adjacent transient search panel. It publishes after a\n40 ms quiet interval; hiding it discards an unpublished query. It can be reused.\n\nThe public methods are synchronous. Output render functions observe state; navigation\ncomes through the workspace API, including its `onSaved` integration. `store` provides\n`read`, `write` and `subscribe`; `timers` provides `schedule(callback, delay)` and\n`cancel(handle)`. Production timers use the browser's timers. Keep these interfaces.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"PHP 7.4.3\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true\n}\n",
+        "docs/host-api.md": "# Host integration\n\nopen(id), edit(text), close() and dispose() are synchronous entry points.\nThe store owns persisted document records independently of any mounted view.\nStore delivery writes first, snapshots subscriptions, and skips removed listeners.\nonSaved is called inline and can navigate or edit; rendering is an output sink.\nEvery open creates a fresh visit and subscription, including same-key reopen.\nInjected timers provide schedule(callback,delay) and cancel(handle).\nThe preview is transient and independent of the editor's persistence policy.\n",
+        "src/workflow.php": "<?php\nclass Store {\n    private $records, $listeners = [], $serial = 0, $revision = 0;\n    function __construct($records) { $this->records = $records; }\n    function read($id) { return $this->records[$id] ?? ''; }\n    function subscribe($fn) { $token = ++$this->serial; $this->listeners[$token] = $fn; return $token; }\n    function stop($token) { unset($this->listeners[$token]); }\n    function write($id, $text) {\n        $this->records[$id] = $text;\n        $event = ['id'=>$id, 'text'=>$text, 'revision'=>++$this->revision];\n        foreach ($this->listeners as $token=>$fn) if (isset($this->listeners[$token])) $fn($event);\n        return $event;\n    }\n}\nclass Trailing {\n    private $env, $delay, $work, $handle = null, $pending = null;\n    function __construct($env, $delay, $work) { $this->env=$env; $this->delay=$delay; $this->work=$work; }\n    function push($value) {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=$value;\n        $this->handle=$this->env->schedule(function() { $this->flush(); }, $this->delay);\n    }\n    function flush() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $value=$this->pending; $this->pending=null; $this->handle=null;\n        if ($value !== null) ($this->work)($value);\n    }\n    function cancel() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=null; $this->handle=null;\n    }\n}\n\nclass Visit {\n    private $env, $id, $stop, $task;\n    function __construct($env, $id) {\n        $this->env=$env; $this->id=$id;\n        $token=$env->store->subscribe(function($e) use ($env, $id) { if ($e['id']===$id) $env->output('status',$e); });\n        $this->stop=function() use ($env, $token) { $env->store->stop($token); };\n        $this->task=new Trailing($env,120,function($text) use ($env,$id) { $env->write($id,$text); });\n    }\n    function accept($text) { $this->task->push($text); }\n    function depart() { ($this->stop)();$this->env->output('document',null);$this->task->flush(); }\n}\nclass Workspace {\n    private $env, $current=null, $generation=0;\n    function __construct($env) { $this->env=$env; }\n    private function retire() { $old=$this->current; $this->current=null; if ($old) $old->depart(); else $this->env->output('document',null); }\n    function open($id) { $ticket=++$this->generation; $this->retire(); if ($ticket!==$this->generation) return; $this->current=new Visit($this->env,$id); $this->env->output('document',['id'=>$id,'text'=>$this->env->store->read($id)]); }\n    function edit($text) { $selected=$this->current; if ($selected) $selected->accept($text); }\n    function close() { ++$this->generation; $this->retire(); }\n    function dispose() { $this->close(); }\n}\nclass Preview {\n    private $task;\n    function __construct($env) { $this->task=new Trailing($env,40,function($q) use ($env) { $env->output('preview',['query'=>$q]); }); }\n    function query($text) { $this->task->push($text); }\n    function hide() { $this->task->cancel(); }\n}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.php",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ]
+}

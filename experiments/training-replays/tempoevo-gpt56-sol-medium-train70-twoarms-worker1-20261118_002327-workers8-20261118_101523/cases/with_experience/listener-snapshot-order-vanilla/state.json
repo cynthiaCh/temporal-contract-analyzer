@@ -1,0 +1,530 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "81b872186ec7455d361453a2b788e1e252823c35b98372763181741fda405136",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "package.json": "7984c67f416880985803329ef982d2ab714819400f5cae2a06568ed077db0683",
+        "src/channel.js": "ba40ce05391f80582611e3850cc8f2c45a5db8d39a31b753174a690dcefc3a85",
+        "src/metrics-consumer.js": "73445d7fb5ede97450b4f339370c1f0987394808ce312bb0407694575b380213",
+        "src/presence-panel.js": "606650cc1f4c3e857ed5266173622b545a7dc713c9092735538f889014e9f4ae",
+        "src/render-workspace.js": "0d1412acc6eeda2ea6fa3d1b50314be93fa28b7e74e124faec0354129aa19035",
+        "src/subscription.js": "9d0ceb1a2dd1b20bebb383b2dc4ce2baec61d9e0ddd2f01ba2cb90254ec2300f",
+        "src/workspace-navigation.js": "3745d2d03240263eea523df10e5bf4d6b7c52aa20496406b1959035b2fe2040d"
+      },
+      "candidate_sources": {
+        "README.md": "# Presence snapshots\n\nThe panel displays full online-user snapshots, not an append-only event history.\nWithin one visit, channel event arrival order defines snapshot freshness.\nDecoding compressed frames can finish out of order. Once a newer snapshot has\nbeen published, an older frame must not roll the panel back. If an earlier\nframe finishes before any newer snapshot is published, it may still be shown.\nThis ordering is per visit; revisiting the same channel starts a new visit.\nClosing stops publication, but pending decodes can still settle.\nMetrics remains an incremental-only observer and must not adopt panel policy.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\n  \"name\": \"listener-snapshot-order-vanilla-fixture\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+        "src/channel.js": "// Presence frames are full snapshots; see ../README.md for ordering semantics.\nclass PresenceEvent extends Event {\n  constructor(detail) {\n    super(\"presence\");\n    this.detail = detail;\n  }\n}\n\nexport function createPresenceChannel(token, { decode = (value) => value } = {}) {\n  const target = new EventTarget();\n  const emit = (kind) => target.dispatchEvent(new PresenceEvent(`${token}:${kind}`));\n  return {\n    target,\n    decode,\n    connect(bootstrapMode) {\n      if (bootstrapMode === \"deferred\") queueMicrotask(() => emit(\"bootstrap\"));\n      else emit(\"bootstrap\");\n    },\n    emitUpdate() {\n      emit(\"update\");\n    },\n  };\n}\n\nexport async function observeChannel({ token, bootstrapMode }) {\n  const events = [];\n  const channel = createPresenceChannel(token);\n  channel.connect(bootstrapMode);\n  channel.target.addEventListener(\"presence\", (event) => events.push(event.detail));\n  await Promise.resolve();\n  channel.emitUpdate();\n  return { events };\n}\n",
+        "src/metrics-consumer.js": "import { observeChannel } from \"./channel.js\";\n\nexport function collectMetrics(token) {\n  // Metrics deliberately attach after the synchronous bootstrap and count deltas only.\n  return observeChannel({ token, bootstrapMode: \"synchronous\" });\n}\n",
+        "src/presence-panel.js": "import { createPresenceChannel } from \"./channel.js\";\nimport { subscribeChannel } from \"./subscription.js\";\n\nexport function createPresencePanel(publish) {\n  let currentVisit = null;\n\n  const retireCurrentVisit = () => {\n    const visit = currentVisit;\n    currentVisit = null;\n    if (visit && visit.release) visit.release();\n  };\n\n  return {\n    show(channel, bootstrapMode = \"synchronous\") {\n      retireCurrentVisit();\n\n      const visit = { release: null };\n      currentVisit = visit;\n      let release;\n      try {\n        release = subscribeChannel(channel, bootstrapMode, (value) => {\n          if (currentVisit === visit) publish(value);\n        });\n      } catch (error) {\n        if (currentVisit === visit) currentVisit = null;\n        throw error;\n      }\n\n      if (currentVisit === visit) visit.release = release;\n      else release();\n    },\n    close() {\n      retireCurrentVisit();\n    },\n  };\n}\n\nexport async function renderPresence(token, bootstrapMode) {\n  const events = [];\n  const panel = createPresencePanel((value) => events.push(value));\n  const channel = createPresenceChannel(token);\n  panel.show(channel, bootstrapMode);\n  await Promise.resolve();\n  channel.emitUpdate();\n  panel.close();\n  return { events };\n}\n",
+        "src/render-workspace.js": "import { collectMetrics } from \"./metrics-consumer.js\";\nimport { renderPresence } from \"./presence-panel.js\";\n\nexport async function render({ token, bootstrapMode }) {\n  const [presence, metrics] = await Promise.all([\n    renderPresence(token, bootstrapMode),\n    collectMetrics(token),\n  ]);\n  return { presence, metrics };\n}\n",
+        "src/subscription.js": "// The decoder may return a value or a Promise (compressed network frames).\n// EventTarget removal detaches reception; an already started decode still settles.\nexport function subscribeChannel(channel, bootstrapMode, receive) {\n  let active = true;\n  let arrival = 0;\n  let published = 0;\n\n  const publish = (sequence, value) => {\n    if (!active || sequence <= published) return;\n    published = sequence;\n    receive(value);\n  };\n\n  const listener = (event) => {\n    if (!active) return;\n    const sequence = ++arrival;\n    const decoded = channel.decode(event.detail);\n    if (decoded && typeof decoded.then === \"function\") {\n      decoded.then((value) => publish(sequence, value));\n    } else {\n      publish(sequence, decoded);\n    }\n  };\n\n  channel.target.addEventListener(\"presence\", listener);\n  try {\n    channel.connect(bootstrapMode);\n  } catch (error) {\n    active = false;\n    channel.target.removeEventListener(\"presence\", listener);\n    throw error;\n  }\n  return () => {\n    active = false;\n    channel.target.removeEventListener(\"presence\", listener);\n  };\n}\n",
+        "src/workspace-navigation.js": "import { createPresencePanel } from \"./presence-panel.js\";\n\n// Presence publication can synchronously select a different room or hide the\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot).\n// Reusing a transport object on a later visit is supported by the workspace.\nexport function createWorkspaceNavigation(renderState) {\n  const panel = createPresencePanel((value) => renderState(value, navigation));\n  const navigation = {\n    select(channel, mode = \"synchronous\") { panel.show(channel, mode); },\n    hide() { panel.close(); },\n  };\n  return navigation;\n}\n"
+      },
+      "delivered_sha256s": [
+        "2b46ebef0210d193cf3c224d408cd690d5870460673f7bc67205090a7ff7b310",
+        "b470b9906940cd4fc90dd20201cf69a5c82cff16c7d4dd4fe2172f46ec9dc116",
+        "092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce",
+        "e674d9c3e84a302fa3aea69789cc2d962616a40c69926bfc357cf885cede0e94",
+        "4a344162be345350744e4de69aeb9d51b8d11f805cc594c0392e26d5649535d1"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/channel.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/metrics-consumer.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/presence-panel.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/render-workspace.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/subscription.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/workspace-navigation.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "Synchronous bootstrap is received and published immediately after show.",
+      "Deferred bootstrap is received, followed by later updates.",
+      "Both decode completion orders obey freshness: an older frame may publish first, but it cannot publish after a newer frame has published.",
+      "Closing during a pending decode prevents its eventual publication while allowing the decode to settle.",
+      "Selecting a replacement visit during a pending decode prevents the old result from publishing and permits current-visit updates.",
+      "Revisiting the same channel object uses fresh visit identity and fresh ordering state.",
+      "During synchronous bootstrap publication, nested select or hide remains authoritative after the outer show returns; the old listener cannot admit later events.",
+      "Metrics retains its existing delta-only behavior and does not receive synchronous bootstrap.",
+      "Run the public syntax/build checks after any Action."
+    ],
+    "forbidden_effects": [
+      "Do not change the metrics consumer or make it receive the synchronous bootstrap.",
+      "Do not treat presence snapshots as append-only events or combine them incrementally.",
+      "Do not let an older decoded snapshot roll back a newer snapshot already published in the same visit.",
+      "Do not publish results belonging to a closed or replaced visit.",
+      "Do not use channel/transport object identity as visit identity.",
+      "Do not let an outer reentrant show overwrite cleanup ownership established by nested navigation.",
+      "Do not require cancellation of pending decoding when closing; settlement without publication remains allowed.",
+      "Do not modify tests or configuration."
+    ],
+    "lifecycle_identity": [
+      "Each call that opens/shows a channel creates a distinct presence-panel visit.",
+      "Revisiting the same channel or transport object creates a new visit with independent authority and ordering state.",
+      "A visit loses publication authority before close or replacement can proceed through callback-capable behavior.",
+      "Listener cleanup belongs to the visit that created it; a returned cleanup handle is retained only if that visit is still current."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "The presence subscription must begin receiving events before connect can synchronously emit the bootstrap snapshot."
+      },
+      {
+        "id": "O2",
+        "text": "Synchronous decoded values must retain immediate publication behavior, including the ability of publication to synchronously select another channel or hide the panel."
+      },
+      {
+        "id": "O3",
+        "text": "Only the currently active visit may admit an event for decoding or publish its decoded result; close and replacement retire the old visit even if its physical listener cleanup is not yet available."
+      },
+      {
+        "id": "O4",
+        "text": "Within one visit, assign freshness by event arrival order. A decoded frame may publish if the visit is active and no newer-arriving frame has already published; once a newer frame publishes, older frames must not publish."
+      },
+      {
+        "id": "O5",
+        "text": "Advance the visit's published-freshness state before invoking the callback-capable publish function so reentrant navigation cannot restore stale authority."
+      },
+      {
+        "id": "O6",
+        "text": "After callback-capable startup returns a cleanup handle, install it only if its originating visit remains active; otherwise invoke that captured cleanup without disturbing cleanup installed by nested navigation."
+      },
+      {
+        "id": "O7",
+        "text": "Closing or replacing a visit must detach its reception and prevent already-started asynchronous decoding from publishing, while permitting that decoding to settle."
+      },
+      {
+        "id": "O8",
+        "text": "The metrics path must remain unchanged and continue attaching after synchronous bootstrap so that it counts deltas only."
+      }
+    ],
+    "ordering_barriers": [
+      "Install the presence event listener before invoking channel.connect for that visit.",
+      "Establish the new visit's logical identity and provisional cleanup ownership before connect or any other callback-capable startup.",
+      "Retire the previous visit before starting its replacement, and retire the current visit before close completes.",
+      "Check visit authority before starting decode and again when an asynchronous decode completes.",
+      "Record a frame's arrival sequence before decoding begins.",
+      "Record the published freshness watermark before calling publish.",
+      "Resolve cleanup ownership after startup returns without overwriting ownership created by nested navigation."
+    ],
+    "preservation": [
+      "Preserve immediate delivery for synchronously decoded presence values.",
+      "Preserve support for decoders that return either a direct value or a Promise.",
+      "Preserve the rule that an earlier frame may be shown when it finishes before any newer snapshot has published.",
+      "Preserve workspace navigation in which publication synchronously selects another room or hides the panel.",
+      "Preserve support for reusing the same transport object on a later visit.",
+      "Preserve close behavior that stops publication without requiring pending decodes to be cancelled.",
+      "Preserve the metrics consumer's incremental-only behavior and existing public interfaces."
+    ],
+    "scope": [
+      "Business-code changes are limited to the presence-panel subscription and lifecycle behavior under src/, principally src/subscription.js and src/presence-panel.js.",
+      "Workspace navigation behavior in src/workspace-navigation.js is an observable integration boundary to preserve.",
+      "src/metrics-consumer.js and its intentional post-bootstrap attachment behavior are out of modification scope.",
+      "Tests, configuration, scorer implementations, reference implementations, and hidden tests are outside scope."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Immediately after opening the presence panel, the initial online-user state is\nsometimes missing even though later presence updates appear."
+      },
+      {
+        "file": "TASK",
+        "quote": "Fix the presence\npanel while preserving its existing behavior, including workspace navigation."
+      },
+      {
+        "file": "TASK",
+        "quote": "Do not change the metrics consumer."
+      },
+      {
+        "file": "README.md",
+        "quote": "The panel displays full online-user snapshots, not an append-only event history."
+      },
+      {
+        "file": "README.md",
+        "quote": "Within one visit, channel event arrival order defines snapshot freshness."
+      },
+      {
+        "file": "README.md",
+        "quote": "Once a newer snapshot has\nbeen published, an older frame must not roll the panel back. If an earlier\nframe finishes before any newer snapshot is published, it may still be shown."
+      },
+      {
+        "file": "README.md",
+        "quote": "This ordering is per visit; revisiting the same channel starts a new visit."
+      },
+      {
+        "file": "README.md",
+        "quote": "Closing stops publication, but pending decodes can still settle."
+      },
+      {
+        "file": "README.md",
+        "quote": "Metrics remains an incremental-only observer and must not adopt panel policy."
+      },
+      {
+        "file": "src/subscription.js",
+        "quote": "// The decoder may return a value or a Promise (compressed network frames)."
+      },
+      {
+        "file": "src/subscription.js",
+        "quote": "// EventTarget removal detaches reception; an already started decode still settles."
+      },
+      {
+        "file": "src/channel.js",
+        "quote": "if (bootstrapMode === \"deferred\") queueMicrotask(() => emit(\"bootstrap\"));\n      else emit(\"bootstrap\");"
+      },
+      {
+        "file": "src/workspace-navigation.js",
+        "quote": "// Presence publication can synchronously select a different room or hide the\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot)."
+      },
+      {
+        "file": "src/workspace-navigation.js",
+        "quote": "// Reusing a transport object on a later visit is supported by the workspace."
+      },
+      {
+        "file": "src/metrics-consumer.js",
+        "quote": "// Metrics deliberately attach after the synchronous bootstrap and count deltas only."
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "These checks are required after an Action but do not test business behavior."
+      }
+    ],
+    "triggers": [
+      "Opening/showing the presence panel with synchronous bootstrap.",
+      "Opening/showing the presence panel with deferred bootstrap.",
+      "Receiving a presence frame whose decode is synchronous or asynchronous.",
+      "Decode completions occurring in a different order from event arrival.",
+      "Closing or hiding the panel while decoding is pending.",
+      "Selecting another channel while an old visit is active or decoding.",
+      "Publication synchronously reentering workspace navigation through select or hide.",
+      "Reopening the same channel object in a later visit."
+    ],
+    "unknowns": [
+      "Public sources do not specify decoder rejection or thrown-error handling; preserve existing behavior unless required by the stated obligations.",
+      "Public sources do not require cancellation of decoding or define a decoder cancellation API.",
+      "Public sources do not define error reporting, retry, persistence, or auditing behavior.",
+      "Public syntax/build checks do not establish the required business behavior.",
+      "Whether channel.connect itself can throw is not specified; no new exception policy should be inferred."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 1,
+  "diagnoses": [],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "finalized": true,
+  "first_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "repair_stop_reason": "oracle_accepted",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "f3bcc87cc7b125b40ca2d7b8afdf3cc3444530fee0652f938d105637e5f067fd",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9994650296867
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "36d5a4f4344de1fc874e0cb719c85290c4594e8508c64c4a9245d51c5c270402",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 24704,
+        "input_tokens": 32456,
+        "output_tokens": 3167,
+        "reasoning_output_tokens": 1641,
+        "total_tokens": 35623
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "581473210be3ebd67b0722ced3890cb760cf2c601a060f9c5f9c68328f9497c2",
+      "seconds": 59.673805112950504,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 24704,
+        "input_tokens": 32456,
+        "output_tokens": 3167,
+        "reasoning_output_tokens": 1641,
+        "total_tokens": 35623
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "e6773224ce3ba6feb4c26c80b5779cb9891900c180a65ef5fc12f5f890feb94c",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9995326828212
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "e96df5c5094ce5fda43ce3dd61ccc5c0487c93eb6e6a0fdc7ea4fd1066a385e0",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 18252,
+        "output_tokens": 1908,
+        "reasoning_output_tokens": 330,
+        "total_tokens": 20160
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "bcf89245f752d475ffcbf3943052f5d29ac30273596e8ee612bcd53a44632efe",
+      "seconds": 38.63926895800978,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 18252,
+        "output_tokens": 1908,
+        "reasoning_output_tokens": 330,
+        "total_tokens": 20160
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "90afe699436e7279dcc986b227d50a357c71a288653d2235d25355e5f1927086",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9986821776256
+          },
+          "number": 1,
+          "requests": 6,
+          "restart_reason": "initial",
+          "result_sha256": "8d0cd1d6b172ae2684f3b8990c8ace70afe9afe50b9783a21946fce4f6cb83fc",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 124416,
+        "input_tokens": 141105,
+        "output_tokens": 5161,
+        "reasoning_output_tokens": 1649,
+        "total_tokens": 146266
+      },
+      "requests": 6,
+      "reserved_requests": 24,
+      "result_sha256": "f6a337926573f35dba10effe38565ad73dcb394bf9b315ff537d209bd5a80356",
+      "seconds": 99.72429400216788,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 124416,
+        "input_tokens": 141105,
+        "output_tokens": 5161,
+        "reasoning_output_tokens": 1649,
+        "total_tokens": 146266
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "b5bc7f8eae1311cd873aff808da328678625e797a61204ec8095abd44b1457a5",
+      "seconds": 0.9905566433444619,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 1.1273950682953,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "97eafd8fd56e0795a51aa53d2929bdff9ebef8c1e5e96f55a52a33ef9565e986",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9961964562535
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "48385fdc742a1dab6fdedc9097d140ed73c084bf3203f337859e466e26748b3e",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 66269,
+        "output_tokens": 1105,
+        "reasoning_output_tokens": 114,
+        "total_tokens": 67374
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "75ebb28fae1c046065734ef301e511415843dc0dc0e6948c87e63121d31eeba0",
+      "seconds": 29.961940980516374,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 66269,
+        "output_tokens": 1105,
+        "reasoning_output_tokens": 114,
+        "total_tokens": 67374
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "training_accepted": true
+}

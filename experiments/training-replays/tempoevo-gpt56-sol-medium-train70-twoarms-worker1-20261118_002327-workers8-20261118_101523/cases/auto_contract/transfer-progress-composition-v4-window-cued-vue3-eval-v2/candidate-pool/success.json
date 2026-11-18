@@ -1,0 +1,974 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/session.js\n+++ candidate/src/session.js\n@@ -6,14 +6,14 @@\n   const n=++this.attempts, entry={fileId:v.file.id,attemptId:n,visitId:v.id,kind};\n   \n   this.host.record(entry);\n-  const progress={active:()=>this.current(v),audit:frame=>this.host.recordProgress?.({fileId:v.file.id,attemptId:n,frame}),\n-   view:(frame,order)=>{if(this.current(v)){this.host.showProgress?.({fileId:v.file.id,attemptId:n,frame});this.onState(this.snapshot());}}};\n+  const progress={active:()=>this.current(v),admit:()=>++v.arrivalOrder,audit:frame=>this.host.recordProgress?.({fileId:v.file.id,attemptId:n,frame}),\n+   view:(frame,order)=>{if(this.current(v)&&order>v.displayedOrder){v.displayedOrder=order;this.host.showProgress?.({fileId:v.file.id,attemptId:n,frame});this.onState(this.snapshot());}}};\n   const h=createAttempt(v.file,n,this.host.transport,this.host.onCancel,progress);this.tasks.set(n,h);return h;\n  }\n  notice(v,h){ this.host.showQueued({fileId:v.file.id,attemptId:h.attemptId,visitId:v.id,status:'queued'});}\n  release(v){const h=v.handle;v.handle=null;if(h)h.cancel();}\n  select(file){if(this.disposed)return null;const request=++this.serial,old=this.visit;this.visit=null;if(old)this.release(old);\n-  if(this.disposed||this.serial!==request)return null;const v={id:request,file,handle:null};this.visit=v;\n+  if(this.disposed||this.serial!==request)return null;const v={id:request,file,handle:null,arrivalOrder:0,displayedOrder:0};this.visit=v;\n   const h=this.enqueue(v,'select');if(this.current(v)){v.handle=h;this.notice(v,h);}else h.cancel();this.onState(this.snapshot());return h;}\n  retry(){const v=this.visit;if(!v||!v.handle||this.disposed)return null;v.handle.cancel();\n   const accepted=v;const h=this.enqueue(accepted,'retry');if(this.current(accepted))accepted.handle=h;else h.cancel();\n@@ -27,11 +27,12 @@\n  controller.signal.addEventListener('abort',()=>{stop();onCancel({file,attemptId,signal:controller.signal});},{once:true});\n  transport({file,attemptId,signal:controller.signal});\n  const feed=file.progressFeed;\n- if(feed){const listener=event=>{ const order=progress.admit?.()??0;\n-   const deliver=frame=>{ progress.audit?.(frame);progress.view?.(frame,order);};\n+ if(feed){let listening=true;\n+  const listener=event=>{if(progress.active&&!progress.active()){stop();return;}const order=progress.admit?.()??0;\n+   const deliver=frame=>{progress.audit?.(frame);if(!controller.signal.aborted)progress.view?.(frame,order);if(progress.active&&!progress.active())stop();};\n    const decoded=feed.decode(event.detail);if(decoded&&typeof decoded.then==='function')decoded.then(deliver);else deliver(decoded);};\n-  feed.start();feed.target.addEventListener('progress',listener);\n-  stop=()=>feed.target.removeEventListener('progress',listener);if(controller.signal.aborted)stop();}\n+  stop=()=>{if(!listening)return;listening=false;feed.target.removeEventListener('progress',listener);};\n+  feed.target.addEventListener('progress',listener);feed.start();if(controller.signal.aborted)stop();}\n  return {file,attemptId,signal:controller.signal,cancel(){if(!controller.signal.aborted)controller.abort();}};\n }\n \n",
+        "from_previous": "--- previous/src/session.js\n+++ candidate/src/session.js\n@@ -6,14 +6,14 @@\n   const n=++this.attempts, entry={fileId:v.file.id,attemptId:n,visitId:v.id,kind};\n   \n   this.host.record(entry);\n-  const progress={active:()=>this.current(v),audit:frame=>this.host.recordProgress?.({fileId:v.file.id,attemptId:n,frame}),\n-   view:(frame,order)=>{if(this.current(v)){this.host.showProgress?.({fileId:v.file.id,attemptId:n,frame});this.onState(this.snapshot());}}};\n+  const progress={active:()=>this.current(v),admit:()=>++v.arrivalOrder,audit:frame=>this.host.recordProgress?.({fileId:v.file.id,attemptId:n,frame}),\n+   view:(frame,order)=>{if(this.current(v)&&order>v.displayedOrder){v.displayedOrder=order;this.host.showProgress?.({fileId:v.file.id,attemptId:n,frame});this.onState(this.snapshot());}}};\n   const h=createAttempt(v.file,n,this.host.transport,this.host.onCancel,progress);this.tasks.set(n,h);return h;\n  }\n  notice(v,h){ this.host.showQueued({fileId:v.file.id,attemptId:h.attemptId,visitId:v.id,status:'queued'});}\n  release(v){const h=v.handle;v.handle=null;if(h)h.cancel();}\n  select(file){if(this.disposed)return null;const request=++this.serial,old=this.visit;this.visit=null;if(old)this.release(old);\n-  if(this.disposed||this.serial!==request)return null;const v={id:request,file,handle:null};this.visit=v;\n+  if(this.disposed||this.serial!==request)return null;const v={id:request,file,handle:null,arrivalOrder:0,displayedOrder:0};this.visit=v;\n   const h=this.enqueue(v,'select');if(this.current(v)){v.handle=h;this.notice(v,h);}else h.cancel();this.onState(this.snapshot());return h;}\n  retry(){const v=this.visit;if(!v||!v.handle||this.disposed)return null;v.handle.cancel();\n   const accepted=v;const h=this.enqueue(accepted,'retry');if(this.current(accepted))accepted.handle=h;else h.cancel();\n@@ -27,11 +27,12 @@\n  controller.signal.addEventListener('abort',()=>{stop();onCancel({file,attemptId,signal:controller.signal});},{once:true});\n  transport({file,attemptId,signal:controller.signal});\n  const feed=file.progressFeed;\n- if(feed){const listener=event=>{ const order=progress.admit?.()??0;\n-   const deliver=frame=>{ progress.audit?.(frame);progress.view?.(frame,order);};\n+ if(feed){let listening=true;\n+  const listener=event=>{if(progress.active&&!progress.active()){stop();return;}const order=progress.admit?.()??0;\n+   const deliver=frame=>{progress.audit?.(frame);if(!controller.signal.aborted)progress.view?.(frame,order);if(progress.active&&!progress.active())stop();};\n    const decoded=feed.decode(event.detail);if(decoded&&typeof decoded.then==='function')decoded.then(deliver);else deliver(decoded);};\n-  feed.start();feed.target.addEventListener('progress',listener);\n-  stop=()=>feed.target.removeEventListener('progress',listener);if(controller.signal.aborted)stop();}\n+  stop=()=>{if(!listening)return;listening=false;feed.target.removeEventListener('progress',listener);};\n+  feed.target.addEventListener('progress',listener);feed.start();if(controller.signal.aborted)stop();}\n  return {file,attemptId,signal:controller.signal,cancel(){if(!controller.signal.aborted)controller.abort();}};\n }\n \n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [],
+        "coverage": [
+          {
+            "analysis_scope": "inline script blocks only; template expressions, generated code and Vue runtime behavior are not analyzed",
+            "path": "src/Workspace.vue",
+            "status": "parsed"
+          },
+          {
+            "path": "src/session.js",
+            "status": "parsed"
+          }
+        ],
+        "events": [
+          {
+            "arguments": [],
+            "binding": "unresolved",
+            "callee": "AbortController",
+            "column": 18,
+            "conditions": [],
+            "end_column": 39,
+            "end_line": 26,
+            "id": "src/session.js::e101",
+            "kind": "call",
+            "line": 26,
+            "path": "src/session.js",
+            "receiver": "",
+            "scope": "<module>/createAttempt",
+            "text": "new AbortController()"
+          },
+          {
+            "column": 49,
+            "conditions": [],
+            "end_column": 53,
+            "end_line": 26,
+            "id": "src/session.js::e103",
+            "kind": "function_definition",
+            "line": 26,
+            "path": "src/session.js",
+            "scope": "<module>/createAttempt/stop",
+            "text": "()=>"
+          },
+          {
+            "arguments": [],
+            "binding": "ambiguous_or_reassigned",
+            "callee": "stop",
+            "column": 49,
+            "conditions": [],
+            "end_column": 55,
+            "end_line": 27,
+            "id": "src/session.js::e107",
+            "kind": "call",
+            "line": 27,
+            "path": "src/session.js",
+            "receiver": "",
+            "scope": "<module>/createAttempt/<callback>",
+            "text": "stop()"
+          },
+          {
+            "arguments": [
+              "{file,attemptId,signal:controller.signal}"
+            ],
+            "binding": "parameter_callback",
+            "callee": "onCancel",
+            "column": 56,
+            "conditions": [],
+            "end_column": 107,
+            "end_line": 27,
+            "id": "src/session.js::e108",
+            "kind": "call",
+            "line": 27,
+            "path": "src/session.js",
+            "receiver": "",
+            "scope": "<module>/createAttempt/<callback>",
+            "text": "onCancel({file,attemptId,signal:controller.signal})"
+          },
+          {
+            "arguments": [
+              "'abort'",
+              "()=>{stop();onCancel({file,attemptId,signal:controller.signal});}",
+              "{once:true}"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "controller.signal.addEventListener",
+            "column": 1,
+            "conditions": [],
+            "end_column": 122,
+            "end_line": 27,
+            "id": "src/session.js::e109",
+            "kind": "call",
+            "line": 27,
+            "path": "src/session.js",
+            "receiver": "controller.signal",
+            "scope": "<module>/createAttempt",
+            "text": "controller.signal.addEventListener('abort',()=>{stop();onCancel({file,attemptId,signal:controller.signal});},{once:true})"
+          },
+          {
+            "arguments": [
+              "{file,attemptId,signal:controller.signal}"
+            ],
+            "binding": "parameter_callback",
+            "callee": "transport",
+            "column": 1,
+            "conditions": [],
+            "end_column": 53,
+            "end_line": 28,
+            "id": "src/session.js::e110",
+            "kind": "call",
+            "line": 28,
+            "path": "src/session.js",
+            "receiver": "",
+            "scope": "<module>/createAttempt",
+            "text": "transport({file,attemptId,signal:controller.signal})"
+          },
+          {
+            "column": 4,
+            "conditions": [],
+            "end_column": 8,
+            "end_line": 30,
+            "expression": "feed",
+            "id": "src/session.js::e112",
+            "kind": "guard",
+            "line": 30,
+            "path": "src/session.js",
+            "scope": "<module>/createAttempt",
+            "text": "feed"
+          },
+          {
+            "column": 46,
+            "conditions": [],
+            "end_column": 87,
+            "end_line": 32,
+            "expression": "decoded&&typeof decoded.then==='function'",
+            "id": "src/session.js::e122",
+            "kind": "guard",
+            "line": 32,
+            "path": "src/session.js",
+            "scope": "<module>/createAttempt/listener",
+            "text": "decoded&&typeof decoded.then==='function'"
+          },
+          {
+            "arguments": [
+              "deliver"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "decoded.then",
+            "column": 88,
+            "conditions": [
+              "if decoded&&typeof decoded.then==='function'"
+            ],
+            "end_column": 109,
+            "end_line": 32,
+            "id": "src/session.js::e123",
+            "kind": "call",
+            "line": 32,
+            "path": "src/session.js",
+            "receiver": "decoded",
+            "scope": "<module>/createAttempt/listener",
+            "text": "decoded.then(deliver)"
+          },
+          {
+            "arguments": [
+              "'progress'",
+              "listener"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "feed.target.removeEventListener",
+            "column": 11,
+            "conditions": [],
+            "end_column": 63,
+            "end_line": 34,
+            "id": "src/session.js::e129",
+            "kind": "call",
+            "line": 34,
+            "path": "src/session.js",
+            "receiver": "feed.target",
+            "scope": "<module>/createAttempt/<callback>#2",
+            "text": "feed.target.removeEventListener('progress',listener)"
+          },
+          {
+            "column": 67,
+            "conditions": [
+              "if feed"
+            ],
+            "end_column": 92,
+            "end_line": 34,
+            "expression": "controller.signal.aborted",
+            "id": "src/session.js::e131",
+            "kind": "guard",
+            "line": 34,
+            "path": "src/session.js",
+            "scope": "<module>/createAttempt",
+            "text": "controller.signal.aborted"
+          },
+          {
+            "arguments": [],
+            "binding": "ambiguous_or_reassigned",
+            "callee": "stop",
+            "column": 93,
+            "conditions": [
+              "if feed",
+              "if controller.signal.aborted"
+            ],
+            "end_column": 99,
+            "end_line": 34,
+            "id": "src/session.js::e132",
+            "kind": "call",
+            "line": 34,
+            "path": "src/session.js",
+            "receiver": "",
+            "scope": "<module>/createAttempt",
+            "text": "stop()"
+          },
+          {
+            "column": 49,
+            "conditions": [],
+            "end_column": 57,
+            "end_line": 35,
+            "id": "src/session.js::e133",
+            "kind": "function_definition",
+            "line": 35,
+            "path": "src/session.js",
+            "scope": "<module>/createAttempt/cancel",
+            "text": "cancel()"
+          },
+          {
+            "column": 61,
+            "conditions": [],
+            "end_column": 87,
+            "end_line": 35,
+            "expression": "!controller.signal.aborted",
+            "id": "src/session.js::e134",
+            "kind": "guard",
+            "line": 35,
+            "path": "src/session.js",
+            "scope": "<module>/createAttempt/cancel",
+            "text": "!controller.signal.aborted"
+          },
+          {
+            "arguments": [],
+            "binding": "local_value_unresolved",
+            "callee": "controller.abort",
+            "column": 88,
+            "conditions": [
+              "if !controller.signal.aborted"
+            ],
+            "end_column": 106,
+            "end_line": 35,
+            "id": "src/session.js::e135",
+            "kind": "call",
+            "line": 35,
+            "path": "src/session.js",
+            "receiver": "controller",
+            "scope": "<module>/createAttempt/cancel",
+            "text": "controller.abort()"
+          },
+          {
+            "column": 65,
+            "conditions": [],
+            "end_column": 102,
+            "end_line": 39,
+            "expression": "value&&typeof value.then==='function'",
+            "id": "src/session.js::e141",
+            "kind": "guard",
+            "line": 39,
+            "path": "src/session.js",
+            "scope": "<module>/collectProgressTelemetry/listener",
+            "text": "value&&typeof value.then==='function'"
+          },
+          {
+            "arguments": [
+              "recordDelta"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "value.then",
+            "column": 103,
+            "conditions": [
+              "if value&&typeof value.then==='function'"
+            ],
+            "end_column": 126,
+            "end_line": 39,
+            "id": "src/session.js::e142",
+            "kind": "call",
+            "line": 39,
+            "path": "src/session.js",
+            "receiver": "value",
+            "scope": "<module>/collectProgressTelemetry/listener",
+            "text": "value.then(recordDelta)"
+          },
+          {
+            "arguments": [
+              "'progress'",
+              "listener"
+            ],
+            "binding": "parameter_member",
+            "callee": "feed.target.removeEventListener",
+            "column": 12,
+            "conditions": [],
+            "end_column": 64,
+            "end_line": 41,
+            "id": "src/session.js::e149",
+            "kind": "call",
+            "line": 41,
+            "path": "src/session.js",
+            "receiver": "feed.target",
+            "scope": "<module>/collectProgressTelemetry/<callback>",
+            "text": "feed.target.removeEventListener('progress',listener)"
+          }
+        ],
+        "findings": [
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "Co-occurrence only; verify that both concern the same work and lifecycle.",
+            "evidence": [
+              "src/session.js::e123",
+              "src/session.js::e129"
+            ],
+            "message": "Completion callback registration and listener removal coexist in this file.",
+            "path": "src/session.js",
+            "review_question": "If related, is validity checked when in-flight work completes after listener removal?",
+            "rule": "continuation-and-listener-removal",
+            "scope": "<module>/createAttempt/listener"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/session.js::e101",
+              "src/session.js::e103",
+              "src/session.js::e107",
+              "src/session.js::e108",
+              "src/session.js::e123",
+              "src/session.js::e129",
+              "src/session.js::e132",
+              "src/session.js::e133",
+              "src/session.js::e135"
+            ],
+            "message": "完成回调/等待点与关闭、重新打开或清理边界名称线索出现在同一词法单元。",
+            "path": "src/session.js",
+            "review_question": "关闭、卸载和切换是否是不同边界？哪些边界应使旧结果失效，哪些工作应继续？需从仓库证据确认。",
+            "rule": "continuation-lifecycle-boundaries",
+            "scope": "<module>/createAttempt"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/session.js::e101",
+              "src/session.js::e103",
+              "src/session.js::e107",
+              "src/session.js::e108",
+              "src/session.js::e112",
+              "src/session.js::e122",
+              "src/session.js::e123",
+              "src/session.js::e129",
+              "src/session.js::e131",
+              "src/session.js::e132",
+              "src/session.js::e133",
+              "src/session.js::e134",
+              "src/session.js::e135"
+            ],
+            "message": "列出相关词法单元中的条件判断，以及关闭/返回清理函数内的状态写入；存在判断不等于有效性保护。",
+            "path": "src/session.js",
+            "review_question": "回调检查了什么状态？关闭、卸载、重开分别更新了什么？只取消计时器能否约束已发请求？相同标识重新使用时判断是否仍适用？",
+            "rule": "continuation-guard-state-review",
+            "scope": "<module>/createAttempt"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/session.js::e142",
+              "src/session.js::e149"
+            ],
+            "message": "完成回调/等待点与关闭、重新打开或清理边界名称线索出现在同一词法单元。",
+            "path": "src/session.js",
+            "review_question": "关闭、卸载和切换是否是不同边界？哪些边界应使旧结果失效，哪些工作应继续？需从仓库证据确认。",
+            "rule": "continuation-lifecycle-boundaries",
+            "scope": "<module>/collectProgressTelemetry"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/session.js::e141",
+              "src/session.js::e142",
+              "src/session.js::e149"
+            ],
+            "message": "列出相关词法单元中的条件判断，以及关闭/返回清理函数内的状态写入；存在判断不等于有效性保护。",
+            "path": "src/session.js",
+            "review_question": "回调检查了什么状态？关闭、卸载、重开分别更新了什么？只取消计时器能否约束已发请求？相同标识重新使用时判断是否仍适用？",
+            "rule": "continuation-guard-state-review",
+            "scope": "<module>/collectProgressTelemetry"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "回调未位于另一个嵌套函数体，且此前未发现 await/yield；只是源码上的候选直接通知路径。名称、循环元素和路径可达性未作类型/控制流证明，未证明它与其他文件中的订阅者是同一实例。",
+            "evidence": [
+              "src/session.js::e109",
+              "src/session.js::e110"
+            ],
+            "message": "成员写入或集合/持久化名称调用之后，同一非 async 函数直接调用参数回调或循环取出的可调用项。",
+            "path": "src/session.js",
+            "review_question": "该调用是否通知外部消费者？消费者能否在返回前重新进入当前对象？调用后继续使用的状态是否仍有效，最新请求如何决定优先级？",
+            "rule": "state-write-inline-notification",
+            "scope": "<module>/createAttempt"
+          }
+        ],
+        "limitations": [
+          "Syntax facts, candidate call links and review hints are not verified contracts, bugs, severity or difficulty scores.",
+          "API names are clues. Types, aliases, control flow, dynamic dispatch and callback targets are not fully resolved.",
+          "Local order is lexical order within a block; branches, exceptions, loops, short-circuiting and execution remain unchecked.",
+          "await may suspend; cancellation does not imply completed work or cleanup. Listener removal does not cancel work already started.",
+          "if/try/finally syntax does not prove adequate protection. The absence of hints does not imply safety.",
+          "No hidden scorers, reference patches, model results or human profiles are read. Operators must verify input provenance.",
+          "Vue analysis covers inline <script>/<script setup> in JS/TS/JSX/TSX only. Templates, styles, custom-block transforms, generated code and runtime scheduling are excluded. Script blocks are independent; cross-block bindings and instance dispatch remain unresolved. parsed means script parsing succeeded, not component behaviour was verified."
+        ],
+        "relations": [
+          {
+            "after": "src/session.js::e110",
+            "before": "src/session.js::e109",
+            "kind": "lexical_write_before_direct_call",
+            "qualification": "Source order in one function; path execution, callback type and reentry remain unproven."
+          }
+        ],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "parsed",
+        "target_definitions": []
+      },
+      "sources": {
+        "README.md": "# Laboratory microscopy series upload\n\nThis workspace selects payload files, starts transfers, records queue and\nprogress history, and paints progress for its open panel. Runtime: Node 22.23.2.\nDependencies: Vue 3.4.38; jsdom 22.1.0; esbuild 0.21.5. See src for the session/component entry API.\n\nSelecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit.\nThe source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order.\n\nrecordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size.\n\nOne startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle.\n\nThe same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance.\nRemoving a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred.\n\nFiles have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset.\nA decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime.\n\nThe mounted component delegates synchronous select/retry/hide commands to its\nsession, projects state through the actual framework, and disposes its session\non lifecycle teardown. The source uses EventTarget and AbortController; decode\nmay return a value or Promise. jQuery commands use synchronous triggerHandler.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package-lock.json": "{\n  \"name\": \"transfer-progress-composition-v4-window-cued-vue3-fixture\",\n  \"version\": \"0.1.0\",\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {\n      \"name\": \"transfer-progress-composition-v4-window-cued-vue3-fixture\",\n      \"version\": \"0.1.0\",\n      \"dependencies\": {\n        \"esbuild\": \"0.21.5\",\n        \"jsdom\": \"22.1.0\",\n        \"vue3\": \"npm:vue@3.4.38\"\n      }\n    },\n    \"node_modules/@babel/helper-string-parser\": {\n      \"version\": \"7.29.7\",\n      \"resolved\": \"https://registry.npmjs.org/@babel/helper-string-parser/-/helper-string-parser-7.29.7.tgz\",\n      \"integrity\": \"sha512-Pb5ijPrZ89GDH8223L4UP8i6QApWxs04RbPQJTeWDV0/keR2E36MeKnyr6LYmUUvqRRI+Iv87SuF1W6ErINzYw==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">=6.9.0\"\n      }\n    },\n    \"node_modules/@babel/helper-validator-identifier\": {\n      \"version\": \"7.29.7\",\n      \"resolved\": \"https://registry.npmjs.org/@babel/helper-validator-identifier/-/helper-validator-identifier-7.29.7.tgz\",\n      \"integrity\": \"sha512-qehxGkRj55h/ff8EMaJ+cYhyaKlHIxqYDn682wQD7RNp9UujOQsHog2uS0r2vzr4pW+sXf90NeeayjcNaX3fFg==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">=6.9.0\"\n      }\n    },\n    \"node_modules/@babel/parser\": {\n      \"version\": \"7.29.9\",\n      \"resolved\": \"https://registry.npmjs.org/@babel/parser/-/parser-7.29.9.tgz\",\n      \"integrity\": \"sha512-CjXrNHTnvqBVqHgdBysY3vk2T8tpJHb5/RMeHJBTyVa9xgugCB0CJTx/3oO8RV2QRQP391RWpB7D6hLjm8V9uA==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@babel/types\": \"^7.29.8\"\n      },\n      \"bin\": {\n        \"parser\": \"bin/babel-parser.js\"\n      },\n      \"engines\": {\n        \"node\": \">=6.0.0\"\n      }\n    },\n    \"node_modules/@babel/types\": {\n      \"version\": \"7.29.8\",\n      \"resolved\": \"https://registry.npmjs.org/@babel/types/-/types-7.29.8.tgz\",\n      \"integrity\": \"sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@babel/helper-string-parser\": \"^7.29.7\",\n        \"@babel/helper-validator-identifier\": \"^7.29.7\"\n      },\n      \"engines\": {\n        \"node\": \">=6.9.0\"\n      }\n    },\n    \"node_modules/@esbuild/aix-ppc64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/aix-ppc64/-/aix-ppc64-0.21.5.tgz\",\n      \"integrity\": \"sha512-1SDgH6ZSPTlggy1yI6+Dbkiz8xzpHJEVAlF/AM1tHPLsf5STom9rwtjE4hKAF20FfXXNTFqEYXyJNWh1GiZedQ==\",\n      \"cpu\": [\n        \"ppc64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"aix\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/android-arm\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/android-arm/-/android-arm-0.21.5.tgz\",\n      \"integrity\": \"sha512-vCPvzSjpPHEi1siZdlvAlsPxXl7WbOVUBBAowWug4rJHb68Ox8KualB+1ocNvT5fjv6wpkX6o/iEpbDrf68zcg==\",\n      \"cpu\": [\n        \"arm\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"android\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/android-arm64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/android-arm64/-/android-arm64-0.21.5.tgz\",\n      \"integrity\": \"sha512-c0uX9VAUBQ7dTDCjq+wdyGLowMdtR/GoC2U5IYk/7D1H1JYC0qseD7+11iMP2mRLN9RcCMRcjC4YMclCzGwS/A==\",\n      \"cpu\": [\n        \"arm64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"android\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/android-x64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/android-x64/-/android-x64-0.21.5.tgz\",\n      \"integrity\": \"sha512-D7aPRUUNHRBwHxzxRvp856rjUHRFW1SdQATKXH2hqA0kAZb1hKmi02OpYRacl0TxIGz/ZmXWlbZgjwWYaCakTA==\",\n      \"cpu\": [\n        \"x64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"android\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/darwin-arm64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/darwin-arm64/-/darwin-arm64-0.21.5.tgz\",\n      \"integrity\": \"sha512-DwqXqZyuk5AiWWf3UfLiRDJ5EDd49zg6O9wclZ7kUMv2WRFr4HKjXp/5t8JZ11QbQfUS6/cRCKGwYhtNAY88kQ==\",\n      \"cpu\": [\n        \"arm64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"darwin\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/darwin-x64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/darwin-x64/-/darwin-x64-0.21.5.tgz\",\n      \"integrity\": \"sha512-se/JjF8NlmKVG4kNIuyWMV/22ZaerB+qaSi5MdrXtd6R08kvs2qCN4C09miupktDitvh8jRFflwGFBQcxZRjbw==\",\n      \"cpu\": [\n        \"x64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"darwin\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/freebsd-arm64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/freebsd-arm64/-/freebsd-arm64-0.21.5.tgz\",\n      \"integrity\": \"sha512-5JcRxxRDUJLX8JXp/wcBCy3pENnCgBR9bN6JsY4OmhfUtIHe3ZW0mawA7+RDAcMLrMIZaf03NlQiX9DGyB8h4g==\",\n      \"cpu\": [\n        \"arm64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"freebsd\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/freebsd-x64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/freebsd-x64/-/freebsd-x64-0.21.5.tgz\",\n      \"integrity\": \"sha512-J95kNBj1zkbMXtHVH29bBriQygMXqoVQOQYA+ISs0/2l3T9/kj42ow2mpqerRBxDJnmkUDCaQT/dfNXWX/ZZCQ==\",\n      \"cpu\": [\n        \"x64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"freebsd\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-arm\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-arm/-/linux-arm-0.21.5.tgz\",\n      \"integrity\": \"sha512-bPb5AHZtbeNGjCKVZ9UGqGwo8EUu4cLq68E95A53KlxAPRmUyYv2D6F0uUI65XisGOL1hBP5mTronbgo+0bFcA==\",\n      \"cpu\": [\n        \"arm\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-arm64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-arm64/-/linux-arm64-0.21.5.tgz\",\n      \"integrity\": \"sha512-ibKvmyYzKsBeX8d8I7MH/TMfWDXBF3db4qM6sy+7re0YXya+K1cem3on9XgdT2EQGMu4hQyZhan7TeQ8XkGp4Q==\",\n      \"cpu\": [\n        \"arm64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-ia32\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-ia32/-/linux-ia32-0.21.5.tgz\",\n      \"integrity\": \"sha512-YvjXDqLRqPDl2dvRODYmmhz4rPeVKYvppfGYKSNGdyZkA01046pLWyRKKI3ax8fbJoK5QbxblURkwK/MWY18Tg==\",\n      \"cpu\": [\n        \"ia32\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-loong64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-loong64/-/linux-loong64-0.21.5.tgz\",\n      \"integrity\": \"sha512-uHf1BmMG8qEvzdrzAqg2SIG/02+4/DHB6a9Kbya0XDvwDEKCoC8ZRWI5JJvNdUjtciBGFQ5PuBlpEOXQj+JQSg==\",\n      \"cpu\": [\n        \"loong64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-mips64el\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-mips64el/-/linux-mips64el-0.21.5.tgz\",\n      \"integrity\": \"sha512-IajOmO+KJK23bj52dFSNCMsz1QP1DqM6cwLUv3W1QwyxkyIWecfafnI555fvSGqEKwjMXVLokcV5ygHW5b3Jbg==\",\n      \"cpu\": [\n        \"mips64el\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-ppc64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-ppc64/-/linux-ppc64-0.21.5.tgz\",\n      \"integrity\": \"sha512-1hHV/Z4OEfMwpLO8rp7CvlhBDnjsC3CttJXIhBi+5Aj5r+MBvy4egg7wCbe//hSsT+RvDAG7s81tAvpL2XAE4w==\",\n      \"cpu\": [\n        \"ppc64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-riscv64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-riscv64/-/linux-riscv64-0.21.5.tgz\",\n      \"integrity\": \"sha512-2HdXDMd9GMgTGrPWnJzP2ALSokE/0O5HhTUvWIbD3YdjME8JwvSCnNGBnTThKGEB91OZhzrJ4qIIxk/SBmyDDA==\",\n      \"cpu\": [\n        \"riscv64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-s390x\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-s390x/-/linux-s390x-0.21.5.tgz\",\n      \"integrity\": \"sha512-zus5sxzqBJD3eXxwvjN1yQkRepANgxE9lgOW2qLnmr8ikMTphkjgXu1HR01K4FJg8h1kEEDAqDcZQtbrRnB41A==\",\n      \"cpu\": [\n        \"s390x\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-x64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.21.5.tgz\",\n      \"integrity\": \"sha512-1rYdTpyv03iycF1+BhzrzQJCdOuAOtaqHTWJZCWvijKD2N5Xu0TtVC8/+1faWqcP9iBCWOmjmhoH94dH82BxPQ==\",\n      \"cpu\": [\n        \"x64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/netbsd-x64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/netbsd-x64/-/netbsd-x64-0.21.5.tgz\",\n      \"integrity\": \"sha512-Woi2MXzXjMULccIwMnLciyZH4nCIMpWQAs049KEeMvOcNADVxo0UBIQPfSmxB3CWKedngg7sWZdLvLczpe0tLg==\",\n      \"cpu\": [\n        \"x64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"netbsd\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/openbsd-x64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/openbsd-x64/-/openbsd-x64-0.21.5.tgz\",\n      \"integrity\": \"sha512-HLNNw99xsvx12lFBUwoT8EVCsSvRNDVxNpjZ7bPn947b8gJPzeHWyNVhFsaerc0n3TsbOINvRP2byTZ5LKezow==\",\n      \"cpu\": [\n        \"x64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"openbsd\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/sunos-x64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/sunos-x64/-/sunos-x64-0.21.5.tgz\",\n      \"integrity\": \"sha512-6+gjmFpfy0BHU5Tpptkuh8+uw3mnrvgs+dSPQXQOv3ekbordwnzTVEb4qnIvQcYXq6gzkyTnoZ9dZG+D4garKg==\",\n      \"cpu\": [\n        \"x64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"sunos\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/win32-arm64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/win32-arm64/-/win32-arm64-0.21.5.tgz\",\n      \"integrity\": \"sha512-Z0gOTd75VvXqyq7nsl93zwahcTROgqvuAcYDUr+vOv8uHhNSKROyU961kgtCD1e95IqPKSQKH7tBTslnS3tA8A==\",\n      \"cpu\": [\n        \"arm64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"win32\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/win32-ia32\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/win32-ia32/-/win32-ia32-0.21.5.tgz\",\n      \"integrity\": \"sha512-SWXFF1CL2RVNMaVs+BBClwtfZSvDgtL//G/smwAc5oVK/UPu2Gu9tIaRgFmYFFKrmg3SyAjSrElf0TiJ1v8fYA==\",\n      \"cpu\": [\n        \"ia32\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"win32\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/win32-x64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/win32-x64/-/win32-x64-0.21.5.tgz\",\n      \"integrity\": \"sha512-tQd/1efJuzPC6rCFwEvLtci/xNFcTZknmXs98FYDfGE4wP9ClFV98nyKrzJKVPMhdDnjzLhdUyMX4PsQAPjwIw==\",\n      \"cpu\": [\n        \"x64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"win32\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@jridgewell/sourcemap-codec\": {\n      \"version\": \"1.6.0\",\n      \"resolved\": \"https://registry.npmjs.org/@jridgewell/sourcemap-codec/-/sourcemap-codec-1.6.0.tgz\",\n      \"integrity\": \"sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/@tootallnate/once\": {\n      \"version\": \"2.0.1\",\n      \"resolved\": \"https://registry.npmjs.org/@tootallnate/once/-/once-2.0.1.tgz\",\n      \"integrity\": \"sha512-HqmEUIGRJ5fSXchkVgR5F7qn48bDBzv0kWj/Kfu5e6uci4UlEeng4331LnBkWffb++Ei3FOVLxo8JJWMFBDMeQ==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">= 10\"\n      }\n    },\n    \"node_modules/@vue/compiler-core\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/compiler-core/-/compiler-core-3.4.38.tgz\",\n      \"integrity\": \"sha512-8IQOTCWnLFqfHzOGm9+P8OPSEDukgg3Huc92qSG49if/xI2SAwLHQO2qaPQbjCWPBcQoO1WYfXfTACUrWV3c5A==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@babel/parser\": \"^7.24.7\",\n        \"@vue/shared\": \"3.4.38\",\n        \"entities\": \"^4.5.0\",\n        \"estree-walker\": \"^2.0.2\",\n        \"source-map-js\": \"^1.2.0\"\n      }\n    },\n    \"node_modules/@vue/compiler-core/node_modules/entities\": {\n      \"version\": \"4.5.0\",\n      \"resolved\": \"https://registry.npmjs.org/entities/-/entities-4.5.0.tgz\",\n      \"integrity\": \"sha512-V0hjH4dGPh9Ao5p0MoRY6BVqtwCjhz6vI5LT8AJ55H+4g9/4vbHx1I54fS0XuclLhDHArPQCiMjDxjaL8fPxhw==\",\n      \"license\": \"BSD-2-Clause\",\n      \"engines\": {\n        \"node\": \">=0.12\"\n      },\n      \"funding\": {\n        \"url\": \"https://github.com/fb55/entities?sponsor=1\"\n      }\n    },\n    \"node_modules/@vue/compiler-dom\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/compiler-dom/-/compiler-dom-3.4.38.tgz\",\n      \"integrity\": \"sha512-Osc/c7ABsHXTsETLgykcOwIxFktHfGSUDkb05V61rocEfsFDcjDLH/IHJSNJP+/Sv9KeN2Lx1V6McZzlSb9EhQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@vue/compiler-core\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\"\n      }\n    },\n    \"node_modules/@vue/compiler-ssr\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/compiler-ssr/-/compiler-ssr-3.4.38.tgz\",\n      \"integrity\": \"sha512-YXznKFQ8dxYpAz9zLuVvfcXhc31FSPFDcqr0kyujbOwNhlmaNvL2QfIy+RZeJgSn5Fk54CWoEUeW+NVBAogGaw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@vue/compiler-dom\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\"\n      }\n    },\n    \"node_modules/@vue/reactivity\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/reactivity/-/reactivity-3.4.38.tgz\",\n      \"integrity\": \"sha512-4vl4wMMVniLsSYYeldAKzbk72+D3hUnkw9z8lDeJacTxAkXeDAP1uE9xr2+aKIN0ipOL8EG2GPouVTH6yF7Gnw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@vue/shared\": \"3.4.38\"\n      }\n    },\n    \"node_modules/@vue/runtime-core\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/runtime-core/-/runtime-core-3.4.38.tgz\",\n      \"integrity\": \"sha512-21z3wA99EABtuf+O3IhdxP0iHgkBs1vuoCAsCKLVJPEjpVqvblwBnTj42vzHRlWDCyxu9ptDm7sI2ZMcWrQqlA==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@vue/reactivity\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\"\n      }\n    },\n    \"node_modules/@vue/runtime-dom\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/runtime-dom/-/runtime-dom-3.4.38.tgz\",\n      \"integrity\": \"sha512-afZzmUreU7vKwKsV17H1NDThEEmdYI+GCAK/KY1U957Ig2NATPVjCROv61R19fjZNzMmiU03n79OMnXyJVN0UA==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@vue/reactivity\": \"3.4.38\",\n        \"@vue/runtime-core\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\",\n        \"csstype\": \"^3.1.3\"\n      }\n    },\n    \"node_modules/@vue/server-renderer\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/server-renderer/-/server-renderer-3.4.38.tgz\",\n      \"integrity\": \"sha512-NggOTr82FbPEkkUvBm4fTGcwUY8UuTsnWC/L2YZBmvaQ4C4Jl/Ao4HHTB+l7WnFCt5M/dN3l0XLuyjzswGYVCA==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@vue/compiler-ssr\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\"\n      },\n      \"peerDependencies\": {\n        \"vue\": \"3.4.38\"\n      }\n    },\n    \"node_modules/@vue/shared\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/shared/-/shared-3.4.38.tgz\",\n      \"integrity\": \"sha512-q0xCiLkuWWQLzVrecPb0RMsNWyxICOjPrcrwxTUEHb1fsnvni4dcuyG7RT/Ie7VPTvnjzIaWzRMUBsrqNj/hhw==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/abab\": {\n      \"version\": \"2.0.6\",\n      \"resolved\": \"https://registry.npmjs.org/abab/-/abab-2.0.6.tgz\",\n      \"integrity\": \"sha512-j2afSsaIENvHZN2B8GOpF566vZ5WVk5opAiMTvWgaQT8DkbOqsTfvNAvHoRGU2zzP8cPoqys+xHTRDWW8L+/BA==\",\n      \"deprecated\": \"Use your platform's native atob() and btoa() methods instead\",\n      \"license\": \"BSD-3-Clause\"\n    },\n    \"node_modules/agent-base\": {\n      \"version\": \"6.0.2\",\n      \"resolved\": \"https://registry.npmjs.org/agent-base/-/agent-base-6.0.2.tgz\",\n      \"integrity\": \"sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"debug\": \"4\"\n      },\n      \"engines\": {\n        \"node\": \">= 6.0.0\"\n      }\n    },\n    \"node_modules/asynckit\": {\n      \"version\": \"0.4.0\",\n      \"resolved\": \"https://registry.npmjs.org/asynckit/-/asynckit-0.4.0.tgz\",\n      \"integrity\": \"sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/call-bind-apply-helpers\": {\n      \"version\": \"1.0.2\",\n      \"resolved\": \"https://registry.npmjs.org/call-bind-apply-helpers/-/call-bind-apply-helpers-1.0.2.tgz\",\n      \"integrity\": \"sha512-Sp1ablJ0ivDkSzjcaJdxEunN5/XvksFJ2sMBFfq6x0ryhQV/2b/KwFe21cMpmHtPOSij8K99/wSfoEuTObmuMQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"es-errors\": \"^1.3.0\",\n        \"function-bind\": \"^1.1.2\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/combined-stream\": {\n      \"version\": \"1.0.8\",\n      \"resolved\": \"https://registry.npmjs.org/combined-stream/-/combined-stream-1.0.8.tgz\",\n      \"integrity\": \"sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"delayed-stream\": \"~1.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.8\"\n      }\n    },\n    \"node_modules/cssstyle\": {\n      \"version\": \"3.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/cssstyle/-/cssstyle-3.0.0.tgz\",\n      \"integrity\": \"sha512-N4u2ABATi3Qplzf0hWbVCdjenim8F3ojEXpBDF5hBpjzW182MjNGLqfmQ0SkSPeQ+V86ZXgeH8aXj6kayd4jgg==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"rrweb-cssom\": \"^0.6.0\"\n      },\n      \"engines\": {\n        \"node\": \">=14\"\n      }\n    },\n    \"node_modules/csstype\": {\n      \"version\": \"3.2.3\",\n      \"resolved\": \"https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz\",\n      \"integrity\": \"sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/data-urls\": {\n      \"version\": \"4.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/data-urls/-/data-urls-4.0.0.tgz\",\n      \"integrity\": \"sha512-/mMTei/JXPqvFqQtfyTowxmJVwr2PVAeCcDxyFf6LhoOu/09TX2OX3kb2wzi4DMXcfj4OItwDOnhl5oziPnT6g==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"abab\": \"^2.0.6\",\n        \"whatwg-mimetype\": \"^3.0.0\",\n        \"whatwg-url\": \"^12.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">=14\"\n      }\n    },\n    \"node_modules/debug\": {\n      \"version\": \"4.4.3\",\n      \"resolved\": \"https://registry.npmjs.org/debug/-/debug-4.4.3.tgz\",\n      \"integrity\": \"sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"ms\": \"^2.1.3\"\n      },\n      \"engines\": {\n        \"node\": \">=6.0\"\n      },\n      \"peerDependenciesMeta\": {\n        \"supports-color\": {\n          \"optional\": true\n        }\n      }\n    },\n    \"node_modules/decimal.js\": {\n      \"version\": \"10.6.0\",\n      \"resolved\": \"https://registry.npmjs.org/decimal.js/-/decimal.js-10.6.0.tgz\",\n      \"integrity\": \"sha512-YpgQiITW3JXGntzdUmyUR1V812Hn8T1YVXhCu+wO3OpS4eU9l4YdD3qjyiKdV6mvV29zapkMeD390UVEf2lkUg==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/delayed-stream\": {\n      \"version\": \"1.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/delayed-stream/-/delayed-stream-1.0.0.tgz\",\n      \"integrity\": \"sha512-ZySD7Nf91aLB0RxL4KGrKHBXl7Eds1DAmEdcoVawXnLD7SDhpNgtuII2aAkg7a7QS41jxPSZ17p4VdGnMHk3MQ==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">=0.4.0\"\n      }\n    },\n    \"node_modules/domexception\": {\n      \"version\": \"4.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/domexception/-/domexception-4.0.0.tgz\",\n      \"integrity\": \"sha512-A2is4PLG+eeSfoTMA95/s4pvAoSo2mKtiM5jlHkAVewmiO8ISFTFKZjH7UAM1Atli/OT/7JHOrJRJiMKUZKYBw==\",\n      \"deprecated\": \"Use your platform's native DOMException instead\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"webidl-conversions\": \"^7.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/dunder-proto\": {\n      \"version\": \"1.0.1\",\n      \"resolved\": \"https://registry.npmjs.org/dunder-proto/-/dunder-proto-1.0.1.tgz\",\n      \"integrity\": \"sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"call-bind-apply-helpers\": \"^1.0.1\",\n        \"es-errors\": \"^1.3.0\",\n        \"gopd\": \"^1.2.0\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/entities\": {\n      \"version\": \"6.0.1\",\n      \"resolved\": \"https://registry.npmjs.org/entities/-/entities-6.0.1.tgz\",\n      \"integrity\": \"sha512-aN97NXWF6AWBTahfVOIrB/NShkzi5H7F9r1s9mD3cDj4Ko5f2qhhVoYMibXF7GlLveb/D2ioWay8lxI97Ven3g==\",\n      \"license\": \"BSD-2-Clause\",\n      \"engines\": {\n        \"node\": \">=0.12\"\n      },\n      \"funding\": {\n        \"url\": \"https://github.com/fb55/entities?sponsor=1\"\n      }\n    },\n    \"node_modules/es-define-property\": {\n      \"version\": \"1.0.1\",\n      \"resolved\": \"https://registry.npmjs.org/es-define-property/-/es-define-property-1.0.1.tgz\",\n      \"integrity\": \"sha512-e3nRfgfUZ4rNGL232gUgX06QNyyez04KdjFrF+LTRoOXmrOgFKDg4BCdsjW8EnT69eqdYGmRpJwiPVYNrCaW3g==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/es-errors\": {\n      \"version\": \"1.3.0\",\n      \"resolved\": \"https://registry.npmjs.org/es-errors/-/es-errors-1.3.0.tgz\",\n      \"integrity\": \"sha512-Zf5H2Kxt2xjTvbJvP2ZWLEICxA6j+hAmMzIlypy4xcBg1vKVnx89Wy0GbS+kf5cwCVFFzdCFh2XSCFNULS6csw==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/es-object-atoms\": {\n      \"version\": \"1.1.2\",\n      \"resolved\": \"https://registry.npmjs.org/es-object-atoms/-/es-object-atoms-1.1.2.tgz\",\n      \"integrity\": \"sha512-HWcBoN6NileqtSydK2FqHbS/LoDd2pqrnQHLyJzBj4kOp/ky2MWMN694xOfkK8/SnUsW2DH7EfyVlydKCsm1Zw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"es-errors\": \"^1.3.0\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/es-set-tostringtag\": {\n      \"version\": \"2.1.0\",\n      \"resolved\": \"https://registry.npmjs.org/es-set-tostringtag/-/es-set-tostringtag-2.1.0.tgz\",\n      \"integrity\": \"sha512-j6vWzfrGVfyXxge+O0x5sh6cvxAog0a/4Rdd2K36zCMV5eJ+/+tOAngRO8cODMNWbVRdVlmGZQL2YS3yR8bIUA==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"es-errors\": \"^1.3.0\",\n        \"get-intrinsic\": \"^1.2.6\",\n        \"has-tostringtag\": \"^1.0.2\",\n        \"hasown\": \"^2.0.2\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/esbuild\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/esbuild/-/esbuild-0.21.5.tgz\",\n      \"integrity\": \"sha512-mg3OPMV4hXywwpoDxu3Qda5xCKQi+vCTZq8S9J/EpkhB2HzKXq4SNFZE3+NK93JYxc8VMSep+lOUSC/RVKaBqw==\",\n      \"hasInstallScript\": true,\n      \"license\": \"MIT\",\n      \"bin\": {\n        \"esbuild\": \"bin/esbuild\"\n      },\n      \"engines\": {\n        \"node\": \">=12\"\n      },\n      \"optionalDependencies\": {\n        \"@esbuild/aix-ppc64\": \"0.21.5\",\n        \"@esbuild/android-arm\": \"0.21.5\",\n        \"@esbuild/android-arm64\": \"0.21.5\",\n        \"@esbuild/android-x64\": \"0.21.5\",\n        \"@esbuild/darwin-arm64\": \"0.21.5\",\n        \"@esbuild/darwin-x64\": \"0.21.5\",\n        \"@esbuild/freebsd-arm64\": \"0.21.5\",\n        \"@esbuild/freebsd-x64\": \"0.21.5\",\n        \"@esbuild/linux-arm\": \"0.21.5\",\n        \"@esbuild/linux-arm64\": \"0.21.5\",\n        \"@esbuild/linux-ia32\": \"0.21.5\",\n        \"@esbuild/linux-loong64\": \"0.21.5\",\n        \"@esbuild/linux-mips64el\": \"0.21.5\",\n        \"@esbuild/linux-ppc64\": \"0.21.5\",\n        \"@esbuild/linux-riscv64\": \"0.21.5\",\n        \"@esbuild/linux-s390x\": \"0.21.5\",\n        \"@esbuild/linux-x64\": \"0.21.5\",\n        \"@esbuild/netbsd-x64\": \"0.21.5\",\n        \"@esbuild/openbsd-x64\": \"0.21.5\",\n        \"@esbuild/sunos-x64\": \"0.21.5\",\n        \"@esbuild/win32-arm64\": \"0.21.5\",\n        \"@esbuild/win32-ia32\": \"0.21.5\",\n        \"@esbuild/win32-x64\": \"0.21.5\"\n      }\n    },\n    \"node_modules/estree-walker\": {\n      \"version\": \"2.0.2\",\n      \"resolved\": \"https://registry.npmjs.org/estree-walker/-/estree-walker-2.0.2.tgz\",\n      \"integrity\": \"sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/form-data\": {\n      \"version\": \"4.0.6\",\n      \"resolved\": \"https://registry.npmjs.org/form-data/-/form-data-4.0.6.tgz\",\n      \"integrity\": \"sha512-vKatAh4SlVfgbv+YtmhiRjhEMJsYpsG1Y2rMQtR+SVSbytsSD1YGzDIcrAJmdFec88u/+VoGmxnl+80gL1tRCQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"asynckit\": \"^0.4.0\",\n        \"combined-stream\": \"^1.0.8\",\n        \"es-set-tostringtag\": \"^2.1.0\",\n        \"hasown\": \"^2.0.4\",\n        \"mime-types\": \"^2.1.35\"\n      },\n      \"engines\": {\n        \"node\": \">= 6\"\n      }\n    },\n    \"node_modules/function-bind\": {\n      \"version\": \"1.1.2\",\n      \"resolved\": \"https://registry.npmjs.org/function-bind/-/function-bind-1.1.2.tgz\",\n      \"integrity\": \"sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==\",\n      \"license\": \"MIT\",\n      \"funding\": {\n        \"url\": \"https://github.com/sponsors/ljharb\"\n      }\n    },\n    \"node_modules/get-intrinsic\": {\n      \"version\": \"1.3.0\",\n      \"resolved\": \"https://registry.npmjs.org/get-intrinsic/-/get-intrinsic-1.3.0.tgz\",\n      \"integrity\": \"sha512-9fSjSaos/fRIVIp+xSJlE6lfwhES7LNtKaCBIamHsjr2na1BiABJPo0mOjjz8GJDURarmCPGqaiVg5mfjb98CQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"call-bind-apply-helpers\": \"^1.0.2\",\n        \"es-define-property\": \"^1.0.1\",\n        \"es-errors\": \"^1.3.0\",\n        \"es-object-atoms\": \"^1.1.1\",\n        \"function-bind\": \"^1.1.2\",\n        \"get-proto\": \"^1.0.1\",\n        \"gopd\": \"^1.2.0\",\n        \"has-symbols\": \"^1.1.0\",\n        \"hasown\": \"^2.0.2\",\n        \"math-intrinsics\": \"^1.1.0\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      },\n      \"funding\": {\n        \"url\": \"https://github.com/sponsors/ljharb\"\n      }\n    },\n    \"node_modules/get-proto\": {\n      \"version\": \"1.0.1\",\n      \"resolved\": \"https://registry.npmjs.org/get-proto/-/get-proto-1.0.1.tgz\",\n      \"integrity\": \"sha512-sTSfBjoXBp89JvIKIefqw7U2CCebsc74kiY6awiGogKtoSGbgjYE/G/+l9sF3MWFPNc9IcoOC4ODfKHfxFmp0g==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"dunder-proto\": \"^1.0.1\",\n        \"es-object-atoms\": \"^1.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/gopd\": {\n      \"version\": \"1.2.0\",\n      \"resolved\": \"https://registry.npmjs.org/gopd/-/gopd-1.2.0.tgz\",\n      \"integrity\": \"sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      },\n      \"funding\": {\n        \"url\": \"https://github.com/sponsors/ljharb\"\n      }\n    },\n    \"node_modules/has-symbols\": {\n      \"version\": \"1.1.0\",\n      \"resolved\": \"https://registry.npmjs.org/has-symbols/-/has-symbols-1.1.0.tgz\",\n      \"integrity\": \"sha512-1cDNdwJ2Jaohmb3sg4OmKaMBwuC48sYni5HUw2DvsC8LjGTLK9h+eb1X6RyuOHe4hT0ULCW68iomhjUoKUqlPQ==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      },\n      \"funding\": {\n        \"url\": \"https://github.com/sponsors/ljharb\"\n      }\n    },\n    \"node_modules/has-tostringtag\": {\n      \"version\": \"1.0.2\",\n      \"resolved\": \"https://registry.npmjs.org/has-tostringtag/-/has-tostringtag-1.0.2.tgz\",\n      \"integrity\": \"sha512-NqADB8VjPFLM2V0VvHUewwwsw0ZWBaIdgo+ieHtK3hasLz4qeCRjYcqfB6AQrBggRKppKF8L52/VqdVsO47Dlw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"has-symbols\": \"^1.0.3\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      },\n      \"funding\": {\n        \"url\": \"https://github.com/sponsors/ljharb\"\n      }\n    },\n    \"node_modules/hasown\": {\n      \"version\": \"2.0.4\",\n      \"resolved\": \"https://registry.npmjs.org/hasown/-/hasown-2.0.4.tgz\",\n      \"integrity\": \"sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"function-bind\": \"^1.1.2\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/html-encoding-sniffer\": {\n      \"version\": \"3.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/html-encoding-sniffer/-/html-encoding-sniffer-3.0.0.tgz\",\n      \"integrity\": \"sha512-oWv4T4yJ52iKrufjnyZPkrN0CH3QnrUqdB6In1g5Fe1mia8GmF36gnfNySxoZtxD5+NmYw1EElVXiBk93UeskA==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"whatwg-encoding\": \"^2.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/http-proxy-agent\": {\n      \"version\": \"5.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/http-proxy-agent/-/http-proxy-agent-5.0.0.tgz\",\n      \"integrity\": \"sha512-n2hY8YdoRE1i7r6M0w9DIw5GgZN0G25P8zLCRQ8rjXtTU3vsNFBI/vWK/UIeE6g5MUUz6avwAPXmL6Fy9D/90w==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@tootallnate/once\": \"2\",\n        \"agent-base\": \"6\",\n        \"debug\": \"4\"\n      },\n      \"engines\": {\n        \"node\": \">= 6\"\n      }\n    },\n    \"node_modules/https-proxy-agent\": {\n      \"version\": \"5.0.1\",\n      \"resolved\": \"https://registry.npmjs.org/https-proxy-agent/-/https-proxy-agent-5.0.1.tgz\",\n      \"integrity\": \"sha512-dFcAjpTQFgoLMzC2VwU+C/CbS7uRL0lWmxDITmqm7C+7F0Odmj6s9l6alZc6AELXhrnggM2CeWSXHGOdX2YtwA==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"agent-base\": \"6\",\n        \"debug\": \"4\"\n      },\n      \"engines\": {\n        \"node\": \">= 6\"\n      }\n    },\n    \"node_modules/iconv-lite\": {\n      \"version\": \"0.6.3\",\n      \"resolved\": \"https://registry.npmjs.org/iconv-lite/-/iconv-lite-0.6.3.tgz\",\n      \"integrity\": \"sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"safer-buffer\": \">= 2.1.2 < 3.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">=0.10.0\"\n      }\n    },\n    \"node_modules/is-potential-custom-element-name\": {\n      \"version\": \"1.0.1\",\n      \"resolved\": \"https://registry.npmjs.org/is-potential-custom-element-name/-/is-potential-custom-element-name-1.0.1.tgz\",\n      \"integrity\": \"sha512-bCYeRA2rVibKZd+s2625gGnGF/t7DSqDs4dP7CrLA1m7jKWz6pps0LpYLJN8Q64HtmPKJ1hrN3nzPNKFEKOUiQ==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/jsdom\": {\n      \"version\": \"22.1.0\",\n      \"resolved\": \"https://registry.npmjs.org/jsdom/-/jsdom-22.1.0.tgz\",\n      \"integrity\": \"sha512-/9AVW7xNbsBv6GfWho4TTNjEo9fe6Zhf9O7s0Fhhr3u+awPwAJMKwAMXnkk5vBxflqLW9hTHX/0cs+P3gW+cQw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"abab\": \"^2.0.6\",\n        \"cssstyle\": \"^3.0.0\",\n        \"data-urls\": \"^4.0.0\",\n        \"decimal.js\": \"^10.4.3\",\n        \"domexception\": \"^4.0.0\",\n        \"form-data\": \"^4.0.0\",\n        \"html-encoding-sniffer\": \"^3.0.0\",\n        \"http-proxy-agent\": \"^5.0.0\",\n        \"https-proxy-agent\": \"^5.0.1\",\n        \"is-potential-custom-element-name\": \"^1.0.1\",\n        \"nwsapi\": \"^2.2.4\",\n        \"parse5\": \"^7.1.2\",\n        \"rrweb-cssom\": \"^0.6.0\",\n        \"saxes\": \"^6.0.0\",\n        \"symbol-tree\": \"^3.2.4\",\n        \"tough-cookie\": \"^4.1.2\",\n        \"w3c-xmlserializer\": \"^4.0.0\",\n        \"webidl-conversions\": \"^7.0.0\",\n        \"whatwg-encoding\": \"^2.0.0\",\n        \"whatwg-mimetype\": \"^3.0.0\",\n        \"whatwg-url\": \"^12.0.1\",\n        \"ws\": \"^8.13.0\",\n        \"xml-name-validator\": \"^4.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">=16\"\n      },\n      \"peerDependencies\": {\n        \"canvas\": \"^2.5.0\"\n      },\n      \"peerDependenciesMeta\": {\n        \"canvas\": {\n          \"optional\": true\n        }\n      }\n    },\n    \"node_modules/magic-string\": {\n      \"version\": \"0.30.21\",\n      \"resolved\": \"https://registry.npmjs.org/magic-string/-/magic-string-0.30.21.tgz\",\n      \"integrity\": \"sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@jridgewell/sourcemap-codec\": \"^1.5.5\"\n      }\n    },\n    \"node_modules/math-intrinsics\": {\n      \"version\": \"1.1.0\",\n      \"resolved\": \"https://registry.npmjs.org/math-intrinsics/-/math-intrinsics-1.1.0.tgz\",\n      \"integrity\": \"sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/mime-db\": {\n      \"version\": \"1.52.0\",\n      \"resolved\": \"https://registry.npmjs.org/mime-db/-/mime-db-1.52.0.tgz\",\n      \"integrity\": \"sha512-sPU4uV7dYlvtWJxwwxHD0PuihVNiE7TyAbQ5SWxDCB9mUYvOgroQOwYQQOKPJ8CIbE+1ETVlOoK1UC2nU3gYvg==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">= 0.6\"\n      }\n    },\n    \"node_modules/mime-types\": {\n      \"version\": \"2.1.35\",\n      \"resolved\": \"https://registry.npmjs.org/mime-types/-/mime-types-2.1.35.tgz\",\n      \"integrity\": \"sha512-ZDY+bPm5zTTF+YpCrAU9nK0UgICYPT0QtT1NZWFv4s++TNkcgVaT0g6+4R2uI4MjQjzysHB1zxuWL50hzaeXiw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"mime-db\": \"1.52.0\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.6\"\n      }\n    },\n    \"node_modules/ms\": {\n      \"version\": \"2.1.3\",\n      \"resolved\": \"https://registry.npmjs.org/ms/-/ms-2.1.3.tgz\",\n      \"integrity\": \"sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/nanoid\": {\n      \"version\": \"3.3.19\",\n      \"resolved\": \"https://registry.npmjs.org/nanoid/-/nanoid-3.3.19.tgz\",\n      \"integrity\": \"sha512-Y2tUNy4ouw6tq5oDSKeQYGOyhkUBhNOcGV/02KC+6kd9eDGqdZd++mjMiIDilrBYvjEnCYvVtsuHCuP+okSfug==\",\n      \"funding\": [\n        {\n          \"type\": \"github\",\n          \"url\": \"https://github.com/sponsors/ai\"\n        }\n      ],\n      \"license\": \"MIT\",\n      \"bin\": {\n        \"nanoid\": \"bin/nanoid.cjs\"\n      },\n      \"engines\": {\n        \"node\": \"^10 || ^12 || ^13.7 || ^14 || >=15.0.1\"\n      }\n    },\n    \"node_modules/nwsapi\": {\n      \"version\": \"2.2.28\",\n      \"resolved\": \"https://registry.npmjs.org/nwsapi/-/nwsapi-2.2.28.tgz\",\n      \"integrity\": \"sha512-IlVB7OS7qrOsVYlpnFIkETjMwT9jwvmocJmmM+GZU/PAB3uGi9Ezd7vcWhWBUnSc0ya4ppmQITOyP1ez9gg8cg==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/parse5\": {\n      \"version\": \"7.3.0\",\n      \"resolved\": \"https://registry.npmjs.org/parse5/-/parse5-7.3.0.tgz\",\n      \"integrity\": \"sha512-IInvU7fabl34qmi9gY8XOVxhYyMyuH2xUNpb2q8/Y+7552KlejkRvqvD19nMoUW/uQGGbqNpA6Tufu5FL5BZgw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"entities\": \"^6.0.0\"\n      },\n      \"funding\": {\n        \"url\": \"https://github.com/inikulin/parse5?sponsor=1\"\n      }\n    },\n    \"node_modules/picocolors\": {\n      \"version\": \"1.1.1\",\n      \"resolved\": \"https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz\",\n      \"integrity\": \"sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==\",\n      \"license\": \"ISC\"\n    },\n    \"node_modules/postcss\": {\n      \"version\": \"8.5.28\",\n      \"resolved\": \"https://registry.npmjs.org/postcss/-/postcss-8.5.28.tgz\",\n      \"integrity\": \"sha512-RRuzqDtt5Y9h3quz5hWhK+TPnsmVs6WwSU6LkJMeY4HstUEDuYTG8UJSdawMRzmzAtV+KEoG8N3Qg2qLy5vM/A==\",\n      \"funding\": [\n        {\n          \"type\": \"opencollective\",\n          \"url\": \"https://opencollective.com/postcss/\"\n        },\n        {\n          \"type\": \"tidelift\",\n          \"url\": \"https://tidelift.com/funding/github/npm/postcss\"\n        },\n        {\n          \"type\": \"github\",\n          \"url\": \"https://github.com/sponsors/ai\"\n        }\n      ],\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"nanoid\": \"^3.3.18\",\n        \"picocolors\": \"^1.1.1\",\n        \"source-map-js\": \"^1.2.1\"\n      },\n      \"engines\": {\n        \"node\": \"^10 || ^12 || >=14\"\n      }\n    },\n    \"node_modules/psl\": {\n      \"version\": \"1.15.0\",\n      \"resolved\": \"https://registry.npmjs.org/psl/-/psl-1.15.0.tgz\",\n      \"integrity\": \"sha512-JZd3gMVBAVQkSs6HdNZo9Sdo0LNcQeMNP3CozBJb3JYC/QUYZTnKxP+f8oWRX4rHP5EurWxqAHTSwUCjlNKa1w==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"punycode\": \"^2.3.1\"\n      },\n      \"funding\": {\n        \"url\": \"https://github.com/sponsors/lupomontero\"\n      }\n    },\n    \"node_modules/punycode\": {\n      \"version\": \"2.3.1\",\n      \"resolved\": \"https://registry.npmjs.org/punycode/-/punycode-2.3.1.tgz\",\n      \"integrity\": \"sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">=6\"\n      }\n    },\n    \"node_modules/querystringify\": {\n      \"version\": \"2.2.0\",\n      \"resolved\": \"https://registry.npmjs.org/querystringify/-/querystringify-2.2.0.tgz\",\n      \"integrity\": \"sha512-FIqgj2EUvTa7R50u0rGsyTftzjYmv/a3hO345bZNrqabNqjtgiDMgmo4mkUjd+nzU5oF3dClKqFIPUKybUyqoQ==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/requires-port\": {\n      \"version\": \"1.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/requires-port/-/requires-port-1.0.0.tgz\",\n      \"integrity\": \"sha512-KigOCHcocU3XODJxsu8i/j8T9tzT4adHiecwORRQ0ZZFcp7ahwXuRU1m+yuO90C5ZUyGeGfocHDI14M3L3yDAQ==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/rrweb-cssom\": {\n      \"version\": \"0.6.0\",\n      \"resolved\": \"https://registry.npmjs.org/rrweb-cssom/-/rrweb-cssom-0.6.0.tgz\",\n      \"integrity\": \"sha512-APM0Gt1KoXBz0iIkkdB/kfvGOwC4UuJFeG/c+yV7wSc7q96cG/kJ0HiYCnzivD9SB53cLV1MlHFNfOuPaadYSw==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/safer-buffer\": {\n      \"version\": \"2.1.2\",\n      \"resolved\": \"https://registry.npmjs.org/safer-buffer/-/safer-buffer-2.1.2.tgz\",\n      \"integrity\": \"sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/saxes\": {\n      \"version\": \"6.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/saxes/-/saxes-6.0.0.tgz\",\n      \"integrity\": \"sha512-xAg7SOnEhrm5zI3puOOKyy1OMcMlIJZYNJY7xLBwSze0UjhPLnWfj2GF2EpT0jmzaJKIWKHLsaSSajf35bcYnA==\",\n      \"license\": \"ISC\",\n      \"dependencies\": {\n        \"xmlchars\": \"^2.2.0\"\n      },\n      \"engines\": {\n        \"node\": \">=v12.22.7\"\n      }\n    },\n    \"node_modules/source-map-js\": {\n      \"version\": \"1.2.2\",\n      \"resolved\": \"https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.2.tgz\",\n      \"integrity\": \"sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==\",\n      \"license\": \"BSD-3-Clause\",\n      \"engines\": {\n        \"node\": \">=0.10.0\"\n      }\n    },\n    \"node_modules/symbol-tree\": {\n      \"version\": \"3.2.4\",\n      \"resolved\": \"https://registry.npmjs.org/symbol-tree/-/symbol-tree-3.2.4.tgz\",\n      \"integrity\": \"sha512-9QNk5KwDF+Bvz+PyObkmSYjI5ksVUYtjW7AU22r2NKcfLJcXp96hkDWU3+XndOsUb+AQ9QhfzfCT2O+CNWT5Tw==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/tough-cookie\": {\n      \"version\": \"4.1.4\",\n      \"resolved\": \"https://registry.npmjs.org/tough-cookie/-/tough-cookie-4.1.4.tgz\",\n      \"integrity\": \"sha512-Loo5UUvLD9ScZ6jh8beX1T6sO1w2/MpCRpEP7V280GKMVUQ0Jzar2U3UJPsrdbziLEMMhu3Ujnq//rhiFuIeag==\",\n      \"license\": \"BSD-3-Clause\",\n      \"dependencies\": {\n        \"psl\": \"^1.1.33\",\n        \"punycode\": \"^2.1.1\",\n        \"universalify\": \"^0.2.0\",\n        \"url-parse\": \"^1.5.3\"\n      },\n      \"engines\": {\n        \"node\": \">=6\"\n      }\n    },\n    \"node_modules/tr46\": {\n      \"version\": \"4.1.1\",\n      \"resolved\": \"https://registry.npmjs.org/tr46/-/tr46-4.1.1.tgz\",\n      \"integrity\": \"sha512-2lv/66T7e5yNyhAAC4NaKe5nVavzuGJQVVtRYLyQ2OI8tsJ61PMLlelehb0wi2Hx6+hT/OJUWZcw8MjlSRnxvw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"punycode\": \"^2.3.0\"\n      },\n      \"engines\": {\n        \"node\": \">=14\"\n      }\n    },\n    \"node_modules/universalify\": {\n      \"version\": \"0.2.0\",\n      \"resolved\": \"https://registry.npmjs.org/universalify/-/universalify-0.2.0.tgz\",\n      \"integrity\": \"sha512-CJ1QgKmNg3CwvAv/kOFmtnEN05f0D/cn9QntgNOQlQF9dgvVTHj3t+8JPdjqawCHk7V/KA+fbUqzZ9XWhcqPUg==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">= 4.0.0\"\n      }\n    },\n    \"node_modules/url-parse\": {\n      \"version\": \"1.5.10\",\n      \"resolved\": \"https://registry.npmjs.org/url-parse/-/url-parse-1.5.10.tgz\",\n      \"integrity\": \"sha512-WypcfiRhfeUP9vvF0j6rw0J3hrWrw6iZv3+22h6iRMJ/8z1Tj6XfLP4DsUix5MhMPnXpiHDoKyoZ/bdCkwBCiQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"querystringify\": \"^2.1.1\",\n        \"requires-port\": \"^1.0.0\"\n      }\n    },\n    \"node_modules/vue\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/vue/-/vue-3.4.38.tgz\",\n      \"integrity\": \"sha512-f0ZgN+mZ5KFgVv9wz0f4OgVKukoXtS3nwET4c2vLBGQR50aI8G0cqbFtLlX9Yiyg3LFGBitruPHt2PxwTduJEw==\",\n      \"license\": \"MIT\",\n      \"peer\": true,\n      \"dependencies\": {\n        \"@vue/compiler-dom\": \"3.4.38\",\n        \"@vue/compiler-sfc\": \"3.4.38\",\n        \"@vue/runtime-dom\": \"3.4.38\",\n        \"@vue/server-renderer\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\"\n      },\n      \"peerDependencies\": {\n        \"typescript\": \"*\"\n      },\n      \"peerDependenciesMeta\": {\n        \"typescript\": {\n          \"optional\": true\n        }\n      }\n    },\n    \"node_modules/vue/node_modules/@vue/compiler-sfc\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/compiler-sfc/-/compiler-sfc-3.4.38.tgz\",\n      \"integrity\": \"sha512-s5QfZ+9PzPh3T5H4hsQDJtI8x7zdJaew/dCGgqZ2630XdzaZ3AD8xGZfBqpT8oaD/p2eedd+pL8tD5vvt5ZYJQ==\",\n      \"license\": \"MIT\",\n      \"peer\": true,\n      \"dependencies\": {\n        \"@babel/parser\": \"^7.24.7\",\n        \"@vue/compiler-core\": \"3.4.38\",\n        \"@vue/compiler-dom\": \"3.4.38\",\n        \"@vue/compiler-ssr\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\",\n        \"estree-walker\": \"^2.0.2\",\n        \"magic-string\": \"^0.30.10\",\n        \"postcss\": \"^8.4.40\",\n        \"source-map-js\": \"^1.2.0\"\n      }\n    },\n    \"node_modules/vue3\": {\n      \"name\": \"vue\",\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/vue/-/vue-3.4.38.tgz\",\n      \"integrity\": \"sha512-f0ZgN+mZ5KFgVv9wz0f4OgVKukoXtS3nwET4c2vLBGQR50aI8G0cqbFtLlX9Yiyg3LFGBitruPHt2PxwTduJEw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@vue/compiler-dom\": \"3.4.38\",\n        \"@vue/compiler-sfc\": \"3.4.38\",\n        \"@vue/runtime-dom\": \"3.4.38\",\n        \"@vue/server-renderer\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\"\n      },\n      \"peerDependencies\": {\n        \"typescript\": \"*\"\n      },\n      \"peerDependenciesMeta\": {\n        \"typescript\": {\n          \"optional\": true\n        }\n      }\n    },\n    \"node_modules/vue3/node_modules/@vue/compiler-sfc\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/compiler-sfc/-/compiler-sfc-3.4.38.tgz\",\n      \"integrity\": \"sha512-s5QfZ+9PzPh3T5H4hsQDJtI8x7zdJaew/dCGgqZ2630XdzaZ3AD8xGZfBqpT8oaD/p2eedd+pL8tD5vvt5ZYJQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@babel/parser\": \"^7.24.7\",\n        \"@vue/compiler-core\": \"3.4.38\",\n        \"@vue/compiler-dom\": \"3.4.38\",\n        \"@vue/compiler-ssr\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\",\n        \"estree-walker\": \"^2.0.2\",\n        \"magic-string\": \"^0.30.10\",\n        \"postcss\": \"^8.4.40\",\n        \"source-map-js\": \"^1.2.0\"\n      }\n    },\n    \"node_modules/w3c-xmlserializer\": {\n      \"version\": \"4.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/w3c-xmlserializer/-/w3c-xmlserializer-4.0.0.tgz\",\n      \"integrity\": \"sha512-d+BFHzbiCx6zGfz0HyQ6Rg69w9k19nviJspaj4yNscGjrHu94sVP+aRm75yEbCh+r2/yR+7q6hux9LVtbuTGBw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"xml-name-validator\": \"^4.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">=14\"\n      }\n    },\n    \"node_modules/webidl-conversions\": {\n      \"version\": \"7.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/webidl-conversions/-/webidl-conversions-7.0.0.tgz\",\n      \"integrity\": \"sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==\",\n      \"license\": \"BSD-2-Clause\",\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/whatwg-encoding\": {\n      \"version\": \"2.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/whatwg-encoding/-/whatwg-encoding-2.0.0.tgz\",\n      \"integrity\": \"sha512-p41ogyeMUrw3jWclHWTQg1k05DSVXPLcVxRTYsXUk+ZooOCZLcoYgPZ/HL/D/N+uQPOtcp1me1WhBEaX02mhWg==\",\n      \"deprecated\": \"Use @exodus/bytes instead for a more spec-conformant and faster implementation\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"iconv-lite\": \"0.6.3\"\n      },\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/whatwg-mimetype\": {\n      \"version\": \"3.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/whatwg-mimetype/-/whatwg-mimetype-3.0.0.tgz\",\n      \"integrity\": \"sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/whatwg-url\": {\n      \"version\": \"12.0.1\",\n      \"resolved\": \"https://registry.npmjs.org/whatwg-url/-/whatwg-url-12.0.1.tgz\",\n      \"integrity\": \"sha512-Ed/LrqB8EPlGxjS+TrsXcpUond1mhccS3pchLhzSgPCnTimUCKj3IZE75pAs5m6heB2U2TMerKFUXheyHY+VDQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"tr46\": \"^4.1.1\",\n        \"webidl-conversions\": \"^7.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">=14\"\n      }\n    },\n    \"node_modules/ws\": {\n      \"version\": \"8.22.0\",\n      \"resolved\": \"https://registry.npmjs.org/ws/-/ws-8.22.0.tgz\",\n      \"integrity\": \"sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">=10.0.0\"\n      },\n      \"peerDependencies\": {\n        \"bufferutil\": \"^4.0.1\",\n        \"utf-8-validate\": \">=5.0.2\"\n      },\n      \"peerDependenciesMeta\": {\n        \"bufferutil\": {\n          \"optional\": true\n        },\n        \"utf-8-validate\": {\n          \"optional\": true\n        }\n      }\n    },\n    \"node_modules/xml-name-validator\": {\n      \"version\": \"4.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/xml-name-validator/-/xml-name-validator-4.0.0.tgz\",\n      \"integrity\": \"sha512-ICP2e+jsHvAj2E2lIHxa5tjXRlKDJo4IdvPvCXbXQGdzSfmSpNVyIKMvoZHjDY9DP0zV17iI85o90vRFXNccRw==\",\n      \"license\": \"Apache-2.0\",\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/xmlchars\": {\n      \"version\": \"2.2.0\",\n      \"resolved\": \"https://registry.npmjs.org/xmlchars/-/xmlchars-2.2.0.tgz\",\n      \"integrity\": \"sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==\",\n      \"license\": \"MIT\"\n    }\n  }\n}\n",
+        "package.json": "{\n  \"name\": \"transfer-progress-composition-v4-window-cued-vue3-fixture\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"dependencies\": {\n    \"vue3\": \"npm:vue@3.4.38\",\n    \"jsdom\": \"22.1.0\",\n    \"esbuild\": \"0.21.5\"\n  }\n}\n",
+        "src/Workspace.vue": "<template><section data-business=\"Laboratory sequence transfer\"><output>{{ owner.fileId || 'closed' }}:{{ owner.attemptId || 0 }}</output></section></template>\n<script>\nimport {shallowRef,onBeforeUnmount} from 'vue3';\nimport {Session} from './session.js';\nexport default {props:['host'],setup(props){const owner=shallowRef({}),session=new Session(props.host,s=>{owner.value=s;});onBeforeUnmount(()=>session.dispose());return {owner,select:f=>session.select(f),retry:()=>session.retry(),hide:()=>session.hide(),dispose:()=>session.dispose(),snapshot:()=>session.snapshot()};}};\n</script>\n",
+        "src/session.js": "// A session owns panel visits; physical attempts keep their own cancellation.\nexport class Session {\n constructor(host,onState=()=>{}) {this.host=host;this.onState=onState;this.visit=null;this.serial=0;this.attempts=0;this.tasks=new Map();this.disposed=false;}\n current(v) {return this.visit===v;}\n enqueue(v,kind) {\n  const n=++this.attempts, entry={fileId:v.file.id,attemptId:n,visitId:v.id,kind};\n  \n  this.host.record(entry);\n  const progress={active:()=>this.current(v),audit:frame=>this.host.recordProgress?.({fileId:v.file.id,attemptId:n,frame}),\n   view:(frame,order)=>{if(this.current(v)){this.host.showProgress?.({fileId:v.file.id,attemptId:n,frame});this.onState(this.snapshot());}}};\n  const h=createAttempt(v.file,n,this.host.transport,this.host.onCancel,progress);this.tasks.set(n,h);return h;\n }\n notice(v,h){ this.host.showQueued({fileId:v.file.id,attemptId:h.attemptId,visitId:v.id,status:'queued'});}\n release(v){const h=v.handle;v.handle=null;if(h)h.cancel();}\n select(file){if(this.disposed)return null;const request=++this.serial,old=this.visit;this.visit=null;if(old)this.release(old);\n  if(this.disposed||this.serial!==request)return null;const v={id:request,file,handle:null};this.visit=v;\n  const h=this.enqueue(v,'select');if(this.current(v)){v.handle=h;this.notice(v,h);}else h.cancel();this.onState(this.snapshot());return h;}\n retry(){const v=this.visit;if(!v||!v.handle||this.disposed)return null;v.handle.cancel();\n  const accepted=v;const h=this.enqueue(accepted,'retry');if(this.current(accepted))accepted.handle=h;else h.cancel();\n  if(this.current(accepted))this.notice(accepted,h);this.onState(this.snapshot());return h;}\n hide(){this.serial++;const old=this.visit;this.visit=null;if(old)this.release(old);this.onState(this.snapshot());}\n dispose(){if(this.disposed)return;this.disposed=true;this.hide();for(const h of this.tasks.values())h.cancel();}\n snapshot(){const v=this.visit;return {visitId:v?v.id:null,fileId:v?v.file.id:null,attemptId:v&&v.handle?v.handle.attemptId:null,disposed:this.disposed,attempts:this.attempts};}\n}\nexport function createAttempt(file,attemptId,transport,onCancel,progress={}) {\n const controller=new AbortController();let stop=()=>{};\n controller.signal.addEventListener('abort',()=>{stop();onCancel({file,attemptId,signal:controller.signal});},{once:true});\n transport({file,attemptId,signal:controller.signal});\n const feed=file.progressFeed;\n if(feed){const listener=event=>{ const order=progress.admit?.()??0;\n   const deliver=frame=>{ progress.audit?.(frame);progress.view?.(frame,order);};\n   const decoded=feed.decode(event.detail);if(decoded&&typeof decoded.then==='function')decoded.then(deliver);else deliver(decoded);};\n  feed.start();feed.target.addEventListener('progress',listener);\n  stop=()=>feed.target.removeEventListener('progress',listener);if(controller.signal.aborted)stop();}\n return {file,attemptId,signal:controller.signal,cancel(){if(!controller.signal.aborted)controller.abort();}};\n}\n\nexport function collectProgressTelemetry(feed,recordDelta){\n const listener=event=>{const value=feed.decode(event.detail);if(value&&typeof value.then==='function')value.then(recordDelta);else recordDelta(value);};\n feed.start();feed.target.addEventListener('progress',listener);\n return ()=>feed.target.removeEventListener('progress',listener);\n}\n"
+      },
+      "task": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives. Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior. Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward. Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses.\n"
+    },
+    "source_sha256": "00c8baf8a4682ef7d641bfeda259e75800ebf59051752e1c9b01a14f54a167fd",
+    "task_id": "transfer-progress-composition-v4-window-cued-vue3-eval-v2"
+  },
+  "experience": {
+    "excludes": [
+      "different_ownership_policy",
+      "discard_boundary_policy"
+    ],
+    "labels": [
+      "O",
+      "B",
+      "L",
+      "I",
+      "A"
+    ],
+    "limitations": [
+      "Applies when a source can emit synchronously during start, decoding can finish asynchronously out of arrival order, and display validity has a documented lifecycle identity; it does not establish policy for rejected decodes or transfer completion.",
+      "Arrival tokens must be scoped to the business display lifecycle. In this source, README.md states: \"Retry replaces the physical attempt without\\nopening another visit.\" Therefore retry keeps the visit ordering domain, while selecting even the same file creates a new one.",
+      "This guidance preserves decoded-frame audit history even when display becomes stale. A different product that explicitly discards stale results requires a separate boundary policy."
+    ],
+    "requires": [
+      "shared_lifetime",
+      "observer_lifetime",
+      "attempt_resource",
+      "lazy_consumption",
+      "async_resume",
+      "boundary_persistence",
+      "inline_reentry",
+      "effect_lifetimes"
+    ],
+    "rules": [
+      {
+        "body": "Apply this pattern when startup may publish cached events synchronously and asynchronous decoding can reorder their completions. TASK states: \"A transfer with a warm progress source shows no initial progress until a later\\npacket arrives.\" and \"Full\\nprogress frames may decode out of order; do not allow an older frame to roll the\\ncurrent display backward.\" README.md confirms: \"start may emit cached\\npackets synchronously; decoding yields a full frame, immediately or later.\\nDecode completion order can differ from packet arrival order.\"",
+        "category": "applicability"
+      },
+      {
+        "body": "Establish an idempotent listener-removal capability and register the listener before invoking source start. Removal must commit its inert/removed state before calling the underlying detach operation, because README.md states: \"Removing a listener commits removal before calling the host detach callback;\\nthat callback may synchronously select, hide or dispose. Repeated removal is\\ninert.\" After start returns, recheck cancellation because synchronous callbacks may have invalidated the attempt before its handle was returned.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Assign a strictly increasing token when each packet arrives, before decoding it. Audit every successfully decoded frame independently, then paint only if the exact display lifecycle remains current, the physical attempt is not cancelled, and the token is newer than the last painted token. This separates arrival order from decode completion order and prevents an older continuation from overwriting newer display state.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Scope arrival and displayed-order state to the visit rather than file identity or physical attempt identity: README.md states, \"Selecting a file creates a visit. Retry replaces the physical attempt without\\nopening another visit. Selecting the same file object again opens a new visit.\" Use attempt cancellation as an additional paint guard so obsolete retry attempts cannot paint, while the visit token prevents rollback across attempts in the same visit.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Preserve history independently of painting. src/session.js identifies the two effects as \"audit:frame=>this.host.recordProgress?.({fileId:v.file.id,attemptId:n,frame})\" and \"this.host.showProgress?.({fileId:v.file.id,attemptId:n,frame})\"; README.md states: \"recordProgress appends transfer history; showProgress paints the open panel.\" A stale decoded frame may still be audited even when it must not repaint.",
+        "category": "preservation"
+      },
+      {
+        "body": "Treat the newest eligible decoded frame as a full replacement rather than enforcing numeric monotonicity. README.md states: \"A full frame replaces displayed state; loaded values can decrease or reset.\" Only arrival tokens are monotonic.",
+        "category": "preservation"
+      },
+      {
+        "body": "Keep unrelated consumers unchanged when their ordering contract differs. TASK requires: \"Preserve ordinary streaming, diagnostic telemetry,\\nand subsequent uses.\" README.md says telemetry's \"existing live delta observations are separate\\nfrom the panel.\" Therefore do not change collectProgressTelemetry startup/listener ordering as part of the panel repair.",
+        "category": "exclusion"
+      },
+      {
+        "body": "Preserve transfer, retry, navigation, cleanup, audit, notices, and queue-record shape. TASK requires restoration \"without changing the public\\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior.\" README.md fixes queue records as \"{fileId, attemptId, visitId, kind}\" absent separate authorization.",
+        "category": "preservation"
+      },
+      {
+        "body": "Verify at least: a cached packet emitted synchronously by start is decoded, audited, and displayed; multiple startup packets with reversed decode completion paint only the newest arrival while auditing both; a newer full frame may decrease the displayed value; showProgress re-entry that selects, hides, or disposes during start leaves cleanup usable and prevents obsolete painting; retry preserves visit identity but cancels old-attempt painting; selecting the same file creates a new display lifecycle; repeated removal is inert; telemetry and subsequent shared-source uses remain unchanged. Run public JavaScript/Vue syntax or build checks with generated output outside the submitted workspace.",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "On attempt startup, install the panel progress listener before invoking the progress source's start method so synchronously emitted cached packets are observed.",
+      "Establish the attempt's cleanup/removal capability before start can synchronously emit callbacks and re-enter select, hide, or dispose.",
+      "Assign an arrival-order token when each panel packet is received, before decoding begins.",
+      "Always append the decoded frame to transfer history through recordProgress, including frames whose decode completes after a newer packet.",
+      "Paint a decoded frame only if its visit is still current and no newer-arriving packet has already become the displayed frame.",
+      "Keep the telemetry consumer's existing start/listen and live-delta behavior unchanged.",
+      "After the Action, run the public JavaScript/Vue syntax or build checks without placing generated artifacts in the workspace."
+    ],
+    "forbidden_effects": [
+      "Do not change public transfer, retry, navigation, cleanup, cancellation, audit, notice, or queue-record behavior beyond restoring the missing initial panel progress and preventing stale display rollback.",
+      "Do not suppress audit/history recording merely because a frame is stale for display.",
+      "Do not make loaded values monotonic; a newer full frame is allowed to decrease or reset the displayed value.",
+      "Do not conflate a retry attempt with a new visit.",
+      "Do not conflate selecting the same file object again with the prior visit.",
+      "Do not add byteCount to queue records without separate authorization.",
+      "Do not change collectProgressTelemetry behavior while repairing the panel consumer.",
+      "Do not allow a callback from an obsolete visit, cancelled attempt, hidden panel, or disposed workspace to repaint the current panel.",
+      "Do not make repeated cleanup/removal observable after the first removal.",
+      "Do not modify tests or configuration, and do not place compiled output or caches in the submitted workspace."
+    ],
+    "lifecycle_identity": [
+      "A workspace Session has its own lifetime and becomes permanently disposed after dispose.",
+      "A selection creates a visit identified by visitId; selecting the same file object again creates a distinct visit.",
+      "A retry retains the current visit identity but creates a new physical attempt identified by attemptId.",
+      "The file object and source are shared across attempts and visits for that file, so file identity alone is insufficient to decide whether a decoded result may paint.",
+      "Panel display validity is tied to the exact current visit and the newest eligible packet arrival within that display lifecycle.",
+      "Each physical attempt owns its AbortController and cancellation state."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Restore the warm-source initial panel progress update by making the panel listener able to receive packets emitted synchronously by start."
+      },
+      {
+        "id": "O2",
+        "text": "For the panel consumer, order display eligibility by packet arrival rather than asynchronous decode completion, so completion of an older packet cannot overwrite a frame from a newer packet."
+      },
+      {
+        "id": "O3",
+        "text": "Treat decoded frames as full replacements: the newest eligible frame may legitimately decrease or reset loaded values."
+      },
+      {
+        "id": "O4",
+        "text": "Continue recording transfer progress history for decoded panel packets independently of whether each frame remains eligible to paint."
+      },
+      {
+        "id": "O5",
+        "text": "Ensure synchronous showProgress/onState re-entry during start can select, hide, or dispose safely even though the outer caller has not yet received the attempt handle."
+      },
+      {
+        "id": "O6",
+        "text": "Retain existing cancellation and cleanup semantics: removal takes effect before any synchronous host detach re-entry, repeated removal is inert, and obsolete attempts cannot subsequently paint."
+      },
+      {
+        "id": "O7",
+        "text": "Preserve visit and attempt semantics across select and retry, including queue record shape and existing notice behavior."
+      },
+      {
+        "id": "O8",
+        "text": "Leave diagnostic collectProgressTelemetry live-delta observations and subsequent source uses unchanged."
+      },
+      {
+        "id": "O9",
+        "text": "Keep the mounted Vue component's synchronous command delegation, framework state projection, and teardown disposal behavior unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "Panel listener registration and usable cleanup state must be established before feed.start can synchronously emit progress.",
+      "Packet arrival order must be captured before feed.decode, because decode may return immediately or later and completions may reorder.",
+      "A decoded frame's audit append must remain independent from the later display-validity decision.",
+      "Before painting, the continuation must verify both current visit validity and that no newer-arriving eligible frame has superseded it.",
+      "Listener removal must be committed before invoking any synchronous host detach callback or allowing re-entrant lifecycle commands.",
+      "Cancellation or lifecycle invalidation occurring during synchronous start must be observed before createAttempt returns and before any later decode continuation may paint."
+    ],
+    "preservation": [
+      "Ordinary asynchronous streaming continues to decode, audit, and display eligible frames.",
+      "recordProgress remains the transfer-history path; showProgress remains the open-panel painting path.",
+      "Queue records retain {fileId, attemptId, visitId, kind}.",
+      "Retry replaces the physical attempt without creating another visit.",
+      "Selecting the same file object again creates a new visit.",
+      "Queue notices, cancellation, retry, navigation, hide, disposal, and component teardown retain existing behavior.",
+      "Telemetry remains separate from panel display and preserves its existing live delta observations.",
+      "A shared source remains reusable across attempts and visits.",
+      "Host callbacks remain synchronous unless explicitly deferred.",
+      "Rejected decode and physical transfer completion remain outside this embedding's modeled behavior."
+    ],
+    "scope": [
+      "Business code relevant to panel progress composition in /workspace/src/session.js, with src/Workspace.vue inspected only to preserve its public component behavior.",
+      "The maintenance window covers synchronous cached packets emitted by a progress source during start and asynchronous decode completions that can arrive out of order.",
+      "No tests, configuration, dependency metadata, scorer, reference implementation, or hidden tests are in scope."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives."
+      },
+      {
+        "file": "TASK",
+        "quote": "Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior."
+      },
+      {
+        "file": "TASK",
+        "quote": "Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses."
+      },
+      {
+        "file": "README.md",
+        "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit.\nThe source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order."
+      },
+      {
+        "file": "README.md",
+        "quote": "recordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size."
+      },
+      {
+        "file": "README.md",
+        "quote": "One startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle."
+      },
+      {
+        "file": "README.md",
+        "quote": "The same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance."
+      },
+      {
+        "file": "README.md",
+        "quote": "Removing a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred."
+      },
+      {
+        "file": "README.md",
+        "quote": "Files have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset. A decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime."
+      },
+      {
+        "file": "README.md",
+        "quote": "The mounted component delegates synchronous select/retry/hide commands to its\nsession, projects state through the actual framework, and disposes its session\non lifecycle teardown. The source uses EventTarget and AbortController; decode\nmay return a value or Promise. jQuery commands use synchronous triggerHandler."
+      },
+      {
+        "file": "src/session.js",
+        "quote": "const progress={active:()=>this.current(v),audit:frame=>this.host.recordProgress?.({fileId:v.file.id,attemptId:n,frame}),\n   view:(frame,order)=>{if(this.current(v)){this.host.showProgress?.({fileId:v.file.id,attemptId:n,frame});this.onState(this.snapshot());}}};"
+      },
+      {
+        "file": "src/session.js",
+        "quote": "const feed=file.progressFeed;\n if(feed){const listener=event=>{ const order=progress.admit?.()??0;\n   const deliver=frame=>{ progress.audit?.(frame);progress.view?.(frame,order);};\n   const decoded=feed.decode(event.detail);if(decoded&&typeof decoded.then==='function')decoded.then(deliver);else deliver(decoded);};\n  feed.start();feed.target.addEventListener('progress',listener);\n  stop=()=>feed.target.removeEventListener('progress',listener);if(controller.signal.aborted)stop();}"
+      },
+      {
+        "file": "src/session.js",
+        "quote": "export function collectProgressTelemetry(feed,recordDelta){\n const listener=event=>{const value=feed.decode(event.detail);if(value&&typeof value.then==='function')value.then(recordDelta);else recordDelta(value);};\n feed.start();feed.target.addEventListener('progress',listener);\n return ()=>feed.target.removeEventListener('progress',listener);\n}"
+      },
+      {
+        "file": "src/Workspace.vue",
+        "quote": "export default {props:['host'],setup(props){const owner=shallowRef({}),session=new Session(props.host,s=>{owner.value=s;});onBeforeUnmount(()=>session.dispose());return {owner,select:f=>session.select(f),retry:()=>session.retry(),hide:()=>session.hide(),dispose:()=>session.dispose(),snapshot:()=>session.snapshot()};}};"
+      }
+    ],
+    "triggers": [
+      "Selecting a file starts a new visit and physical attempt.",
+      "Retrying starts a replacement physical attempt within the current visit.",
+      "feed.start may synchronously emit one or more cached progress packets.",
+      "A progress event invokes decode, which may produce a frame immediately or via a Promise.",
+      "showProgress or state callbacks may synchronously trigger select, hide, or dispose.",
+      "Cancellation, hide, retry, replacement selection, and disposal remove or invalidate panel work.",
+      "Telemetry collection starts its separate diagnostic consumer."
+    ],
+    "unknowns": [
+      "The public sources do not specify the concrete progress-feed implementation or the exact host detach callback mechanism behind removeEventListener; the implementation must honor the documented observable ordering without assuming additional APIs.",
+      "The public sources do not define a numeric frame sequence field; ordering must therefore derive from packet arrival within the panel consumer, not frame contents.",
+      "The public sources do not authorize changing telemetry's current start/listener ordering even though it shares a source abstraction; telemetry must remain untouched.",
+      "The public sources do not specify error handling for rejected decode Promises because rejected decode is explicitly outside the embedding's model.",
+      "The original task does not authorize byteCount in queue records or any change to transport completion semantics."
+    ]
+  },
+  "final_training_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "On attempt startup, install the panel progress listener before invoking the progress source's start method so synchronously emitted cached packets are observed.",
+      "Establish the attempt's cleanup/removal capability before start can synchronously emit callbacks and re-enter select, hide, or dispose.",
+      "Assign an arrival-order token when each panel packet is received, before decoding begins.",
+      "Always append the decoded frame to transfer history through recordProgress, including frames whose decode completes after a newer packet.",
+      "Paint a decoded frame only if its visit is still current and no newer-arriving packet has already become the displayed frame.",
+      "Keep the telemetry consumer's existing start/listen and live-delta behavior unchanged.",
+      "After the Action, run the public JavaScript/Vue syntax or build checks without placing generated artifacts in the workspace."
+    ],
+    "forbidden_effects": [
+      "Do not change public transfer, retry, navigation, cleanup, cancellation, audit, notice, or queue-record behavior beyond restoring the missing initial panel progress and preventing stale display rollback.",
+      "Do not suppress audit/history recording merely because a frame is stale for display.",
+      "Do not make loaded values monotonic; a newer full frame is allowed to decrease or reset the displayed value.",
+      "Do not conflate a retry attempt with a new visit.",
+      "Do not conflate selecting the same file object again with the prior visit.",
+      "Do not add byteCount to queue records without separate authorization.",
+      "Do not change collectProgressTelemetry behavior while repairing the panel consumer.",
+      "Do not allow a callback from an obsolete visit, cancelled attempt, hidden panel, or disposed workspace to repaint the current panel.",
+      "Do not make repeated cleanup/removal observable after the first removal.",
+      "Do not modify tests or configuration, and do not place compiled output or caches in the submitted workspace."
+    ],
+    "lifecycle_identity": [
+      "A workspace Session has its own lifetime and becomes permanently disposed after dispose.",
+      "A selection creates a visit identified by visitId; selecting the same file object again creates a distinct visit.",
+      "A retry retains the current visit identity but creates a new physical attempt identified by attemptId.",
+      "The file object and source are shared across attempts and visits for that file, so file identity alone is insufficient to decide whether a decoded result may paint.",
+      "Panel display validity is tied to the exact current visit and the newest eligible packet arrival within that display lifecycle.",
+      "Each physical attempt owns its AbortController and cancellation state."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Restore the warm-source initial panel progress update by making the panel listener able to receive packets emitted synchronously by start."
+      },
+      {
+        "id": "O2",
+        "text": "For the panel consumer, order display eligibility by packet arrival rather than asynchronous decode completion, so completion of an older packet cannot overwrite a frame from a newer packet."
+      },
+      {
+        "id": "O3",
+        "text": "Treat decoded frames as full replacements: the newest eligible frame may legitimately decrease or reset loaded values."
+      },
+      {
+        "id": "O4",
+        "text": "Continue recording transfer progress history for decoded panel packets independently of whether each frame remains eligible to paint."
+      },
+      {
+        "id": "O5",
+        "text": "Ensure synchronous showProgress/onState re-entry during start can select, hide, or dispose safely even though the outer caller has not yet received the attempt handle."
+      },
+      {
+        "id": "O6",
+        "text": "Retain existing cancellation and cleanup semantics: removal takes effect before any synchronous host detach re-entry, repeated removal is inert, and obsolete attempts cannot subsequently paint."
+      },
+      {
+        "id": "O7",
+        "text": "Preserve visit and attempt semantics across select and retry, including queue record shape and existing notice behavior."
+      },
+      {
+        "id": "O8",
+        "text": "Leave diagnostic collectProgressTelemetry live-delta observations and subsequent source uses unchanged."
+      },
+      {
+        "id": "O9",
+        "text": "Keep the mounted Vue component's synchronous command delegation, framework state projection, and teardown disposal behavior unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "Panel listener registration and usable cleanup state must be established before feed.start can synchronously emit progress.",
+      "Packet arrival order must be captured before feed.decode, because decode may return immediately or later and completions may reorder.",
+      "A decoded frame's audit append must remain independent from the later display-validity decision.",
+      "Before painting, the continuation must verify both current visit validity and that no newer-arriving eligible frame has superseded it.",
+      "Listener removal must be committed before invoking any synchronous host detach callback or allowing re-entrant lifecycle commands.",
+      "Cancellation or lifecycle invalidation occurring during synchronous start must be observed before createAttempt returns and before any later decode continuation may paint."
+    ],
+    "preservation": [
+      "Ordinary asynchronous streaming continues to decode, audit, and display eligible frames.",
+      "recordProgress remains the transfer-history path; showProgress remains the open-panel painting path.",
+      "Queue records retain {fileId, attemptId, visitId, kind}.",
+      "Retry replaces the physical attempt without creating another visit.",
+      "Selecting the same file object again creates a new visit.",
+      "Queue notices, cancellation, retry, navigation, hide, disposal, and component teardown retain existing behavior.",
+      "Telemetry remains separate from panel display and preserves its existing live delta observations.",
+      "A shared source remains reusable across attempts and visits.",
+      "Host callbacks remain synchronous unless explicitly deferred.",
+      "Rejected decode and physical transfer completion remain outside this embedding's modeled behavior."
+    ],
+    "scope": [
+      "Business code relevant to panel progress composition in /workspace/src/session.js, with src/Workspace.vue inspected only to preserve its public component behavior.",
+      "The maintenance window covers synchronous cached packets emitted by a progress source during start and asynchronous decode completions that can arrive out of order.",
+      "No tests, configuration, dependency metadata, scorer, reference implementation, or hidden tests are in scope."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives."
+      },
+      {
+        "file": "TASK",
+        "quote": "Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior."
+      },
+      {
+        "file": "TASK",
+        "quote": "Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses."
+      },
+      {
+        "file": "README.md",
+        "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit.\nThe source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order."
+      },
+      {
+        "file": "README.md",
+        "quote": "recordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size."
+      },
+      {
+        "file": "README.md",
+        "quote": "One startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle."
+      },
+      {
+        "file": "README.md",
+        "quote": "The same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance."
+      },
+      {
+        "file": "README.md",
+        "quote": "Removing a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred."
+      },
+      {
+        "file": "README.md",
+        "quote": "Files have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset. A decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime."
+      },
+      {
+        "file": "README.md",
+        "quote": "The mounted component delegates synchronous select/retry/hide commands to its\nsession, projects state through the actual framework, and disposes its session\non lifecycle teardown. The source uses EventTarget and AbortController; decode\nmay return a value or Promise. jQuery commands use synchronous triggerHandler."
+      },
+      {
+        "file": "src/session.js",
+        "quote": "const progress={active:()=>this.current(v),audit:frame=>this.host.recordProgress?.({fileId:v.file.id,attemptId:n,frame}),\n   view:(frame,order)=>{if(this.current(v)){this.host.showProgress?.({fileId:v.file.id,attemptId:n,frame});this.onState(this.snapshot());}}};"
+      },
+      {
+        "file": "src/session.js",
+        "quote": "const feed=file.progressFeed;\n if(feed){const listener=event=>{ const order=progress.admit?.()??0;\n   const deliver=frame=>{ progress.audit?.(frame);progress.view?.(frame,order);};\n   const decoded=feed.decode(event.detail);if(decoded&&typeof decoded.then==='function')decoded.then(deliver);else deliver(decoded);};\n  feed.start();feed.target.addEventListener('progress',listener);\n  stop=()=>feed.target.removeEventListener('progress',listener);if(controller.signal.aborted)stop();}"
+      },
+      {
+        "file": "src/session.js",
+        "quote": "export function collectProgressTelemetry(feed,recordDelta){\n const listener=event=>{const value=feed.decode(event.detail);if(value&&typeof value.then==='function')value.then(recordDelta);else recordDelta(value);};\n feed.start();feed.target.addEventListener('progress',listener);\n return ()=>feed.target.removeEventListener('progress',listener);\n}"
+      },
+      {
+        "file": "src/Workspace.vue",
+        "quote": "export default {props:['host'],setup(props){const owner=shallowRef({}),session=new Session(props.host,s=>{owner.value=s;});onBeforeUnmount(()=>session.dispose());return {owner,select:f=>session.select(f),retry:()=>session.retry(),hide:()=>session.hide(),dispose:()=>session.dispose(),snapshot:()=>session.snapshot()};}};"
+      }
+    ],
+    "triggers": [
+      "Selecting a file starts a new visit and physical attempt.",
+      "Retrying starts a replacement physical attempt within the current visit.",
+      "feed.start may synchronously emit one or more cached progress packets.",
+      "A progress event invokes decode, which may produce a frame immediately or via a Promise.",
+      "showProgress or state callbacks may synchronously trigger select, hide, or dispose.",
+      "Cancellation, hide, retry, replacement selection, and disposal remove or invalidate panel work.",
+      "Telemetry collection starts its separate diagnostic consumer."
+    ],
+    "unknowns": [
+      "The public sources do not specify the concrete progress-feed implementation or the exact host detach callback mechanism behind removeEventListener; the implementation must honor the documented observable ordering without assuming additional APIs.",
+      "The public sources do not define a numeric frame sequence field; ordering must therefore derive from packet arrival within the panel consumer, not frame contents.",
+      "The public sources do not authorize changing telemetry's current start/listener ordering even though it shares a source abstraction; telemetry must remain untouched.",
+      "The public sources do not specify error handling for rejected decode Promises because rejected decode is explicitly outside the embedding's model.",
+      "The original task does not authorize byteCount in queue records or any change to transport completion semantics."
+    ]
+  },
+  "origin": "success",
+  "reflection_update": {
+    "change_summary": [
+      "Created independent reusable guidance because the frozen experience_catalog and complete related_experiences are both empty; there is no existing lineage to revise or merge.",
+      "Captured the startup checkpoint that listener registration and idempotent cleanup must exist before a synchronously emitting start call, including inline lifecycle re-entry.",
+      "Captured arrival-time ordering across asynchronous decode continuations, with visit-scoped display identity and attempt cancellation as separate validity dimensions.",
+      "Preserved all source-supported obligations: audit every decoded panel frame, allow newer full replacements to decrease, retain retry/selection identities and queue shape, and leave telemetry and other public behavior unchanged."
+    ],
+    "failure_attribution": "not_applicable",
+    "operation": "new",
+    "reason": "Attempt 1 passed both public syntax checks and the available training acceptance verdict. The source exposes a reusable mechanism combining lazy synchronous publication, asynchronous completion reordering, lifecycle identity, and inline cleanup re-entry; no existing experience is available to receive this evidence or correction.",
+    "supporting_attempts": [
+      1
+    ],
+    "target_sha256s": []
+  },
+  "related_experiences": [],
+  "source_sha256": "00c8baf8a4682ef7d641bfeda259e75800ebf59051752e1c9b01a14f54a167fd",
+  "status": "awaiting_content_review",
+  "task": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives. Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior. Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward. Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses.\n",
+  "training_accepted": true,
+  "trajectory": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "ed1f501c74ca69903a907790d747a5967e413231f54917c2187c81739000800e",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "package-lock.json": "789d121d66759e7ea42b3ca8cb2670a2b5b5d76e7002a33c65b3037e99ef64f4",
+        "package.json": "aa36e384f5a85ace6c07305d96b0922a5268284a5b68d4d64ef3b49395b044ce",
+        "src/Workspace.vue": "6f345889cea7848a6e148a44e22827993ead2b867604062eba89afc0b3b059c8",
+        "src/session.js": "fa84c3f3a0d39f096aa042c953e40803777d00858d93943db7aba802bd344837"
+      },
+      "candidate_sources": {
+        "README.md": "# Laboratory microscopy series upload\n\nThis workspace selects payload files, starts transfers, records queue and\nprogress history, and paints progress for its open panel. Runtime: Node 22.23.2.\nDependencies: Vue 3.4.38; jsdom 22.1.0; esbuild 0.21.5. See src for the session/component entry API.\n\nSelecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit.\nThe source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order.\n\nrecordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size.\n\nOne startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle.\n\nThe same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance.\nRemoving a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred.\n\nFiles have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset.\nA decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime.\n\nThe mounted component delegates synchronous select/retry/hide commands to its\nsession, projects state through the actual framework, and disposes its session\non lifecycle teardown. The source uses EventTarget and AbortController; decode\nmay return a value or Promise. jQuery commands use synchronous triggerHandler.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package-lock.json": "{\n  \"name\": \"transfer-progress-composition-v4-window-cued-vue3-fixture\",\n  \"version\": \"0.1.0\",\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {\n      \"name\": \"transfer-progress-composition-v4-window-cued-vue3-fixture\",\n      \"version\": \"0.1.0\",\n      \"dependencies\": {\n        \"esbuild\": \"0.21.5\",\n        \"jsdom\": \"22.1.0\",\n        \"vue3\": \"npm:vue@3.4.38\"\n      }\n    },\n    \"node_modules/@babel/helper-string-parser\": {\n      \"version\": \"7.29.7\",\n      \"resolved\": \"https://registry.npmjs.org/@babel/helper-string-parser/-/helper-string-parser-7.29.7.tgz\",\n      \"integrity\": \"sha512-Pb5ijPrZ89GDH8223L4UP8i6QApWxs04RbPQJTeWDV0/keR2E36MeKnyr6LYmUUvqRRI+Iv87SuF1W6ErINzYw==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">=6.9.0\"\n      }\n    },\n    \"node_modules/@babel/helper-validator-identifier\": {\n      \"version\": \"7.29.7\",\n      \"resolved\": \"https://registry.npmjs.org/@babel/helper-validator-identifier/-/helper-validator-identifier-7.29.7.tgz\",\n      \"integrity\": \"sha512-qehxGkRj55h/ff8EMaJ+cYhyaKlHIxqYDn682wQD7RNp9UujOQsHog2uS0r2vzr4pW+sXf90NeeayjcNaX3fFg==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">=6.9.0\"\n      }\n    },\n    \"node_modules/@babel/parser\": {\n      \"version\": \"7.29.9\",\n      \"resolved\": \"https://registry.npmjs.org/@babel/parser/-/parser-7.29.9.tgz\",\n      \"integrity\": \"sha512-CjXrNHTnvqBVqHgdBysY3vk2T8tpJHb5/RMeHJBTyVa9xgugCB0CJTx/3oO8RV2QRQP391RWpB7D6hLjm8V9uA==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@babel/types\": \"^7.29.8\"\n      },\n      \"bin\": {\n        \"parser\": \"bin/babel-parser.js\"\n      },\n      \"engines\": {\n        \"node\": \">=6.0.0\"\n      }\n    },\n    \"node_modules/@babel/types\": {\n      \"version\": \"7.29.8\",\n      \"resolved\": \"https://registry.npmjs.org/@babel/types/-/types-7.29.8.tgz\",\n      \"integrity\": \"sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@babel/helper-string-parser\": \"^7.29.7\",\n        \"@babel/helper-validator-identifier\": \"^7.29.7\"\n      },\n      \"engines\": {\n        \"node\": \">=6.9.0\"\n      }\n    },\n    \"node_modules/@esbuild/aix-ppc64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/aix-ppc64/-/aix-ppc64-0.21.5.tgz\",\n      \"integrity\": \"sha512-1SDgH6ZSPTlggy1yI6+Dbkiz8xzpHJEVAlF/AM1tHPLsf5STom9rwtjE4hKAF20FfXXNTFqEYXyJNWh1GiZedQ==\",\n      \"cpu\": [\n        \"ppc64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"aix\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/android-arm\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/android-arm/-/android-arm-0.21.5.tgz\",\n      \"integrity\": \"sha512-vCPvzSjpPHEi1siZdlvAlsPxXl7WbOVUBBAowWug4rJHb68Ox8KualB+1ocNvT5fjv6wpkX6o/iEpbDrf68zcg==\",\n      \"cpu\": [\n        \"arm\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"android\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/android-arm64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/android-arm64/-/android-arm64-0.21.5.tgz\",\n      \"integrity\": \"sha512-c0uX9VAUBQ7dTDCjq+wdyGLowMdtR/GoC2U5IYk/7D1H1JYC0qseD7+11iMP2mRLN9RcCMRcjC4YMclCzGwS/A==\",\n      \"cpu\": [\n        \"arm64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"android\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/android-x64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/android-x64/-/android-x64-0.21.5.tgz\",\n      \"integrity\": \"sha512-D7aPRUUNHRBwHxzxRvp856rjUHRFW1SdQATKXH2hqA0kAZb1hKmi02OpYRacl0TxIGz/ZmXWlbZgjwWYaCakTA==\",\n      \"cpu\": [\n        \"x64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"android\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/darwin-arm64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/darwin-arm64/-/darwin-arm64-0.21.5.tgz\",\n      \"integrity\": \"sha512-DwqXqZyuk5AiWWf3UfLiRDJ5EDd49zg6O9wclZ7kUMv2WRFr4HKjXp/5t8JZ11QbQfUS6/cRCKGwYhtNAY88kQ==\",\n      \"cpu\": [\n        \"arm64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"darwin\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/darwin-x64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/darwin-x64/-/darwin-x64-0.21.5.tgz\",\n      \"integrity\": \"sha512-se/JjF8NlmKVG4kNIuyWMV/22ZaerB+qaSi5MdrXtd6R08kvs2qCN4C09miupktDitvh8jRFflwGFBQcxZRjbw==\",\n      \"cpu\": [\n        \"x64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"darwin\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/freebsd-arm64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/freebsd-arm64/-/freebsd-arm64-0.21.5.tgz\",\n      \"integrity\": \"sha512-5JcRxxRDUJLX8JXp/wcBCy3pENnCgBR9bN6JsY4OmhfUtIHe3ZW0mawA7+RDAcMLrMIZaf03NlQiX9DGyB8h4g==\",\n      \"cpu\": [\n        \"arm64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"freebsd\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/freebsd-x64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/freebsd-x64/-/freebsd-x64-0.21.5.tgz\",\n      \"integrity\": \"sha512-J95kNBj1zkbMXtHVH29bBriQygMXqoVQOQYA+ISs0/2l3T9/kj42ow2mpqerRBxDJnmkUDCaQT/dfNXWX/ZZCQ==\",\n      \"cpu\": [\n        \"x64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"freebsd\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-arm\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-arm/-/linux-arm-0.21.5.tgz\",\n      \"integrity\": \"sha512-bPb5AHZtbeNGjCKVZ9UGqGwo8EUu4cLq68E95A53KlxAPRmUyYv2D6F0uUI65XisGOL1hBP5mTronbgo+0bFcA==\",\n      \"cpu\": [\n        \"arm\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-arm64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-arm64/-/linux-arm64-0.21.5.tgz\",\n      \"integrity\": \"sha512-ibKvmyYzKsBeX8d8I7MH/TMfWDXBF3db4qM6sy+7re0YXya+K1cem3on9XgdT2EQGMu4hQyZhan7TeQ8XkGp4Q==\",\n      \"cpu\": [\n        \"arm64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-ia32\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-ia32/-/linux-ia32-0.21.5.tgz\",\n      \"integrity\": \"sha512-YvjXDqLRqPDl2dvRODYmmhz4rPeVKYvppfGYKSNGdyZkA01046pLWyRKKI3ax8fbJoK5QbxblURkwK/MWY18Tg==\",\n      \"cpu\": [\n        \"ia32\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-loong64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-loong64/-/linux-loong64-0.21.5.tgz\",\n      \"integrity\": \"sha512-uHf1BmMG8qEvzdrzAqg2SIG/02+4/DHB6a9Kbya0XDvwDEKCoC8ZRWI5JJvNdUjtciBGFQ5PuBlpEOXQj+JQSg==\",\n      \"cpu\": [\n        \"loong64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-mips64el\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-mips64el/-/linux-mips64el-0.21.5.tgz\",\n      \"integrity\": \"sha512-IajOmO+KJK23bj52dFSNCMsz1QP1DqM6cwLUv3W1QwyxkyIWecfafnI555fvSGqEKwjMXVLokcV5ygHW5b3Jbg==\",\n      \"cpu\": [\n        \"mips64el\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-ppc64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-ppc64/-/linux-ppc64-0.21.5.tgz\",\n      \"integrity\": \"sha512-1hHV/Z4OEfMwpLO8rp7CvlhBDnjsC3CttJXIhBi+5Aj5r+MBvy4egg7wCbe//hSsT+RvDAG7s81tAvpL2XAE4w==\",\n      \"cpu\": [\n        \"ppc64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-riscv64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-riscv64/-/linux-riscv64-0.21.5.tgz\",\n      \"integrity\": \"sha512-2HdXDMd9GMgTGrPWnJzP2ALSokE/0O5HhTUvWIbD3YdjME8JwvSCnNGBnTThKGEB91OZhzrJ4qIIxk/SBmyDDA==\",\n      \"cpu\": [\n        \"riscv64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-s390x\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-s390x/-/linux-s390x-0.21.5.tgz\",\n      \"integrity\": \"sha512-zus5sxzqBJD3eXxwvjN1yQkRepANgxE9lgOW2qLnmr8ikMTphkjgXu1HR01K4FJg8h1kEEDAqDcZQtbrRnB41A==\",\n      \"cpu\": [\n        \"s390x\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/linux-x64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.21.5.tgz\",\n      \"integrity\": \"sha512-1rYdTpyv03iycF1+BhzrzQJCdOuAOtaqHTWJZCWvijKD2N5Xu0TtVC8/+1faWqcP9iBCWOmjmhoH94dH82BxPQ==\",\n      \"cpu\": [\n        \"x64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"linux\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/netbsd-x64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/netbsd-x64/-/netbsd-x64-0.21.5.tgz\",\n      \"integrity\": \"sha512-Woi2MXzXjMULccIwMnLciyZH4nCIMpWQAs049KEeMvOcNADVxo0UBIQPfSmxB3CWKedngg7sWZdLvLczpe0tLg==\",\n      \"cpu\": [\n        \"x64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"netbsd\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/openbsd-x64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/openbsd-x64/-/openbsd-x64-0.21.5.tgz\",\n      \"integrity\": \"sha512-HLNNw99xsvx12lFBUwoT8EVCsSvRNDVxNpjZ7bPn947b8gJPzeHWyNVhFsaerc0n3TsbOINvRP2byTZ5LKezow==\",\n      \"cpu\": [\n        \"x64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"openbsd\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/sunos-x64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/sunos-x64/-/sunos-x64-0.21.5.tgz\",\n      \"integrity\": \"sha512-6+gjmFpfy0BHU5Tpptkuh8+uw3mnrvgs+dSPQXQOv3ekbordwnzTVEb4qnIvQcYXq6gzkyTnoZ9dZG+D4garKg==\",\n      \"cpu\": [\n        \"x64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"sunos\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/win32-arm64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/win32-arm64/-/win32-arm64-0.21.5.tgz\",\n      \"integrity\": \"sha512-Z0gOTd75VvXqyq7nsl93zwahcTROgqvuAcYDUr+vOv8uHhNSKROyU961kgtCD1e95IqPKSQKH7tBTslnS3tA8A==\",\n      \"cpu\": [\n        \"arm64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"win32\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/win32-ia32\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/win32-ia32/-/win32-ia32-0.21.5.tgz\",\n      \"integrity\": \"sha512-SWXFF1CL2RVNMaVs+BBClwtfZSvDgtL//G/smwAc5oVK/UPu2Gu9tIaRgFmYFFKrmg3SyAjSrElf0TiJ1v8fYA==\",\n      \"cpu\": [\n        \"ia32\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"win32\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@esbuild/win32-x64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/win32-x64/-/win32-x64-0.21.5.tgz\",\n      \"integrity\": \"sha512-tQd/1efJuzPC6rCFwEvLtci/xNFcTZknmXs98FYDfGE4wP9ClFV98nyKrzJKVPMhdDnjzLhdUyMX4PsQAPjwIw==\",\n      \"cpu\": [\n        \"x64\"\n      ],\n      \"license\": \"MIT\",\n      \"optional\": true,\n      \"os\": [\n        \"win32\"\n      ],\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/@jridgewell/sourcemap-codec\": {\n      \"version\": \"1.6.0\",\n      \"resolved\": \"https://registry.npmjs.org/@jridgewell/sourcemap-codec/-/sourcemap-codec-1.6.0.tgz\",\n      \"integrity\": \"sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/@tootallnate/once\": {\n      \"version\": \"2.0.1\",\n      \"resolved\": \"https://registry.npmjs.org/@tootallnate/once/-/once-2.0.1.tgz\",\n      \"integrity\": \"sha512-HqmEUIGRJ5fSXchkVgR5F7qn48bDBzv0kWj/Kfu5e6uci4UlEeng4331LnBkWffb++Ei3FOVLxo8JJWMFBDMeQ==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">= 10\"\n      }\n    },\n    \"node_modules/@vue/compiler-core\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/compiler-core/-/compiler-core-3.4.38.tgz\",\n      \"integrity\": \"sha512-8IQOTCWnLFqfHzOGm9+P8OPSEDukgg3Huc92qSG49if/xI2SAwLHQO2qaPQbjCWPBcQoO1WYfXfTACUrWV3c5A==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@babel/parser\": \"^7.24.7\",\n        \"@vue/shared\": \"3.4.38\",\n        \"entities\": \"^4.5.0\",\n        \"estree-walker\": \"^2.0.2\",\n        \"source-map-js\": \"^1.2.0\"\n      }\n    },\n    \"node_modules/@vue/compiler-core/node_modules/entities\": {\n      \"version\": \"4.5.0\",\n      \"resolved\": \"https://registry.npmjs.org/entities/-/entities-4.5.0.tgz\",\n      \"integrity\": \"sha512-V0hjH4dGPh9Ao5p0MoRY6BVqtwCjhz6vI5LT8AJ55H+4g9/4vbHx1I54fS0XuclLhDHArPQCiMjDxjaL8fPxhw==\",\n      \"license\": \"BSD-2-Clause\",\n      \"engines\": {\n        \"node\": \">=0.12\"\n      },\n      \"funding\": {\n        \"url\": \"https://github.com/fb55/entities?sponsor=1\"\n      }\n    },\n    \"node_modules/@vue/compiler-dom\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/compiler-dom/-/compiler-dom-3.4.38.tgz\",\n      \"integrity\": \"sha512-Osc/c7ABsHXTsETLgykcOwIxFktHfGSUDkb05V61rocEfsFDcjDLH/IHJSNJP+/Sv9KeN2Lx1V6McZzlSb9EhQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@vue/compiler-core\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\"\n      }\n    },\n    \"node_modules/@vue/compiler-ssr\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/compiler-ssr/-/compiler-ssr-3.4.38.tgz\",\n      \"integrity\": \"sha512-YXznKFQ8dxYpAz9zLuVvfcXhc31FSPFDcqr0kyujbOwNhlmaNvL2QfIy+RZeJgSn5Fk54CWoEUeW+NVBAogGaw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@vue/compiler-dom\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\"\n      }\n    },\n    \"node_modules/@vue/reactivity\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/reactivity/-/reactivity-3.4.38.tgz\",\n      \"integrity\": \"sha512-4vl4wMMVniLsSYYeldAKzbk72+D3hUnkw9z8lDeJacTxAkXeDAP1uE9xr2+aKIN0ipOL8EG2GPouVTH6yF7Gnw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@vue/shared\": \"3.4.38\"\n      }\n    },\n    \"node_modules/@vue/runtime-core\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/runtime-core/-/runtime-core-3.4.38.tgz\",\n      \"integrity\": \"sha512-21z3wA99EABtuf+O3IhdxP0iHgkBs1vuoCAsCKLVJPEjpVqvblwBnTj42vzHRlWDCyxu9ptDm7sI2ZMcWrQqlA==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@vue/reactivity\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\"\n      }\n    },\n    \"node_modules/@vue/runtime-dom\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/runtime-dom/-/runtime-dom-3.4.38.tgz\",\n      \"integrity\": \"sha512-afZzmUreU7vKwKsV17H1NDThEEmdYI+GCAK/KY1U957Ig2NATPVjCROv61R19fjZNzMmiU03n79OMnXyJVN0UA==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@vue/reactivity\": \"3.4.38\",\n        \"@vue/runtime-core\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\",\n        \"csstype\": \"^3.1.3\"\n      }\n    },\n    \"node_modules/@vue/server-renderer\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/server-renderer/-/server-renderer-3.4.38.tgz\",\n      \"integrity\": \"sha512-NggOTr82FbPEkkUvBm4fTGcwUY8UuTsnWC/L2YZBmvaQ4C4Jl/Ao4HHTB+l7WnFCt5M/dN3l0XLuyjzswGYVCA==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@vue/compiler-ssr\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\"\n      },\n      \"peerDependencies\": {\n        \"vue\": \"3.4.38\"\n      }\n    },\n    \"node_modules/@vue/shared\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/shared/-/shared-3.4.38.tgz\",\n      \"integrity\": \"sha512-q0xCiLkuWWQLzVrecPb0RMsNWyxICOjPrcrwxTUEHb1fsnvni4dcuyG7RT/Ie7VPTvnjzIaWzRMUBsrqNj/hhw==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/abab\": {\n      \"version\": \"2.0.6\",\n      \"resolved\": \"https://registry.npmjs.org/abab/-/abab-2.0.6.tgz\",\n      \"integrity\": \"sha512-j2afSsaIENvHZN2B8GOpF566vZ5WVk5opAiMTvWgaQT8DkbOqsTfvNAvHoRGU2zzP8cPoqys+xHTRDWW8L+/BA==\",\n      \"deprecated\": \"Use your platform's native atob() and btoa() methods instead\",\n      \"license\": \"BSD-3-Clause\"\n    },\n    \"node_modules/agent-base\": {\n      \"version\": \"6.0.2\",\n      \"resolved\": \"https://registry.npmjs.org/agent-base/-/agent-base-6.0.2.tgz\",\n      \"integrity\": \"sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"debug\": \"4\"\n      },\n      \"engines\": {\n        \"node\": \">= 6.0.0\"\n      }\n    },\n    \"node_modules/asynckit\": {\n      \"version\": \"0.4.0\",\n      \"resolved\": \"https://registry.npmjs.org/asynckit/-/asynckit-0.4.0.tgz\",\n      \"integrity\": \"sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/call-bind-apply-helpers\": {\n      \"version\": \"1.0.2\",\n      \"resolved\": \"https://registry.npmjs.org/call-bind-apply-helpers/-/call-bind-apply-helpers-1.0.2.tgz\",\n      \"integrity\": \"sha512-Sp1ablJ0ivDkSzjcaJdxEunN5/XvksFJ2sMBFfq6x0ryhQV/2b/KwFe21cMpmHtPOSij8K99/wSfoEuTObmuMQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"es-errors\": \"^1.3.0\",\n        \"function-bind\": \"^1.1.2\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/combined-stream\": {\n      \"version\": \"1.0.8\",\n      \"resolved\": \"https://registry.npmjs.org/combined-stream/-/combined-stream-1.0.8.tgz\",\n      \"integrity\": \"sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"delayed-stream\": \"~1.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.8\"\n      }\n    },\n    \"node_modules/cssstyle\": {\n      \"version\": \"3.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/cssstyle/-/cssstyle-3.0.0.tgz\",\n      \"integrity\": \"sha512-N4u2ABATi3Qplzf0hWbVCdjenim8F3ojEXpBDF5hBpjzW182MjNGLqfmQ0SkSPeQ+V86ZXgeH8aXj6kayd4jgg==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"rrweb-cssom\": \"^0.6.0\"\n      },\n      \"engines\": {\n        \"node\": \">=14\"\n      }\n    },\n    \"node_modules/csstype\": {\n      \"version\": \"3.2.3\",\n      \"resolved\": \"https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz\",\n      \"integrity\": \"sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/data-urls\": {\n      \"version\": \"4.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/data-urls/-/data-urls-4.0.0.tgz\",\n      \"integrity\": \"sha512-/mMTei/JXPqvFqQtfyTowxmJVwr2PVAeCcDxyFf6LhoOu/09TX2OX3kb2wzi4DMXcfj4OItwDOnhl5oziPnT6g==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"abab\": \"^2.0.6\",\n        \"whatwg-mimetype\": \"^3.0.0\",\n        \"whatwg-url\": \"^12.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">=14\"\n      }\n    },\n    \"node_modules/debug\": {\n      \"version\": \"4.4.3\",\n      \"resolved\": \"https://registry.npmjs.org/debug/-/debug-4.4.3.tgz\",\n      \"integrity\": \"sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"ms\": \"^2.1.3\"\n      },\n      \"engines\": {\n        \"node\": \">=6.0\"\n      },\n      \"peerDependenciesMeta\": {\n        \"supports-color\": {\n          \"optional\": true\n        }\n      }\n    },\n    \"node_modules/decimal.js\": {\n      \"version\": \"10.6.0\",\n      \"resolved\": \"https://registry.npmjs.org/decimal.js/-/decimal.js-10.6.0.tgz\",\n      \"integrity\": \"sha512-YpgQiITW3JXGntzdUmyUR1V812Hn8T1YVXhCu+wO3OpS4eU9l4YdD3qjyiKdV6mvV29zapkMeD390UVEf2lkUg==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/delayed-stream\": {\n      \"version\": \"1.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/delayed-stream/-/delayed-stream-1.0.0.tgz\",\n      \"integrity\": \"sha512-ZySD7Nf91aLB0RxL4KGrKHBXl7Eds1DAmEdcoVawXnLD7SDhpNgtuII2aAkg7a7QS41jxPSZ17p4VdGnMHk3MQ==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">=0.4.0\"\n      }\n    },\n    \"node_modules/domexception\": {\n      \"version\": \"4.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/domexception/-/domexception-4.0.0.tgz\",\n      \"integrity\": \"sha512-A2is4PLG+eeSfoTMA95/s4pvAoSo2mKtiM5jlHkAVewmiO8ISFTFKZjH7UAM1Atli/OT/7JHOrJRJiMKUZKYBw==\",\n      \"deprecated\": \"Use your platform's native DOMException instead\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"webidl-conversions\": \"^7.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/dunder-proto\": {\n      \"version\": \"1.0.1\",\n      \"resolved\": \"https://registry.npmjs.org/dunder-proto/-/dunder-proto-1.0.1.tgz\",\n      \"integrity\": \"sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"call-bind-apply-helpers\": \"^1.0.1\",\n        \"es-errors\": \"^1.3.0\",\n        \"gopd\": \"^1.2.0\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/entities\": {\n      \"version\": \"6.0.1\",\n      \"resolved\": \"https://registry.npmjs.org/entities/-/entities-6.0.1.tgz\",\n      \"integrity\": \"sha512-aN97NXWF6AWBTahfVOIrB/NShkzi5H7F9r1s9mD3cDj4Ko5f2qhhVoYMibXF7GlLveb/D2ioWay8lxI97Ven3g==\",\n      \"license\": \"BSD-2-Clause\",\n      \"engines\": {\n        \"node\": \">=0.12\"\n      },\n      \"funding\": {\n        \"url\": \"https://github.com/fb55/entities?sponsor=1\"\n      }\n    },\n    \"node_modules/es-define-property\": {\n      \"version\": \"1.0.1\",\n      \"resolved\": \"https://registry.npmjs.org/es-define-property/-/es-define-property-1.0.1.tgz\",\n      \"integrity\": \"sha512-e3nRfgfUZ4rNGL232gUgX06QNyyez04KdjFrF+LTRoOXmrOgFKDg4BCdsjW8EnT69eqdYGmRpJwiPVYNrCaW3g==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/es-errors\": {\n      \"version\": \"1.3.0\",\n      \"resolved\": \"https://registry.npmjs.org/es-errors/-/es-errors-1.3.0.tgz\",\n      \"integrity\": \"sha512-Zf5H2Kxt2xjTvbJvP2ZWLEICxA6j+hAmMzIlypy4xcBg1vKVnx89Wy0GbS+kf5cwCVFFzdCFh2XSCFNULS6csw==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/es-object-atoms\": {\n      \"version\": \"1.1.2\",\n      \"resolved\": \"https://registry.npmjs.org/es-object-atoms/-/es-object-atoms-1.1.2.tgz\",\n      \"integrity\": \"sha512-HWcBoN6NileqtSydK2FqHbS/LoDd2pqrnQHLyJzBj4kOp/ky2MWMN694xOfkK8/SnUsW2DH7EfyVlydKCsm1Zw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"es-errors\": \"^1.3.0\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/es-set-tostringtag\": {\n      \"version\": \"2.1.0\",\n      \"resolved\": \"https://registry.npmjs.org/es-set-tostringtag/-/es-set-tostringtag-2.1.0.tgz\",\n      \"integrity\": \"sha512-j6vWzfrGVfyXxge+O0x5sh6cvxAog0a/4Rdd2K36zCMV5eJ+/+tOAngRO8cODMNWbVRdVlmGZQL2YS3yR8bIUA==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"es-errors\": \"^1.3.0\",\n        \"get-intrinsic\": \"^1.2.6\",\n        \"has-tostringtag\": \"^1.0.2\",\n        \"hasown\": \"^2.0.2\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/esbuild\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/esbuild/-/esbuild-0.21.5.tgz\",\n      \"integrity\": \"sha512-mg3OPMV4hXywwpoDxu3Qda5xCKQi+vCTZq8S9J/EpkhB2HzKXq4SNFZE3+NK93JYxc8VMSep+lOUSC/RVKaBqw==\",\n      \"hasInstallScript\": true,\n      \"license\": \"MIT\",\n      \"bin\": {\n        \"esbuild\": \"bin/esbuild\"\n      },\n      \"engines\": {\n        \"node\": \">=12\"\n      },\n      \"optionalDependencies\": {\n        \"@esbuild/aix-ppc64\": \"0.21.5\",\n        \"@esbuild/android-arm\": \"0.21.5\",\n        \"@esbuild/android-arm64\": \"0.21.5\",\n        \"@esbuild/android-x64\": \"0.21.5\",\n        \"@esbuild/darwin-arm64\": \"0.21.5\",\n        \"@esbuild/darwin-x64\": \"0.21.5\",\n        \"@esbuild/freebsd-arm64\": \"0.21.5\",\n        \"@esbuild/freebsd-x64\": \"0.21.5\",\n        \"@esbuild/linux-arm\": \"0.21.5\",\n        \"@esbuild/linux-arm64\": \"0.21.5\",\n        \"@esbuild/linux-ia32\": \"0.21.5\",\n        \"@esbuild/linux-loong64\": \"0.21.5\",\n        \"@esbuild/linux-mips64el\": \"0.21.5\",\n        \"@esbuild/linux-ppc64\": \"0.21.5\",\n        \"@esbuild/linux-riscv64\": \"0.21.5\",\n        \"@esbuild/linux-s390x\": \"0.21.5\",\n        \"@esbuild/linux-x64\": \"0.21.5\",\n        \"@esbuild/netbsd-x64\": \"0.21.5\",\n        \"@esbuild/openbsd-x64\": \"0.21.5\",\n        \"@esbuild/sunos-x64\": \"0.21.5\",\n        \"@esbuild/win32-arm64\": \"0.21.5\",\n        \"@esbuild/win32-ia32\": \"0.21.5\",\n        \"@esbuild/win32-x64\": \"0.21.5\"\n      }\n    },\n    \"node_modules/estree-walker\": {\n      \"version\": \"2.0.2\",\n      \"resolved\": \"https://registry.npmjs.org/estree-walker/-/estree-walker-2.0.2.tgz\",\n      \"integrity\": \"sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/form-data\": {\n      \"version\": \"4.0.6\",\n      \"resolved\": \"https://registry.npmjs.org/form-data/-/form-data-4.0.6.tgz\",\n      \"integrity\": \"sha512-vKatAh4SlVfgbv+YtmhiRjhEMJsYpsG1Y2rMQtR+SVSbytsSD1YGzDIcrAJmdFec88u/+VoGmxnl+80gL1tRCQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"asynckit\": \"^0.4.0\",\n        \"combined-stream\": \"^1.0.8\",\n        \"es-set-tostringtag\": \"^2.1.0\",\n        \"hasown\": \"^2.0.4\",\n        \"mime-types\": \"^2.1.35\"\n      },\n      \"engines\": {\n        \"node\": \">= 6\"\n      }\n    },\n    \"node_modules/function-bind\": {\n      \"version\": \"1.1.2\",\n      \"resolved\": \"https://registry.npmjs.org/function-bind/-/function-bind-1.1.2.tgz\",\n      \"integrity\": \"sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==\",\n      \"license\": \"MIT\",\n      \"funding\": {\n        \"url\": \"https://github.com/sponsors/ljharb\"\n      }\n    },\n    \"node_modules/get-intrinsic\": {\n      \"version\": \"1.3.0\",\n      \"resolved\": \"https://registry.npmjs.org/get-intrinsic/-/get-intrinsic-1.3.0.tgz\",\n      \"integrity\": \"sha512-9fSjSaos/fRIVIp+xSJlE6lfwhES7LNtKaCBIamHsjr2na1BiABJPo0mOjjz8GJDURarmCPGqaiVg5mfjb98CQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"call-bind-apply-helpers\": \"^1.0.2\",\n        \"es-define-property\": \"^1.0.1\",\n        \"es-errors\": \"^1.3.0\",\n        \"es-object-atoms\": \"^1.1.1\",\n        \"function-bind\": \"^1.1.2\",\n        \"get-proto\": \"^1.0.1\",\n        \"gopd\": \"^1.2.0\",\n        \"has-symbols\": \"^1.1.0\",\n        \"hasown\": \"^2.0.2\",\n        \"math-intrinsics\": \"^1.1.0\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      },\n      \"funding\": {\n        \"url\": \"https://github.com/sponsors/ljharb\"\n      }\n    },\n    \"node_modules/get-proto\": {\n      \"version\": \"1.0.1\",\n      \"resolved\": \"https://registry.npmjs.org/get-proto/-/get-proto-1.0.1.tgz\",\n      \"integrity\": \"sha512-sTSfBjoXBp89JvIKIefqw7U2CCebsc74kiY6awiGogKtoSGbgjYE/G/+l9sF3MWFPNc9IcoOC4ODfKHfxFmp0g==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"dunder-proto\": \"^1.0.1\",\n        \"es-object-atoms\": \"^1.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/gopd\": {\n      \"version\": \"1.2.0\",\n      \"resolved\": \"https://registry.npmjs.org/gopd/-/gopd-1.2.0.tgz\",\n      \"integrity\": \"sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      },\n      \"funding\": {\n        \"url\": \"https://github.com/sponsors/ljharb\"\n      }\n    },\n    \"node_modules/has-symbols\": {\n      \"version\": \"1.1.0\",\n      \"resolved\": \"https://registry.npmjs.org/has-symbols/-/has-symbols-1.1.0.tgz\",\n      \"integrity\": \"sha512-1cDNdwJ2Jaohmb3sg4OmKaMBwuC48sYni5HUw2DvsC8LjGTLK9h+eb1X6RyuOHe4hT0ULCW68iomhjUoKUqlPQ==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      },\n      \"funding\": {\n        \"url\": \"https://github.com/sponsors/ljharb\"\n      }\n    },\n    \"node_modules/has-tostringtag\": {\n      \"version\": \"1.0.2\",\n      \"resolved\": \"https://registry.npmjs.org/has-tostringtag/-/has-tostringtag-1.0.2.tgz\",\n      \"integrity\": \"sha512-NqADB8VjPFLM2V0VvHUewwwsw0ZWBaIdgo+ieHtK3hasLz4qeCRjYcqfB6AQrBggRKppKF8L52/VqdVsO47Dlw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"has-symbols\": \"^1.0.3\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      },\n      \"funding\": {\n        \"url\": \"https://github.com/sponsors/ljharb\"\n      }\n    },\n    \"node_modules/hasown\": {\n      \"version\": \"2.0.4\",\n      \"resolved\": \"https://registry.npmjs.org/hasown/-/hasown-2.0.4.tgz\",\n      \"integrity\": \"sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"function-bind\": \"^1.1.2\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/html-encoding-sniffer\": {\n      \"version\": \"3.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/html-encoding-sniffer/-/html-encoding-sniffer-3.0.0.tgz\",\n      \"integrity\": \"sha512-oWv4T4yJ52iKrufjnyZPkrN0CH3QnrUqdB6In1g5Fe1mia8GmF36gnfNySxoZtxD5+NmYw1EElVXiBk93UeskA==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"whatwg-encoding\": \"^2.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/http-proxy-agent\": {\n      \"version\": \"5.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/http-proxy-agent/-/http-proxy-agent-5.0.0.tgz\",\n      \"integrity\": \"sha512-n2hY8YdoRE1i7r6M0w9DIw5GgZN0G25P8zLCRQ8rjXtTU3vsNFBI/vWK/UIeE6g5MUUz6avwAPXmL6Fy9D/90w==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@tootallnate/once\": \"2\",\n        \"agent-base\": \"6\",\n        \"debug\": \"4\"\n      },\n      \"engines\": {\n        \"node\": \">= 6\"\n      }\n    },\n    \"node_modules/https-proxy-agent\": {\n      \"version\": \"5.0.1\",\n      \"resolved\": \"https://registry.npmjs.org/https-proxy-agent/-/https-proxy-agent-5.0.1.tgz\",\n      \"integrity\": \"sha512-dFcAjpTQFgoLMzC2VwU+C/CbS7uRL0lWmxDITmqm7C+7F0Odmj6s9l6alZc6AELXhrnggM2CeWSXHGOdX2YtwA==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"agent-base\": \"6\",\n        \"debug\": \"4\"\n      },\n      \"engines\": {\n        \"node\": \">= 6\"\n      }\n    },\n    \"node_modules/iconv-lite\": {\n      \"version\": \"0.6.3\",\n      \"resolved\": \"https://registry.npmjs.org/iconv-lite/-/iconv-lite-0.6.3.tgz\",\n      \"integrity\": \"sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"safer-buffer\": \">= 2.1.2 < 3.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">=0.10.0\"\n      }\n    },\n    \"node_modules/is-potential-custom-element-name\": {\n      \"version\": \"1.0.1\",\n      \"resolved\": \"https://registry.npmjs.org/is-potential-custom-element-name/-/is-potential-custom-element-name-1.0.1.tgz\",\n      \"integrity\": \"sha512-bCYeRA2rVibKZd+s2625gGnGF/t7DSqDs4dP7CrLA1m7jKWz6pps0LpYLJN8Q64HtmPKJ1hrN3nzPNKFEKOUiQ==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/jsdom\": {\n      \"version\": \"22.1.0\",\n      \"resolved\": \"https://registry.npmjs.org/jsdom/-/jsdom-22.1.0.tgz\",\n      \"integrity\": \"sha512-/9AVW7xNbsBv6GfWho4TTNjEo9fe6Zhf9O7s0Fhhr3u+awPwAJMKwAMXnkk5vBxflqLW9hTHX/0cs+P3gW+cQw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"abab\": \"^2.0.6\",\n        \"cssstyle\": \"^3.0.0\",\n        \"data-urls\": \"^4.0.0\",\n        \"decimal.js\": \"^10.4.3\",\n        \"domexception\": \"^4.0.0\",\n        \"form-data\": \"^4.0.0\",\n        \"html-encoding-sniffer\": \"^3.0.0\",\n        \"http-proxy-agent\": \"^5.0.0\",\n        \"https-proxy-agent\": \"^5.0.1\",\n        \"is-potential-custom-element-name\": \"^1.0.1\",\n        \"nwsapi\": \"^2.2.4\",\n        \"parse5\": \"^7.1.2\",\n        \"rrweb-cssom\": \"^0.6.0\",\n        \"saxes\": \"^6.0.0\",\n        \"symbol-tree\": \"^3.2.4\",\n        \"tough-cookie\": \"^4.1.2\",\n        \"w3c-xmlserializer\": \"^4.0.0\",\n        \"webidl-conversions\": \"^7.0.0\",\n        \"whatwg-encoding\": \"^2.0.0\",\n        \"whatwg-mimetype\": \"^3.0.0\",\n        \"whatwg-url\": \"^12.0.1\",\n        \"ws\": \"^8.13.0\",\n        \"xml-name-validator\": \"^4.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">=16\"\n      },\n      \"peerDependencies\": {\n        \"canvas\": \"^2.5.0\"\n      },\n      \"peerDependenciesMeta\": {\n        \"canvas\": {\n          \"optional\": true\n        }\n      }\n    },\n    \"node_modules/magic-string\": {\n      \"version\": \"0.30.21\",\n      \"resolved\": \"https://registry.npmjs.org/magic-string/-/magic-string-0.30.21.tgz\",\n      \"integrity\": \"sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@jridgewell/sourcemap-codec\": \"^1.5.5\"\n      }\n    },\n    \"node_modules/math-intrinsics\": {\n      \"version\": \"1.1.0\",\n      \"resolved\": \"https://registry.npmjs.org/math-intrinsics/-/math-intrinsics-1.1.0.tgz\",\n      \"integrity\": \"sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">= 0.4\"\n      }\n    },\n    \"node_modules/mime-db\": {\n      \"version\": \"1.52.0\",\n      \"resolved\": \"https://registry.npmjs.org/mime-db/-/mime-db-1.52.0.tgz\",\n      \"integrity\": \"sha512-sPU4uV7dYlvtWJxwwxHD0PuihVNiE7TyAbQ5SWxDCB9mUYvOgroQOwYQQOKPJ8CIbE+1ETVlOoK1UC2nU3gYvg==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">= 0.6\"\n      }\n    },\n    \"node_modules/mime-types\": {\n      \"version\": \"2.1.35\",\n      \"resolved\": \"https://registry.npmjs.org/mime-types/-/mime-types-2.1.35.tgz\",\n      \"integrity\": \"sha512-ZDY+bPm5zTTF+YpCrAU9nK0UgICYPT0QtT1NZWFv4s++TNkcgVaT0g6+4R2uI4MjQjzysHB1zxuWL50hzaeXiw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"mime-db\": \"1.52.0\"\n      },\n      \"engines\": {\n        \"node\": \">= 0.6\"\n      }\n    },\n    \"node_modules/ms\": {\n      \"version\": \"2.1.3\",\n      \"resolved\": \"https://registry.npmjs.org/ms/-/ms-2.1.3.tgz\",\n      \"integrity\": \"sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/nanoid\": {\n      \"version\": \"3.3.19\",\n      \"resolved\": \"https://registry.npmjs.org/nanoid/-/nanoid-3.3.19.tgz\",\n      \"integrity\": \"sha512-Y2tUNy4ouw6tq5oDSKeQYGOyhkUBhNOcGV/02KC+6kd9eDGqdZd++mjMiIDilrBYvjEnCYvVtsuHCuP+okSfug==\",\n      \"funding\": [\n        {\n          \"type\": \"github\",\n          \"url\": \"https://github.com/sponsors/ai\"\n        }\n      ],\n      \"license\": \"MIT\",\n      \"bin\": {\n        \"nanoid\": \"bin/nanoid.cjs\"\n      },\n      \"engines\": {\n        \"node\": \"^10 || ^12 || ^13.7 || ^14 || >=15.0.1\"\n      }\n    },\n    \"node_modules/nwsapi\": {\n      \"version\": \"2.2.28\",\n      \"resolved\": \"https://registry.npmjs.org/nwsapi/-/nwsapi-2.2.28.tgz\",\n      \"integrity\": \"sha512-IlVB7OS7qrOsVYlpnFIkETjMwT9jwvmocJmmM+GZU/PAB3uGi9Ezd7vcWhWBUnSc0ya4ppmQITOyP1ez9gg8cg==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/parse5\": {\n      \"version\": \"7.3.0\",\n      \"resolved\": \"https://registry.npmjs.org/parse5/-/parse5-7.3.0.tgz\",\n      \"integrity\": \"sha512-IInvU7fabl34qmi9gY8XOVxhYyMyuH2xUNpb2q8/Y+7552KlejkRvqvD19nMoUW/uQGGbqNpA6Tufu5FL5BZgw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"entities\": \"^6.0.0\"\n      },\n      \"funding\": {\n        \"url\": \"https://github.com/inikulin/parse5?sponsor=1\"\n      }\n    },\n    \"node_modules/picocolors\": {\n      \"version\": \"1.1.1\",\n      \"resolved\": \"https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz\",\n      \"integrity\": \"sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==\",\n      \"license\": \"ISC\"\n    },\n    \"node_modules/postcss\": {\n      \"version\": \"8.5.28\",\n      \"resolved\": \"https://registry.npmjs.org/postcss/-/postcss-8.5.28.tgz\",\n      \"integrity\": \"sha512-RRuzqDtt5Y9h3quz5hWhK+TPnsmVs6WwSU6LkJMeY4HstUEDuYTG8UJSdawMRzmzAtV+KEoG8N3Qg2qLy5vM/A==\",\n      \"funding\": [\n        {\n          \"type\": \"opencollective\",\n          \"url\": \"https://opencollective.com/postcss/\"\n        },\n        {\n          \"type\": \"tidelift\",\n          \"url\": \"https://tidelift.com/funding/github/npm/postcss\"\n        },\n        {\n          \"type\": \"github\",\n          \"url\": \"https://github.com/sponsors/ai\"\n        }\n      ],\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"nanoid\": \"^3.3.18\",\n        \"picocolors\": \"^1.1.1\",\n        \"source-map-js\": \"^1.2.1\"\n      },\n      \"engines\": {\n        \"node\": \"^10 || ^12 || >=14\"\n      }\n    },\n    \"node_modules/psl\": {\n      \"version\": \"1.15.0\",\n      \"resolved\": \"https://registry.npmjs.org/psl/-/psl-1.15.0.tgz\",\n      \"integrity\": \"sha512-JZd3gMVBAVQkSs6HdNZo9Sdo0LNcQeMNP3CozBJb3JYC/QUYZTnKxP+f8oWRX4rHP5EurWxqAHTSwUCjlNKa1w==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"punycode\": \"^2.3.1\"\n      },\n      \"funding\": {\n        \"url\": \"https://github.com/sponsors/lupomontero\"\n      }\n    },\n    \"node_modules/punycode\": {\n      \"version\": \"2.3.1\",\n      \"resolved\": \"https://registry.npmjs.org/punycode/-/punycode-2.3.1.tgz\",\n      \"integrity\": \"sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">=6\"\n      }\n    },\n    \"node_modules/querystringify\": {\n      \"version\": \"2.2.0\",\n      \"resolved\": \"https://registry.npmjs.org/querystringify/-/querystringify-2.2.0.tgz\",\n      \"integrity\": \"sha512-FIqgj2EUvTa7R50u0rGsyTftzjYmv/a3hO345bZNrqabNqjtgiDMgmo4mkUjd+nzU5oF3dClKqFIPUKybUyqoQ==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/requires-port\": {\n      \"version\": \"1.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/requires-port/-/requires-port-1.0.0.tgz\",\n      \"integrity\": \"sha512-KigOCHcocU3XODJxsu8i/j8T9tzT4adHiecwORRQ0ZZFcp7ahwXuRU1m+yuO90C5ZUyGeGfocHDI14M3L3yDAQ==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/rrweb-cssom\": {\n      \"version\": \"0.6.0\",\n      \"resolved\": \"https://registry.npmjs.org/rrweb-cssom/-/rrweb-cssom-0.6.0.tgz\",\n      \"integrity\": \"sha512-APM0Gt1KoXBz0iIkkdB/kfvGOwC4UuJFeG/c+yV7wSc7q96cG/kJ0HiYCnzivD9SB53cLV1MlHFNfOuPaadYSw==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/safer-buffer\": {\n      \"version\": \"2.1.2\",\n      \"resolved\": \"https://registry.npmjs.org/safer-buffer/-/safer-buffer-2.1.2.tgz\",\n      \"integrity\": \"sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/saxes\": {\n      \"version\": \"6.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/saxes/-/saxes-6.0.0.tgz\",\n      \"integrity\": \"sha512-xAg7SOnEhrm5zI3puOOKyy1OMcMlIJZYNJY7xLBwSze0UjhPLnWfj2GF2EpT0jmzaJKIWKHLsaSSajf35bcYnA==\",\n      \"license\": \"ISC\",\n      \"dependencies\": {\n        \"xmlchars\": \"^2.2.0\"\n      },\n      \"engines\": {\n        \"node\": \">=v12.22.7\"\n      }\n    },\n    \"node_modules/source-map-js\": {\n      \"version\": \"1.2.2\",\n      \"resolved\": \"https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.2.tgz\",\n      \"integrity\": \"sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==\",\n      \"license\": \"BSD-3-Clause\",\n      \"engines\": {\n        \"node\": \">=0.10.0\"\n      }\n    },\n    \"node_modules/symbol-tree\": {\n      \"version\": \"3.2.4\",\n      \"resolved\": \"https://registry.npmjs.org/symbol-tree/-/symbol-tree-3.2.4.tgz\",\n      \"integrity\": \"sha512-9QNk5KwDF+Bvz+PyObkmSYjI5ksVUYtjW7AU22r2NKcfLJcXp96hkDWU3+XndOsUb+AQ9QhfzfCT2O+CNWT5Tw==\",\n      \"license\": \"MIT\"\n    },\n    \"node_modules/tough-cookie\": {\n      \"version\": \"4.1.4\",\n      \"resolved\": \"https://registry.npmjs.org/tough-cookie/-/tough-cookie-4.1.4.tgz\",\n      \"integrity\": \"sha512-Loo5UUvLD9ScZ6jh8beX1T6sO1w2/MpCRpEP7V280GKMVUQ0Jzar2U3UJPsrdbziLEMMhu3Ujnq//rhiFuIeag==\",\n      \"license\": \"BSD-3-Clause\",\n      \"dependencies\": {\n        \"psl\": \"^1.1.33\",\n        \"punycode\": \"^2.1.1\",\n        \"universalify\": \"^0.2.0\",\n        \"url-parse\": \"^1.5.3\"\n      },\n      \"engines\": {\n        \"node\": \">=6\"\n      }\n    },\n    \"node_modules/tr46\": {\n      \"version\": \"4.1.1\",\n      \"resolved\": \"https://registry.npmjs.org/tr46/-/tr46-4.1.1.tgz\",\n      \"integrity\": \"sha512-2lv/66T7e5yNyhAAC4NaKe5nVavzuGJQVVtRYLyQ2OI8tsJ61PMLlelehb0wi2Hx6+hT/OJUWZcw8MjlSRnxvw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"punycode\": \"^2.3.0\"\n      },\n      \"engines\": {\n        \"node\": \">=14\"\n      }\n    },\n    \"node_modules/universalify\": {\n      \"version\": \"0.2.0\",\n      \"resolved\": \"https://registry.npmjs.org/universalify/-/universalify-0.2.0.tgz\",\n      \"integrity\": \"sha512-CJ1QgKmNg3CwvAv/kOFmtnEN05f0D/cn9QntgNOQlQF9dgvVTHj3t+8JPdjqawCHk7V/KA+fbUqzZ9XWhcqPUg==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">= 4.0.0\"\n      }\n    },\n    \"node_modules/url-parse\": {\n      \"version\": \"1.5.10\",\n      \"resolved\": \"https://registry.npmjs.org/url-parse/-/url-parse-1.5.10.tgz\",\n      \"integrity\": \"sha512-WypcfiRhfeUP9vvF0j6rw0J3hrWrw6iZv3+22h6iRMJ/8z1Tj6XfLP4DsUix5MhMPnXpiHDoKyoZ/bdCkwBCiQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"querystringify\": \"^2.1.1\",\n        \"requires-port\": \"^1.0.0\"\n      }\n    },\n    \"node_modules/vue\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/vue/-/vue-3.4.38.tgz\",\n      \"integrity\": \"sha512-f0ZgN+mZ5KFgVv9wz0f4OgVKukoXtS3nwET4c2vLBGQR50aI8G0cqbFtLlX9Yiyg3LFGBitruPHt2PxwTduJEw==\",\n      \"license\": \"MIT\",\n      \"peer\": true,\n      \"dependencies\": {\n        \"@vue/compiler-dom\": \"3.4.38\",\n        \"@vue/compiler-sfc\": \"3.4.38\",\n        \"@vue/runtime-dom\": \"3.4.38\",\n        \"@vue/server-renderer\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\"\n      },\n      \"peerDependencies\": {\n        \"typescript\": \"*\"\n      },\n      \"peerDependenciesMeta\": {\n        \"typescript\": {\n          \"optional\": true\n        }\n      }\n    },\n    \"node_modules/vue/node_modules/@vue/compiler-sfc\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/compiler-sfc/-/compiler-sfc-3.4.38.tgz\",\n      \"integrity\": \"sha512-s5QfZ+9PzPh3T5H4hsQDJtI8x7zdJaew/dCGgqZ2630XdzaZ3AD8xGZfBqpT8oaD/p2eedd+pL8tD5vvt5ZYJQ==\",\n      \"license\": \"MIT\",\n      \"peer\": true,\n      \"dependencies\": {\n        \"@babel/parser\": \"^7.24.7\",\n        \"@vue/compiler-core\": \"3.4.38\",\n        \"@vue/compiler-dom\": \"3.4.38\",\n        \"@vue/compiler-ssr\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\",\n        \"estree-walker\": \"^2.0.2\",\n        \"magic-string\": \"^0.30.10\",\n        \"postcss\": \"^8.4.40\",\n        \"source-map-js\": \"^1.2.0\"\n      }\n    },\n    \"node_modules/vue3\": {\n      \"name\": \"vue\",\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/vue/-/vue-3.4.38.tgz\",\n      \"integrity\": \"sha512-f0ZgN+mZ5KFgVv9wz0f4OgVKukoXtS3nwET4c2vLBGQR50aI8G0cqbFtLlX9Yiyg3LFGBitruPHt2PxwTduJEw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@vue/compiler-dom\": \"3.4.38\",\n        \"@vue/compiler-sfc\": \"3.4.38\",\n        \"@vue/runtime-dom\": \"3.4.38\",\n        \"@vue/server-renderer\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\"\n      },\n      \"peerDependencies\": {\n        \"typescript\": \"*\"\n      },\n      \"peerDependenciesMeta\": {\n        \"typescript\": {\n          \"optional\": true\n        }\n      }\n    },\n    \"node_modules/vue3/node_modules/@vue/compiler-sfc\": {\n      \"version\": \"3.4.38\",\n      \"resolved\": \"https://registry.npmjs.org/@vue/compiler-sfc/-/compiler-sfc-3.4.38.tgz\",\n      \"integrity\": \"sha512-s5QfZ+9PzPh3T5H4hsQDJtI8x7zdJaew/dCGgqZ2630XdzaZ3AD8xGZfBqpT8oaD/p2eedd+pL8tD5vvt5ZYJQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"@babel/parser\": \"^7.24.7\",\n        \"@vue/compiler-core\": \"3.4.38\",\n        \"@vue/compiler-dom\": \"3.4.38\",\n        \"@vue/compiler-ssr\": \"3.4.38\",\n        \"@vue/shared\": \"3.4.38\",\n        \"estree-walker\": \"^2.0.2\",\n        \"magic-string\": \"^0.30.10\",\n        \"postcss\": \"^8.4.40\",\n        \"source-map-js\": \"^1.2.0\"\n      }\n    },\n    \"node_modules/w3c-xmlserializer\": {\n      \"version\": \"4.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/w3c-xmlserializer/-/w3c-xmlserializer-4.0.0.tgz\",\n      \"integrity\": \"sha512-d+BFHzbiCx6zGfz0HyQ6Rg69w9k19nviJspaj4yNscGjrHu94sVP+aRm75yEbCh+r2/yR+7q6hux9LVtbuTGBw==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"xml-name-validator\": \"^4.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">=14\"\n      }\n    },\n    \"node_modules/webidl-conversions\": {\n      \"version\": \"7.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/webidl-conversions/-/webidl-conversions-7.0.0.tgz\",\n      \"integrity\": \"sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==\",\n      \"license\": \"BSD-2-Clause\",\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/whatwg-encoding\": {\n      \"version\": \"2.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/whatwg-encoding/-/whatwg-encoding-2.0.0.tgz\",\n      \"integrity\": \"sha512-p41ogyeMUrw3jWclHWTQg1k05DSVXPLcVxRTYsXUk+ZooOCZLcoYgPZ/HL/D/N+uQPOtcp1me1WhBEaX02mhWg==\",\n      \"deprecated\": \"Use @exodus/bytes instead for a more spec-conformant and faster implementation\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"iconv-lite\": \"0.6.3\"\n      },\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/whatwg-mimetype\": {\n      \"version\": \"3.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/whatwg-mimetype/-/whatwg-mimetype-3.0.0.tgz\",\n      \"integrity\": \"sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/whatwg-url\": {\n      \"version\": \"12.0.1\",\n      \"resolved\": \"https://registry.npmjs.org/whatwg-url/-/whatwg-url-12.0.1.tgz\",\n      \"integrity\": \"sha512-Ed/LrqB8EPlGxjS+TrsXcpUond1mhccS3pchLhzSgPCnTimUCKj3IZE75pAs5m6heB2U2TMerKFUXheyHY+VDQ==\",\n      \"license\": \"MIT\",\n      \"dependencies\": {\n        \"tr46\": \"^4.1.1\",\n        \"webidl-conversions\": \"^7.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">=14\"\n      }\n    },\n    \"node_modules/ws\": {\n      \"version\": \"8.22.0\",\n      \"resolved\": \"https://registry.npmjs.org/ws/-/ws-8.22.0.tgz\",\n      \"integrity\": \"sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg==\",\n      \"license\": \"MIT\",\n      \"engines\": {\n        \"node\": \">=10.0.0\"\n      },\n      \"peerDependencies\": {\n        \"bufferutil\": \"^4.0.1\",\n        \"utf-8-validate\": \">=5.0.2\"\n      },\n      \"peerDependenciesMeta\": {\n        \"bufferutil\": {\n          \"optional\": true\n        },\n        \"utf-8-validate\": {\n          \"optional\": true\n        }\n      }\n    },\n    \"node_modules/xml-name-validator\": {\n      \"version\": \"4.0.0\",\n      \"resolved\": \"https://registry.npmjs.org/xml-name-validator/-/xml-name-validator-4.0.0.tgz\",\n      \"integrity\": \"sha512-ICP2e+jsHvAj2E2lIHxa5tjXRlKDJo4IdvPvCXbXQGdzSfmSpNVyIKMvoZHjDY9DP0zV17iI85o90vRFXNccRw==\",\n      \"license\": \"Apache-2.0\",\n      \"engines\": {\n        \"node\": \">=12\"\n      }\n    },\n    \"node_modules/xmlchars\": {\n      \"version\": \"2.2.0\",\n      \"resolved\": \"https://registry.npmjs.org/xmlchars/-/xmlchars-2.2.0.tgz\",\n      \"integrity\": \"sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==\",\n      \"license\": \"MIT\"\n    }\n  }\n}\n",
+        "package.json": "{\n  \"name\": \"transfer-progress-composition-v4-window-cued-vue3-fixture\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"dependencies\": {\n    \"vue3\": \"npm:vue@3.4.38\",\n    \"jsdom\": \"22.1.0\",\n    \"esbuild\": \"0.21.5\"\n  }\n}\n",
+        "src/Workspace.vue": "<template><section data-business=\"Laboratory sequence transfer\"><output>{{ owner.fileId || 'closed' }}:{{ owner.attemptId || 0 }}</output></section></template>\n<script>\nimport {shallowRef,onBeforeUnmount} from 'vue3';\nimport {Session} from './session.js';\nexport default {props:['host'],setup(props){const owner=shallowRef({}),session=new Session(props.host,s=>{owner.value=s;});onBeforeUnmount(()=>session.dispose());return {owner,select:f=>session.select(f),retry:()=>session.retry(),hide:()=>session.hide(),dispose:()=>session.dispose(),snapshot:()=>session.snapshot()};}};\n</script>\n",
+        "src/session.js": "// A session owns panel visits; physical attempts keep their own cancellation.\nexport class Session {\n constructor(host,onState=()=>{}) {this.host=host;this.onState=onState;this.visit=null;this.serial=0;this.attempts=0;this.tasks=new Map();this.disposed=false;}\n current(v) {return this.visit===v;}\n enqueue(v,kind) {\n  const n=++this.attempts, entry={fileId:v.file.id,attemptId:n,visitId:v.id,kind};\n  \n  this.host.record(entry);\n  const progress={active:()=>this.current(v),admit:()=>++v.arrivalOrder,audit:frame=>this.host.recordProgress?.({fileId:v.file.id,attemptId:n,frame}),\n   view:(frame,order)=>{if(this.current(v)&&order>v.displayedOrder){v.displayedOrder=order;this.host.showProgress?.({fileId:v.file.id,attemptId:n,frame});this.onState(this.snapshot());}}};\n  const h=createAttempt(v.file,n,this.host.transport,this.host.onCancel,progress);this.tasks.set(n,h);return h;\n }\n notice(v,h){ this.host.showQueued({fileId:v.file.id,attemptId:h.attemptId,visitId:v.id,status:'queued'});}\n release(v){const h=v.handle;v.handle=null;if(h)h.cancel();}\n select(file){if(this.disposed)return null;const request=++this.serial,old=this.visit;this.visit=null;if(old)this.release(old);\n  if(this.disposed||this.serial!==request)return null;const v={id:request,file,handle:null,arrivalOrder:0,displayedOrder:0};this.visit=v;\n  const h=this.enqueue(v,'select');if(this.current(v)){v.handle=h;this.notice(v,h);}else h.cancel();this.onState(this.snapshot());return h;}\n retry(){const v=this.visit;if(!v||!v.handle||this.disposed)return null;v.handle.cancel();\n  const accepted=v;const h=this.enqueue(accepted,'retry');if(this.current(accepted))accepted.handle=h;else h.cancel();\n  if(this.current(accepted))this.notice(accepted,h);this.onState(this.snapshot());return h;}\n hide(){this.serial++;const old=this.visit;this.visit=null;if(old)this.release(old);this.onState(this.snapshot());}\n dispose(){if(this.disposed)return;this.disposed=true;this.hide();for(const h of this.tasks.values())h.cancel();}\n snapshot(){const v=this.visit;return {visitId:v?v.id:null,fileId:v?v.file.id:null,attemptId:v&&v.handle?v.handle.attemptId:null,disposed:this.disposed,attempts:this.attempts};}\n}\nexport function createAttempt(file,attemptId,transport,onCancel,progress={}) {\n const controller=new AbortController();let stop=()=>{};\n controller.signal.addEventListener('abort',()=>{stop();onCancel({file,attemptId,signal:controller.signal});},{once:true});\n transport({file,attemptId,signal:controller.signal});\n const feed=file.progressFeed;\n if(feed){let listening=true;\n  const listener=event=>{if(progress.active&&!progress.active()){stop();return;}const order=progress.admit?.()??0;\n   const deliver=frame=>{progress.audit?.(frame);if(!controller.signal.aborted)progress.view?.(frame,order);if(progress.active&&!progress.active())stop();};\n   const decoded=feed.decode(event.detail);if(decoded&&typeof decoded.then==='function')decoded.then(deliver);else deliver(decoded);};\n  stop=()=>{if(!listening)return;listening=false;feed.target.removeEventListener('progress',listener);};\n  feed.target.addEventListener('progress',listener);feed.start();if(controller.signal.aborted)stop();}\n return {file,attemptId,signal:controller.signal,cancel(){if(!controller.signal.aborted)controller.abort();}};\n}\n\nexport function collectProgressTelemetry(feed,recordDelta){\n const listener=event=>{const value=feed.decode(event.detail);if(value&&typeof value.then==='function')value.then(recordDelta);else recordDelta(value);};\n feed.start();feed.target.addEventListener('progress',listener);\n return ()=>feed.target.removeEventListener('progress',listener);\n}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/Workspace.vue",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/session.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ]
+}

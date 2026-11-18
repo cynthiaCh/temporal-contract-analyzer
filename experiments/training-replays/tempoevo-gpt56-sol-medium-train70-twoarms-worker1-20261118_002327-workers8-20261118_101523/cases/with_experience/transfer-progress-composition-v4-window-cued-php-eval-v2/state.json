@@ -1,0 +1,369 @@
+{
+  "attempts": [],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "Warm-source selection: the cached packet emitted synchronously by start is decoded, audited, and shown for the open visit without waiting for another packet.",
+      "Ordinary streaming: packets emitted after startup continue through decode, recordProgress, and eligible showProgress handling.",
+      "Out-of-order decoding: if a newer-received full frame is displayed before an older-received frame finishes decoding, the older completion is audited but does not replace the display.",
+      "Legitimate reset: a later-received frame may display even when its loaded value is lower; freshness is based on reception order, not numeric progress.",
+      "Retry: it retains the visit identity, creates one new attempt and queue record, cancels the prior attempt, and shares the visit-level display freshness ordering.",
+      "Startup reentrancy: if showProgress selects, hides, or disposes while start is still emitting packets, the retired visit admits no later packets, and the resumed startup does not overwrite newer ownership.",
+      "Audit reentrancy: after recordProgress returns, display authority and freshness are checked again before showProgress; a newer nested publication cannot be rolled back.",
+      "Cleanup reentrancy: unlisten may navigate synchronously; newer navigation keeps ownership, and repeated cancellation/removal remains inert.",
+      "Retained audit: decoding admitted before hide, replacement, cancellation, or disposal still produces its original recordProgress effect once when it completes, without painting a closed panel.",
+      "Same-file reselection creates a distinct visit that receives subsequent progress normally.",
+      "Telemetry retains its existing start-before-listen behavior and live recordDelta observations.",
+      "Queue records and queued notices retain their existing fields; run the public PHP syntax check after any Action."
+    ],
+    "forbidden_effects": [
+      "Do not change the public transfer, retry, navigation, cleanup, audit, or queue-record behavior except for coordination strictly necessary to restore initial panel progress and prevent display rollback.",
+      "Do not add byteCount or any other field to queue records.",
+      "Do not apply the panel bootstrap or full-frame freshness policy to Telemetry.",
+      "Do not suppress recordProgress merely because a frame is no longer eligible for display.",
+      "Do not treat loaded values as monotonic; a newer full frame may decrease or reset progress.",
+      "Do not let an obsolete startup, listener cleanup, or cancellation callback replace or cancel resources owned by newer navigation.",
+      "Do not allow a retired visit to admit new packets, including additional synchronous packets emitted before start returns.",
+      "Do not expose progress from an old visit in a later visit, even when both visits use the same file object.",
+      "Do not change source/sink payload identities or the public session/component entry API."
+    ],
+    "lifecycle_identity": [
+      "A Visit is created by select and is identified by its visit id and object identity.",
+      "Retry creates a new physical Attempt but remains within the accepted entry Visit.",
+      "Selecting the same file object again creates a new Visit; stable file identity does not merge visits.",
+      "Each admitted packet remains associated with its originating file, attempt number, visit, and reception order through deferred decoding.",
+      "Display freshness belongs to the Visit and therefore spans retries within that Visit.",
+      "Each Session/VisitRegistry has an independent lifetime, serial, attempt counter, current visit, and disposed state.",
+      "Telemetry is a separate consumer of the shared source and is not governed by panel visit display ordering."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "For panel attempts, establish packet reception before invoking start so a synchronously emitted cached packet can produce the initial progress update, while keeping the listener active for later streaming."
+      },
+      {
+        "id": "O2",
+        "text": "Before decoding a packet, verify that its originating reception is still admitted for its Visit; logical retirement must take effect even when the physical subscription handle has not yet been returned."
+      },
+      {
+        "id": "O3",
+        "text": "Assign a reception sequence to every admitted panel packet before decode begins, and use that sequence—not loaded magnitude or decode completion order—to govern full-frame presentation."
+      },
+      {
+        "id": "O4",
+        "text": "When an admitted decode completes, append its recordProgress history exactly once using the originating file and attempt, including when the attempt or Visit has since been canceled, hidden, replaced, or disposed."
+      },
+      {
+        "id": "O5",
+        "text": "After recordProgress returns, show the frame only if its originating Visit is still current and its reception sequence is not older than the latest frame already published for that Visit."
+      },
+      {
+        "id": "O6",
+        "text": "Advance the Visit publication watermark before invoking showProgress so synchronous nested delivery cannot allow an older outer completion to roll the display backward."
+      },
+      {
+        "id": "O7",
+        "text": "Coordinate provisional startup ownership and returned cleanup resources so navigation during start cannot leave an obsolete listener admitting packets or let resumed obsolete work overwrite newer ownership."
+      },
+      {
+        "id": "O8",
+        "text": "Preserve select, hide, dispose, retry, listener removal, and cancellation reentrancy behavior: retire old ownership before callback-capable cleanup and recheck navigation authority after callbacks return."
+      },
+      {
+        "id": "O9",
+        "text": "Keep an accepted retry bound to the Visit captured at retry entry: cancel the previous attempt, enqueue and record the retry once, cancel the new attempt if that Visit ended, and publish its queued notice only if the Visit remains current."
+      },
+      {
+        "id": "O10",
+        "text": "Leave Telemetry behavior unchanged, including its existing live-delta decoding and startup/listener sequence."
+      },
+      {
+        "id": "O11",
+        "text": "Preserve exact queue record fields {fileId, attemptId, visitId, kind} and existing queued-notice fields {fileId, attemptId, visitId, status}."
+      }
+    ],
+    "ordering_barriers": [
+      "Panel listener registration must precede panel start invocation so cached synchronous emissions are observable.",
+      "Packet reception order must be assigned before decode or any callback-capable work.",
+      "Logical retirement must be committed before unlisten or transfer cancellation can reenter navigation.",
+      "recordProgress must occur before the final display eligibility decision for that completed decode.",
+      "Current-Visit authority and publication freshness must be rechecked after recordProgress returns.",
+      "The publication watermark must be committed before showProgress is invoked.",
+      "Retry cancellation of the preceding attempt remains before retry enqueue; queue recording remains before construction/startup of the new Attempt.",
+      "An obsolete startup may reconcile and clean up its own returned subscription, but must not publish it as ownership after newer navigation."
+    ],
+    "preservation": [
+      "Ordinary post-start progress streaming and deferred decode completion remain supported.",
+      "Every admitted decode retains its audit effect through recordProgress even if visible presentation is later suppressed.",
+      "The existing transfer call and idempotent cancel behavior are retained.",
+      "Select creates a Visit and attempt; retry replaces only the physical attempt; same-file reselection creates another Visit.",
+      "Existing queue recording, queued notices, attempt numbering, visit numbering, snapshot semantics, and per-workspace independence are retained.",
+      "Existing cleanup behavior is retained, including committed listener removal, inert repeated removal, hide, and idempotent disposal.",
+      "Existing reentrant navigation semantics are retained across cancellation, unlisten, recordProgress, and showProgress callbacks.",
+      "Telemetry continues to observe live decoded deltas separately from panel bootstrap and full-frame presentation."
+    ],
+    "scope": [
+      "Business code for the PHP panel progress workflow in src/workflow.php.",
+      "Panel packet reception, decode admission, retained progress audit, display freshness, and lifecycle coordination needed at callback-capable startup and cleanup boundaries.",
+      "Existing Session select, retry, hide, dispose, enqueue, notice, release, and Attempt cancellation behavior only insofar as coordination is necessary to preserve it.",
+      "Telemetry is preservation-only: its diagnostic behavior must remain unchanged."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives. Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior. Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward. Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses."
+      },
+      {
+        "file": "README.md",
+        "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit."
+      },
+      {
+        "file": "README.md",
+        "quote": "The source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order."
+      },
+      {
+        "file": "README.md",
+        "quote": "recordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior."
+      },
+      {
+        "file": "README.md",
+        "quote": "Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size."
+      },
+      {
+        "file": "README.md",
+        "quote": "One startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle."
+      },
+      {
+        "file": "README.md",
+        "quote": "The same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance."
+      },
+      {
+        "file": "README.md",
+        "quote": "Removing a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred."
+      },
+      {
+        "file": "README.md",
+        "quote": "Files have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset."
+      },
+      {
+        "file": "README.md",
+        "quote": "A decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime."
+      },
+      {
+        "file": "README.md",
+        "quote": "Environment.call/bind provides a synchronous source embedding: listen(file\n token, callback token) returns a subscription, start can invoke it before\nreturning, and unlisten may reenter navigation."
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "$env->call('start',$file->token);$subscription=$env->call('listen',$file->token,$callback);"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "$deliver=function($frame)use($active,$audit,$view,$order){ $audit($frame);$view($frame,$order);};"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function enqueue($v,$kind){$n=++$this->attempts;$entry=['fileId'=>$v->file->id,'attemptId'=>$n,'visitId'=>$v->id,'kind'=>$kind]; $this->env->call('record',$entry);"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function retry(){$v=$this->registry->visit;if(!$v||!$v->handle||$this->registry->disposed)return null;$v->handle->cancel(); $accepted=$v;$h=$this->enqueue($accepted,'retry');if($this->current($accepted))$accepted->handle=$h;else $h->cancel();if($this->current($accepted))$this->notice($accepted,$h);return $h;}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "class Telemetry {public $stop;function __construct($env,$file){$callback=$env->bind(function($packet)use($env,$file){$deliver=function($frame)use($env){$env->call('recordDelta',$frame);};$value=$env->call('decode',$file->token,$packet,$env->bind($deliver));if(!$value->deferred)$deliver($value->frame);});$env->call('start',$file->token);$subscription=$env->call('listen',$file->token,$callback);"
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations."
+      }
+    ],
+    "triggers": [
+      "Selecting a file starts a panel Visit and its first physical Attempt.",
+      "Retrying cancels the current physical Attempt and starts another Attempt in the same Visit.",
+      "Panel source start may synchronously emit one or more cached packets.",
+      "The source may emit ordinary packets after startup returns.",
+      "Decode may complete immediately or on a later host turn, and completions may be out of reception order.",
+      "recordProgress, showProgress, unlisten, and cancellation-related host calls may synchronously reenter navigation.",
+      "Hide, replacement selection, or disposal retires the current Visit.",
+      "Selecting the identical file object after retirement starts a distinct Visit."
+    ],
+    "unknowns": [
+      "Behavior for rejected decode is outside the documented model.",
+      "Physical transfer completion behavior is outside the documented model.",
+      "Recovery from exceptions thrown by Environment.call, bound callbacks, recordProgress, showProgress, or other adapters is unspecified.",
+      "No public source defines packet sequence metadata; reception order is the available ordering for the required full-frame freshness rule.",
+      "No separate authorization permits adding byteCount or other queue fields.",
+      "The public syntax check does not establish business behavior correctness."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 1,
+  "diagnoses": [],
+  "error": "EvidenceError('Invalid action execution: stream disconnected before completion: error sending request')",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "93eb4a60c015d85536ba18776fcde853d0952697403e9dc436035635f77bed7c",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9997317269444
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "c919bd123fb54771cbf05b2f08aa186cc87a3f1a7fdc989a9ee763cf375526c6",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 23680,
+        "input_tokens": 30262,
+        "output_tokens": 4105,
+        "reasoning_output_tokens": 2433,
+        "total_tokens": 34367
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "4e39a7fd42d2d2b79666a37af793195fb27ea45e1c3fff9b7faa6f5ed9d00768",
+      "seconds": 68.83542911335826,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 23680,
+        "input_tokens": 30262,
+        "output_tokens": 4105,
+        "reasoning_output_tokens": 2433,
+        "total_tokens": 34367
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "59927c6201afa3694636ecfaf65ada37b83c5ed9cbbf623b9cb886052ddba8d1",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9997584242374
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "086d8028501dc60ff9dad7b9ae85bbcd6db425fd8cc601c899e6221774b19603",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 20860,
+        "output_tokens": 2763,
+        "reasoning_output_tokens": 121,
+        "total_tokens": 23623
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "3b555d876b4b3b63d5b901f6dfa29bdeab717f1b74b087be8107d2ca9d7e7826",
+      "seconds": 61.21821690630168,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 20860,
+        "output_tokens": 2763,
+        "reasoning_output_tokens": 121,
+        "total_tokens": 23623
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "transient_transport_error",
+          "input_sha256": "0e7200392813381891ca69788a9b1cb7766253eb9bc6bc06bf9b86df259cede8",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9996052132919
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "bc70f89c11b62d77185a389fa70477ea3995a0d585b9827de56aee8a7aeb7385",
+          "status": "complete",
+          "valid": false
+        },
+        {
+          "failure_type": "transient_transport_error",
+          "input_sha256": "0e7200392813381891ca69788a9b1cb7766253eb9bc6bc06bf9b86df259cede8",
+          "limits": {
+            "requests": 22,
+            "seconds": 565.9411788899451
+          },
+          "number": 2,
+          "requests": 3,
+          "restart_reason": "transient_transport",
+          "result_sha256": "03f786c3895302bf020e9f7f2b51cd09ef829d74dcdc24857270521b75cdd287",
+          "status": "complete",
+          "valid": false
+        },
+        {
+          "failure_type": "transient_transport_error",
+          "input_sha256": "0e7200392813381891ca69788a9b1cb7766253eb9bc6bc06bf9b86df259cede8",
+          "limits": {
+            "requests": 19,
+            "seconds": 510.1689526643604
+          },
+          "number": 3,
+          "requests": 1,
+          "restart_reason": "transient_transport",
+          "result_sha256": "387cb3d75d024271ab8d9a1dbac0e27936c015ad2784745d49771c2ef381ee9f",
+          "status": "complete",
+          "valid": false
+        }
+      ],
+      "failure_type": "transient_transport_error",
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 42240,
+        "input_tokens": 77667,
+        "output_tokens": 2092,
+        "reasoning_output_tokens": 875,
+        "total_tokens": 79759
+      },
+      "requests": 6,
+      "reserved_requests": 24,
+      "result_sha256": "7d92fb990c39fa878c6d369b811bd08c91ab35156c7e060c516702594d3c091a",
+      "seconds": 119.34881130605936,
+      "status": "invalid",
+      "tokens": null,
+      "tool_policy_recoveries": 0,
+      "transport_retries": 2,
+      "unknown_usage_requests": 3,
+      "usage_incomplete": true
+    }
+  ],
+  "status": "execution_invalid",
+  "stop_reason": "execution_invalid",
+  "training_accepted": null
+}

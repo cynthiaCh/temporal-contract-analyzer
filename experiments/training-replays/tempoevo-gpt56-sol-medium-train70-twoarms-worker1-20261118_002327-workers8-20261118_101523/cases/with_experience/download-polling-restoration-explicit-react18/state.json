@@ -1,0 +1,493 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "package.json": "a9d1f10d79bb908c5c9dff32c0af288bb33cb15df2afa01e2df85ff459d4e6ce",
+        "src/BackgroundExportPanel.jsx": "63e32169e0d679c95b56e35e28b11b74fbee4d4393474cbbb0cb44dccbe976ad",
+        "src/DownloadDialog.jsx": "56f766c633fb063fcafe559d90868c8e45d47670933da21c53d65d544c0c92b4",
+        "src/preparation-api.js": "83719f5a8ad07721fc3a67a5b8a61b3f514d3aa7c7e49a8ba752741194ac4df0",
+        "src/useBackgroundPreparation.js": "7bafa1e762224be69f2ba3dcdb787aa79fa4ac8d77aa2caf957c3f9744549ded",
+        "src/usePreparation.js": "a1c8950edfd3a4f7890e01515a40804efe15c1abf5bcdc76f5fed1ca311ac700"
+      },
+      "candidate_sources": {
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\n  \"name\": \"download-polling-restoration-explicit-react18-fixture\",\n  \"version\": \"0.0.0\",\n  \"private\": true,\n  \"dependencies\": {\n    \"react\": \"18.3.1\",\n    \"react-dom\": \"18.3.1\"\n  }\n}\n",
+        "src/BackgroundExportPanel.jsx": "\"use strict\";\n\nconst React = require(\"react\");\nconst { useBackgroundPreparation } = require(\"./useBackgroundPreparation.js\");\n\nconst BackgroundExportPanel = React.forwardRef(function BackgroundExportPanel({ token }, ref) {\n  const preparation = useBackgroundPreparation(token);\n  React.useImperativeHandle(ref, () => preparation);\n  const snapshot = preparation.snapshot();\n  return React.createElement(\"section\", {\n    \"data-surface\": \"background-export\",\n    \"data-visible\": String(snapshot.visible),\n    \"data-loading\": String(snapshot.loading),\n  });\n});\n\nmodule.exports = { BackgroundExportPanel };\n\n",
+        "src/DownloadDialog.jsx": "\"use strict\";\n\nconst React = require(\"react\");\nconst { usePreparation } = require(\"./usePreparation.js\");\n\nconst DownloadDialog = React.forwardRef(function DownloadDialog({ token }, ref) {\n  const preparation = usePreparation(token, { invalidateOnClose: true });\n  React.useImperativeHandle(ref, () => preparation);\n  const snapshot = preparation.snapshot();\n  return React.createElement(\"section\", {\n    \"data-surface\": \"download-dialog\",\n    \"data-visible\": String(snapshot.visible),\n    \"data-loading\": String(snapshot.loading),\n  });\n});\n\nmodule.exports = { DownloadDialog };\n",
+        "src/preparation-api.js": "\"use strict\";\n\n// This fixture's public service contract is deliberately explicit: the\n// transport resolves false while preparation is pending and true when ready.\nconst PREPARATION_STATUS = Object.freeze({\n  PENDING: false,\n  READY: true,\n});\n\nfunction checkPreparation(token) {\n  if (typeof globalThis.__preparationTransport !== \"function\") {\n    throw new Error(\"preparation transport is not installed\");\n  }\n  return globalThis.__preparationTransport(token);\n}\n\nfunction schedulePreparationRetry(callback) {\n  if (typeof globalThis.__schedulePreparationRetry !== \"function\") {\n    throw new Error(\"retry scheduler is not installed\");\n  }\n  return globalThis.__schedulePreparationRetry(callback);\n}\n\nfunction cancelPreparationRetry(handle) {\n  if (typeof globalThis.__cancelPreparationRetry === \"function\") {\n    globalThis.__cancelPreparationRetry(handle);\n  }\n}\n\nmodule.exports = {\n  PREPARATION_STATUS,\n  checkPreparation,\n  schedulePreparationRetry,\n  cancelPreparationRetry,\n};\n",
+        "src/useBackgroundPreparation.js": "\"use strict\";\n\nconst React = require(\"react\");\nconst {\n  PREPARATION_STATUS,\n  checkPreparation,\n  schedulePreparationRetry,\n  cancelPreparationRetry,\n} = require(\"./preparation-api.js\");\n\nfunction useBackgroundPreparation(initialToken) {\n  const state = React.useRef({\n    visible: true,\n    loading: false,\n    retryScheduled: false,\n    checkCount: 0,\n    completed: [],\n    token: initialToken,\n  });\n  const retryHandle = React.useRef(null);\n  const active = React.useRef(true);\n  const [, render] = React.useReducer((value) => value + 1, 0);\n  const publish = () => {\n    if (active.current) render();\n  };\n  const clearRetry = () => {\n    if (retryHandle.current !== null) cancelPreparationRetry(retryHandle.current);\n    retryHandle.current = null;\n    state.current.retryScheduled = false;\n  };\n  const check = () => {\n    const requestToken = state.current.token;\n    state.current.loading = true;\n    state.current.checkCount += 1;\n    publish();\n    checkPreparation(requestToken).then((status) => {\n      if (!active.current) return;\n      if (status === PREPARATION_STATUS.READY) {\n        clearRetry();\n        state.current.loading = false;\n        if (!state.current.completed.includes(requestToken)) {\n          state.current.completed.push(requestToken);\n        }\n        publish();\n        return;\n      }\n      state.current.retryScheduled = true;\n      retryHandle.current = schedulePreparationRetry(() => {\n        retryHandle.current = null;\n        state.current.retryScheduled = false;\n        check();\n      });\n      publish();\n    });\n  };\n\n  React.useEffect(() => () => {\n    active.current = false;\n    clearRetry();\n  }, []);\n\n  return {\n    start: check,\n    close() {\n      // Closing this progress panel does not cancel workspace-owned work.\n      state.current.visible = false;\n      publish();\n    },\n    snapshot() {\n      return { ...state.current, completed: [...state.current.completed] };\n    },\n  };\n}\n\nmodule.exports = { useBackgroundPreparation };\n",
+        "src/usePreparation.js": "\"use strict\";\n\nconst React = require(\"react\");\nconst {\n  PREPARATION_STATUS,\n  checkPreparation,\n  schedulePreparationRetry,\n  cancelPreparationRetry,\n} = require(\"./preparation-api.js\");\n\nfunction usePreparation(initialToken, { invalidateOnClose = false } = {}) {\n  const state = React.useRef({\n    visible: true,\n    loading: false,\n    retryScheduled: false,\n    checkCount: 0,\n    completed: [],\n    token: initialToken,\n  });\n  const lifecycle = React.useRef({\n    generation: 0,\n    retryHandle: null,\n    disposed: false,\n  });\n  const [, render] = React.useReducer((value) => value + 1, 0);\n\n  const publish = () => {\n    if (!lifecycle.current.disposed) render();\n  };\n  const clearRetry = () => {\n    const retryHandle = lifecycle.current.retryHandle;\n    lifecycle.current.retryHandle = null;\n    state.current.retryScheduled = false;\n    if (retryHandle !== null) cancelPreparationRetry(retryHandle);\n  };\n  const beginGeneration = () => {\n    lifecycle.current.generation += 1;\n    clearRetry();\n    state.current.loading = false;\n    return lifecycle.current.generation;\n  };\n  const check = (generation) => {\n    const requestToken = state.current.token;\n    state.current.loading = true;\n    state.current.checkCount += 1;\n    publish();\n    checkPreparation(requestToken).then((status) => {\n      if (lifecycle.current.disposed || generation !== lifecycle.current.generation) return;\n      if (status === PREPARATION_STATUS.READY) {\n        state.current.loading = false;\n        if (!state.current.completed.includes(requestToken)) {\n          state.current.completed.push(requestToken);\n        }\n        publish();\n        return;\n      }\n      if (status === PREPARATION_STATUS.PENDING) {\n        state.current.retryScheduled = true;\n        let retryInvoked = false;\n        const retryHandle = schedulePreparationRetry(() => {\n          retryInvoked = true;\n          if (lifecycle.current.disposed || generation !== lifecycle.current.generation) return;\n          lifecycle.current.retryHandle = null;\n          state.current.retryScheduled = false;\n          check(generation);\n        });\n        if (retryInvoked || lifecycle.current.disposed || generation !== lifecycle.current.generation) {\n          cancelPreparationRetry(retryHandle);\n          return;\n        }\n        lifecycle.current.retryHandle = retryHandle;\n        publish();\n      }\n    });\n  };\n\n  React.useEffect(() => () => {\n    lifecycle.current.disposed = true;\n    beginGeneration();\n  }, []);\n\n  return {\n    start() {\n      state.current.visible = true;\n      check(beginGeneration());\n    },\n    close() {\n      state.current.visible = false;\n      if (invalidateOnClose) beginGeneration();\n      publish();\n    },\n    reopen(nextToken) {\n      state.current.token = nextToken;\n      state.current.visible = true;\n      publish();\n      check(beginGeneration());\n    },\n    snapshot() {\n      return { ...state.current, completed: [...state.current.completed] };\n    },\n  };\n}\n\nmodule.exports = { usePreparation };\n"
+      },
+      "delivered_sha256s": [
+        "d7cb9da9dcefa3c18aa791c278931df92a5f95efa3e1a2185d319ecaee7fbb36",
+        "98295aa2919059b252b315192210813df312e80c68473cfb51d4056f44860fbd",
+        "129faf3f6bc67dd105ecfd0a7432adf34a6e7051ba434d534f060fe5cc7ee33a",
+        "a61888fc25043255da3bcb32237113aacae934551481da4cb97ab786557ae90f",
+        "540afef243f6a3d3c82d188bdfdeda7ceb328db2fb0fb35df0e7c4fd519bdc15"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/BackgroundExportPanel.jsx",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/DownloadDialog.jsx",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/preparation-api.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/useBackgroundPreparation.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/usePreparation.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "On start, the dialog immediately begins a check for the current token, sets loading true, increments checkCount, and publishes a snapshot.",
+      "For the current generation, every PENDING result schedules a later retry through schedulePreparationRetry; the retry revalidates lifecycle authority before starting another check.",
+      "A PENDING result does not add the token to completed and does not end loading.",
+      "A READY result for the current generation ends loading and adds the originating request token to completed at most once.",
+      "Close, reopen, a replacement start, and unmount invalidate foreground work and cancel any owned scheduled retry so stale responses or callbacks cannot check, complete, or publish.",
+      "Closing BackgroundExportPanel only hides it; workspace-owned preparation continues until owner disposal.",
+      "snapshot returns a new completed array rather than exposing the internal mutable array."
+    ],
+    "forbidden_effects": [
+      "Do not deliver or record a file as completed for PENDING.",
+      "Do not let a response or retry from an invalidated generation affect a replacement foreground run, including when the token value is reused.",
+      "Do not let foreground close or unmount leave an owned retry active.",
+      "Do not convert retry scheduling into immediate recursive polling or invent a retry delay, retry limit, backoff, or timeout.",
+      "Do not change background-panel close into cancellation of workspace-owned preparation.",
+      "Do not mutate tests, configuration, dependencies, public commands, or unrelated behavior."
+    ],
+    "lifecycle_identity": [
+      "Foreground authority is the combination of the captured request token and the generation returned by beginGeneration().",
+      "Each foreground response and retry belongs to its originating generation; token equality alone does not authorize work after close, restart, or reopen.",
+      "The disposed flag is the terminal owner boundary and forbids subsequent foreground publication or continuation.",
+      "Background preparation has a distinct owner lifetime represented by active; panel visibility is not its cancellation identity."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "The file download dialog must continue checking when the preparation service reports PENDING and must deliver or record completion only after READY."
+      },
+      {
+        "id": "O2",
+        "text": "Each PENDING result belonging to the current foreground generation must schedule another check through the supplied retry scheduler while loading remains active."
+      },
+      {
+        "id": "O3",
+        "text": "A READY result belonging to the current foreground generation must stop loading and add its captured request token to completed without duplicates."
+      },
+      {
+        "id": "O4",
+        "text": "Foreground close, replacement start, reopen, and unmount must invalidate obsolete continuations and cancel their owned scheduled retry; stale responses and callbacks must not check, complete, or publish."
+      },
+      {
+        "id": "O5",
+        "text": "Existing immediate start behavior, state fields, check counting, visibility behavior, snapshot isolation, and public imperative commands must be preserved."
+      },
+      {
+        "id": "O6",
+        "text": "Background preparation ownership must remain separate: hiding its panel must not cancel workspace-owned work, while unmount must release its retry resources."
+      }
+    ],
+    "ordering_barriers": [
+      "Capture the foreground generation and request token before issuing each transport check.",
+      "After each transport resolution, verify that the hook is not disposed and that the captured generation is still current before interpreting the status or scheduling continuation.",
+      "Before a scheduled retry initiates transport work, verify that its originating generation is still current and the hook is not disposed.",
+      "Invalidate the old generation and cancel its owned retry before beginning replacement foreground work.",
+      "For READY, validate lifecycle authority before changing loading, completed, or rendered state.",
+      "Unmount marks the foreground owner disposed before generation invalidation and cleanup."
+    ],
+    "preservation": [
+      "Preserve direct initial checking from start and reopen rather than deferring the first check to the retry scheduler.",
+      "Preserve visible, loading, retryScheduled, checkCount, completed, and token snapshot fields and their existing meanings.",
+      "Preserve completed-token deduplication and copying in snapshot().",
+      "Preserve DownloadDialog's invalidate-on-close policy.",
+      "Preserve BackgroundExportPanel's independent workspace-owned lifetime and close-as-hide behavior.",
+      "Preserve the injected preparation transport, retry scheduler, and cancellation interfaces."
+    ],
+    "scope": [
+      "Business code for the foreground file-download preparation flow in src/usePreparation.js and its existing use by src/DownloadDialog.jsx.",
+      "The public status, scheduling, and cancellation boundary in src/preparation-api.js.",
+      "Adjacent background preparation is in preservation scope only; the task does not request changing its ownership policy."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "The preparation service can now report that a file is still pending before it becomes ready. Update the file download dialog so it keeps checking pending preparation and delivers the file only after a ready status."
+      },
+      {
+        "file": "src/preparation-api.js",
+        "quote": "// transport resolves false while preparation is pending and true when ready."
+      },
+      {
+        "file": "src/preparation-api.js",
+        "quote": "function schedulePreparationRetry(callback) {\n  if (typeof globalThis.__schedulePreparationRetry !== \"function\") {\n    throw new Error(\"retry scheduler is not installed\");\n  }\n  return globalThis.__schedulePreparationRetry(callback);\n}"
+      },
+      {
+        "file": "src/usePreparation.js",
+        "quote": "const requestToken = state.current.token;\n    state.current.loading = true;\n    state.current.checkCount += 1;\n    publish();"
+      },
+      {
+        "file": "src/usePreparation.js",
+        "quote": "if (lifecycle.current.disposed || generation !== lifecycle.current.generation) return;"
+      },
+      {
+        "file": "src/usePreparation.js",
+        "quote": "if (status === PREPARATION_STATUS.READY) {\n        state.current.loading = false;\n        if (!state.current.completed.includes(requestToken)) {\n          state.current.completed.push(requestToken);\n        }\n      }"
+      },
+      {
+        "file": "src/usePreparation.js",
+        "quote": "start() {\n      state.current.visible = true;\n      check(beginGeneration());\n    }"
+      },
+      {
+        "file": "src/usePreparation.js",
+        "quote": "close() {\n      state.current.visible = false;\n      if (invalidateOnClose) beginGeneration();\n      publish();\n    }"
+      },
+      {
+        "file": "src/usePreparation.js",
+        "quote": "reopen(nextToken) {\n      state.current.token = nextToken;\n      state.current.visible = true;\n      publish();\n      check(beginGeneration());\n    }"
+      },
+      {
+        "file": "src/usePreparation.js",
+        "quote": "return { ...state.current, completed: [...state.current.completed] };"
+      },
+      {
+        "file": "src/DownloadDialog.jsx",
+        "quote": "const preparation = usePreparation(token, { invalidateOnClose: true });"
+      },
+      {
+        "file": "src/useBackgroundPreparation.js",
+        "quote": "// Closing this progress panel does not cancel workspace-owned work."
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations."
+      }
+    ],
+    "triggers": [
+      "Calling start() on the foreground preparation controller.",
+      "Receiving PENDING from checkPreparation for the current foreground generation.",
+      "Execution of a scheduled retry callback for the current foreground generation.",
+      "Receiving READY from checkPreparation for the current foreground generation.",
+      "Calling close() on the download dialog, whose hook uses invalidateOnClose: true.",
+      "Calling reopen(nextToken), starting replacement work, or unmounting the hook owner."
+    ],
+    "unknowns": [
+      "The public task and sources do not specify retry delay, backoff, maximum attempts, timeout, or retry-limit behavior.",
+      "Transport rejection and scheduler or cancellation exceptions are unspecified.",
+      "No separate file-transfer API is supplied; the public implementation represents delivery through the completed token list.",
+      "The public sources do not guarantee whether scheduler or cancellation callbacks can execute inline or reenter application code; lifecycle checks around these boundaries are preservation safeguards.",
+      "Loading presentation between repeated checks is not stated directly by TASK, though existing source makes loading true when a check starts and only clears it in the READY or invalidation paths.",
+      "Behavior for values other than the documented false PENDING and true READY statuses is unspecified."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 1,
+  "diagnoses": [],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "finalized": true,
+  "first_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "repair_stop_reason": "oracle_accepted",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "94fb743d559c81de332f8232dd54e1829c6196c518b8c6b023111911af109438",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9993191966787
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "2c1fc6fdad2e262ab8a0d361ebff42585b2804b0832c5b59e73cf34a98dc2e55",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 27008,
+        "input_tokens": 37064,
+        "output_tokens": 3336,
+        "reasoning_output_tokens": 2018,
+        "total_tokens": 40400
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "2d9d80282f16ee5edb64f7cf2382bf9fdb8584a08019b81e9f5c7d24fb1a9dc0",
+      "seconds": 60.70284903142601,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 27008,
+        "input_tokens": 37064,
+        "output_tokens": 3336,
+        "reasoning_output_tokens": 2018,
+        "total_tokens": 40400
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "633cb6412a30b1b02bd6353c9c49fbf6fcdf27fb3f10316cf95028a22ce72f9f",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9993854062632
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "aec38ad26e6a0b126f0707793b11c06dd679f3545e369d0313d8dc4d213cbf1e",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 20149,
+        "output_tokens": 1668,
+        "reasoning_output_tokens": 95,
+        "total_tokens": 21817
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "d6d2d274d21b9d955abd791d68604889f275065f1aaeefe9b1d58792f98d41dc",
+      "seconds": 33.988561508245766,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 20149,
+        "output_tokens": 1668,
+        "reasoning_output_tokens": 95,
+        "total_tokens": 21817
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "4618780153b8272377de0d718d350ed3fff8c18494fe5da9bd1fba91059af613",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9992664130405
+          },
+          "number": 1,
+          "requests": 6,
+          "restart_reason": "initial",
+          "result_sha256": "26d0c11d63371690687b11ab71c707e5a55cf75035011020b9e8f69a9a340810",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 136064,
+        "input_tokens": 155216,
+        "output_tokens": 3461,
+        "reasoning_output_tokens": 1618,
+        "total_tokens": 158677
+      },
+      "requests": 6,
+      "reserved_requests": 24,
+      "result_sha256": "a865b39d232c873e7434419bbad36a56dab32addd1b15a5b9acffbfbcad7b548",
+      "seconds": 78.74119083210826,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 136064,
+        "input_tokens": 155216,
+        "output_tokens": 3461,
+        "reasoning_output_tokens": 1618,
+        "total_tokens": 158677
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "44864b31d8554895e0bed7c771ebda6484d0217306de32480515194e40096f05",
+      "seconds": 0.9219974530860782,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 3.6220845384523273,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "203e8b940beb3c87b600ffed6394262936080c8bcd3b828a004a925b3c19f1e1",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9963507540524
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "6037a875a218f52a7460592cc5b08c2639efa380c1de95a04b8f38be4a84e345",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 67455,
+        "output_tokens": 1463,
+        "reasoning_output_tokens": 213,
+        "total_tokens": 68918
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "5b2c0dd06c4dd2277cfe1eb11ab200088757fb4f3de78d78f942c47e8110eeaa",
+      "seconds": 33.8868275154382,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 67455,
+        "output_tokens": 1463,
+        "reasoning_output_tokens": 213,
+        "total_tokens": 68918
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "training_accepted": true
+}

@@ -1,0 +1,1298 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "86c2c7d354f0ab7e7a4d763d07299a66e683f4992df9e4f130903e6fff192c92",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "7b4b9efa2f3c9df4316d75bbd3a3bcbbf0f27cb85ef1d194b2d3aa79188d7647",
+        "src/workflow.go": "70e622693b42161743eb98c7670a92c1ace8ddd14f3c0f2963531cb5891fb19b"
+      },
+      "candidate_sources": {
+        "README.md": "# Harbor sonar inspection upload\n\nThis workspace selects payload files, starts transfers, records queue and\nprogress history, and paints progress for its open panel. Runtime: Go 1.13.8.\nDependencies: Go standard library. See src for the session/component entry API.\n\nSelecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit.\nThe source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order.\n\nrecordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size.\n\nOne startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle.\n\nThe same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance.\nRemoving a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred.\n\nFiles have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset.\nA decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime.\n\nEnvironment.call/bind provides a synchronous source embedding: listen(file\n token, callback token) returns a subscription, start can invoke it before\nreturning, and unlisten may reenter navigation. decode(file token, packet,\ncompletion token) returns {deferred:false,frame} or {deferred:true}. Deferred\ncompletion invokes the bound native closure on an explicit later host turn.\nTransport receives a physical cancellation observer corresponding to the\nnative attempt state; cancel is idempotent. The wire embedding interns file\nobjects and forwards source/sink calls. Go uses context cancellation; the other\nnative ports use object flags. No native DOM/Promise runtime is claimed.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Go 1.13.8\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true,\n  \"runtime_artifacts\": [\n    {\n      \"package\": \"golang-1.13-go\",\n      \"version\": \"1.13.8-1ubuntu1.2\",\n      \"filename\": \"golang-1.13-go_1.13.8-1ubuntu1.2_amd64.deb\",\n      \"sha256\": \"a7f2aa26c607fadcbb84bc9329f687a60cf6469cff9c6223ed7178d5afd85140\"\n    },\n    {\n      \"package\": \"golang-1.13-src\",\n      \"version\": \"1.13.8-1ubuntu1.2\",\n      \"filename\": \"golang-1.13-src_1.13.8-1ubuntu1.2_amd64.deb\",\n      \"sha256\": \"a31a2736a19535af9a2614417fa3286f660c9a3c8e759beea9bcb2cb2bdcd15a\"\n    }\n  ],\n  \"host_binary\": null,\n  \"bootstrap_lock_sha256\": \"fdfaea057ebf9cb9f8e44f99591c0da4292f4a7a6a138c9fe479abf725128c25\"\n}\n",
+        "src/workflow.go": "package main\n\nimport \"context\"\n\n// A typed visit owns its view; each attempt owns cancellation and source callbacks.\ntype Environment interface {\n\tCall(string, ...interface{}) interface{}\n\tBind(func(interface{})) int\n}\ntype File struct {\n\tID          string\n\tToken, Size int\n\tFeed        bool\n}\ntype Visit struct {\n\tID     int\n\tFile   *File\n\tHandle *Attempt\n}\ntype Attempt struct {\n\tFile          *File\n\tNumber        int\n\tCtx           context.Context\n\tCancelContext context.CancelFunc\n\tEnv           Environment\n\tStop          func()\n}\n\nfunc NewAttempt(env Environment, file *File, n int, active func() int, audit func(interface{}), view func(interface{}, int)) *Attempt {\n\tctx, cancel := context.WithCancel(context.Background())\n\th := &Attempt{File: file, Number: n, Ctx: ctx, CancelContext: cancel, Env: env, Stop: func() {}}\n\tenv.Call(\"transport\", file.Token, n)\n\tif file.Feed {\n\t\tcallback := env.Bind(func(packet interface{}) {\n\t\t\torder := active()\n\t\t\tdeliver := func(frame interface{}) { ; audit(frame); view(frame, order) }\n\t\t\tvalue := env.Call(\"decode\", file.Token, packet, env.Bind(deliver)).(map[string]interface{})\n\t\t\tif !value[\"deferred\"].(bool) {\n\t\t\t\tdeliver(value[\"frame\"])\n\t\t\t}\n\t\t})\n\t\tsubscription := env.Call(\"listen\", file.Token, callback)\n\t\tstopped := false\n\t\th.Stop = func() {\n\t\t\tif stopped {\n\t\t\t\treturn\n\t\t\t}\n\t\t\tstopped = true\n\t\t\tenv.Call(\"unlisten\", file.Token, subscription)\n\t\t}\n\t\tif h.Ctx.Err() != nil {\n\t\t\th.Stop()\n\t\t} else {\n\t\t\tenv.Call(\"start\", file.Token)\n\t\t}\n\t}\n\treturn h\n}\nfunc (h *Attempt) Cancel() {\n\tif h.Ctx.Err() != nil {\n\t\treturn\n\t}\n\th.CancelContext()\n\th.Stop()\n\th.Env.Call(\"cancel\", h.File.Token, h.Number)\n}\n\ntype Client interface {\n\tSelect(*File) *Attempt\n\tRetry() *Attempt\n\tHide()\n\tDispose()\n\tSnapshot() map[string]interface{}\n}\ntype Session struct {\n\tEnv              Environment\n\tVisit            *Visit\n\tSerial, Attempts int\n\tTasks            []*Attempt\n\tDisposed         bool\n}\n\nfunc NewSession(env Environment) Client  { return &Session{Env: env} }\nfunc (s *Session) current(v *Visit) bool { return s.Visit == v }\nfunc (s *Session) enqueue(v *Visit, kind string) *Attempt {\n\ts.Attempts++\n\tn := s.Attempts\n\tentry := map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"visitId\": v.ID, \"kind\": kind}\n\ts.Env.Call(\"record\", entry)\n\tarrival, painted := 0, 0\n\th := NewAttempt(s.Env, v.File, n, func() int { arrival++; return arrival }, func(frame interface{}) {\n\t\ts.Env.Call(\"recordProgress\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"frame\": frame})\n\t}, func(frame interface{}, order int) {\n\t\tif s.current(v) && order > painted {\n\t\t\tpainted = order\n\t\t\ts.Env.Call(\"showProgress\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"frame\": frame})\n\t\t}\n\t})\n\ts.Tasks = append(s.Tasks, h)\n\treturn h\n}\nfunc (s *Session) notice(v *Visit, h *Attempt) {\n\ts.Env.Call(\"showQueued\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": h.Number, \"visitId\": v.ID, \"status\": \"queued\"})\n}\nfunc (s *Session) release(v *Visit) {\n\th := v.Handle\n\tv.Handle = nil\n\tif h != nil {\n\t\th.Cancel()\n\t}\n}\nfunc (s *Session) Select(file *File) *Attempt {\n\tif s.Disposed {\n\t\treturn nil\n\t}\n\ts.Serial++\n\trequest := s.Serial\n\told := s.Visit\n\ts.Visit = nil\n\tif old != nil {\n\t\ts.release(old)\n\t}\n\tif s.Disposed || s.Serial != request {\n\t\treturn nil\n\t}\n\tv := &Visit{ID: request, File: file}\n\ts.Visit = v\n\th := s.enqueue(v, \"select\")\n\tif s.current(v) {\n\t\tv.Handle = h\n\t\ts.notice(v, h)\n\t} else {\n\t\th.Cancel()\n\t}\n\treturn h\n}\nfunc (s *Session) Retry() *Attempt {\n\tv := s.Visit\n\tif v == nil || v.Handle == nil || s.Disposed {\n\t\treturn nil\n\t}\n\tv.Handle.Cancel()\n\taccepted := v\n\th := s.enqueue(accepted, \"retry\")\n\tif s.current(accepted) {\n\t\taccepted.Handle = h\n\t} else {\n\t\th.Cancel()\n\t}\n\tif s.current(accepted) {\n\t\ts.notice(accepted, h)\n\t}\n\treturn h\n}\nfunc (s *Session) Hide() {\n\ts.Serial++\n\told := s.Visit\n\ts.Visit = nil\n\tif old != nil {\n\t\ts.release(old)\n\t}\n}\nfunc (s *Session) Dispose() {\n\tif s.Disposed {\n\t\treturn\n\t}\n\ts.Disposed = true\n\ts.Hide()\n\tfor _, h := range s.Tasks {\n\t\th.Cancel()\n\t}\n}\nfunc (s *Session) Snapshot() map[string]interface{} {\n\tvar visit, file, attempt interface{}\n\tif s.Visit != nil {\n\t\tvisit = s.Visit.ID\n\t\tfile = s.Visit.File.ID\n\t\tif s.Visit.Handle != nil {\n\t\t\tattempt = s.Visit.Handle.Number\n\t\t}\n\t}\n\treturn map[string]interface{}{\"visitId\": visit, \"fileId\": file, \"attemptId\": attempt, \"disposed\": s.Disposed, \"attempts\": s.Attempts}\n}\n\ntype Telemetry struct{ Stop func() }\n\nfunc NewTelemetry(env Environment, file *File) *Telemetry {\n\tcallback := env.Bind(func(packet interface{}) {\n\t\tdeliver := func(frame interface{}) { env.Call(\"recordDelta\", frame) }\n\t\tvalue := env.Call(\"decode\", file.Token, packet, env.Bind(deliver)).(map[string]interface{})\n\t\tif !value[\"deferred\"].(bool) {\n\t\t\tdeliver(value[\"frame\"])\n\t\t}\n\t})\n\tvar subscription interface{}\n\tenv.Call(\"start\", file.Token)\n\tsubscription = env.Call(\"listen\", file.Token, callback)\n\treturn &Telemetry{Stop: func() { env.Call(\"unlisten\", file.Token, subscription) }}\n}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.go",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "86c2c7d354f0ab7e7a4d763d07299a66e683f4992df9e4f130903e6fff192c92",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "7b4b9efa2f3c9df4316d75bbd3a3bcbbf0f27cb85ef1d194b2d3aa79188d7647",
+        "src/workflow.go": "ab92b93f19cee35c3cda66ce03552bc84836a86b854a27e619b868af6edc3289"
+      },
+      "candidate_sources": {
+        "README.md": "# Harbor sonar inspection upload\n\nThis workspace selects payload files, starts transfers, records queue and\nprogress history, and paints progress for its open panel. Runtime: Go 1.13.8.\nDependencies: Go standard library. See src for the session/component entry API.\n\nSelecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit.\nThe source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order.\n\nrecordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size.\n\nOne startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle.\n\nThe same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance.\nRemoving a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred.\n\nFiles have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset.\nA decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime.\n\nEnvironment.call/bind provides a synchronous source embedding: listen(file\n token, callback token) returns a subscription, start can invoke it before\nreturning, and unlisten may reenter navigation. decode(file token, packet,\ncompletion token) returns {deferred:false,frame} or {deferred:true}. Deferred\ncompletion invokes the bound native closure on an explicit later host turn.\nTransport receives a physical cancellation observer corresponding to the\nnative attempt state; cancel is idempotent. The wire embedding interns file\nobjects and forwards source/sink calls. Go uses context cancellation; the other\nnative ports use object flags. No native DOM/Promise runtime is claimed.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Go 1.13.8\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true,\n  \"runtime_artifacts\": [\n    {\n      \"package\": \"golang-1.13-go\",\n      \"version\": \"1.13.8-1ubuntu1.2\",\n      \"filename\": \"golang-1.13-go_1.13.8-1ubuntu1.2_amd64.deb\",\n      \"sha256\": \"a7f2aa26c607fadcbb84bc9329f687a60cf6469cff9c6223ed7178d5afd85140\"\n    },\n    {\n      \"package\": \"golang-1.13-src\",\n      \"version\": \"1.13.8-1ubuntu1.2\",\n      \"filename\": \"golang-1.13-src_1.13.8-1ubuntu1.2_amd64.deb\",\n      \"sha256\": \"a31a2736a19535af9a2614417fa3286f660c9a3c8e759beea9bcb2cb2bdcd15a\"\n    }\n  ],\n  \"host_binary\": null,\n  \"bootstrap_lock_sha256\": \"fdfaea057ebf9cb9f8e44f99591c0da4292f4a7a6a138c9fe479abf725128c25\"\n}\n",
+        "src/workflow.go": "package main\n\nimport \"context\"\n\n// A typed visit owns its view; each attempt owns cancellation and source callbacks.\ntype Environment interface {\n\tCall(string, ...interface{}) interface{}\n\tBind(func(interface{})) int\n}\ntype File struct {\n\tID          string\n\tToken, Size int\n\tFeed        bool\n}\ntype Visit struct {\n\tID     int\n\tFile   *File\n\tHandle *Attempt\n}\ntype Attempt struct {\n\tFile          *File\n\tNumber        int\n\tCtx           context.Context\n\tCancelContext context.CancelFunc\n\tEnv           Environment\n\tStop          func()\n}\n\nfunc NewAttempt(env Environment, file *File, n int, active func() int, audit func(interface{}), view func(interface{}, int)) *Attempt {\n\tctx, cancel := context.WithCancel(context.Background())\n\th := &Attempt{File: file, Number: n, Ctx: ctx, CancelContext: cancel, Env: env, Stop: func() {}}\n\tenv.Call(\"transport\", file.Token, n)\n\tif file.Feed {\n\t\tcallback := env.Bind(func(packet interface{}) {\n\t\t\torder := active()\n\t\t\tdeliver := func(frame interface{}) {\n\t\t\t\taudit(frame)\n\t\t\t\tif h.Ctx.Err() == nil {\n\t\t\t\t\tview(frame, order)\n\t\t\t\t}\n\t\t\t}\n\t\t\tvalue := env.Call(\"decode\", file.Token, packet, env.Bind(deliver)).(map[string]interface{})\n\t\t\tif !value[\"deferred\"].(bool) {\n\t\t\t\tdeliver(value[\"frame\"])\n\t\t\t}\n\t\t})\n\t\tsubscription := env.Call(\"listen\", file.Token, callback)\n\t\tstopped := false\n\t\th.Stop = func() {\n\t\t\tif stopped {\n\t\t\t\treturn\n\t\t\t}\n\t\t\tstopped = true\n\t\t\tenv.Call(\"unlisten\", file.Token, subscription)\n\t\t}\n\t\tif h.Ctx.Err() != nil {\n\t\t\th.Stop()\n\t\t} else {\n\t\t\tenv.Call(\"start\", file.Token)\n\t\t}\n\t}\n\treturn h\n}\nfunc (h *Attempt) Cancel() {\n\tif h.Ctx.Err() != nil {\n\t\treturn\n\t}\n\th.CancelContext()\n\th.Stop()\n\th.Env.Call(\"cancel\", h.File.Token, h.Number)\n}\n\ntype Client interface {\n\tSelect(*File) *Attempt\n\tRetry() *Attempt\n\tHide()\n\tDispose()\n\tSnapshot() map[string]interface{}\n}\ntype Session struct {\n\tEnv              Environment\n\tVisit            *Visit\n\tSerial, Attempts int\n\tTasks            []*Attempt\n\tDisposed         bool\n}\n\nfunc NewSession(env Environment) Client  { return &Session{Env: env} }\nfunc (s *Session) current(v *Visit) bool { return s.Visit == v }\nfunc (s *Session) enqueue(v *Visit, kind string) *Attempt {\n\ts.Attempts++\n\tn := s.Attempts\n\tentry := map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"visitId\": v.ID, \"kind\": kind}\n\ts.Env.Call(\"record\", entry)\n\tarrival, painted := 0, 0\n\th := NewAttempt(s.Env, v.File, n, func() int { arrival++; return arrival }, func(frame interface{}) {\n\t\ts.Env.Call(\"recordProgress\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"frame\": frame})\n\t}, func(frame interface{}, order int) {\n\t\tif s.current(v) && order > painted {\n\t\t\tpainted = order\n\t\t\ts.Env.Call(\"showProgress\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"frame\": frame})\n\t\t}\n\t})\n\ts.Tasks = append(s.Tasks, h)\n\treturn h\n}\nfunc (s *Session) notice(v *Visit, h *Attempt) {\n\ts.Env.Call(\"showQueued\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": h.Number, \"visitId\": v.ID, \"status\": \"queued\"})\n}\nfunc (s *Session) release(v *Visit) {\n\th := v.Handle\n\tv.Handle = nil\n\tif h != nil {\n\t\th.Cancel()\n\t}\n}\nfunc (s *Session) Select(file *File) *Attempt {\n\tif s.Disposed {\n\t\treturn nil\n\t}\n\ts.Serial++\n\trequest := s.Serial\n\told := s.Visit\n\ts.Visit = nil\n\tif old != nil {\n\t\ts.release(old)\n\t}\n\tif s.Disposed || s.Serial != request {\n\t\treturn nil\n\t}\n\tv := &Visit{ID: request, File: file}\n\ts.Visit = v\n\th := s.enqueue(v, \"select\")\n\tif s.current(v) {\n\t\tv.Handle = h\n\t\ts.notice(v, h)\n\t} else {\n\t\th.Cancel()\n\t}\n\treturn h\n}\nfunc (s *Session) Retry() *Attempt {\n\tv := s.Visit\n\tif v == nil || v.Handle == nil || s.Disposed {\n\t\treturn nil\n\t}\n\tv.Handle.Cancel()\n\taccepted := v\n\th := s.enqueue(accepted, \"retry\")\n\tif s.current(accepted) {\n\t\taccepted.Handle = h\n\t} else {\n\t\th.Cancel()\n\t}\n\tif s.current(accepted) {\n\t\ts.notice(accepted, h)\n\t}\n\treturn h\n}\nfunc (s *Session) Hide() {\n\ts.Serial++\n\told := s.Visit\n\ts.Visit = nil\n\tif old != nil {\n\t\ts.release(old)\n\t}\n}\nfunc (s *Session) Dispose() {\n\tif s.Disposed {\n\t\treturn\n\t}\n\ts.Disposed = true\n\ts.Hide()\n\tfor _, h := range s.Tasks {\n\t\th.Cancel()\n\t}\n}\nfunc (s *Session) Snapshot() map[string]interface{} {\n\tvar visit, file, attempt interface{}\n\tif s.Visit != nil {\n\t\tvisit = s.Visit.ID\n\t\tfile = s.Visit.File.ID\n\t\tif s.Visit.Handle != nil {\n\t\t\tattempt = s.Visit.Handle.Number\n\t\t}\n\t}\n\treturn map[string]interface{}{\"visitId\": visit, \"fileId\": file, \"attemptId\": attempt, \"disposed\": s.Disposed, \"attempts\": s.Attempts}\n}\n\ntype Telemetry struct{ Stop func() }\n\nfunc NewTelemetry(env Environment, file *File) *Telemetry {\n\tcallback := env.Bind(func(packet interface{}) {\n\t\tdeliver := func(frame interface{}) { env.Call(\"recordDelta\", frame) }\n\t\tvalue := env.Call(\"decode\", file.Token, packet, env.Bind(deliver)).(map[string]interface{})\n\t\tif !value[\"deferred\"].(bool) {\n\t\t\tdeliver(value[\"frame\"])\n\t\t}\n\t})\n\tvar subscription interface{}\n\tenv.Call(\"start\", file.Token)\n\tsubscription = env.Call(\"listen\", file.Token, callback)\n\treturn &Telemetry{Stop: func() { env.Call(\"unlisten\", file.Token, subscription) }}\n}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.go",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 2,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "86c2c7d354f0ab7e7a4d763d07299a66e683f4992df9e4f130903e6fff192c92",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "7b4b9efa2f3c9df4316d75bbd3a3bcbbf0f27cb85ef1d194b2d3aa79188d7647",
+        "src/workflow.go": "3ca2f95b668b28de1f3aa0d4cf40f970056989e4ccbe5ac899bdaff775d2da68"
+      },
+      "candidate_sources": {
+        "README.md": "# Harbor sonar inspection upload\n\nThis workspace selects payload files, starts transfers, records queue and\nprogress history, and paints progress for its open panel. Runtime: Go 1.13.8.\nDependencies: Go standard library. See src for the session/component entry API.\n\nSelecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit.\nThe source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order.\n\nrecordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size.\n\nOne startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle.\n\nThe same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance.\nRemoving a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred.\n\nFiles have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset.\nA decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime.\n\nEnvironment.call/bind provides a synchronous source embedding: listen(file\n token, callback token) returns a subscription, start can invoke it before\nreturning, and unlisten may reenter navigation. decode(file token, packet,\ncompletion token) returns {deferred:false,frame} or {deferred:true}. Deferred\ncompletion invokes the bound native closure on an explicit later host turn.\nTransport receives a physical cancellation observer corresponding to the\nnative attempt state; cancel is idempotent. The wire embedding interns file\nobjects and forwards source/sink calls. Go uses context cancellation; the other\nnative ports use object flags. No native DOM/Promise runtime is claimed.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Go 1.13.8\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true,\n  \"runtime_artifacts\": [\n    {\n      \"package\": \"golang-1.13-go\",\n      \"version\": \"1.13.8-1ubuntu1.2\",\n      \"filename\": \"golang-1.13-go_1.13.8-1ubuntu1.2_amd64.deb\",\n      \"sha256\": \"a7f2aa26c607fadcbb84bc9329f687a60cf6469cff9c6223ed7178d5afd85140\"\n    },\n    {\n      \"package\": \"golang-1.13-src\",\n      \"version\": \"1.13.8-1ubuntu1.2\",\n      \"filename\": \"golang-1.13-src_1.13.8-1ubuntu1.2_amd64.deb\",\n      \"sha256\": \"a31a2736a19535af9a2614417fa3286f660c9a3c8e759beea9bcb2cb2bdcd15a\"\n    }\n  ],\n  \"host_binary\": null,\n  \"bootstrap_lock_sha256\": \"fdfaea057ebf9cb9f8e44f99591c0da4292f4a7a6a138c9fe479abf725128c25\"\n}\n",
+        "src/workflow.go": "package main\n\nimport \"context\"\n\n// A typed visit owns its view; each attempt owns cancellation and source callbacks.\ntype Environment interface {\n\tCall(string, ...interface{}) interface{}\n\tBind(func(interface{})) int\n}\ntype File struct {\n\tID          string\n\tToken, Size int\n\tFeed        bool\n}\ntype Visit struct {\n\tID     int\n\tFile   *File\n\tHandle *Attempt\n}\ntype Attempt struct {\n\tFile          *File\n\tNumber        int\n\tCtx           context.Context\n\tCancelContext context.CancelFunc\n\tEnv           Environment\n\tStop          func()\n}\n\nfunc NewAttempt(env Environment, file *File, n int, active func() int, audit func(interface{}), view func(interface{}, int)) *Attempt {\n\tctx, cancel := context.WithCancel(context.Background())\n\th := &Attempt{File: file, Number: n, Ctx: ctx, CancelContext: cancel, Env: env, Stop: func() {}}\n\tenv.Call(\"transport\", file.Token, n)\n\tif file.Feed {\n\t\tcallback := env.Bind(func(packet interface{}) {\n\t\t\torder := active()\n\t\t\tdeliver := func(frame interface{}) {\n\t\t\t\taudit(frame)\n\t\t\t\tif h.Ctx.Err() == nil {\n\t\t\t\t\tview(frame, order)\n\t\t\t\t}\n\t\t\t}\n\t\t\tvalue := env.Call(\"decode\", file.Token, packet, env.Bind(deliver)).(map[string]interface{})\n\t\t\tif !value[\"deferred\"].(bool) {\n\t\t\t\tdeliver(value[\"frame\"])\n\t\t\t}\n\t\t})\n\t\tsubscription := env.Call(\"listen\", file.Token, callback)\n\t\tstopped := false\n\t\th.Stop = func() {\n\t\t\tif stopped {\n\t\t\t\treturn\n\t\t\t}\n\t\t\tstopped = true\n\t\t\tenv.Call(\"unlisten\", file.Token, subscription)\n\t\t}\n\t\tif h.Ctx.Err() != nil {\n\t\t\th.Stop()\n\t\t} else {\n\t\t\tenv.Call(\"start\", file.Token)\n\t\t}\n\t}\n\treturn h\n}\nfunc (h *Attempt) Cancel() {\n\tif h.Ctx.Err() != nil {\n\t\treturn\n\t}\n\th.CancelContext()\n\th.Stop()\n\th.Env.Call(\"cancel\", h.File.Token, h.Number)\n}\n\ntype Client interface {\n\tSelect(*File) *Attempt\n\tRetry() *Attempt\n\tHide()\n\tDispose()\n\tSnapshot() map[string]interface{}\n}\ntype Session struct {\n\tEnv              Environment\n\tVisit            *Visit\n\tSerial, Attempts int\n\tTasks            []*Attempt\n\tDisposed         bool\n}\n\nfunc NewSession(env Environment) Client  { return &Session{Env: env} }\nfunc (s *Session) current(v *Visit) bool { return s.Visit == v }\nfunc (s *Session) enqueue(v *Visit, kind string) *Attempt {\n\ts.Attempts++\n\tn := s.Attempts\n\tentry := map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"visitId\": v.ID, \"kind\": kind}\n\ts.Env.Call(\"record\", entry)\n\tarrival, painted := 0, 0\n\th := NewAttempt(s.Env, v.File, n, func() int { arrival++; return arrival }, func(frame interface{}) {\n\t\ts.Env.Call(\"recordProgress\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"frame\": frame})\n\t}, func(frame interface{}, order int) {\n\t\tif s.current(v) && order > painted {\n\t\t\tpainted = order\n\t\t\ts.Env.Call(\"showProgress\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": n, \"frame\": frame})\n\t\t}\n\t})\n\ts.Tasks = append(s.Tasks, h)\n\treturn h\n}\nfunc (s *Session) notice(v *Visit, h *Attempt) {\n\ts.Env.Call(\"showQueued\", map[string]interface{}{\"fileId\": v.File.ID, \"attemptId\": h.Number, \"visitId\": v.ID, \"status\": \"queued\"})\n}\nfunc (s *Session) release(v *Visit) {\n\th := v.Handle\n\tv.Handle = nil\n\tif h != nil {\n\t\th.Cancel()\n\t}\n}\nfunc (s *Session) Select(file *File) *Attempt {\n\tif s.Disposed {\n\t\treturn nil\n\t}\n\ts.Serial++\n\trequest := s.Serial\n\told := s.Visit\n\ts.Visit = nil\n\tif old != nil {\n\t\ts.release(old)\n\t}\n\tif s.Disposed || s.Serial != request {\n\t\treturn nil\n\t}\n\tv := &Visit{ID: request, File: file}\n\ts.Visit = v\n\th := s.enqueue(v, \"select\")\n\tif s.current(v) {\n\t\tv.Handle = h\n\t\ts.notice(v, h)\n\t} else {\n\t\th.Cancel()\n\t}\n\treturn h\n}\nfunc (s *Session) Retry() *Attempt {\n\tv := s.Visit\n\tif v == nil || v.Handle == nil || s.Disposed {\n\t\treturn nil\n\t}\n\tprevious := v.Handle\n\tprevious.Cancel()\n\t// Removing the old listener may synchronously navigate or dispose. Do not\n\t// start a retry for a visit whose accepted attempt changed in that callback.\n\tif s.Disposed || !s.current(v) || v.Handle != previous {\n\t\treturn nil\n\t}\n\taccepted := v\n\th := s.enqueue(accepted, \"retry\")\n\tif s.current(accepted) && accepted.Handle == previous {\n\t\taccepted.Handle = h\n\t} else {\n\t\th.Cancel()\n\t}\n\tif s.current(accepted) && accepted.Handle == h {\n\t\ts.notice(accepted, h)\n\t}\n\treturn h\n}\nfunc (s *Session) Hide() {\n\ts.Serial++\n\told := s.Visit\n\ts.Visit = nil\n\tif old != nil {\n\t\ts.release(old)\n\t}\n}\nfunc (s *Session) Dispose() {\n\tif s.Disposed {\n\t\treturn\n\t}\n\ts.Disposed = true\n\ts.Hide()\n\tfor _, h := range s.Tasks {\n\t\th.Cancel()\n\t}\n}\nfunc (s *Session) Snapshot() map[string]interface{} {\n\tvar visit, file, attempt interface{}\n\tif s.Visit != nil {\n\t\tvisit = s.Visit.ID\n\t\tfile = s.Visit.File.ID\n\t\tif s.Visit.Handle != nil {\n\t\t\tattempt = s.Visit.Handle.Number\n\t\t}\n\t}\n\treturn map[string]interface{}{\"visitId\": visit, \"fileId\": file, \"attemptId\": attempt, \"disposed\": s.Disposed, \"attempts\": s.Attempts}\n}\n\ntype Telemetry struct{ Stop func() }\n\nfunc NewTelemetry(env Environment, file *File) *Telemetry {\n\tcallback := env.Bind(func(packet interface{}) {\n\t\tdeliver := func(frame interface{}) { env.Call(\"recordDelta\", frame) }\n\t\tvalue := env.Call(\"decode\", file.Token, packet, env.Bind(deliver)).(map[string]interface{})\n\t\tif !value[\"deferred\"].(bool) {\n\t\t\tdeliver(value[\"frame\"])\n\t\t}\n\t})\n\tvar subscription interface{}\n\tenv.Call(\"start\", file.Token)\n\tsubscription = env.Call(\"listen\", file.Token, callback)\n\treturn &Telemetry{Stop: func() { env.Call(\"unlisten\", file.Token, subscription) }}\n}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.go",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 3,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "A warm source that emits synchronously from start produces an initial panel progress update during the first transfer.",
+      "Every decoded transfer frame is still appended to progress history through recordProgress.",
+      "Panel display accepts a decoded frame only when its visit is still current and no later-arriving packet for that attempt has already updated the display.",
+      "A later packet whose decode completes first remains displayed when an earlier packet finishes decoding afterward.",
+      "Frames are ordered by packet arrival, not by loaded values, because full-frame loaded values may decrease or reset.",
+      "Select, Retry, Hide, and Dispose retain their existing queue, notice, cancellation, navigation, and cleanup effects.",
+      "Telemetry continues to observe live deltas with its existing start/listen behavior.",
+      "Go business source remains compatible with Go 1.13.8 and the standard library."
+    ],
+    "forbidden_effects": [
+      "Do not suppress, reorder, or deduplicate recordProgress audit entries merely because a frame is stale for display.",
+      "Do not compare frame payload values to determine freshness or assume progress is monotonic.",
+      "Do not add byteCount to queue records without separate authorization.",
+      "Do not turn Retry into a new visit or reuse a physical attempt.",
+      "Do not change Telemetry or collectProgressTelemetry behavior.",
+      "Do not allow callbacks from a hidden, replaced, or disposed visit to paint the panel.",
+      "Do not leak a listener or physical attempt when synchronous reentrant navigation occurs before NewAttempt returns its cleanup handle.",
+      "Do not change public transfer, retry, navigation, cleanup, cancellation, notice, or queue-record behavior."
+    ],
+    "lifecycle_identity": [
+      "Each Select call that is accepted creates a new visit, including selection of the same File object again.",
+      "Retry retains the current Visit and replaces its physical Attempt.",
+      "A File is shared across its visits and attempts and has stable object identity with immutable ID and Size during these commands.",
+      "Each Attempt owns its context cancellation and source-listener cleanup.",
+      "Each Session has an independent workspace lifetime.",
+      "Display freshness is scoped to a physical attempt; packet-order state must not bleed into retries, later visits, telemetry, or subsequent sessions."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Subscribe the transfer attempt to its progress source early enough that packets emitted synchronously by start are observed, including more than one synchronous startup packet."
+      },
+      {
+        "id": "O2",
+        "text": "Assign a monotonically increasing arrival order within each physical transfer attempt when its source callback receives a packet."
+      },
+      {
+        "id": "O3",
+        "text": "Continue auditing every successfully decoded transfer frame with recordProgress, regardless of visit visibility or whether the frame is stale for panel display."
+      },
+      {
+        "id": "O4",
+        "text": "Show a decoded frame only if its visit is still current and its packet arrival order is not older than the latest arrival order already painted for that attempt."
+      },
+      {
+        "id": "O5",
+        "text": "Use packet arrival order, rather than decoded payload values or decode completion order, to prevent an older frame from rolling the display backward."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve synchronous callback and reentrancy safety: if selection, hiding, or disposal occurs during startup before the caller receives the cleanup handle, the attempt must still be cancelled and its installed listener removed exactly once."
+      },
+      {
+        "id": "O7",
+        "text": "Preserve existing Select, Retry, Hide, Dispose, queue record, queued notice, cancellation, snapshot, and cleanup behavior outside the required progress correction."
+      },
+      {
+        "id": "O8",
+        "text": "Leave diagnostic Telemetry live-delta observation behavior unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "For transfer attempts, listener installation must be effective before start can synchronously emit the initial packet.",
+      "Packet arrival order must be captured in the source callback before decode begins.",
+      "recordProgress remains a decode-completion effect for every decoded frame and is not gated by display freshness.",
+      "The display freshness check must occur when a decode result is delivered, immediately before showProgress.",
+      "A stale decode completion must not overwrite a display already painted from a later-arriving packet.",
+      "Listener removal commits before the host unlisten/detach callback can reenter navigation, and repeated removal remains inert."
+    ],
+    "preservation": [
+      "Public Client entry behavior for Select, Retry, Hide, Dispose, and Snapshot.",
+      "One visit per accepted selection and no additional visit for Retry.",
+      "One new physical attempt and queue record per select or retry under existing acceptance rules.",
+      "Queue-record shape remains {fileId, attemptId, visitId, kind}.",
+      "Existing showQueued notice behavior and fields.",
+      "Idempotent attempt cancellation and cleanup across navigation and disposal.",
+      "All recordProgress history entries for decoded transfer frames.",
+      "Ordinary asynchronous and synchronous streaming after startup.",
+      "Diagnostic Telemetry recordDelta observations and lifecycle.",
+      "Subsequent uses of the shared source, file, session API, and workspace-local lifetime.",
+      "Full-frame replacement semantics, including legitimate decreases and resets in loaded values."
+    ],
+    "scope": [
+      "Business behavior in src/workflow.go for transfer-attempt source subscription, packet sequencing, decoded-frame auditing, and current-panel painting.",
+      "The maintenance applies to Session-created transfer attempts and their callback-capable startup/cleanup boundary.",
+      "Telemetry is preservation-only and is not a target for behavioral redesign.",
+      "Tests, configuration, dependencies, and evaluator artifacts are outside Action scope."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives."
+      },
+      {
+        "file": "TASK",
+        "quote": "Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior."
+      },
+      {
+        "file": "TASK",
+        "quote": "Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses."
+      },
+      {
+        "file": "README.md",
+        "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit.\nThe source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order."
+      },
+      {
+        "file": "README.md",
+        "quote": "recordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size."
+      },
+      {
+        "file": "README.md",
+        "quote": "One startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle."
+      },
+      {
+        "file": "README.md",
+        "quote": "The same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance."
+      },
+      {
+        "file": "README.md",
+        "quote": "Removing a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred."
+      },
+      {
+        "file": "README.md",
+        "quote": "Files have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset.\nA decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime."
+      },
+      {
+        "file": "README.md",
+        "quote": "Environment.call/bind provides a synchronous source embedding: listen(file\n token, callback token) returns a subscription, start can invoke it before\nreturning, and unlisten may reenter navigation."
+      },
+      {
+        "file": "README.md",
+        "quote": "Transport receives a physical cancellation observer corresponding to the\nnative attempt state; cancel is idempotent."
+      }
+    ],
+    "triggers": [
+      "An accepted Select starts a new visit and physical attempt for a feed-enabled file.",
+      "Retry cancels the current physical attempt and starts a replacement attempt for the same visit.",
+      "start synchronously emits one or more cached packets.",
+      "A source callback receives an ordinary later packet.",
+      "decode returns an immediate full frame.",
+      "A deferred decode completion delivers a full frame on a later host turn.",
+      "showProgress, unlisten, or another synchronous host callback reenters Select, Hide, or Dispose."
+    ],
+    "unknowns": [
+      "The public sources do not specify rejected-decode handling beyond stating that rejected decode is outside this embedding's model.",
+      "The public sources do not define physical transfer completion behavior in this embedding.",
+      "The exact opaque subscription representation and host implementation of listen/start/unlisten are not public beyond their documented synchronous and reentrant semantics.",
+      "No byteCount authorization is supplied, so queue records must retain their existing four fields."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 3,
+  "diagnoses": [
+    {
+      "attempt": 2,
+      "candidate_only_contract_evidence": [],
+      "contract_after": {
+        "checkpoints": [
+          "A warm source that emits synchronously from start produces an initial panel progress update during the first transfer.",
+          "Every decoded transfer frame is still appended to progress history through recordProgress.",
+          "Panel display accepts a decoded frame only when its visit is still current and no later-arriving packet for that attempt has already updated the display.",
+          "A later packet whose decode completes first remains displayed when an earlier packet finishes decoding afterward.",
+          "Frames are ordered by packet arrival, not by loaded values, because full-frame loaded values may decrease or reset.",
+          "Select, Retry, Hide, and Dispose retain their existing queue, notice, cancellation, navigation, and cleanup effects.",
+          "Telemetry continues to observe live deltas with its existing start/listen behavior.",
+          "Go business source remains compatible with Go 1.13.8 and the standard library."
+        ],
+        "forbidden_effects": [
+          "Do not suppress, reorder, or deduplicate recordProgress audit entries merely because a frame is stale for display.",
+          "Do not compare frame payload values to determine freshness or assume progress is monotonic.",
+          "Do not add byteCount to queue records without separate authorization.",
+          "Do not turn Retry into a new visit or reuse a physical attempt.",
+          "Do not change Telemetry or collectProgressTelemetry behavior.",
+          "Do not allow callbacks from a hidden, replaced, or disposed visit to paint the panel.",
+          "Do not leak a listener or physical attempt when synchronous reentrant navigation occurs before NewAttempt returns its cleanup handle.",
+          "Do not change public transfer, retry, navigation, cleanup, cancellation, notice, or queue-record behavior."
+        ],
+        "lifecycle_identity": [
+          "Each Select call that is accepted creates a new visit, including selection of the same File object again.",
+          "Retry retains the current Visit and replaces its physical Attempt.",
+          "A File is shared across its visits and attempts and has stable object identity with immutable ID and Size during these commands.",
+          "Each Attempt owns its context cancellation and source-listener cleanup.",
+          "Each Session has an independent workspace lifetime.",
+          "Display freshness is scoped to a physical attempt; packet-order state must not bleed into retries, later visits, telemetry, or subsequent sessions."
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "text": "Subscribe the transfer attempt to its progress source early enough that packets emitted synchronously by start are observed, including more than one synchronous startup packet."
+          },
+          {
+            "id": "O2",
+            "text": "Assign a monotonically increasing arrival order within each physical transfer attempt when its source callback receives a packet."
+          },
+          {
+            "id": "O3",
+            "text": "Continue auditing every successfully decoded transfer frame with recordProgress, regardless of visit visibility or whether the frame is stale for panel display."
+          },
+          {
+            "id": "O4",
+            "text": "Show a decoded frame only if its visit is still current and its packet arrival order is not older than the latest arrival order already painted for that attempt."
+          },
+          {
+            "id": "O5",
+            "text": "Use packet arrival order, rather than decoded payload values or decode completion order, to prevent an older frame from rolling the display backward."
+          },
+          {
+            "id": "O6",
+            "text": "Preserve synchronous callback and reentrancy safety: if selection, hiding, or disposal occurs during startup before the caller receives the cleanup handle, the attempt must still be cancelled and its installed listener removed exactly once."
+          },
+          {
+            "id": "O7",
+            "text": "Preserve existing Select, Retry, Hide, Dispose, queue record, queued notice, cancellation, snapshot, and cleanup behavior outside the required progress correction."
+          },
+          {
+            "id": "O8",
+            "text": "Leave diagnostic Telemetry live-delta observation behavior unchanged."
+          }
+        ],
+        "ordering_barriers": [
+          "For transfer attempts, listener installation must be effective before start can synchronously emit the initial packet.",
+          "Packet arrival order must be captured in the source callback before decode begins.",
+          "recordProgress remains a decode-completion effect for every decoded frame and is not gated by display freshness.",
+          "The display freshness check must occur when a decode result is delivered, immediately before showProgress.",
+          "A stale decode completion must not overwrite a display already painted from a later-arriving packet.",
+          "Listener removal commits before the host unlisten/detach callback can reenter navigation, and repeated removal remains inert."
+        ],
+        "preservation": [
+          "Public Client entry behavior for Select, Retry, Hide, Dispose, and Snapshot.",
+          "One visit per accepted selection and no additional visit for Retry.",
+          "One new physical attempt and queue record per select or retry under existing acceptance rules.",
+          "Queue-record shape remains {fileId, attemptId, visitId, kind}.",
+          "Existing showQueued notice behavior and fields.",
+          "Idempotent attempt cancellation and cleanup across navigation and disposal.",
+          "All recordProgress history entries for decoded transfer frames.",
+          "Ordinary asynchronous and synchronous streaming after startup.",
+          "Diagnostic Telemetry recordDelta observations and lifecycle.",
+          "Subsequent uses of the shared source, file, session API, and workspace-local lifetime.",
+          "Full-frame replacement semantics, including legitimate decreases and resets in loaded values."
+        ],
+        "scope": [
+          "Business behavior in src/workflow.go for transfer-attempt source subscription, packet sequencing, decoded-frame auditing, and current-panel painting.",
+          "The maintenance applies to Session-created transfer attempts and their callback-capable startup/cleanup boundary.",
+          "Telemetry is preservation-only and is not a target for behavioral redesign.",
+          "Tests, configuration, dependencies, and evaluator artifacts are outside Action scope."
+        ],
+        "supporting_evidence": [
+          {
+            "file": "TASK",
+            "quote": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives."
+          },
+          {
+            "file": "TASK",
+            "quote": "Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior."
+          },
+          {
+            "file": "TASK",
+            "quote": "Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward."
+          },
+          {
+            "file": "TASK",
+            "quote": "Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses."
+          },
+          {
+            "file": "README.md",
+            "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit.\nThe source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order."
+          },
+          {
+            "file": "README.md",
+            "quote": "recordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size."
+          },
+          {
+            "file": "README.md",
+            "quote": "One startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle."
+          },
+          {
+            "file": "README.md",
+            "quote": "The same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance."
+          },
+          {
+            "file": "README.md",
+            "quote": "Removing a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred."
+          },
+          {
+            "file": "README.md",
+            "quote": "Files have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset.\nA decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime."
+          },
+          {
+            "file": "README.md",
+            "quote": "Environment.call/bind provides a synchronous source embedding: listen(file\n token, callback token) returns a subscription, start can invoke it before\nreturning, and unlisten may reenter navigation."
+          },
+          {
+            "file": "README.md",
+            "quote": "Transport receives a physical cancellation observer corresponding to the\nnative attempt state; cancel is idempotent."
+          }
+        ],
+        "triggers": [
+          "An accepted Select starts a new visit and physical attempt for a feed-enabled file.",
+          "Retry cancels the current physical attempt and starts a replacement attempt for the same visit.",
+          "start synchronously emits one or more cached packets.",
+          "A source callback receives an ordinary later packet.",
+          "decode returns an immediate full frame.",
+          "A deferred decode completion delivers a full frame on a later host turn.",
+          "showProgress, unlisten, or another synchronous host callback reenters Select, Hide, or Dispose."
+        ],
+        "unknowns": [
+          "The public sources do not specify rejected-decode handling beyond stating that rejected decode is outside this embedding's model.",
+          "The public sources do not define physical transfer completion behavior in this embedding.",
+          "The exact opaque subscription representation and host implementation of listen/start/unlisten are not public beyond their documented synchronous and reentrant semantics.",
+          "No byteCount authorization is supplied, so queue records must retain their existing four fields."
+        ]
+      },
+      "contract_changed": false,
+      "diagnosis": "implementation_gap",
+      "explanation": "The behavioral contract already captures the original task and public documentation, so no contract revision is justified. The original source installs the transfer listener after start and supplies a constant packet order, which conflicts with the stated warm-source and out-of-order requirements. The previous candidate addresses those implementation defects by installing the listener before start, assigning attempt-local increasing arrival numbers, and gating only showProgress with the latest painted order while leaving recordProgress unconditional. It also makes listener cleanup idempotent and installs the cleanup closure before start, while leaving Telemetry unchanged. The failed acceptance verdict supplies no failure cause and therefore does not support changing the contract or inferring another requirement.",
+      "remaining_unknowns": [
+        "The acceptance verdict provides no diagnostic cause, so it cannot establish whether any unobserved implementation defect remains.",
+        "The public sources do not specify rejected-decode or physical-transfer-completion behavior beyond declaring them outside this embedding's model.",
+        "The host's opaque subscription representation and internal listen/start/unlisten implementation remain unspecified."
+      ],
+      "restored_original_contract_evidence": false,
+      "routing_analysis": null,
+      "structured_delta": [],
+      "supporting_evidence": [
+        {
+          "file": "TASK",
+          "quote": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives."
+        },
+        {
+          "file": "TASK",
+          "quote": "Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior."
+        },
+        {
+          "file": "TASK",
+          "quote": "Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward."
+        },
+        {
+          "file": "README.md",
+          "quote": "start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order."
+        },
+        {
+          "file": "README.md",
+          "quote": "Removing a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert."
+        },
+        {
+          "file": "src/workflow.go",
+          "quote": "});var subscription interface{};env.Call(\"start\",file.Token);subscription=env.Call(\"listen\",file.Token,callback);h.Stop=func(){env.Call(\"unlisten\",file.Token,subscription)};if h.Ctx.Err()!=nil{h.Stop()}"
+        },
+        {
+          "file": "src/workflow.go",
+          "quote": "h:=NewAttempt(s.Env,v.File,n,func()int{return 0},func(frame interface{}){s.Env.Call(\"recordProgress\",map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":n,\"frame\":frame})},func(frame interface{},order int){if s.current(v){s.Env.Call(\"showProgress\",map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":n,\"frame\":frame})}});"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "subscription := env.Call(\"listen\", file.Token, callback)"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "arrival, painted := 0, 0"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "if s.current(v) && order > painted {"
+        }
+      ],
+      "supporting_evidence_bindings": [
+        {
+          "file": "TASK",
+          "quote": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "README.md",
+          "quote": "start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "README.md",
+          "quote": "Removing a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "src/workflow.go",
+          "quote": "});var subscription interface{};env.Call(\"start\",file.Token);subscription=env.Call(\"listen\",file.Token,callback);h.Stop=func(){env.Call(\"unlisten\",file.Token,subscription)};if h.Ctx.Err()!=nil{h.Stop()}",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "src/workflow.go",
+          "quote": "h:=NewAttempt(s.Env,v.File,n,func()int{return 0},func(frame interface{}){s.Env.Call(\"recordProgress\",map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":n,\"frame\":frame})},func(frame interface{},order int){if s.current(v){s.Env.Call(\"showProgress\",map[string]interface{}{\"fileId\":v.File.ID,\"attemptId\":n,\"frame\":frame})}});",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "subscription := env.Call(\"listen\", file.Token, callback)",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "arrival, painted := 0, 0",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "if s.current(v) && order > painted {",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        }
+      ],
+      "unused_routing_analysis": false
+    },
+    {
+      "attempt": 3,
+      "candidate_only_contract_evidence": [],
+      "contract_after": {
+        "checkpoints": [
+          "A warm source that emits synchronously from start produces an initial panel progress update during the first transfer.",
+          "Every decoded transfer frame is still appended to progress history through recordProgress.",
+          "Panel display accepts a decoded frame only when its visit is still current and no later-arriving packet for that attempt has already updated the display.",
+          "A later packet whose decode completes first remains displayed when an earlier packet finishes decoding afterward.",
+          "Frames are ordered by packet arrival, not by loaded values, because full-frame loaded values may decrease or reset.",
+          "Select, Retry, Hide, and Dispose retain their existing queue, notice, cancellation, navigation, and cleanup effects.",
+          "Telemetry continues to observe live deltas with its existing start/listen behavior.",
+          "Go business source remains compatible with Go 1.13.8 and the standard library."
+        ],
+        "forbidden_effects": [
+          "Do not suppress, reorder, or deduplicate recordProgress audit entries merely because a frame is stale for display.",
+          "Do not compare frame payload values to determine freshness or assume progress is monotonic.",
+          "Do not add byteCount to queue records without separate authorization.",
+          "Do not turn Retry into a new visit or reuse a physical attempt.",
+          "Do not change Telemetry or collectProgressTelemetry behavior.",
+          "Do not allow callbacks from a hidden, replaced, or disposed visit to paint the panel.",
+          "Do not leak a listener or physical attempt when synchronous reentrant navigation occurs before NewAttempt returns its cleanup handle.",
+          "Do not change public transfer, retry, navigation, cleanup, cancellation, notice, or queue-record behavior."
+        ],
+        "lifecycle_identity": [
+          "Each Select call that is accepted creates a new visit, including selection of the same File object again.",
+          "Retry retains the current Visit and replaces its physical Attempt.",
+          "A File is shared across its visits and attempts and has stable object identity with immutable ID and Size during these commands.",
+          "Each Attempt owns its context cancellation and source-listener cleanup.",
+          "Each Session has an independent workspace lifetime.",
+          "Display freshness is scoped to a physical attempt; packet-order state must not bleed into retries, later visits, telemetry, or subsequent sessions."
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "text": "Subscribe the transfer attempt to its progress source early enough that packets emitted synchronously by start are observed, including more than one synchronous startup packet."
+          },
+          {
+            "id": "O2",
+            "text": "Assign a monotonically increasing arrival order within each physical transfer attempt when its source callback receives a packet."
+          },
+          {
+            "id": "O3",
+            "text": "Continue auditing every successfully decoded transfer frame with recordProgress, regardless of visit visibility or whether the frame is stale for panel display."
+          },
+          {
+            "id": "O4",
+            "text": "Show a decoded frame only if its visit is still current and its packet arrival order is not older than the latest arrival order already painted for that attempt."
+          },
+          {
+            "id": "O5",
+            "text": "Use packet arrival order, rather than decoded payload values or decode completion order, to prevent an older frame from rolling the display backward."
+          },
+          {
+            "id": "O6",
+            "text": "Preserve synchronous callback and reentrancy safety: if selection, hiding, or disposal occurs during startup before the caller receives the cleanup handle, the attempt must still be cancelled and its installed listener removed exactly once."
+          },
+          {
+            "id": "O7",
+            "text": "Preserve existing Select, Retry, Hide, Dispose, queue record, queued notice, cancellation, snapshot, and cleanup behavior outside the required progress correction."
+          },
+          {
+            "id": "O8",
+            "text": "Leave diagnostic Telemetry live-delta observation behavior unchanged."
+          }
+        ],
+        "ordering_barriers": [
+          "For transfer attempts, listener installation must be effective before start can synchronously emit the initial packet.",
+          "Packet arrival order must be captured in the source callback before decode begins.",
+          "recordProgress remains a decode-completion effect for every decoded frame and is not gated by display freshness.",
+          "The display freshness check must occur when a decode result is delivered, immediately before showProgress.",
+          "A stale decode completion must not overwrite a display already painted from a later-arriving packet.",
+          "Listener removal commits before the host unlisten/detach callback can reenter navigation, and repeated removal remains inert."
+        ],
+        "preservation": [
+          "Public Client entry behavior for Select, Retry, Hide, Dispose, and Snapshot.",
+          "One visit per accepted selection and no additional visit for Retry.",
+          "One new physical attempt and queue record per select or retry under existing acceptance rules.",
+          "Queue-record shape remains {fileId, attemptId, visitId, kind}.",
+          "Existing showQueued notice behavior and fields.",
+          "Idempotent attempt cancellation and cleanup across navigation and disposal.",
+          "All recordProgress history entries for decoded transfer frames.",
+          "Ordinary asynchronous and synchronous streaming after startup.",
+          "Diagnostic Telemetry recordDelta observations and lifecycle.",
+          "Subsequent uses of the shared source, file, session API, and workspace-local lifetime.",
+          "Full-frame replacement semantics, including legitimate decreases and resets in loaded values."
+        ],
+        "scope": [
+          "Business behavior in src/workflow.go for transfer-attempt source subscription, packet sequencing, decoded-frame auditing, and current-panel painting.",
+          "The maintenance applies to Session-created transfer attempts and their callback-capable startup/cleanup boundary.",
+          "Telemetry is preservation-only and is not a target for behavioral redesign.",
+          "Tests, configuration, dependencies, and evaluator artifacts are outside Action scope."
+        ],
+        "supporting_evidence": [
+          {
+            "file": "TASK",
+            "quote": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives."
+          },
+          {
+            "file": "TASK",
+            "quote": "Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior."
+          },
+          {
+            "file": "TASK",
+            "quote": "Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward."
+          },
+          {
+            "file": "TASK",
+            "quote": "Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses."
+          },
+          {
+            "file": "README.md",
+            "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit.\nThe source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order."
+          },
+          {
+            "file": "README.md",
+            "quote": "recordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size."
+          },
+          {
+            "file": "README.md",
+            "quote": "One startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle."
+          },
+          {
+            "file": "README.md",
+            "quote": "The same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance."
+          },
+          {
+            "file": "README.md",
+            "quote": "Removing a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred."
+          },
+          {
+            "file": "README.md",
+            "quote": "Files have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset.\nA decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime."
+          },
+          {
+            "file": "README.md",
+            "quote": "Environment.call/bind provides a synchronous source embedding: listen(file\n token, callback token) returns a subscription, start can invoke it before\nreturning, and unlisten may reenter navigation."
+          },
+          {
+            "file": "README.md",
+            "quote": "Transport receives a physical cancellation observer corresponding to the\nnative attempt state; cancel is idempotent."
+          }
+        ],
+        "triggers": [
+          "An accepted Select starts a new visit and physical attempt for a feed-enabled file.",
+          "Retry cancels the current physical attempt and starts a replacement attempt for the same visit.",
+          "start synchronously emits one or more cached packets.",
+          "A source callback receives an ordinary later packet.",
+          "decode returns an immediate full frame.",
+          "A deferred decode completion delivers a full frame on a later host turn.",
+          "showProgress, unlisten, or another synchronous host callback reenters Select, Hide, or Dispose."
+        ],
+        "unknowns": [
+          "The public sources do not specify rejected-decode handling beyond stating that rejected decode is outside this embedding's model.",
+          "The public sources do not define physical transfer completion behavior in this embedding.",
+          "The exact opaque subscription representation and host implementation of listen/start/unlisten are not public beyond their documented synchronous and reentrant semantics.",
+          "No byteCount authorization is supplied, so queue records must retain their existing four fields."
+        ]
+      },
+      "contract_changed": false,
+      "diagnosis": "implementation_gap",
+      "explanation": "The behavioral contract already covers the required startup, ordering, audit, visibility, and reentrant-cleanup behavior, so no contract revision is justified. The candidate fixes subscription order and packet-order display freshness, but it does not make the in-construction attempt reachable by visit cleanup during synchronous startup. NewAttempt invokes start before returning, while Select assigns v.Handle only after enqueue returns. Consequently, a showProgress callback that synchronously selects, hides, or disposes can encounter a nil handle and cannot cancel or detach the active startup attempt at that navigation boundary. The candidate cancels it only after start and the reentrant operation unwind, allowing the old listener and physical attempt to remain active during nested or subsequent source use. This is an implementation gap against O6 and the existing navigation/cleanup preservation requirements. The failed acceptance verdict itself was not used as evidence of this cause.",
+      "remaining_unknowns": [
+        "The public sources do not specify rejected-decode handling beyond stating that rejected decode is outside this embedding's model.",
+        "The public sources do not define physical transfer completion behavior in this embedding.",
+        "The exact opaque subscription representation and host implementation of listen/start/unlisten are not public beyond their documented synchronous and reentrant semantics.",
+        "The public sources do not prescribe a particular implementation technique for publishing or otherwise cancelling an attempt while NewAttempt is still executing."
+      ],
+      "restored_original_contract_evidence": false,
+      "routing_analysis": null,
+      "structured_delta": [],
+      "supporting_evidence": [
+        {
+          "file": "TASK",
+          "quote": "Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior."
+        },
+        {
+          "file": "TASK",
+          "quote": "Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses."
+        },
+        {
+          "file": "README.md",
+          "quote": "One startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle."
+        },
+        {
+          "file": "README.md",
+          "quote": "Removing a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred."
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "if h.Ctx.Err() != nil {\n\t\t\th.Stop()\n\t\t} else {\n\t\t\tenv.Call(\"start\", file.Token)\n\t\t}"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "h := s.enqueue(v, \"select\")\n\tif s.current(v) {\n\t\tv.Handle = h\n\t\ts.notice(v, h)\n\t} else {\n\t\th.Cancel()\n\t}"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "func (s *Session) release(v *Visit) {\n\th := v.Handle\n\tv.Handle = nil\n\tif h != nil {\n\t\th.Cancel()\n\t}\n}"
+        }
+      ],
+      "supporting_evidence_bindings": [
+        {
+          "file": "TASK",
+          "quote": "Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "README.md",
+          "quote": "One startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "README.md",
+          "quote": "Removing a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "if h.Ctx.Err() != nil {\n\t\t\th.Stop()\n\t\t} else {\n\t\t\tenv.Call(\"start\", file.Token)\n\t\t}",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "h := s.enqueue(v, \"select\")\n\tif s.current(v) {\n\t\tv.Handle = h\n\t\ts.notice(v, h)\n\t} else {\n\t\th.Cancel()\n\t}",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.go",
+          "quote": "func (s *Session) release(v *Visit) {\n\th := v.Handle\n\tv.Handle = nil\n\tif h != nil {\n\t\th.Cancel()\n\t}\n}",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        }
+      ],
+      "unused_routing_analysis": false
+    }
+  ],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": false,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": false,
+    "valid": true,
+    "verdict": "UNDERREACH"
+  },
+  "finalized": true,
+  "first_pass_attempt": null,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": false,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": false,
+    "valid": true,
+    "verdict": "UNDERREACH"
+  },
+  "repair_stop_reason": "action_budget_exhausted",
+  "stages": [
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "d88ddc3b4b5063898c95d89b5d123555a5a64322c83c93dc31e61c5ff6dceae4",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9997969549149
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "8658a611e7766a00458e70ca0c0199f46b4bd8ecb90f19e15939439951ac5c56",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 13043,
+        "output_tokens": 2431,
+        "reasoning_output_tokens": 140,
+        "total_tokens": 15474
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "7ae8be6bfb3fcbdb9e5df377046ea006aa095fc920472bdd1e9c92f2a81d139c",
+      "seconds": 50.75769373588264,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 13043,
+        "output_tokens": 2431,
+        "reasoning_output_tokens": 140,
+        "total_tokens": 15474
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "babbb019f0bbc36df0a491382c74bf74bf1a88f7a52a07ac227356603ec0ce8a",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9994373321533
+          },
+          "number": 1,
+          "requests": 6,
+          "restart_reason": "initial",
+          "result_sha256": "33e83ba9096f69e814877f0444055b03d16705dc0cd018fc2f820f863ab255d6",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 108928,
+        "input_tokens": 124602,
+        "output_tokens": 3562,
+        "reasoning_output_tokens": 2174,
+        "total_tokens": 128164
+      },
+      "requests": 6,
+      "reserved_requests": 24,
+      "result_sha256": "35a015a5d807077aeebf3cee97749c8cf6d371f02b2361d8399099f8475dd9e4",
+      "seconds": 84.69813215080649,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 108928,
+        "input_tokens": 124602,
+        "output_tokens": 3562,
+        "reasoning_output_tokens": 2174,
+        "total_tokens": 128164
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "7c3e5ebc58a9f96de27955ce9b3f3d94b2d9c47a34357f2d7a821592cf1cc93d",
+      "seconds": 0.48534541204571724,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 1.229624972678721,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "diagnosis-2",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "e41e444e018bb18f637da99b9f0ab4c811d23b5bc39f2e4470b89516b2990a43",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9992123777047
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "9126aaa3a9fb8829ad256b12d69121bf0ce78fa29dc49c7e41ce832025c35e30",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-2",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 19284,
+        "output_tokens": 2793,
+        "reasoning_output_tokens": 373,
+        "total_tokens": 22077
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "0cac53c3a008d0a3c7b6fa47bfb07ca408397a7e90fba52a9f32127babb64de4",
+      "seconds": 58.71968217846006,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 19284,
+        "output_tokens": 2793,
+        "reasoning_output_tokens": 373,
+        "total_tokens": 22077
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-2",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "bb12061ee019364bc20ea112d646e7e5d533498a8d8f2084f7bc6bef37bbba6a",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9994568759575
+          },
+          "number": 1,
+          "requests": 6,
+          "restart_reason": "initial",
+          "result_sha256": "a86b22b5ab4dc86a4999abd30c43c71cfc79d1a9da25318033d654371f08438f",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-2",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 113280,
+        "input_tokens": 129389,
+        "output_tokens": 4427,
+        "reasoning_output_tokens": 3416,
+        "total_tokens": 133816
+      },
+      "requests": 6,
+      "reserved_requests": 24,
+      "result_sha256": "f743689337fe4a5974e7a6eb1f049412353302116ebc168d32a70ada3a6ceefb",
+      "seconds": 109.66812814678997,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 113280,
+        "input_tokens": 129389,
+        "output_tokens": 4427,
+        "reasoning_output_tokens": 3416,
+        "total_tokens": 133816
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-2",
+      "key": "visible-2",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "7c3e5ebc58a9f96de27955ce9b3f3d94b2d9c47a34357f2d7a821592cf1cc93d",
+      "seconds": 0.47593383491039276,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-2",
+      "key": "acceptance-2",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 1.2727835280820727,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "diagnosis-3",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "4b4c12f22e26413bbc51a9817e031aa3c130b2b604e1b570772720f8b40075ff",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9987009391189
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "faecc3d0a7796492d432fbacce589ec001af23bdca61560c7de40b141c328da0",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-3",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 18808,
+        "output_tokens": 4108,
+        "reasoning_output_tokens": 1700,
+        "total_tokens": 22916
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "506aca21976377fed1e2921edc20ff151fed63be6926754241f4b65f2948f2d4",
+      "seconds": 63.53180042095482,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 18808,
+        "output_tokens": 4108,
+        "reasoning_output_tokens": 1700,
+        "total_tokens": 22916
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-3",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "93c9120f70f4bb642a25903bdfc6639d890e586fd2fd92421473d486799f91e8",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9978528339416
+          },
+          "number": 1,
+          "requests": 8,
+          "restart_reason": "initial",
+          "result_sha256": "ff8fea846eb757027264462d237ec251d636b80c6db547cc51696847543e674f",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-3",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 163840,
+        "input_tokens": 183407,
+        "output_tokens": 5869,
+        "reasoning_output_tokens": 3907,
+        "total_tokens": 189276
+      },
+      "requests": 8,
+      "reserved_requests": 24,
+      "result_sha256": "b58e46b1f50e20cbd1cb55c6264a3fdb020a7c6c08b5f455439d547a79b68c06",
+      "seconds": 143.2225254587829,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 163840,
+        "input_tokens": 183407,
+        "output_tokens": 5869,
+        "reasoning_output_tokens": 3907,
+        "total_tokens": 189276
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-3",
+      "key": "visible-3",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "7c3e5ebc58a9f96de27955ce9b3f3d94b2d9c47a34357f2d7a821592cf1cc93d",
+      "seconds": 0.46851115953177214,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-3",
+      "key": "acceptance-3",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 1.2997829839587212,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "awaiting_expert_summary",
+  "stop_reason": "action_budget_exhausted",
+  "training_accepted": false
+}

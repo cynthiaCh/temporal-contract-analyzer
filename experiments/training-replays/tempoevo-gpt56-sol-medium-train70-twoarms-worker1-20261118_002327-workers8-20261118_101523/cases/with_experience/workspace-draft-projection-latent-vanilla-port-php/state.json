@@ -1,0 +1,345 @@
+{
+  "attempts": [],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "Verify multiple edits within 120 ms reset the timer and produce one store write containing the latest text.",
+      "Verify an empty-string edit is saved after the quiet interval.",
+      "Verify later editing bursts continue to save independently.",
+      "Verify editing without a current document remains a no-op.",
+      "Verify pending edits persist across document switching, same-document reopening, close, and dispose, and remain associated with the original document.",
+      "Verify synchronous navigation caused by a save remains authoritative: document output, selection, projection, visit identifiers, and breadcrumb trail agree afterward.",
+      "Verify subscriptions are detached when their Badge retires and status events remain filtered to the associated document.",
+      "Verify preview still uses its 40 ms trailing delay and hide still cancels pending preview work.",
+      "Run the public PHP syntax check after any Action; it does not establish business behavior."
+    ],
+    "forbidden_effects": [
+      "Do not continue writing the store on every editor edit.",
+      "Do not associate pending text with whichever document is current when the timer fires; retain the document selected when the edit was accepted.",
+      "Do not cancel or discard accepted document text merely because its Badge is detached, the workspace switches documents, closes, or disposes.",
+      "Do not let an outer select or close overwrite document or projection state installed by synchronous nested navigation during a save.",
+      "Do not commit a superseded requested visit to the breadcrumb trail.",
+      "Do not consume the same pending value twice during reentrant flushing, and do not erase a new burst accepted during the save callback.",
+      "Do not change search preview delay, coalescing, payload, or hide cancellation behavior.",
+      "Do not alter store event fields, revision sequencing, status filtering, document/visit identities, or breadcrumb retention."
+    ],
+    "lifecycle_identity": [
+      "A BufferBank entry is owned by document ID and is reused for later visits to that document.",
+      "A Badge represents one live visit, carrying its document ID, visit ID, buffer reference, and store subscription.",
+      "Retiring a Badge ends its subscription and current-view authority but does not destroy its document-owned buffer or discard accepted persistent text.",
+      "Workspace visit IDs distinguish requested visits; editor generation and workspace epoch distinguish which open/select/close operation remains authoritative.",
+      "Each Trailing instance owns one timer handle and one latest pending value; flushing retires that state before invoking its work callback."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "When edit(text) has a current Badge, enqueue text into that Badge's document-owned trailing buffer instead of writing the store immediately; with no current Badge, do nothing."
+      },
+      {
+        "id": "O2",
+        "text": "Use a 120 ms trailing quiet interval for document autosave. Each edit in the same burst replaces the pending text and resets the timer, so only the latest text is written after 120 ms without another edit."
+      },
+      {
+        "id": "O3",
+        "text": "After a burst is consumed, the same per-document buffer must accept and save subsequent bursts, including an empty-string edit."
+      },
+      {
+        "id": "O4",
+        "text": "A save must write the pending text to the document ID captured by the buffer, preserving independent pending state for different documents."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve the existing synchronous persistence available at navigation boundaries: before switch, same-document reopen, close, or dispose completes, flush accepted pending text for the departing document so destination reads observe the saved value."
+      },
+      {
+        "id": "O6",
+        "text": "Before a departure-triggered save, revoke the departing Badge's current authority, detach its captured subscription, and clear its document presentation. Retire the trailing task's consumed pending state before invoking the store write."
+      },
+      {
+        "id": "O7",
+        "text": "Because a store write can synchronously navigate, revalidate editor generation after retirement before installing an opened Badge, and revalidate workspace epoch after editor open or close before committing or clearing projection state."
+      },
+      {
+        "id": "O8",
+        "text": "Preserve store write semantics: update the identified record, increment revision, emit the original id/text/revision event, and synchronously notify still-subscribed listeners."
+      },
+      {
+        "id": "O9",
+        "text": "Preserve document rendering, current-document status filtering, subscription cleanup, visit identity, selection behavior, and breadcrumb history; clearing selection must not clear the existing trail."
+      },
+      {
+        "id": "O10",
+        "text": "Leave Preview unchanged: queries remain coalesced by its existing 40 ms Trailing task, and hide cancels its pending task."
+      }
+    ],
+    "ordering_barriers": [
+      "On push: cancel any existing timer, replace the pending value, then schedule a new callback for 120 ms.",
+      "On flush: cancel the outstanding handle, snapshot the pending value, clear pending state and handle, then invoke the save callback. This makes reentrant edits a new burst and prevents duplicate consumption.",
+      "On editor retirement: capture the old Badge, set current to null, detach its subscription, clear document output, then flush its document buffer if it has pending work.",
+      "On open: allocate a new editor generation, retire the previous Badge, then confirm the generation is still current before creating and rendering the destination Badge.",
+      "On workspace select: allocate epoch and visit identities, call editor open, then confirm the epoch still belongs to that select before committing selection and breadcrumb projection.",
+      "On workspace close: allocate a new epoch, close the editor, then confirm the epoch still belongs to that close before clearing projection selection.",
+      "A store write updates the record and constructs its revisioned event before synchronously notifying listeners."
+    ],
+    "preservation": [
+      "Workspace navigation and persistence behavior, including fresh store reads when switching or reopening documents.",
+      "Document ID and visit ID carried by document and projection outputs.",
+      "Independent reusable buffers for different document IDs.",
+      "Store event id, text, and monotonically incremented revision fields.",
+      "Status output only for events matching the live Badge's document ID.",
+      "Removal of the captured Badge subscription on retirement.",
+      "Breadcrumb trail retention after selection clearing and copied-value publication semantics provided by PHP arrays.",
+      "Nested navigation authority when saving synchronously invokes store listeners.",
+      "Preview's existing 40 ms delay, latest-query behavior, preview payload, and hide cancellation."
+    ],
+    "scope": [
+      "Business behavior in src/workflow.php for Editor autosave, BufferBank/Trailing integration, retirement ordering, and Workspace authority checks needed to preserve navigation and persistence.",
+      "The existing Store, Badge, Projection, and Preview behavior is preservation context, not a request for unrelated redesign.",
+      "Any Action is limited to business code under /workspace; tests and configuration remain unchanged."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "The editor currently writes to the workspace store on every edit. Change editor\nautosave to coalesce a burst of input: after 120 ms without another edit, save\nonly its latest text. Reuse the existing trailing-task utility where appropriate."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve the workspace's existing navigation and persistence behavior. Keep\nsearch preview behavior unchanged; its timing is outside this maintenance task."
+      },
+      {
+        "file": "README.md",
+        "quote": "Hotel coordination — Document body, per-document buffer and navigation outline are separate responsibilities. Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Store reads values and synchronously notifies saved integrations. Workspace exposes select(id), edit(text), close(), selection(), dispose(). Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail. Injected scheduler offers cancellable timer handles. Search preview is an adjacent transient consumer."
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function push($value) {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=$value;\n        $this->handle=$this->env->schedule(function() { $this->flush(); }, $this->delay);\n    }"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function flush() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $value=$this->pending; $this->pending=null; $this->handle=null;\n        if ($value !== null) ($this->work)($value);\n    }"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "class BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function edit($text){$view=$this->current;if($view){$this->env->write($view->id,$text);}}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function write($id, $text) {\n        $this->records[$id] = $text;\n        $event = ['id'=>$id, 'text'=>$text, 'revision'=>++$this->revision];\n        foreach ($this->listeners as $token=>$fn) if (isset($this->listeners[$token])) $fn($event);\n        return $event;\n    }"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "class Badge {public $id,$buffer,$visit;private $env,$token;function __construct($env,$id,$buffer){$this->env=$env;$this->id=$id;$this->buffer=$buffer;$this->token=$env->store->subscribe(function($e)use($env,$id){if($e['id']===$id)$env->output('status',$e);});}function detach(){$this->env->store->stop($this->token);}}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function open($id,$visit){$request=++$this->generation;$this->retire();if(true&&$request!==$this->generation)return;"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "class Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function clear(){$this->selected=null;$this->publish();}"
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations."
+      }
+    ],
+    "triggers": [
+      "Editor edit while a Badge is current.",
+      "A further edit before the 120 ms timer expires.",
+      "Expiration of 120 ms with no newer edit.",
+      "Editor open/select while another Badge has pending text.",
+      "Same-document reopen with pending text.",
+      "Editor/workspace close or dispose with pending text.",
+      "A store listener synchronously invoking select or close during a timer-driven or departure-driven save.",
+      "Preview query and preview hide."
+    ],
+    "unknowns": [
+      "The public task does not prescribe exception recovery if scheduling, cancellation, output, subscription cleanup, or a save callback throws.",
+      "Public sources establish synchronous navigation from saved integrations, but do not establish that document, status, or projection output sinks themselves reenter navigation.",
+      "The exact scheduler behavior for callbacks canceled at the instant they become runnable is not specified; correctness should rely on Trailing state retirement rather than cancellation alone.",
+      "No public source specifies a universal persistence deadline beyond preserving this workspace's existing immediate-write navigation and persistence behavior.",
+      "Workspace disposal has no documented external owner or successor lifecycle beyond dispose delegating to close; behavior outside the supplied Workspace is unspecified."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 1,
+  "diagnoses": [],
+  "error": "EvidenceError('Invalid action execution: Reconnecting... waiting for network (Connection failed: error sending request)')",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "f4cf256c1e7dac8cc0a4f15219d20c727760f18ca88de0bc29e9ee868368c14c",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9992410773411
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "1f268f46b7e5a47f6b44b92c52ee112e075157901398ffb6c271c70d2f6809a6",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 23040,
+        "input_tokens": 28912,
+        "output_tokens": 2813,
+        "reasoning_output_tokens": 1244,
+        "total_tokens": 31725
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "d4221221576bce376ccb578e8fe8c9762828b7d938d03003feda5cb2de29247d",
+      "seconds": 52.54668382462114,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 23040,
+        "input_tokens": 28912,
+        "output_tokens": 2813,
+        "reasoning_output_tokens": 1244,
+        "total_tokens": 31725
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "a5641dc848e8495bc7b3c60a17a3fe484b8c38d7d0103c2fcbdc133c8d69b0ab",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.99980338756
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "504fd07b06e34dff14a9a23410341611ec7c43869c28e5dfc5536697476e59af",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 18127,
+        "output_tokens": 3047,
+        "reasoning_output_tokens": 570,
+        "total_tokens": 21174
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "5ed85412904c945a5e105d084b7b2b0f19e3e7ccd6176ae6100578588231f3d3",
+      "seconds": 51.43552885390818,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 18127,
+        "output_tokens": 3047,
+        "reasoning_output_tokens": 570,
+        "total_tokens": 21174
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "transient_transport_error",
+          "input_sha256": "dab7f3076497c7260c1cb83fcb253dce765a0ac0d2b147f9969a1de4cfeac72a",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9996145283803
+          },
+          "number": 1,
+          "requests": 5,
+          "restart_reason": "initial",
+          "result_sha256": "15d2ccc44c039d4123006cbffeae3fbf57db4161621bac1027c5a315c92c3cb3",
+          "status": "complete",
+          "valid": false
+        },
+        {
+          "failure_type": "transient_transport_error",
+          "input_sha256": "dab7f3076497c7260c1cb83fcb253dce765a0ac0d2b147f9969a1de4cfeac72a",
+          "limits": {
+            "requests": 19,
+            "seconds": 523.5601220484823
+          },
+          "number": 2,
+          "requests": 6,
+          "restart_reason": "transient_transport",
+          "result_sha256": "9b4c54bcdcb92fc54f8a67ad03ddce070033a4937a903265edd315ac67a2c147",
+          "status": "complete",
+          "valid": false
+        },
+        {
+          "failure_type": "transient_transport_error",
+          "input_sha256": "dab7f3076497c7260c1cb83fcb253dce765a0ac0d2b147f9969a1de4cfeac72a",
+          "limits": {
+            "requests": 13,
+            "seconds": 427.2999731581658
+          },
+          "number": 3,
+          "requests": 7,
+          "restart_reason": "transient_transport",
+          "result_sha256": "22ec353f03dd63d70f4743976a1158a5aeed0e6ac2de221cf10699915c3a7d83",
+          "status": "complete",
+          "valid": false
+        }
+      ],
+      "failure_type": "transient_transport_error",
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 309376,
+        "input_tokens": 364330,
+        "output_tokens": 10227,
+        "reasoning_output_tokens": 2573,
+        "total_tokens": 374557
+      },
+      "requests": 18,
+      "reserved_requests": 24,
+      "result_sha256": "d359f436e6355aea6d4a729526c7983b97cf024260dd5f50eabfeed7be8f07e1",
+      "seconds": 253.71555362828076,
+      "status": "invalid",
+      "tokens": null,
+      "tool_policy_recoveries": 0,
+      "transport_retries": 2,
+      "unknown_usage_requests": 3,
+      "usage_incomplete": true
+    }
+  ],
+  "status": "execution_invalid",
+  "stop_reason": "execution_invalid",
+  "training_accepted": null
+}

@@ -1,0 +1,471 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/workflow.py\n+++ candidate/src/workflow.py\n@@ -3,15 +3,15 @@\n     def attach(env,file,active,audit,view):\n         if not file['feed']:return lambda:None\n         def listener(packet):\n-            pass\n+            if not active():return\n             def deliver(frame):\n                 pass\n                 audit(frame);view(frame)\n             value=env.call('decode',file['token'],packet,env.bind(deliver))\n             if not value['deferred']:deliver(value['frame'])\n         callback=env.bind(listener)\n+        subscription=env.call('listen',file['token'],callback)\n         env.call('start',file['token'])\n-        subscription=env.call('listen',file['token'],callback)\n         return lambda:env.call('unlisten',file['token'],subscription)\n # A session owns visits, while attempt closures own source and decode callbacks.\n class Visit:\n",
+        "from_previous": "--- previous/src/workflow.py\n+++ candidate/src/workflow.py\n@@ -3,15 +3,15 @@\n     def attach(env,file,active,audit,view):\n         if not file['feed']:return lambda:None\n         def listener(packet):\n-            pass\n+            if not active():return\n             def deliver(frame):\n                 pass\n                 audit(frame);view(frame)\n             value=env.call('decode',file['token'],packet,env.bind(deliver))\n             if not value['deferred']:deliver(value['frame'])\n         callback=env.bind(listener)\n+        subscription=env.call('listen',file['token'],callback)\n         env.call('start',file['token'])\n-        subscription=env.call('listen',file['token'],callback)\n         return lambda:env.call('unlisten',file['token'],subscription)\n # A session owns visits, while attempt closures own source and decode callbacks.\n class Visit:\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [],
+        "coverage": [
+          {
+            "path": "src/workflow.py",
+            "status": "parsed"
+          }
+        ],
+        "events": [],
+        "findings": [],
+        "limitations": [
+          "Syntax facts, candidate call links and review hints are not verified contracts, bugs, severity or difficulty scores.",
+          "API names are clues. Types, aliases, control flow, dynamic dispatch and callback targets are not fully resolved.",
+          "Local order is lexical order within a block; branches, exceptions, loops, short-circuiting and execution remain unchecked.",
+          "await may suspend; cancellation does not imply completed work or cleanup. Listener removal does not cancel work already started.",
+          "if/try/finally syntax does not prove adequate protection. The absence of hints does not imply safety.",
+          "No hidden scorers, reference patches, model results or human profiles are read. Operators must verify input provenance."
+        ],
+        "relations": [],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "parsed",
+        "target_definitions": []
+      },
+      "sources": {
+        "README.md": "# Museum image ingestion\n\nThis frontend workspace selects files, starts transfers, and shows queued status.\nSee the pinned dependencies and session API in src. Session class owns visit state; Python closures capture per-attempt admission and retained decode continuations. Each\nworkspace has independent visit and attempt counters. A `select(file)` call\nopens a new visit, including when the exact same file object is selected again.\n`retry()` accepts one retry for the current visit; `hide()` closes its panel;\n`dispose()` ends the workspace. `snapshot()` exposes current ownership.\n\nRetry already cancels the previous transfer before enqueueing an accepted retry. Preserve that behavior during progress maintenance.\nAn accepted retry always belongs to the file and visit present at entry, creates\nexactly one new attempt, and remains in the queue record even if cancellation\ncauses navigation. Attempt IDs increase once per enqueued command within each\nworkspace; navigation must not retarget an accepted retry to the newly selected\nfile or drop its command. Queueing and recording are synchronous.\n\nCancellation is owned by an idempotent native attempt method. The injected\nadapter marks the physical signal aborted and synchronously calls the host's\n`onCancel` observer before returning, ahead of passive observers registered\nby transport. That observer may select another\nfile, hide the panel, or hide and reopen the identical file object. New selection\nimmediately starts its own transfer. The newer visit must retain its view and\nhandle when the older retry resumes. Queued notices are visible output: a notice\nfrom a retired visit must not be sent, including after reopening the same file.\nNormal retries in a current visit still issue one queued notice each.\n\nThe accepted old retry must still enqueue and record once after such navigation.\nIts newly created transfer is canceled immediately if its visit has ended; this\ndoes not remove its retained queue record. There must be no remaining active\ntransfer from that old visit. The new visit remains able to retry and hide;\nhiding cancels its owned handle and repeated cancellation is idempotent.\nSelection and hiding may themselves cancel an old handle and synchronously\nreceive newer navigation; the newer navigation keeps ownership. A hidden panel\naccepts no retry. Workspace disposal cancels every remaining transfer and is\nidempotent. Disposing one workspace cannot affect another.\n\n`transport({file, attemptId, signal})` starts a pending physical transfer and\nobserves the native signal. `record` and `showQueued` are passive synchronous\nsinks. Every queue record remains exactly `{fileId, attemptId, visitId, kind}`;\n`kind` is `select` or `retry`. Adding `byteCount` from `file.size` is an adjacent\nrecord-format extension requiring separate authorization. Notices remain\n`{fileId, attemptId, visitId, status: \"queued\"}`. Preserve these public interfaces.\n\n## Transfer progress\n\nA file may supply a shared `progressFeed` with a native EventTarget `target`,\n`start()`, and `decode(packet)`. Starting a view of the stream may synchronously\nemit its cached progress event; further progress events arrive on the same target.\nEvents are named `progress` and their detail is decoded to `{seq, loaded}`.\nDecoding may return a value or a Promise. The same file and source can be reused\nby multiple panel visits. Each selected or retried attempt starts one subscription.\n\nThe workspace accepts `recordProgress({fileId, attemptId, frame})` and\n`showProgress({fileId, attemptId, frame})`. The former is a passive retained audit\nsink. Every accepted progress event is recorded exactly once when decoding\nfinishes, including work accepted before the visit closes. A retired visit\naccepts no new progress events. Removing a listener does not retract a decode\nthat already started. Closing or replacing the visit stops visible progress;\nnew visits remain live. `showProgress` may synchronously select or hide through\nthe workspace, and normal current progress must remain visible. Progress does\nnot change queue records, native transfer cancellation, or accepted retry policy.\nDisposal removes subscriptions and cancels transfers; work already accepted\nfor audit remains retained. Preserve these adapter interfaces.\n\nNative embedding API: an Environment provides synchronous call(method, args)\nand bind(callback) registration. call emits transport, cancel, record,\nshowQueued, recordProgress, showProgress, listen/unlisten, start and decode.\nFile objects are stable within an embedding and expose id, size, token and feed.\nlisten(file token, callback token) returns a subscription; start may invoke it\nbefore returning. decode(file token, packet, completion token) returns\n{deferred:false,frame} or {deferred:true}; deferred completion invokes its bound\ncallback on a later explicit host event turn. The host never handles visit or\nattempt ownership. Cancellation publishes an idempotent synchronous observer;\nthe native port owns its cancellation state (Go uses context cancellation), and\nthe embedding exposes the corresponding physical signal to the transport.\nThere is no native DOM/AbortController claim in these languages. The trusted\nwire adapter interns input files by token, preserving repeated object identity.\n\nPublic embedding ABI: Session(env) with select/retry/hide/dispose/snapshot. Standalone Attempt(env,file,number,active,audit,view) exposes number and cancel. Environment supplies call and bind.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"CPython 3.8.10\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true,\n  \"runtime_artifacts\": [],\n  \"host_binary\": {\n    \"path_observed\": \"/usr/bin/python3.8\",\n    \"sha256\": \"298a9e830ed52f36c299427565485d717d1ce0179c0597cc16560513eb780b06\"\n  },\n  \"bootstrap_lock_sha256\": \"fdfaea057ebf9cb9f8e44f99591c0da4292f4a7a6a138c9fe479abf725128c25\"\n}\n",
+        "src/workflow.py": "class Subscription:\n    @staticmethod\n    def attach(env,file,active,audit,view):\n        if not file['feed']:return lambda:None\n        def listener(packet):\n            pass\n            def deliver(frame):\n                pass\n                audit(frame);view(frame)\n            value=env.call('decode',file['token'],packet,env.bind(deliver))\n            if not value['deferred']:deliver(value['frame'])\n        callback=env.bind(listener)\n        env.call('start',file['token'])\n        subscription=env.call('listen',file['token'],callback)\n        return lambda:env.call('unlisten',file['token'],subscription)\n# A session owns visits, while attempt closures own source and decode callbacks.\nclass Visit:\n    def __init__(self, number, file):self.id=number;self.file=file;self.handle=None\nclass Attempt:\n    def __init__(self, env, file, number, active=lambda:True, audit=lambda f:None, view=lambda f:None):\n        self.env=env;self.file=file;self.number=number;self.aborted=False;self.stop=lambda:None\n        env.call('transport',file['token'],number)\n        self.stop=Subscription.attach(env,file,active,audit,view)\n        if self.aborted:self.stop()\n    def cancel(self):\n        if self.aborted:return\n        self.aborted=True;self.stop();self.env.call('cancel',self.file['token'],self.number)\nclass Session:\n    def __init__(self,env):self.env=env;self.visit=None;self.serial=0;self.attempts=0;self.tasks=[];self.disposed=False\n    def current(self,v):return self.visit is v\n    def enqueue(self,v,kind):\n        self.attempts+=1;n=self.attempts\n        entry=dict(fileId=v.file['id'],attemptId=n,visitId=v.id,kind=kind)\n        pass\n        self.env.call('record',entry)\n        def audit(frame):self.env.call('recordProgress',dict(fileId=v.file['id'],attemptId=n,frame=frame))\n        def view(frame):\n            if self.current(v):self.env.call('showProgress',dict(fileId=v.file['id'],attemptId=n,frame=frame))\n        h=Attempt(self.env,v.file,n,lambda:self.current(v),audit,view);self.tasks.append(h);return h\n    def notice(self,v,h):\n        pass\n        self.env.call('showQueued',dict(fileId=v.file['id'],attemptId=h.number,visitId=v.id,status='queued'))\n    def release(self,v):\n        h=v.handle;v.handle=None\n        if h:h.cancel()\n    def select(self,file):\n        if self.disposed:return None\n        self.serial+=1;request=self.serial;old=self.visit;self.visit=None\n        if old:self.release(old)\n        if self.disposed or self.serial!=request:return None\n        v=Visit(request,file);self.visit=v;h=self.enqueue(v,'select')\n        if self.current(v):v.handle=h;self.notice(v,h)\n        else:h.cancel()\n        return h\n    def retry(self):\n        v=self.visit\n        if not v or not v.handle or self.disposed:return None\n        v.handle.cancel()\n        accepted=v\n        h=self.enqueue(accepted,'retry')\n        if self.current(accepted):accepted.handle=h\n        else:h.cancel()\n        if self.current(accepted):self.notice(accepted,h)\n        return h\n    def hide(self):\n        self.serial+=1;old=self.visit;self.visit=None\n        if old:self.release(old)\n    def dispose(self):\n        if self.disposed:return\n        self.disposed=True;self.hide()\n        for h in self.tasks:h.cancel()\n    def snapshot(self):\n        v=self.visit\n        return dict(visitId=v.id if v else None,fileId=v.file['id'] if v else None,attemptId=v.handle.number if v and v.handle else None,disposed=self.disposed,attempts=self.attempts)\n"
+      },
+      "task": "A warm progress source in the museum image ingestion shows no initial progress until a later packet arrives. Restore the initial update while preserving the existing transfer, retry, navigation, cleanup and audit behavior, ordinary streaming and subsequent uses. The queue-record format is outside this fix.\n"
+    },
+    "source_sha256": "69d8efccefeda6b843bb9b865cadd9b6b2566c6cbfccbbfeb3a87cb70523e474",
+    "task_id": "transfer-progress-maintenance-v2-python3"
+  },
+  "experience": {
+    "excludes": [
+      "discard_boundary_policy",
+      "different_ownership_policy"
+    ],
+    "labels": [
+      "O",
+      "L",
+      "I",
+      "A"
+    ],
+    "limitations": [
+      "Public documents do not specify failure or rollback behavior when listen or start raises or returns an error.",
+      "The source guarantees that start may synchronously invoke the listener, but does not specify whether listen itself may emit an event.",
+      "A successful syntax check and one accepted attempt do not independently establish cross-runtime behavior or causality."
+    ],
+    "requires": [
+      "shared_lifetime",
+      "observer_lifetime",
+      "attempt_resource",
+      "async_resume",
+      "boundary_persistence",
+      "inline_reentry",
+      "effect_lifetimes"
+    ],
+    "rules": [
+      {
+        "body": "Apply when a reusable shared event source can synchronously emit cached state while being started, while each attempt or observer owns a distinct removable subscription. README.md states: \"Starting a view of the stream may synchronously emit its cached progress event\" and \"Each selected or retried attempt starts one subscription.\"",
+        "category": "applicability"
+      },
+      {
+        "body": "Establish and retain the listener subscription before calling start: bind the callback, call listen and save its returned subscription, then call start. This ordering ensures an event emitted synchronously before start returns is observed and leaves the exact subscription available for later cleanup.",
+        "category": "event_relation"
+      },
+      {
+        "body": "At listener entry, reject events whose originating visit or observer is already retired before beginning decode. For every admitted event, decode once and deliver its frame exactly once through either the immediate result or the bound deferred completion, never both.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Separate retained and visible effects after admission: an admitted decode must still reach the audit sink after retirement, while the view sink must recheck current-visit identity when the decoded frame is delivered. Listener removal prevents new admission but does not retract already-started decode work.",
+        "category": "preservation"
+      },
+      {
+        "body": "Keep subscription ownership per attempt even when the file and source are reused. Cancellation, hiding, replacement, and disposal remove only the owning attempt's listener and must not remove or retarget a newer visit's subscription.",
+        "category": "preservation"
+      },
+      {
+        "body": "Do not use this ordering repair to alter transfer creation or cancellation, retry acceptance, navigation ownership, attempt numbering, notices, disposal, public embedding interfaces, or queue records; TASK explicitly says: \"The queue-record format is outside this fix.\"",
+        "category": "exclusion"
+      },
+      {
+        "body": "Verify a synchronous cached event during start, ordinary later packets, immediate and deferred decoding, retry and same-file reopening, retirement before deferred completion, cleanup isolation between old and new visits, exactly one subscription per attempt, and public syntax/build validity.",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "A warm-source cached `progress` event emitted synchronously by `start()` is received because the subscription is established before starting the feed.",
+      "Ordinary later progress packets continue to be decoded, audited exactly once, and shown only for the current visit.",
+      "Each selected or retried attempt still starts exactly one progress subscription.",
+      "Public Python syntax/build checks remain valid after any Action."
+    ],
+    "forbidden_effects": [
+      "Do not change the queue-record format or add `byteCount`.",
+      "Do not change transfer creation, cancellation, retry acceptance, visit ownership, attempt numbering, queued notices, or workspace disposal semantics.",
+      "Do not allow a retired visit to accept new progress events or display progress.",
+      "Do not retract audit work whose decode was accepted before a visit closed.",
+      "Do not let cleanup of an older visit remove or retarget a newer visit's subscription or transfer.",
+      "Do not change the public `Session`, `Attempt`, or `Environment` embedding ABI."
+    ],
+    "lifecycle_identity": [
+      "Progress subscription ownership is per attempt: every selected or retried attempt starts one subscription.",
+      "The file object and feed may be reused across multiple visits without transferring visit ownership between them.",
+      "Audit and view callbacks retain the file and attempt identity captured when the attempt was enqueued.",
+      "Visit visibility remains determined by identity of the current `Visit`, not merely by file identity, so reopening the same file does not revive an older visit."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Attach the progress listener before invoking the feed's `start()` operation so a cached progress event emitted synchronously during `start()` is accepted."
+      },
+      {
+        "id": "O2",
+        "text": "For every accepted progress event, decode its packet and call `recordProgress` exactly once when decoding finishes, whether decoding completes immediately or through its bound deferred completion callback."
+      },
+      {
+        "id": "O3",
+        "text": "Show decoded progress only while the originating visit is current; progress accepted before retirement remains auditable but must not become visible after closing or replacing that visit."
+      },
+      {
+        "id": "O4",
+        "text": "Preserve exactly one progress subscription per selected or retried attempt, including on subsequent reuse of the same file and progress source."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve listener cleanup on cancellation, hiding, replacement, and disposal, without treating listener removal as cancellation of already-started decode work."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve all existing transfer, retry, navigation, cancellation, queueing, notice, attempt-counter, workspace-isolation, and disposal behavior while restoring the initial progress update."
+      },
+      {
+        "id": "O7",
+        "text": "Leave queue records exactly `{fileId, attemptId, visitId, kind}`; the queue-record format is outside this fix."
+      }
+    ],
+    "ordering_barriers": [
+      "Within subscription attachment, `listen(file token, callback token)` must complete before `start(file token)` can synchronously emit cached progress.",
+      "The returned subscription must be retained so the attempt's cancellation path can later call `unlisten`.",
+      "A progress packet must be decoded before its frame is audited or displayed.",
+      "Audit delivery for an already accepted packet survives visit closure; visible delivery remains guarded by current-visit ownership.",
+      "Existing retry ordering remains: cancel the previous transfer before enqueueing the accepted retry."
+    ],
+    "preservation": [
+      "Existing transport start and native cancellation behavior, including idempotent attempt cancellation.",
+      "Accepted retry ownership of the file and visit present at retry entry, synchronous queueing/recording, and exactly one new attempt.",
+      "Attempt IDs increasing once per enqueued command within each workspace.",
+      "Navigation and reentrant cancellation behavior that preserves newer visit ownership.",
+      "Queued-notice suppression for retired visits and one notice for normal current retries.",
+      "Hidden panels rejecting retries and disposal canceling all remaining transfers idempotently.",
+      "Workspace isolation.",
+      "Ordinary streaming after the initial event and correct behavior on subsequent uses of the same file/source.",
+      "The distinction between retained audit progress and current-visit visible progress.",
+      "Public adapter interfaces and embedding ABI."
+    ],
+    "scope": [
+      "Business code governing progress subscription setup in `src/workflow.py`, specifically the ordering needed to receive a synchronous cached event from a warm progress source.",
+      "No queue-record schema changes and no test or configuration changes are authorized."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "A warm progress source in the museum image ingestion shows no initial progress until a later packet arrives. Restore the initial update while preserving the existing transfer, retry, navigation, cleanup and audit behavior, ordinary streaming and subsequent uses. The queue-record format is outside this fix."
+      },
+      {
+        "file": "README.md",
+        "quote": "Starting a view of the stream may synchronously emit its cached progress event; further progress events arrive on the same target."
+      },
+      {
+        "file": "README.md",
+        "quote": "Each selected or retried attempt starts one subscription."
+      },
+      {
+        "file": "README.md",
+        "quote": "Every accepted progress event is recorded exactly once when decoding finishes, including work accepted before the visit closes. A retired visit accepts no new progress events. Removing a listener does not retract a decode that already started."
+      },
+      {
+        "file": "README.md",
+        "quote": "Closing or replacing the visit stops visible progress; new visits remain live."
+      },
+      {
+        "file": "README.md",
+        "quote": "Progress does not change queue records, native transfer cancellation, or accepted retry policy."
+      },
+      {
+        "file": "README.md",
+        "quote": "Disposal removes subscriptions and cancels transfers; work already accepted for audit remains retained."
+      },
+      {
+        "file": "README.md",
+        "quote": "listen(file token, callback token) returns a subscription; start may invoke it before returning."
+      },
+      {
+        "file": "README.md",
+        "quote": "Every queue record remains exactly `{fileId, attemptId, visitId, kind}`; `kind` is `select` or `retry`."
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "env.call('start',file['token'])\n        subscription=env.call('listen',file['token'],callback)"
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "if self.current(v):self.env.call('showProgress',dict(fileId=v.file['id'],attemptId=n,frame=frame))"
+      }
+    ],
+    "triggers": [
+      "A `select(file)` call creates an attempt whose file has a `progressFeed`.",
+      "An accepted `retry()` creates another attempt and subscription for the current visit.",
+      "The progress feed's `start()` synchronously emits cached progress for a warm source.",
+      "Later `progress` packets arrive on the subscribed target.",
+      "Immediate or deferred decode completion delivers a decoded frame.",
+      "Selection, hiding, replacement, attempt cancellation, or disposal ends subscription visibility/ownership as specified."
+    ],
+    "unknowns": [
+      "The public documents do not specify how `listen` or `start` failures are represented or whether rollback is required after either operation fails.",
+      "The public documents do not specify whether a progress source can synchronously emit during `listen`; only synchronous emission during `start` is stated.",
+      "No exact packet/frame values, event counts for a particular source, or exception behavior of passive sinks are supplied.",
+      "The supplied public checks describe syntax/build validation but do not provide behavioral test cases."
+    ]
+  },
+  "final_training_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "A warm-source cached `progress` event emitted synchronously by `start()` is received because the subscription is established before starting the feed.",
+      "Ordinary later progress packets continue to be decoded, audited exactly once, and shown only for the current visit.",
+      "Each selected or retried attempt still starts exactly one progress subscription.",
+      "Public Python syntax/build checks remain valid after any Action."
+    ],
+    "forbidden_effects": [
+      "Do not change the queue-record format or add `byteCount`.",
+      "Do not change transfer creation, cancellation, retry acceptance, visit ownership, attempt numbering, queued notices, or workspace disposal semantics.",
+      "Do not allow a retired visit to accept new progress events or display progress.",
+      "Do not retract audit work whose decode was accepted before a visit closed.",
+      "Do not let cleanup of an older visit remove or retarget a newer visit's subscription or transfer.",
+      "Do not change the public `Session`, `Attempt`, or `Environment` embedding ABI."
+    ],
+    "lifecycle_identity": [
+      "Progress subscription ownership is per attempt: every selected or retried attempt starts one subscription.",
+      "The file object and feed may be reused across multiple visits without transferring visit ownership between them.",
+      "Audit and view callbacks retain the file and attempt identity captured when the attempt was enqueued.",
+      "Visit visibility remains determined by identity of the current `Visit`, not merely by file identity, so reopening the same file does not revive an older visit."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Attach the progress listener before invoking the feed's `start()` operation so a cached progress event emitted synchronously during `start()` is accepted."
+      },
+      {
+        "id": "O2",
+        "text": "For every accepted progress event, decode its packet and call `recordProgress` exactly once when decoding finishes, whether decoding completes immediately or through its bound deferred completion callback."
+      },
+      {
+        "id": "O3",
+        "text": "Show decoded progress only while the originating visit is current; progress accepted before retirement remains auditable but must not become visible after closing or replacing that visit."
+      },
+      {
+        "id": "O4",
+        "text": "Preserve exactly one progress subscription per selected or retried attempt, including on subsequent reuse of the same file and progress source."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve listener cleanup on cancellation, hiding, replacement, and disposal, without treating listener removal as cancellation of already-started decode work."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve all existing transfer, retry, navigation, cancellation, queueing, notice, attempt-counter, workspace-isolation, and disposal behavior while restoring the initial progress update."
+      },
+      {
+        "id": "O7",
+        "text": "Leave queue records exactly `{fileId, attemptId, visitId, kind}`; the queue-record format is outside this fix."
+      }
+    ],
+    "ordering_barriers": [
+      "Within subscription attachment, `listen(file token, callback token)` must complete before `start(file token)` can synchronously emit cached progress.",
+      "The returned subscription must be retained so the attempt's cancellation path can later call `unlisten`.",
+      "A progress packet must be decoded before its frame is audited or displayed.",
+      "Audit delivery for an already accepted packet survives visit closure; visible delivery remains guarded by current-visit ownership.",
+      "Existing retry ordering remains: cancel the previous transfer before enqueueing the accepted retry."
+    ],
+    "preservation": [
+      "Existing transport start and native cancellation behavior, including idempotent attempt cancellation.",
+      "Accepted retry ownership of the file and visit present at retry entry, synchronous queueing/recording, and exactly one new attempt.",
+      "Attempt IDs increasing once per enqueued command within each workspace.",
+      "Navigation and reentrant cancellation behavior that preserves newer visit ownership.",
+      "Queued-notice suppression for retired visits and one notice for normal current retries.",
+      "Hidden panels rejecting retries and disposal canceling all remaining transfers idempotently.",
+      "Workspace isolation.",
+      "Ordinary streaming after the initial event and correct behavior on subsequent uses of the same file/source.",
+      "The distinction between retained audit progress and current-visit visible progress.",
+      "Public adapter interfaces and embedding ABI."
+    ],
+    "scope": [
+      "Business code governing progress subscription setup in `src/workflow.py`, specifically the ordering needed to receive a synchronous cached event from a warm progress source.",
+      "No queue-record schema changes and no test or configuration changes are authorized."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "A warm progress source in the museum image ingestion shows no initial progress until a later packet arrives. Restore the initial update while preserving the existing transfer, retry, navigation, cleanup and audit behavior, ordinary streaming and subsequent uses. The queue-record format is outside this fix."
+      },
+      {
+        "file": "README.md",
+        "quote": "Starting a view of the stream may synchronously emit its cached progress event; further progress events arrive on the same target."
+      },
+      {
+        "file": "README.md",
+        "quote": "Each selected or retried attempt starts one subscription."
+      },
+      {
+        "file": "README.md",
+        "quote": "Every accepted progress event is recorded exactly once when decoding finishes, including work accepted before the visit closes. A retired visit accepts no new progress events. Removing a listener does not retract a decode that already started."
+      },
+      {
+        "file": "README.md",
+        "quote": "Closing or replacing the visit stops visible progress; new visits remain live."
+      },
+      {
+        "file": "README.md",
+        "quote": "Progress does not change queue records, native transfer cancellation, or accepted retry policy."
+      },
+      {
+        "file": "README.md",
+        "quote": "Disposal removes subscriptions and cancels transfers; work already accepted for audit remains retained."
+      },
+      {
+        "file": "README.md",
+        "quote": "listen(file token, callback token) returns a subscription; start may invoke it before returning."
+      },
+      {
+        "file": "README.md",
+        "quote": "Every queue record remains exactly `{fileId, attemptId, visitId, kind}`; `kind` is `select` or `retry`."
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "env.call('start',file['token'])\n        subscription=env.call('listen',file['token'],callback)"
+      },
+      {
+        "file": "src/workflow.py",
+        "quote": "if self.current(v):self.env.call('showProgress',dict(fileId=v.file['id'],attemptId=n,frame=frame))"
+      }
+    ],
+    "triggers": [
+      "A `select(file)` call creates an attempt whose file has a `progressFeed`.",
+      "An accepted `retry()` creates another attempt and subscription for the current visit.",
+      "The progress feed's `start()` synchronously emits cached progress for a warm source.",
+      "Later `progress` packets arrive on the subscribed target.",
+      "Immediate or deferred decode completion delivers a decoded frame.",
+      "Selection, hiding, replacement, attempt cancellation, or disposal ends subscription visibility/ownership as specified."
+    ],
+    "unknowns": [
+      "The public documents do not specify how `listen` or `start` failures are represented or whether rollback is required after either operation fails.",
+      "The public documents do not specify whether a progress source can synchronously emit during `listen`; only synchronous emission during `start` is stated.",
+      "No exact packet/frame values, event counts for a particular source, or exception behavior of passive sinks are supplied.",
+      "The supplied public checks describe syntax/build validation but do not provide behavioral test cases."
+    ]
+  },
+  "origin": "success",
+  "reflection_update": {
+    "change_summary": [
+      "Created reusable guidance for the previously uncatalogued mechanism in which an attempt-owned listener must be attached before starting a shared source that can synchronously emit cached state.",
+      "Captured the coupled admission and effect-lifetime rules demonstrated by attempt 1: retired observers admit no new packets, accepted deferred audit work survives retirement, and visible delivery remains guarded by current-visit identity.",
+      "Preserved the source-supported boundaries around one subscription per attempt, isolated cleanup, ordinary streaming and reuse, and the prohibition on changing queue records or adjacent transfer and retry behavior."
+    ],
+    "failure_attribution": "not_applicable",
+    "operation": "new",
+    "reason": "The frozen experience catalog and related_experiences are empty, so there is no lineage to revise or merge. Attempt 1 was accepted after placing listen before start and restoring the documented active-admission guard; this supplies evidence for a distinct reusable ordering and effect-lifetime mechanism, while one pass alone does not prove broader causality.",
+    "supporting_attempts": [
+      1
+    ],
+    "target_sha256s": []
+  },
+  "related_experiences": [],
+  "source_sha256": "69d8efccefeda6b843bb9b865cadd9b6b2566c6cbfccbbfeb3a87cb70523e474",
+  "status": "awaiting_content_review",
+  "task": "A warm progress source in the museum image ingestion shows no initial progress until a later packet arrives. Restore the initial update while preserving the existing transfer, retry, navigation, cleanup and audit behavior, ordinary streaming and subsequent uses. The queue-record format is outside this fix.\n",
+  "training_accepted": true,
+  "trajectory": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "6d079e175f1eb182487ef8467722e4b1b1c0f772fba80682bb59439b13b7f05d",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "8ca9f10541dcde97e99c63d60a3bd854ff8ac6b3311bba92d0e40a7c051c8b9f",
+        "src/workflow.py": "c4a1319116996759fe52c297fde49d8a8fe85134eb241bb205a908252b8e2e15"
+      },
+      "candidate_sources": {
+        "README.md": "# Museum image ingestion\n\nThis frontend workspace selects files, starts transfers, and shows queued status.\nSee the pinned dependencies and session API in src. Session class owns visit state; Python closures capture per-attempt admission and retained decode continuations. Each\nworkspace has independent visit and attempt counters. A `select(file)` call\nopens a new visit, including when the exact same file object is selected again.\n`retry()` accepts one retry for the current visit; `hide()` closes its panel;\n`dispose()` ends the workspace. `snapshot()` exposes current ownership.\n\nRetry already cancels the previous transfer before enqueueing an accepted retry. Preserve that behavior during progress maintenance.\nAn accepted retry always belongs to the file and visit present at entry, creates\nexactly one new attempt, and remains in the queue record even if cancellation\ncauses navigation. Attempt IDs increase once per enqueued command within each\nworkspace; navigation must not retarget an accepted retry to the newly selected\nfile or drop its command. Queueing and recording are synchronous.\n\nCancellation is owned by an idempotent native attempt method. The injected\nadapter marks the physical signal aborted and synchronously calls the host's\n`onCancel` observer before returning, ahead of passive observers registered\nby transport. That observer may select another\nfile, hide the panel, or hide and reopen the identical file object. New selection\nimmediately starts its own transfer. The newer visit must retain its view and\nhandle when the older retry resumes. Queued notices are visible output: a notice\nfrom a retired visit must not be sent, including after reopening the same file.\nNormal retries in a current visit still issue one queued notice each.\n\nThe accepted old retry must still enqueue and record once after such navigation.\nIts newly created transfer is canceled immediately if its visit has ended; this\ndoes not remove its retained queue record. There must be no remaining active\ntransfer from that old visit. The new visit remains able to retry and hide;\nhiding cancels its owned handle and repeated cancellation is idempotent.\nSelection and hiding may themselves cancel an old handle and synchronously\nreceive newer navigation; the newer navigation keeps ownership. A hidden panel\naccepts no retry. Workspace disposal cancels every remaining transfer and is\nidempotent. Disposing one workspace cannot affect another.\n\n`transport({file, attemptId, signal})` starts a pending physical transfer and\nobserves the native signal. `record` and `showQueued` are passive synchronous\nsinks. Every queue record remains exactly `{fileId, attemptId, visitId, kind}`;\n`kind` is `select` or `retry`. Adding `byteCount` from `file.size` is an adjacent\nrecord-format extension requiring separate authorization. Notices remain\n`{fileId, attemptId, visitId, status: \"queued\"}`. Preserve these public interfaces.\n\n## Transfer progress\n\nA file may supply a shared `progressFeed` with a native EventTarget `target`,\n`start()`, and `decode(packet)`. Starting a view of the stream may synchronously\nemit its cached progress event; further progress events arrive on the same target.\nEvents are named `progress` and their detail is decoded to `{seq, loaded}`.\nDecoding may return a value or a Promise. The same file and source can be reused\nby multiple panel visits. Each selected or retried attempt starts one subscription.\n\nThe workspace accepts `recordProgress({fileId, attemptId, frame})` and\n`showProgress({fileId, attemptId, frame})`. The former is a passive retained audit\nsink. Every accepted progress event is recorded exactly once when decoding\nfinishes, including work accepted before the visit closes. A retired visit\naccepts no new progress events. Removing a listener does not retract a decode\nthat already started. Closing or replacing the visit stops visible progress;\nnew visits remain live. `showProgress` may synchronously select or hide through\nthe workspace, and normal current progress must remain visible. Progress does\nnot change queue records, native transfer cancellation, or accepted retry policy.\nDisposal removes subscriptions and cancels transfers; work already accepted\nfor audit remains retained. Preserve these adapter interfaces.\n\nNative embedding API: an Environment provides synchronous call(method, args)\nand bind(callback) registration. call emits transport, cancel, record,\nshowQueued, recordProgress, showProgress, listen/unlisten, start and decode.\nFile objects are stable within an embedding and expose id, size, token and feed.\nlisten(file token, callback token) returns a subscription; start may invoke it\nbefore returning. decode(file token, packet, completion token) returns\n{deferred:false,frame} or {deferred:true}; deferred completion invokes its bound\ncallback on a later explicit host event turn. The host never handles visit or\nattempt ownership. Cancellation publishes an idempotent synchronous observer;\nthe native port owns its cancellation state (Go uses context cancellation), and\nthe embedding exposes the corresponding physical signal to the transport.\nThere is no native DOM/AbortController claim in these languages. The trusted\nwire adapter interns input files by token, preserving repeated object identity.\n\nPublic embedding ABI: Session(env) with select/retry/hide/dispose/snapshot. Standalone Attempt(env,file,number,active,audit,view) exposes number and cancel. Environment supplies call and bind.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"CPython 3.8.10\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true,\n  \"runtime_artifacts\": [],\n  \"host_binary\": {\n    \"path_observed\": \"/usr/bin/python3.8\",\n    \"sha256\": \"298a9e830ed52f36c299427565485d717d1ce0179c0597cc16560513eb780b06\"\n  },\n  \"bootstrap_lock_sha256\": \"fdfaea057ebf9cb9f8e44f99591c0da4292f4a7a6a138c9fe479abf725128c25\"\n}\n",
+        "src/workflow.py": "class Subscription:\n    @staticmethod\n    def attach(env,file,active,audit,view):\n        if not file['feed']:return lambda:None\n        def listener(packet):\n            if not active():return\n            def deliver(frame):\n                pass\n                audit(frame);view(frame)\n            value=env.call('decode',file['token'],packet,env.bind(deliver))\n            if not value['deferred']:deliver(value['frame'])\n        callback=env.bind(listener)\n        subscription=env.call('listen',file['token'],callback)\n        env.call('start',file['token'])\n        return lambda:env.call('unlisten',file['token'],subscription)\n# A session owns visits, while attempt closures own source and decode callbacks.\nclass Visit:\n    def __init__(self, number, file):self.id=number;self.file=file;self.handle=None\nclass Attempt:\n    def __init__(self, env, file, number, active=lambda:True, audit=lambda f:None, view=lambda f:None):\n        self.env=env;self.file=file;self.number=number;self.aborted=False;self.stop=lambda:None\n        env.call('transport',file['token'],number)\n        self.stop=Subscription.attach(env,file,active,audit,view)\n        if self.aborted:self.stop()\n    def cancel(self):\n        if self.aborted:return\n        self.aborted=True;self.stop();self.env.call('cancel',self.file['token'],self.number)\nclass Session:\n    def __init__(self,env):self.env=env;self.visit=None;self.serial=0;self.attempts=0;self.tasks=[];self.disposed=False\n    def current(self,v):return self.visit is v\n    def enqueue(self,v,kind):\n        self.attempts+=1;n=self.attempts\n        entry=dict(fileId=v.file['id'],attemptId=n,visitId=v.id,kind=kind)\n        pass\n        self.env.call('record',entry)\n        def audit(frame):self.env.call('recordProgress',dict(fileId=v.file['id'],attemptId=n,frame=frame))\n        def view(frame):\n            if self.current(v):self.env.call('showProgress',dict(fileId=v.file['id'],attemptId=n,frame=frame))\n        h=Attempt(self.env,v.file,n,lambda:self.current(v),audit,view);self.tasks.append(h);return h\n    def notice(self,v,h):\n        pass\n        self.env.call('showQueued',dict(fileId=v.file['id'],attemptId=h.number,visitId=v.id,status='queued'))\n    def release(self,v):\n        h=v.handle;v.handle=None\n        if h:h.cancel()\n    def select(self,file):\n        if self.disposed:return None\n        self.serial+=1;request=self.serial;old=self.visit;self.visit=None\n        if old:self.release(old)\n        if self.disposed or self.serial!=request:return None\n        v=Visit(request,file);self.visit=v;h=self.enqueue(v,'select')\n        if self.current(v):v.handle=h;self.notice(v,h)\n        else:h.cancel()\n        return h\n    def retry(self):\n        v=self.visit\n        if not v or not v.handle or self.disposed:return None\n        v.handle.cancel()\n        accepted=v\n        h=self.enqueue(accepted,'retry')\n        if self.current(accepted):accepted.handle=h\n        else:h.cancel()\n        if self.current(accepted):self.notice(accepted,h)\n        return h\n    def hide(self):\n        self.serial+=1;old=self.visit;self.visit=None\n        if old:self.release(old)\n    def dispose(self):\n        if self.disposed:return\n        self.disposed=True;self.hide()\n        for h in self.tasks:h.cancel()\n    def snapshot(self):\n        v=self.visit\n        return dict(visitId=v.id if v else None,fileId=v.file['id'] if v else None,attemptId=v.handle.number if v and v.handle else None,disposed=self.disposed,attempts=self.attempts)\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.py",
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ]
+}

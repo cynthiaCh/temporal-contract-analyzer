@@ -1,0 +1,483 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "7c03e22d9e70d02be40562d7a72a06af778d90475e788a2b51f3584ea30c72f4",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "package.json": "edbabcfcaa9146cb0455b477acdb5db5b8ecd76b99f6157bc36461011139d33a",
+        "src/draft-store.js": "09006335ff67882ae7089c32e3943e3fd945c8357cca0cfd94052d4e36c7aea1",
+        "src/editor.js": "0779431ed56d2e4b80562d9d92244171c23a31c75e23b6666c1bfc2a9296c1ef",
+        "src/navigation-projection.js": "e50971739fda8d01a02bdc983b63d7f896c8442fe507184d71df5e4a8495f78b",
+        "src/save-status.js": "7fd761f43345e21438f6791b737eab479207e60fdd65db11ff6e415cf8fc8d3d",
+        "src/search-preview.js": "77e627d23e7e43be54bbfc11ceea10225318a7adabcb9aac8c27466dabefc164",
+        "src/timers.js": "db6d40d6bdf9c27a74d012dbafe7bce3230ab168e57061d33f73574349d2acc7",
+        "src/trailing-task.js": "b86f488d3e25868c588eb852a5f719332b85a419bba82b4d5cc932ff9a108baf",
+        "src/workspace.js": "972d523e292c9d54341ab89360c70f5c193f11ea3989ef6cf7b0f7a6c798e932"
+      },
+      "candidate_sources": {
+        "README.md": "# Draft workspace\n\nThe workspace lets a user open documents, edit their text, and move between\ndocuments. It renders the active document together with an outline, a save badge,\nand breadcrumb history. Saved document data remains available after navigation,\nand workspace integrations may react to successful saves.\n\n`select(id)`, `edit(text)`, and `close()` are the public navigation and editing\noperations. The outline and breadcrumbs should continue to describe what the user\nis viewing, while the store should retain accepted edits. Existing integrations\nand ordinary navigation behavior must keep working when draft writes are\ncoalesced.\n\nThe shared trailing-task utility is also used by search preview. Preview is a\ntransient feature with its own hide behavior and is outside the requested draft\nsave change.\n\nThis fixture uses normal JavaScript modules and an injected timer adapter. No\nframework lifecycle is simulated.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\"name\":\"workspace-draft-projection-fixture\",\"private\":true,\"type\":\"module\",\"engines\":{\"node\":\"16.20.2\"}}\n",
+        "src/draft-store.js": "// A synchronous workspace store, independent of whether an editor is visible.\n// Notifications run inline after the record is written. Subscribers may detach\n// or subscribe while a notification is being delivered.\nexport function createDraftStore(initial = {}) {\n  const records = new Map(Object.entries(initial));\n  const listeners = new Set();\n  let revision = 0;\n  return {\n    read(id) { return records.get(id) ?? \"\"; },\n    write(id, text) {\n      records.set(id, text);\n      const event = { id, text, revision: ++revision };\n      for (const listener of [...listeners]) {\n        if (listeners.has(listener)) listener(event);\n      }\n      return event;\n    },\n    subscribe(listener) {\n      listeners.add(listener);\n      return () => listeners.delete(listener);\n    },\n  };\n}\n",
+        "src/editor.js": "import { attachSaveStatus } from \"./save-status.js\";\nimport { createTrailingTask } from \"./trailing-task.js\";\n\nexport function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n  let current = null;\n  let navigationVersion = 0;\n  function retireCurrent() {\n    const leaving = current;\n    current = null;\n    if (leaving) {\n      leaving.stop();\n      leaving.save.flush();\n    }\n  }\n  function close() {\n    const version = ++navigationVersion;\n    retireCurrent();\n    // Flushing can synchronously navigate through a store subscriber. Do not\n    // clear a document installed by that newer request.\n    if (navigationVersion === version) renderDocument(null);\n    return navigationVersion === version;\n  }\n  return {\n    open(id, visit) {\n      const version = ++navigationVersion;\n      retireCurrent();\n      if (navigationVersion !== version) return false;\n      renderDocument(null);\n      if (navigationVersion !== version) return false;\n      const save = createTrailingTask(text => store.write(id, text), 120, timers);\n      current = { id, visit, save, stop: attachSaveStatus(store, id, renderStatus) };\n      renderDocument({ id, visit, text: store.read(id) });\n      return navigationVersion === version;\n    },\n    edit(text) {\n      if (current) current.save.push(text);\n    },\n    selection: () => current && { id: current.id, visit: current.visit },\n    close,\n  };\n}\n",
+        "src/navigation-projection.js": "// The outline and breadcrumb trail serve document navigation. A committed visit\n// is distinct even when its document id matches the previous one. The controller\n// decides whether a requested visit was retained before committing it here.\nexport function createNavigationProjection({ renderProjection }) {\n  let selected = null;\n  const trail = [];\n  function publish() {\n    renderProjection({ selected: selected && { ...selected }, trail: trail.map(item => ({ ...item })) });\n  }\n  return {\n    commit(visit) { selected = { ...visit }; trail.push({ ...visit }); publish(); },\n    clear() { selected = null; publish(); },\n  };\n}\n",
+        "src/save-status.js": "// A mounted document's save badge. A close/open request retires the departing\n// badge immediately: it must produce no further output, including during that\n// navigation call. Saving the document itself is a separate workspace concern.\nexport function attachSaveStatus(store, id, renderStatus) {\n  return store.subscribe(event => {\n    if (event.id === id) renderStatus(event);\n  });\n}\n",
+        "src/search-preview.js": "import { createTrailingTask } from \"./trailing-task.js\";\n\nexport function createSearchPreview({ timers, publish }) {\n  const task = createTrailingTask(query => publish({ query }), 40, timers);\n  return {\n    query(text) { task.push(text); },\n    // A hidden preview has no use for a pending query; reopen starts fresh.\n    hide() { task.cancel(); },\n  };\n}\n",
+        "src/timers.js": "export const browserTimers = {\n  schedule(callback, delay) { return setTimeout(callback, delay); },\n  cancel(handle) { clearTimeout(handle); },\n};\n",
+        "src/trailing-task.js": "import { browserTimers } from \"./timers.js\";\n\n// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.\n// Retire the old batch before invoking work, which can enqueue another batch.\nexport function createTrailingTask(work, delay, timers = browserTimers) {\n  let handle = null;\n  let pending = null;\n  function flush() {\n    if (handle !== null) timers.cancel(handle);\n    handle = null;\n    const args = pending;\n    pending = null;\n    if (args !== null) work(...args);\n  }\n  return {\n    push(...args) {\n      if (handle !== null) timers.cancel(handle);\n      pending = args;\n      handle = timers.schedule(flush, delay);\n    },\n    flush,\n    cancel() {\n      if (handle !== null) timers.cancel(handle);\n      handle = null;\n      pending = null;\n    },\n  };\n}\n",
+        "src/workspace.js": "import { createDraftEditor } from \"./editor.js\";\nimport { createNavigationProjection } from \"./navigation-projection.js\";\n\n// Store notifications synchronously call integrations. Editor state and outline\n// projection are separate responsibilities; only this workspace connects them.\nexport function createWorkspace({ store, timers, renderDocument, renderStatus, renderProjection, onSaved = () => {} }) {\n  let nextVisit = 0;\n  let navigationVersion = 0;\n  const stop = store.subscribe(event => onSaved(event, navigation));\n  const editor = createDraftEditor({ store, timers, renderDocument, renderStatus });\n  const projection = createNavigationProjection({ renderProjection });\n  const navigation = {\n    select(id) {\n      const visit = ++nextVisit;\n      const version = ++navigationVersion;\n      const opened = editor.open(id, visit);\n      if (opened && navigationVersion === version) projection.commit({ id, visit });\n    },\n    edit(text) { editor.edit(text); },\n    close() {\n      const version = ++navigationVersion;\n      editor.close();\n      if (navigationVersion === version) projection.clear();\n    },\n  };\n  return {\n    ...navigation,\n    selection: () => editor.selection(),\n    dispose() {\n      const version = ++navigationVersion;\n      stop();\n      editor.close();\n      if (navigationVersion === version) projection.clear();\n    },\n  };\n}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/draft-store.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/editor.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/navigation-projection.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/save-status.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/search-preview.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/timers.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/trailing-task.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/workspace.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "After any synchronous store.write callback returns, re-check whether the editor/navigation operation that initiated the write is still current before committing further editor or projection state.",
+      "At a select, close, or dispose boundary, preserve the latest accepted edit for the departing document while retiring its save-status subscription before that write can notify subscribers.",
+      "Before committing a requested visit to the navigation projection, verify that synchronous save integrations have not replaced or closed that request.",
+      "When a trailing batch fires or is flushed, retire that batch before invoking store.write so reentrant edits can create a distinct new batch."
+    ],
+    "forbidden_effects": [
+      "Do not write every edit directly to the store.",
+      "Do not save superseded text from an earlier edit in the same burst.",
+      "Do not discard an accepted pending draft merely because the user selects another document, closes the editor, or disposes the workspace.",
+      "Do not allow a departing document's save badge to render during or after the navigation call that retires it.",
+      "Do not let an outer select/open/close operation overwrite a newer navigation request made synchronously by onSaved.",
+      "Do not coalesce distinct committed visits merely because their document IDs match.",
+      "Do not change search-preview timing, cancellation, or hide behavior.",
+      "Do not modify the draft store's synchronous write and inline-notification semantics."
+    ],
+    "lifecycle_identity": [
+      "A pending autosave belongs to the document and committed visit that accepted the edit; later navigation must not retarget that text to the newly selected document.",
+      "Each requested visit has its own monotonically assigned visit identity, including consecutive visits to the same document ID.",
+      "A mounted save-status subscription belongs to one open document and is retired immediately by close/open navigation.",
+      "The trailing batch must be cleared before its work callback runs, allowing a reentrant edit to establish a new batch without being erased by completion of the old one."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Coalesce a burst of editor edits and write only the latest text after 120 ms with no subsequent edit."
+      },
+      {
+        "id": "O2",
+        "text": "Use the existing trailing-task behavior where appropriate, including its latest-arguments batching and reentrancy-safe retirement of the old batch before work runs."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve accepted pending edits across select, close, and workspace disposal boundaries so navigation does not lose draft persistence; boundary handling may flush the departing batch immediately."
+      },
+      {
+        "id": "O4",
+        "text": "Keep document rendering, selection, outline, and breadcrumb projection consistent with the navigation request that remains current after any synchronous save callbacks finish."
+      },
+      {
+        "id": "O5",
+        "text": "Retire the departing document's save-status subscription before a navigation-boundary save can notify listeners, while allowing workspace-level onSaved integrations to observe successful saves."
+      },
+      {
+        "id": "O6",
+        "text": "Account for synchronous reentrancy from store notifications: if onSaved selects, closes, or otherwise changes navigation during a save, the newer request takes precedence over the suspended outer operation."
+      },
+      {
+        "id": "O7",
+        "text": "Leave search preview behavior and its 40 ms timing unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "For ordinary editing, each new edit cancels/replaces the prior scheduled batch and restarts the 120 ms quiet interval.",
+      "The store write occurs only for the latest arguments retained by the batch.",
+      "At navigation retirement, detach the old save-status listener before persisting its pending draft, because store notifications execute inline.",
+      "A navigation request must not commit its projection until any departing-draft persistence and its synchronous integration callbacks have returned and the request is confirmed still current.",
+      "The old trailing batch is cleared before store.write invokes external callbacks; edits initiated by those callbacks form a new pending batch.",
+      "Projection commit follows successful retention of the corresponding editor visit; projection clear follows a close that remains current."
+    ],
+    "preservation": [
+      "select(id), edit(text), and close() remain the public navigation/editing operations.",
+      "Opening a retained visit renders that document using store.read(id).",
+      "Closing clears the active editor rendering and navigation selection; disposal still detaches the workspace store subscription and clears editor/projection state.",
+      "The outline and breadcrumb trail continue to describe the visit the user is viewing, and each committed visit remains distinct even for repeated document IDs.",
+      "Draft-store writes remain synchronous, increment revisions, update the record before notification, and notify currently subscribed listeners inline.",
+      "Workspace integrations continue receiving successful-save events and the navigation object.",
+      "Saved document data remains available after navigation, including edits accepted shortly before navigation.",
+      "Search preview continues using its independent 40 ms trailing task, and hide continues discarding its pending query."
+    ],
+    "scope": [
+      "Change draft editor autosave behavior and the workspace coordination needed to preserve navigation, persistence, save-status retirement, and synchronous-integration behavior.",
+      "Reuse src/trailing-task.js for draft-save coalescing where appropriate.",
+      "Do not change the independent search-preview feature."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Change editor\nautosave to coalesce a burst of input: after 120 ms without another edit, save\nonly its latest text."
+      },
+      {
+        "file": "TASK",
+        "quote": "Reuse the existing trailing-task utility where appropriate."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve the workspace's existing navigation and persistence behavior."
+      },
+      {
+        "file": "TASK",
+        "quote": "Keep\nsearch preview behavior unchanged; its timing is outside this maintenance task."
+      },
+      {
+        "file": "README.md",
+        "quote": "`select(id)`, `edit(text)`, and `close()` are the public navigation and editing\noperations."
+      },
+      {
+        "file": "README.md",
+        "quote": "The outline and breadcrumbs should continue to describe what the user\nis viewing, while the store should retain accepted edits. Existing integrations\nand ordinary navigation behavior must keep working when draft writes are\ncoalesced."
+      },
+      {
+        "file": "src/draft-store.js",
+        "quote": "// A synchronous workspace store, independent of whether an editor is visible.\n// Notifications run inline after the record is written. Subscribers may detach\n// or subscribe while a notification is being delivered."
+      },
+      {
+        "file": "src/draft-store.js",
+        "quote": "write(id, text) {\n      records.set(id, text);\n      const event = { id, text, revision: ++revision };\n      for (const listener of [...listeners]) {\n        if (listeners.has(listener)) listener(event);\n      }\n      return event;\n    }"
+      },
+      {
+        "file": "src/editor.js",
+        "quote": "function close() {\n    const leaving = current;\n    current = null;\n    if (leaving) leaving.stop();\n    renderDocument(null);\n  }"
+      },
+      {
+        "file": "src/editor.js",
+        "quote": "open(id, visit) {\n      close();\n      current = { id, visit, stop: attachSaveStatus(store, id, renderStatus) };\n      renderDocument({ id, visit, text: store.read(id) });\n    }"
+      },
+      {
+        "file": "src/navigation-projection.js",
+        "quote": "// The outline and breadcrumb trail serve document navigation. A committed visit\n// is distinct even when its document id matches the previous one. The controller\n// decides whether a requested visit was retained before committing it here."
+      },
+      {
+        "file": "src/save-status.js",
+        "quote": "// A mounted document's save badge. A close/open request retires the departing\n// badge immediately: it must produce no further output, including during that\n// navigation call. Saving the document itself is a separate workspace concern."
+      },
+      {
+        "file": "src/trailing-task.js",
+        "quote": "// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.\n// Retire the old batch before invoking work, which can enqueue another batch."
+      },
+      {
+        "file": "src/workspace.js",
+        "quote": "// Store notifications synchronously call integrations. Editor state and outline\n// projection are separate responsibilities; only this workspace connects them."
+      },
+      {
+        "file": "src/workspace.js",
+        "quote": "const stop = store.subscribe(event => onSaved(event, navigation));"
+      },
+      {
+        "file": "src/search-preview.js",
+        "quote": "const task = createTrailingTask(query => publish({ query }), 40, timers);"
+      },
+      {
+        "file": "src/search-preview.js",
+        "quote": "// A hidden preview has no use for a pending query; reopen starts fresh.\n    hide() { task.cancel(); }"
+      }
+    ],
+    "triggers": [
+      "Calling edit(text) while a document is selected submits that text to the document's draft autosave batch.",
+      "A further edit before the quiet interval expires replaces the pending text and restarts the 120 ms interval.",
+      "Expiry of 120 ms without another edit triggers persistence of the latest pending text.",
+      "select(id), close(), and dispose() are lifecycle boundaries that must preserve any accepted pending draft while retiring the departing mounted status.",
+      "A synchronous onSaved callback may call select, close, or edit and thereby create a newer navigation or save request."
+    ],
+    "unknowns": [
+      "The originals do not prescribe the internal placement of the draft trailing task or a specific generation/token implementation for reentrancy protection.",
+      "The originals do not explicitly state whether navigation-boundary persistence must use flush versus another mechanism; immediate flush is supported by the existing utility and preserves prior synchronous persistence without weakening the 120 ms ordinary-edit behavior.",
+      "The originals do not specify whether calling edit with identical text should create a new timer or write; no deduplication requirement should be inferred.",
+      "The originals do not define behavior for timer-adapter failures, store.write exceptions, or exceptions thrown by integrations.",
+      "The originals do not specify whether dispose should emit additional document/projection renders beyond the existing close-and-clear behavior."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 1,
+  "diagnoses": [],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "finalized": true,
+  "first_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "repair_stop_reason": "oracle_accepted",
+  "stages": [
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "aae89de10c6af9c9913366d1ec9f746b0849f7b4268fae0e21ea13534f9f8f3c",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9994521960616
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "0b5898e6c4fde62b85232b46b2e4ade597e954d054e07373efac4c1f1ab259cd",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 13758,
+        "output_tokens": 2541,
+        "reasoning_output_tokens": 621,
+        "total_tokens": 16299
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "1ff6e893c618fe12c15899d0c7194523c5263f30f11cf883a76015eb580342e0",
+      "seconds": 45.54020113777369,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 13758,
+        "output_tokens": 2541,
+        "reasoning_output_tokens": 621,
+        "total_tokens": 16299
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "f008a43a564d7db8c687cd61573d3a02f1f6b9c3f41f1af721d3c988154f964f",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9995050365105
+          },
+          "number": 1,
+          "requests": 8,
+          "restart_reason": "initial",
+          "result_sha256": "073e82e9b0fe12ea262471f620ccd4659591d3c064e423c2a0d24060a1e8f20d",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 155264,
+        "input_tokens": 170990,
+        "output_tokens": 7101,
+        "reasoning_output_tokens": 2885,
+        "total_tokens": 178091
+      },
+      "requests": 8,
+      "reserved_requests": 24,
+      "result_sha256": "52e390f4753c7570c122ea395bbd9f679350c3093ea691913362dadbc186f9d6",
+      "seconds": 123.6867519300431,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 155264,
+        "input_tokens": 170990,
+        "output_tokens": 7101,
+        "reasoning_output_tokens": 2885,
+        "total_tokens": 178091
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "bacea1d3181c5c64dde743eba4194b0dc03097f2744e83bf2468c05fb25e5856",
+      "seconds": 1.1503183422610164,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 1.4754877462983131,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "d9ae997bd4449e0a9853ea83bc50668aad60c26058dd0f7ac07e7dd9bbdafd21",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9991017766297
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "f04ecca8ba7496fc100d9917979b6668c302588c9f96c6aa14a31ba8e0e0a191",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 20184,
+        "output_tokens": 1240,
+        "reasoning_output_tokens": 270,
+        "total_tokens": 21424
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "532faa2840603de078d661a7e9f7e5516792db1e00e50c441e50f5c2d7836a50",
+      "seconds": 31.010856485925615,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 20184,
+        "output_tokens": 1240,
+        "reasoning_output_tokens": 270,
+        "total_tokens": 21424
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "training_accepted": true
+}

@@ -1,0 +1,606 @@
+{
+  "acceptance_policy": "training_gold_and_required_visible",
+  "attempt_results": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "501a9f3d5cc1c282406b69eb6f9e3a6a6be29dadfbbd45479f502b2937ef75c8",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "b2da36ea3cfe474b3989decfe362aa8e6cbd45ec24e6267964489e28d7396ae8",
+        "src/workflow.py": "8f690e5c1b87040bac94646bb14eb4fb81fde44956cbd504e24c0077fbc36fd2"
+      },
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.py",
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "visible_passed": true
+    }
+  ],
+  "attempts_started": 1,
+  "candidate_learning_enabled": true,
+  "condition": "structured",
+  "contract_changes": 0,
+  "contract_review_policy": null,
+  "cumulative_action_request_cap": 72,
+  "cumulative_visible_pass": [
+    true,
+    true,
+    true
+  ],
+  "delivery": {
+    "experience_text": "Use the matched guidance together where supported by the current task and source. If advice conflicts, resolve it against the concrete requirements and explain the choice; do not combine incompatible obligations.\n\nMatched experience cb43d602785cb0eb722936571c4ec3478a32c58231315358895b2f8fcebcf3e0\ncb43d602785cb0eb722936571c4ec3478a32c58231315358895b2f8fcebcf3e0:R01 [Applicability]\nApply when replacing an asynchronous configuration dependency with existing local data while preserving surrounding initialization behavior. TASK: \"The remote static-configuration endpoint used by `RecordEditor` has been\\nretired. Replace that request with the existing `LOCAL_CONFIG` and keep the\\neditor's existing behavior unchanged.\" Removing the remote await warrants reviewing which initialization boundaries surrounding effects depend on.\n\ncb43d602785cb0eb722936571c4ec3478a32c58231315358895b2f8fcebcf3e0:R02 [Event relation]\nBegin registration before any replacement readiness wait, and use the public readiness boundary before applying configuration and writing values when preserving registration readiness. Original src/record_editor.py: \"        self._form.begin_registration()\\n        config = await self._load_config(\\\"record-form\\\")\\n        self._form.apply_config(config)\". src/form_port.py exposes \"    async def ready(self):\\n        ...\". src/audit_editor.py demonstrates \"        await self._form.ready()\\n        self._form.apply_config(config)\". This supports an explicit readiness wait as a preservation inference; neither an arbitrary delay nor the old network await proves registration completion.\n\ncb43d602785cb0eb722936571c4ec3478a32c58231315358895b2f8fcebcf3e0:R03 [Preservation]\nReplace the retired request with the existing local configuration while retaining the constructor interface. src/config.py: \"LOCAL_CONFIG = {\\n    \\\"fields\\\": [\\\"parent_id\\\", \\\"parent_code\\\", \\\"parent_name\\\"],\\n    \\\"picker\\\": \\\"unit_lookup\\\",\\n    \\\"initial_values\\\": {},\\n}\". Original src/record_editor.py: \"    def __init__(self, form, load_config):\\n        self._form = form\\n        self._load_config = load_config\". Removing this request does not authorize removing the constructor parameter or changing the configuration definition.\n\nPreserve configuration application before evaluating and writing the supplied record's parent fields, without inserting another suspension between these operations. Original src/record_editor.py: \"        self._form.apply_config(config)\\n        self._form.write(\\n            {\\n                \\\"parent_id\\\": record[\\\"parent_id\\\"],\\n                \\\"parent_code\\\": record[\\\"parent_code\\\"],\\n                \\\"parent_name\\\": record[\\\"parent_name\\\"],\\n            }\\n        )\". Keep these values sourced from record rather than LOCAL_CONFIG.initial_values. This preserves existing evaluation order without assuming undocumented callback behavior.\n\ncb43d602785cb0eb722936571c4ec3478a32c58231315358895b2f8fcebcf3e0:R04 [Exclusion]\nLimit the migration to RecordEditor. TASK: \"Do not migrate `AuditEditor`.\" Preserve src/audit_editor.py's \"        config = await self._load_config(\\\"audit-form\\\")\\n        await self._form.ready()\". Do not import network modes, focus gates, retry handling, visit ownership, audit lifetimes or progress freshness requirements from unrelated experiences.\n\nCandidate limitations:\n- Only TASK and supplied public source/documents establish requirements; automatic contracts and frozen experiences are fallible guidance.\n- The concrete form implementation and registration schedule are absent. Waiting for ready is a preservation inference supported by the public interface and AuditEditor's ordering, not an explicit TASK instruction.\n- Public sources do not establish callback behavior, cancellation, concurrent-open ownership, copying requirements or freshness suppression.\n- Attempt 1 reports passing syntax checks and acceptance, without behavioral observations proving completeness, causality or cross-task benefit.\n- This reflection modifies no files and accesses no scorer, reference implementation or hidden tests.\n\ncb43d602785cb0eb722936571c4ec3478a32c58231315358895b2f8fcebcf3e0:R05 [Verification]\nCheck that RecordEditor no longer requests record-form, begins registration before readiness, applies LOCAL_CONFIG after readiness, and then reads and writes exactly the three existing parent fields. Check unchanged constructor usage and AuditEditor's remote loading/readiness sequence. A controlled delayed-ready form can examine the inferred registration boundary; inspection or focused behavioral checks can confirm apply-before-record-read ordering. VISIBLE_CHECKS.md: \"These checks are required after an Action but do not test business behavior.\" Perform required syntax checks after implementation while preserving tests/configuration and keeping generated artifacts outside the workspace; passing syntax alone cannot establish behavioral preservation.\n\n\nMatched experience bbd6eee9031ebf434c55cd29d1c35f132f9a7b79c441a16f3903e7d6992b822a\nbbd6eee9031ebf434c55cd29d1c35f132f9a7b79c441a16f3903e7d6992b822a:R01 [Applicability]\nThe current interface specifies synchronous initial online entry, asynchronous completion and paused continuation, and different readiness conditions for initial and resumed execution.\n\nbbd6eee9031ebf434c55cd29d1c35f132f9a7b79c441a16f3903e7d6992b822a:R02 [Event relation]\nPreserve the initial network-mode check, network and focus gates for continuation, explicit retry handles, and Promise-turn or native-equivalent asynchronous timing.\n\nbbd6eee9031ebf434c55cd29d1c35f132f9a7b79c441a16f3903e7d6992b822a:R03 [Preservation]\nWhere these modes exist, always permits offline execution; offlineFirst permits initial offline entry but retries may pause. Preserve supported interfaces, dependencies and build/test configuration.\n\nbbd6eee9031ebf434c55cd29d1c35f132f9a7b79c441a16f3903e7d6992b822a:R04 [Exclusion]\nDo not repair departure cancellation by delaying every initial entry, resuming paused tasks synchronously or conflating retry and initial-entry gates. Do not invent these APIs for systems that lack the modes.\n\nbbd6eee9031ebf434c55cd29d1c35f132f9a7b79c441a16f3903e7d6992b822a:R05 [Verification]\nCheck synchronous online entry, asynchronous completion, connectivity without focus, focus restoration, always/offlineFirst, explicit retry cancellation and already-queued continuation separately.\n\n\nMatched experience 0624718ce36a7b9f19374275fafce28f2c117aa28ca07f5f96e96746b04a0938\n0624718ce36a7b9f19374275fafce28f2c117aa28ca07f5f96e96746b04a0938:R01 [Applicability]\nApply when replacing asynchronous configuration loading with existing local data while preserving initialization effects. TASK: \"The remote static-configuration endpoint used by the Personnel relationship\\neditor has been retired. Replace that request with the existing local JSON\\nconfiguration and keep the editor's existing behavior unchanged.\" Inspect the concrete consumer's readiness mechanism rather than transferring another component's ready API.\n\n0624718ce36a7b9f19374275fafce28f2c117aa28ca07f5f96e96746b04a0938:R02 [Event relation]\nCoordinate configuration application with actual availability of the imperative form API. src/components/SchemaForm.vue publishes it through \"const delay = Number(window.__FORM_API_DELAY_MS__ || 0);\\n    setTimeout(() => {\\n      this.$emit(\\\"input\\\", {\" and ends that timer with \"    }, delay);\". src/editors/PersonnelEditor.vue binds \"<schema-form ref=\\\"form\\\" v-model=\\\"formApi\\\" :rule=\\\"rule\\\" :option=\\\"option\\\" />\". A Promise turn, single render tick or fixed delay does not establish timer completion. Observe publication or callable setValue availability; do not skip the write when the initial API object is empty. A readiness watcher is an implementation option, not a required interface.\n\n0624718ce36a7b9f19374275fafce28f2c117aa28ca07f5f96e96746b04a0938:R03 [Preservation]\nReplace Personnel's remote request with src/config/personnel-form.json. Preserve asynchronous initialization completion and applicable error reporting: original src/editors/PersonnelEditor.vue contains \"return getStaticConfig(\\\"personnel-form\\\")\" and \".catch((error) => {\\n          this.loadError = error.message;\\n        });\". Preserve initialization on active mounting and later activation: \"mounted() {\\n    if (this.active) this.getPageConfig();\\n  },\\n  watch: {\\n    active(next) {\\n      if (next) this.getPageConfig();\\n    },\\n  },\".\n\nRetain the imperative write of all three parent fields, alongside declarative defaults. Original src/editors/PersonnelEditor.vue contains \"this.formApi.setValue({\\n            parentId: this.parentNode.id,\\n            parentCode: this.parentNode.code,\\n            parentName: this.parentNode.name,\\n          });\". src/components/SchemaForm.vue implements \"this.values = { ...this.values, ...values };\\n          this.imperativeWriteCount += 1;\" separately from rule hydration's \"this.ruleHydrationCount += 1;\". Declarative hydration therefore cannot replace the imperative effect. Evaluate parentNode fields when applying configuration after readiness rather than capturing them before the wait.\n\nKeep customization local and preserve application order. Original src/editors/PersonnelEditor.vue begins with \"const rules = config.rule.map((item) => ({ ...item }));\\n      this.option = { ...config.option };\". It prepares defaults with \"if (item.field === \\\"parentCode\\\") item.value = this.parentNode.code;\" and \"item.value = this.parentNode.name;\", invokes setValue within the parentName branch, and publishes \"this.rule = rules;\" afterward. Retain these clones, defaults and ordering without mutating the imported JSON or inserting a suspension inside configuration application.\n\nPreserve both picker entry points. src/editors/PersonnelEditor.vue contains \"<button type=\\\"button\\\" @click=\\\"openPicker\\\">Choose unit</button>\", \"item.on = { search: () => this.openPicker() };\", and \"openPicker() {\\n      this.pickerVisible = true;\\n    },\". Retain the unitLookup search callback and button behavior during local configuration customization.\n\n0624718ce36a7b9f19374275fafce28f2c117aa28ca07f5f96e96746b04a0938:R04 [Exclusion]\nKeep the migration scoped to Personnel. TASK: \"Do not migrate the Structure relationship editor.\" Preserve src/editors/StructureEditor.vue's \"return getStaticConfig(\\\"structure-form\\\")\" and surrounding behavior. Do not import unrelated network modes, retry gates, shared-transfer ownership or freshness policies from other experiences.\n\nCandidate limitations:\n- Only TASK and supplied public source establish requirements. Automatic contracts, prior experiences and acceptance observations are fallible guidance.\n- Attempt 1 reports passing syntax checks and acceptance, without behavioral observations proving completeness, causality or cross-task benefit.\n- Actual API readiness is a preservation inference from the timer-based API publication and existing imperative write; TASK specifies no readiness implementation or numerical deadline.\n- The supplied sources establish no cancellation, latest-request ownership, coalescing or deactivation policy for overlapping initialization calls.\n- The supplied setValue implementation does not call external callbacks. Preserving its surrounding application order does not establish a broader reentrancy requirement.\n- This reflection modifies no files and accesses no scorer, reference implementation or hidden tests.\n\n0624718ce36a7b9f19374275fafce28f2c117aa28ca07f5f96e96746b04a0938:R05 [Verification]\nVerify active mounting and later activation with API publication both already complete and delayed. Confirm no Personnel endpoint request, asynchronous completion, an imperative write containing parentId, parentCode and parentName, retained declarative defaults, isolated rule/option clones, both picker entry points, and unchanged Structure loading. Inspect option assignment before the write and rule publication afterward. Change parentNode while readiness is pending to check application-time field evaluation. VISIBLE_CHECKS.md states: \"These checks are required after an Action but do not test business behavior.\" Run required syntax checks after an Action, preserve tests/configuration, and place generated artifacts outside the workspace. Syntax success alone does not establish behavioral preservation.\n\n\nMatched experience 129faf3f6bc67dd105ecfd0a7432adf34a6e7051ba434d534f060fe5cc7ee33a\n129faf3f6bc67dd105ecfd0a7432adf34a6e7051ba434d534f060fe5cc7ee33a:R01 [Applicability]\nApply when asynchronous preparation can remain pending and an existing run identity distinguishes replacement work. TASK: \"The preparation service can now report that a file is still pending before it becomes ready. Update the file download dialog so it keeps checking pending preparation and delivers the file only after a ready status.\" Original src/usePreparation.js establishes run identity with \"lifecycle.current.generation += 1;\" and rejects obsolete results with \"if (lifecycle.current.disposed || generation !== lifecycle.current.generation) return;\".\n\n129faf3f6bc67dd105ecfd0a7432adf34a6e7051ba434d534f060fe5cc7ee33a:R02 [Event relation]\nContinue documented pending results through the existing retry scheduler, retaining the originating generation. Validate that generation and disposal state before retry execution initiates another check and before a result schedules continuation or records completion. Equal tokens do not distinguish successive runs: src/usePreparation.js uses \"check(beginGeneration());\" in both start and reopen. Cancellation of a handle complements these validity checks; it does not establish that an already issued result or callback cannot arrive.\n\n129faf3f6bc67dd105ecfd0a7432adf34a6e7051ba434d534f060fe5cc7ee33a:R03 [Preservation]\nUse the documented service status boundary: src/preparation-api.js states \"// transport resolves false while preparation is pending and true when ready.\" Pending must retain loading without recording completion. Preserve the existing READY branch in src/usePreparation.js: \"state.current.loading = false;\" and \"if (!state.current.completed.includes(requestToken)) {\\n          state.current.completed.push(requestToken);\\n        }\". Preserve the request-token snapshot \"const requestToken = state.current.token;\" rather than attributing an old result to a replacement token.\n\nPreserve immediate initial check entry and existing observable state. Original src/usePreparation.js calls \"check(beginGeneration());\" directly from start and reopen, and performs \"state.current.loading = true;\\n    state.current.checkCount += 1;\\n    publish();\" before transport entry. Keep snapshot copying: \"return { ...state.current, completed: [...state.current.completed] };\". When retaining retry handles, avoid allowing an obsolete scheduler return or callback to overwrite a replacement run's handle or retryScheduled state. Detaching an owned handle before calling external cancellation and retaining the originating generation across that call are defensive ways to preserve ownership if reentry occurs.\n\n129faf3f6bc67dd105ecfd0a7432adf34a6e7051ba434d534f060fe5cc7ee33a:R04 [Exclusion]\nDerive invalidation from each surface's existing ownership policy. src/DownloadDialog.jsx supplies \"const preparation = usePreparation(token, { invalidateOnClose: true });\"; src/usePreparation.js closes with \"if (invalidateOnClose) beginGeneration();\" and unmounts with \"lifecycle.current.disposed = true;\\n    beginGeneration();\". In contrast, src/useBackgroundPreparation.js states \"// Closing this progress panel does not cancel workspace-owned work.\" Preserve that distinction. Do not import shared-cache restoration, queue record fields, stream cleanup, form readiness, network modes or focus gates from unrelated experiences.\n\nCandidate limitations:\n- Only TASK and supplied public source/documents establish requirements. Experiences, automatic contracts and evaluation observations remain fallible guidance.\n- Attempt 1 reports syntax checks and acceptance passing, with no behavioral observations. This does not establish causality, completeness or cross-task effectiveness.\n- Retry delay, backoff, maximum attempts, transport failure handling and undocumented statuses are unspecified.\n- The scheduler and cancellation hooks do not document inline invocation, reentry or cancellation guarantees. Checks around these boundaries are defensive preservation guidance, not evidence that such behavior occurs.\n- The supplied implementation represents completion through completed tokens; no separate file-transfer API is supplied.\n- This reflection modifies no files and accesses no scorer, reference implementation or hidden tests.\n\n129faf3f6bc67dd105ecfd0a7432adf34a6e7051ba434d534f060fe5cc7ee33a:R05 [Verification]\nCheck successive PENDING results followed by READY: each current retry starts another check, loading remains active until READY, and completion retains token deduplication. Separately release old results and cancelled callbacks after close, unmount, replacement start and same-token reopen; they must not initiate checks, schedule continuation or mutate replacement state. Check initial transport entry remains immediate, current retry state and handle ownership remain coherent, and background preparation continues after its panel closes. If exercising inline scheduler invocation or cancellation reentry, treat these as defensive boundary probes rather than documented business schedules. VISIBLE_CHECKS.md states: \"These checks are required after an Action but do not test business behavior.\"\n",
+    "provisional_sha256s": [],
+    "route": {
+      "checks": [
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "R"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 4,
+                  "quote": "Retry callbacks are scheduled for a later event turn and can be cancelled; no real-time interval is"
+                },
+                {
+                  "file": "src/workflow.py",
+                  "line": 37,
+                  "quote": "self.timer=self.host.schedule(retry);self.publish()"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "R"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 4,
+                  "quote": "Retry callbacks are scheduled for a later event turn and can be cancelled; no real-time interval is"
+                },
+                {
+                  "file": "src/workflow.py",
+                  "line": 37,
+                  "quote": "self.timer=self.host.schedule(retry);self.publish()"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "R"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "src/workflow.py",
+                  "line": 14,
+                  "quote": "self.generation+=1"
+                },
+                {
+                  "file": "src/workflow.py",
+                  "line": 25,
+                  "quote": "if self.disposed or generation!=self.generation:return"
+                }
+              ],
+              "predicate": "attempt_resource",
+              "satisfied": true,
+              "state": "known"
+            },
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 4,
+                  "quote": "Retry callbacks are scheduled for a later event turn and can be cancelled; no real-time interval is"
+                },
+                {
+                  "file": "src/workflow.py",
+                  "line": 37,
+                  "quote": "self.timer=self.host.schedule(retry);self.publish()"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        },
+        {
+          "eligible": true,
+          "exclusions": [],
+          "matched_labels": [
+            "R"
+          ],
+          "premises": [
+            {
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "line": 4,
+                  "quote": "Retry callbacks are scheduled for a later event turn and can be cancelled; no real-time interval is"
+                },
+                {
+                  "file": "src/workflow.py",
+                  "line": 37,
+                  "quote": "self.timer=self.host.schedule(retry);self.publish()"
+                }
+              ],
+              "predicate": "async_resume",
+              "satisfied": true,
+              "state": "known"
+            }
+          ],
+          "version": "single-file-v1"
+        }
+      ],
+      "condition": "ROUTED",
+      "matched_count": 4,
+      "max_experiences": 5,
+      "omitted_memory_sha256s": [],
+      "ranking": "label_jaccard_then_overlap_then_digest",
+      "reason": "unreviewed_analysis_source_premises",
+      "selected": null,
+      "selected_entries": [
+        {
+          "obligation_labels": [
+            "R",
+            "O"
+          ],
+          "sha256": "1472ab60d7b1128d71818f7d759a0b7031a0016cc3289ea1f131beaf284a838c",
+          "text_sha256": "27734fee2536e55357e3b801d83fb85114a72e04b9e916785151a50959c593e2",
+          "version": "single-file-v1"
+        },
+        {
+          "obligation_labels": [
+            "R",
+            "O"
+          ],
+          "sha256": "820848e113f5b0124978b790998cd969082717bf4aa9c4894a88008f560ccd8e",
+          "text_sha256": "a5c6b592a2882c2fefbe5924f5a206fd666dc7e36028089da52ea0ede568bacb",
+          "version": "single-file-v1"
+        },
+        {
+          "obligation_labels": [
+            "R",
+            "O"
+          ],
+          "sha256": "8cb99764fa62d5673922653bc5b13708328c6a548d87891baa3c57e31ec62538",
+          "text_sha256": "d7806e3f8bfb6430bcf2e177c90c0f3a26c3a3e74fe0cc57cf0f784277d4c1ef",
+          "version": "single-file-v1"
+        },
+        {
+          "obligation_labels": [
+            "R",
+            "O",
+            "L",
+            "I"
+          ],
+          "sha256": "4396d6d4ef7335640f9fd18b5a242f819cc84db791803883721e88d13fc35be1",
+          "text_sha256": "e704ba170e3010b5665a4c3e93e984ec61120494d72b68070127646546733fe1",
+          "version": "single-file-v1"
+        }
+      ],
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "truncated_count": 0
+    },
+    "selected_sha256": null,
+    "selected_sha256s": [
+      "cb43d602785cb0eb722936571c4ec3478a32c58231315358895b2f8fcebcf3e0",
+      "bbd6eee9031ebf434c55cd29d1c35f132f9a7b79c441a16f3903e7d6992b822a",
+      "0624718ce36a7b9f19374275fafce28f2c117aa28ca07f5f96e96746b04a0938",
+      "129faf3f6bc67dd105ecfd0a7432adf34a6e7051ba434d534f060fe5cc7ee33a"
+    ]
+  },
+  "diagnoses": [],
+  "error": null,
+  "evaluation_split": null,
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "final_visible_passed": true,
+  "first_oracle_pass_attempt": 1,
+  "first_pass_attempt": 1,
+  "first_training_acceptance_attempt": 1,
+  "first_visible_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "held_out_eligible": false,
+  "known_tokens": 361646,
+  "learning_policy": "frozen",
+  "missing_action_evaluations": 0,
+  "mode": "learning",
+  "model": {
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "medium"
+  },
+  "model_profile": "sol56-medium",
+  "online_snapshot_sha256": null,
+  "per_attempt_acceptance": [
+    {
+      "feedback": {
+        "observations": [],
+        "passed": true,
+        "regressions": [],
+        "unknowns": [
+          "Only the acceptance verdict is available for feedback; no failure cause inferred."
+        ]
+      },
+      "passed": true,
+      "valid": true,
+      "verdict": "PASS"
+    }
+  ],
+  "per_attempt_oracle": [
+    {
+      "feedback": {
+        "observations": [],
+        "passed": true,
+        "regressions": [],
+        "unknowns": [
+          "Only the acceptance verdict is available for feedback; no failure cause inferred."
+        ]
+      },
+      "passed": true,
+      "valid": true,
+      "verdict": "PASS"
+    }
+  ],
+  "per_round_evaluations": [
+    {
+      "result": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.py",
+            "passed": true
+          }
+        ],
+        "passed": true,
+        "regressions": [],
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ],
+        "valid": true
+      },
+      "stage": "visible-1"
+    },
+    {
+      "result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "stage": "acceptance-1"
+    }
+  ],
+  "preparation_corrections": 0,
+  "preparation_validation_policy": "advisory-source-validation-v1",
+  "preparation_warnings": [],
+  "protocol": "tempoevo-trajectory-v12",
+  "reflection_updates": [
+    {
+      "name": "success",
+      "publication_kind": null,
+      "update": {
+        "change_summary": [],
+        "deduplication": "exact_normalized_content",
+        "failure_attribution": "not_applicable",
+        "operation": "evidence",
+        "reason": "The accepted public implementation is another instance of the same preparation-retry mechanism covered by the target experience. TASK requires continued foreground checking until ready; README.md documents repeated false results and cancellable later-turn retries; src/workflow.py uses generation identity, captured tokens, ready-only completion, and separate WorkspaceJob ownership. Different language and surface names do not justify new or revised guidance.",
+        "supporting_attempts": [
+          1
+        ],
+        "target_sha256s": [
+          "129faf3f6bc67dd105ecfd0a7432adf34a6e7051ba434d534f060fe5cc7ee33a"
+        ]
+      }
+    }
+  ],
+  "repair_stop_reason": "oracle_accepted",
+  "requests": 18,
+  "required_visible_checks": true,
+  "split_status": "unverified_no_independent_split_evidence",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "570590f52647e44c66d8562811becc08d06591532fafaffffe24cbc04657af59",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9996694885194
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "4e69c29799e60c26cecb5c8c5b4899725436515d25d1f0156b913dc1d7db1fbe",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 22272,
+        "input_tokens": 27312,
+        "output_tokens": 1946,
+        "reasoning_output_tokens": 1075,
+        "total_tokens": 29258
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "9cb574048798526844834a7bc56ea7356887d861b0891d629b49c9562a52dc91",
+      "seconds": 45.71506233792752,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 22272,
+        "input_tokens": 27312,
+        "output_tokens": 1946,
+        "reasoning_output_tokens": 1075,
+        "total_tokens": 29258
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "ff50084fadd9122b181a2b169f637e0c3adbe617a87eca1f865cc2efb0029c8f",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9997561462224
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "1ab372890f167f3a2d4906640bf3f5ba47e35b6db12230a279dff87ac2ee26c8",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 15787,
+        "output_tokens": 1929,
+        "reasoning_output_tokens": 376,
+        "total_tokens": 17716
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "889e8c99ed42a7dc7f95e122ac379817ed83d212829b5ea4244098bb6c2f4bfc",
+      "seconds": 39.82466837763786,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 15787,
+        "output_tokens": 1929,
+        "reasoning_output_tokens": 376,
+        "total_tokens": 17716
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "transient_transport_error",
+          "input_sha256": "c7f9aa8328323486d220639e7928bdb240c9e7a4fc23e065b25b571315f239de",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9994220975786
+          },
+          "number": 1,
+          "requests": 5,
+          "restart_reason": "initial",
+          "result_sha256": "d6d2416693ba62e9bc8a26dfb829ba326527a369775e2fef67170abd46b0654a",
+          "status": "complete",
+          "valid": false
+        },
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "c7f9aa8328323486d220639e7928bdb240c9e7a4fc23e065b25b571315f239de",
+          "limits": {
+            "requests": 19,
+            "seconds": 538.4531184239313
+          },
+          "number": 2,
+          "requests": 9,
+          "restart_reason": "transient_transport",
+          "result_sha256": "a4ee1b328fe62edc30f9724777770669bb7b2aff632d2b7e5367778649b0d9f8",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 225664,
+        "input_tokens": 249590,
+        "output_tokens": 3308,
+        "reasoning_output_tokens": 895,
+        "total_tokens": 252898
+      },
+      "requests": 14,
+      "reserved_requests": 24,
+      "result_sha256": "7d44ce828b93839fb0fd4e13bb030914abec2c70018c4b166a4e5970096587af",
+      "seconds": 136.1383424643427,
+      "status": "complete",
+      "tokens": null,
+      "tool_policy_recoveries": 0,
+      "transport_retries": 1,
+      "unknown_usage_requests": 1,
+      "usage_incomplete": true
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "de8f7cf25820a5e87d797d645824aaa65b94f19ddb61b6e9555d9da60e262cf5",
+      "seconds": 0.8090711459517479,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 8.041108764708042,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "ff999b0530b5e3391664807a423fca38442afb59eac5f02721bf38ac851d84e1",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.997097431682
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "18773aed55fae954b5400d5162925b962dbf3e2071e9eaad312ccfa572780ad9",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 60147,
+        "output_tokens": 1627,
+        "reasoning_output_tokens": 345,
+        "total_tokens": 61774
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "75fa082648385f15ea3fa7e791eac068037f81bc32e0a3498fff09185f9c94ed",
+      "seconds": 33.813886957243085,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 60147,
+        "output_tokens": 1627,
+        "reasoning_output_tokens": 345,
+        "total_tokens": 61774
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "tool_policy_recoveries": 0,
+  "training_accepted": true,
+  "transport_executions": 5,
+  "transport_retries": 1,
+  "unknown_request_stages": [],
+  "unknown_usage_requests": 1,
+  "unstarted_actions": 2,
+  "usage_incomplete": true,
+  "valid_attempts": 1,
+  "visible_passed": true
+}

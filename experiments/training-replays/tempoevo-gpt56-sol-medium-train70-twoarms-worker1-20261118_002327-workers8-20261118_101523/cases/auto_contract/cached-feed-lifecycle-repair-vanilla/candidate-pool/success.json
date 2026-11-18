@@ -1,0 +1,952 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/batch-presenter.js\n+++ candidate/src/batch-presenter.js\n@@ -1,8 +1,11 @@\n // paintRows may finish now or after layout. showCount reports that completed\n // paint; its host may have selected another feed while painting was in progress.\n-export function presentBatch(frame, { paintRows, showCount }) {\n+export function presentBatch(frame, { paintRows, showCount, isCurrent = () => true }) {\n+  if (!isCurrent()) return;\n   const painting = paintRows(frame);\n   if (painting && typeof painting.then === \"function\")\n-    painting.then(() => showCount(frame));\n-  else showCount(frame);\n+    painting.then(() => {\n+      if (isCurrent()) showCount(frame);\n+    });\n+  else if (isCurrent()) showCount(frame);\n }\n--- original/src/feed-panel.js\n+++ candidate/src/feed-panel.js\n@@ -2,16 +2,36 @@\n import { presentBatch } from \"./batch-presenter.js\";\n \n export function createFeedPanel({ history, paintRows, showCount }) {\n-  let release = () => {};\n+  let currentVisit = null;\n+\n+  const retireCurrentVisit = () => {\n+    const visit = currentVisit;\n+    currentVisit = null;\n+    if (visit) visit.release();\n+  };\n+\n   return {\n     show(feed, mode = \"synchronous\") {\n-      release();\n-      release = subscribeFeed(feed, mode, frame =>\n-        presentBatch(frame, { paintRows, showCount }), history);\n+      retireCurrentVisit();\n+\n+      const visit = { release: () => {} };\n+      currentVisit = visit;\n+      const release = subscribeFeed(feed, mode, frame => {\n+        if (currentVisit !== visit) return;\n+        presentBatch(frame, {\n+          paintRows,\n+          showCount,\n+          isCurrent: () => currentVisit === visit,\n+        });\n+      }, history);\n+\n+      // Startup can synchronously render, and rendering can navigate or hide.\n+      // Do not publish this visit's cleanup after such a reentrant retirement.\n+      if (currentVisit === visit) visit.release = release;\n+      else release();\n     },\n     close() {\n-      release();\n-      release = () => {};\n+      retireCurrentVisit();\n     },\n   };\n }\n--- original/src/subscription.js\n+++ candidate/src/subscription.js\n@@ -10,7 +10,7 @@\n     if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n     else deliver(decoded);\n   };\n+  feed.target.addEventListener(\"batch\", listener);\n   feed.start(mode);\n-  feed.target.addEventListener(\"batch\", listener);\n   return () => feed.target.removeEventListener(\"batch\", listener);\n }\n",
+        "from_previous": "--- previous/src/batch-presenter.js\n+++ candidate/src/batch-presenter.js\n@@ -1,8 +1,11 @@\n // paintRows may finish now or after layout. showCount reports that completed\n // paint; its host may have selected another feed while painting was in progress.\n-export function presentBatch(frame, { paintRows, showCount }) {\n+export function presentBatch(frame, { paintRows, showCount, isCurrent = () => true }) {\n+  if (!isCurrent()) return;\n   const painting = paintRows(frame);\n   if (painting && typeof painting.then === \"function\")\n-    painting.then(() => showCount(frame));\n-  else showCount(frame);\n+    painting.then(() => {\n+      if (isCurrent()) showCount(frame);\n+    });\n+  else if (isCurrent()) showCount(frame);\n }\n--- previous/src/feed-panel.js\n+++ candidate/src/feed-panel.js\n@@ -2,16 +2,36 @@\n import { presentBatch } from \"./batch-presenter.js\";\n \n export function createFeedPanel({ history, paintRows, showCount }) {\n-  let release = () => {};\n+  let currentVisit = null;\n+\n+  const retireCurrentVisit = () => {\n+    const visit = currentVisit;\n+    currentVisit = null;\n+    if (visit) visit.release();\n+  };\n+\n   return {\n     show(feed, mode = \"synchronous\") {\n-      release();\n-      release = subscribeFeed(feed, mode, frame =>\n-        presentBatch(frame, { paintRows, showCount }), history);\n+      retireCurrentVisit();\n+\n+      const visit = { release: () => {} };\n+      currentVisit = visit;\n+      const release = subscribeFeed(feed, mode, frame => {\n+        if (currentVisit !== visit) return;\n+        presentBatch(frame, {\n+          paintRows,\n+          showCount,\n+          isCurrent: () => currentVisit === visit,\n+        });\n+      }, history);\n+\n+      // Startup can synchronously render, and rendering can navigate or hide.\n+      // Do not publish this visit's cleanup after such a reentrant retirement.\n+      if (currentVisit === visit) visit.release = release;\n+      else release();\n     },\n     close() {\n-      release();\n-      release = () => {};\n+      retireCurrentVisit();\n     },\n   };\n }\n--- previous/src/subscription.js\n+++ candidate/src/subscription.js\n@@ -10,7 +10,7 @@\n     if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n     else deliver(decoded);\n   };\n+  feed.target.addEventListener(\"batch\", listener);\n   feed.start(mode);\n-  feed.target.addEventListener(\"batch\", listener);\n   return () => feed.target.removeEventListener(\"batch\", listener);\n }\n"
+      },
+      {
+        "from_original": "--- original/src/batch-presenter.js\n+++ candidate/src/batch-presenter.js\n@@ -1,8 +1,11 @@\n // paintRows may finish now or after layout. showCount reports that completed\n // paint; its host may have selected another feed while painting was in progress.\n-export function presentBatch(frame, { paintRows, showCount }) {\n+export function presentBatch(frame, { paintRows, showCount, isCurrent = () => true }) {\n+  if (!isCurrent()) return;\n   const painting = paintRows(frame);\n   if (painting && typeof painting.then === \"function\")\n-    painting.then(() => showCount(frame));\n-  else showCount(frame);\n+    painting.then(() => {\n+      if (isCurrent()) showCount(frame);\n+    });\n+  else if (isCurrent()) showCount(frame);\n }\n--- original/src/feed-panel.js\n+++ candidate/src/feed-panel.js\n@@ -2,16 +2,41 @@\n import { presentBatch } from \"./batch-presenter.js\";\n \n export function createFeedPanel({ history, paintRows, showCount }) {\n-  let release = () => {};\n+  let currentVisit = null;\n+\n+  const retireCurrentVisit = () => {\n+    const visit = currentVisit;\n+    currentVisit = null;\n+    if (visit) visit.release();\n+  };\n+\n   return {\n     show(feed, mode = \"synchronous\") {\n-      release();\n-      release = subscribeFeed(feed, mode, frame =>\n-        presentBatch(frame, { paintRows, showCount }), history);\n+      retireCurrentVisit();\n+\n+      const visit = { release: () => {} };\n+      currentVisit = visit;\n+      const release = subscribeFeed(\n+        feed,\n+        mode,\n+        frame => {\n+          if (currentVisit !== visit) return;\n+          presentBatch(frame, {\n+            paintRows,\n+            showCount,\n+            isCurrent: () => currentVisit === visit,\n+          });\n+        },\n+        history,\n+        visitRelease => { visit.release = visitRelease; },\n+      );\n+\n+      // Startup can synchronously render, and rendering can navigate or hide.\n+      // Ensure a visit retired during startup remains detached after it returns.\n+      if (currentVisit !== visit) release();\n     },\n     close() {\n-      release();\n-      release = () => {};\n+      retireCurrentVisit();\n     },\n   };\n }\n--- original/src/subscription.js\n+++ candidate/src/subscription.js\n@@ -1,6 +1,6 @@\n // Decoding can return a value or a Promise. Detaching an EventTarget listener\n // cannot retract a decode that has already started.\n-export function subscribeFeed(feed, mode, receive, history) {\n+export function subscribeFeed(feed, mode, receive, history, publishRelease) {\n   const listener = event => {\n     const deliver = frame => {\n       history.record(frame);\n@@ -10,7 +10,9 @@\n     if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n     else deliver(decoded);\n   };\n+  const release = () => feed.target.removeEventListener(\"batch\", listener);\n+  feed.target.addEventListener(\"batch\", listener);\n+  if (publishRelease) publishRelease(release);\n   feed.start(mode);\n-  feed.target.addEventListener(\"batch\", listener);\n-  return () => feed.target.removeEventListener(\"batch\", listener);\n+  return release;\n }\n",
+        "from_previous": "--- previous/src/feed-panel.js\n+++ candidate/src/feed-panel.js\n@@ -16,19 +16,24 @@\n \n       const visit = { release: () => {} };\n       currentVisit = visit;\n-      const release = subscribeFeed(feed, mode, frame => {\n-        if (currentVisit !== visit) return;\n-        presentBatch(frame, {\n-          paintRows,\n-          showCount,\n-          isCurrent: () => currentVisit === visit,\n-        });\n-      }, history);\n+      const release = subscribeFeed(\n+        feed,\n+        mode,\n+        frame => {\n+          if (currentVisit !== visit) return;\n+          presentBatch(frame, {\n+            paintRows,\n+            showCount,\n+            isCurrent: () => currentVisit === visit,\n+          });\n+        },\n+        history,\n+        visitRelease => { visit.release = visitRelease; },\n+      );\n \n       // Startup can synchronously render, and rendering can navigate or hide.\n-      // Do not publish this visit's cleanup after such a reentrant retirement.\n-      if (currentVisit === visit) visit.release = release;\n-      else release();\n+      // Ensure a visit retired during startup remains detached after it returns.\n+      if (currentVisit !== visit) release();\n     },\n     close() {\n       retireCurrentVisit();\n--- previous/src/subscription.js\n+++ candidate/src/subscription.js\n@@ -1,6 +1,6 @@\n // Decoding can return a value or a Promise. Detaching an EventTarget listener\n // cannot retract a decode that has already started.\n-export function subscribeFeed(feed, mode, receive, history) {\n+export function subscribeFeed(feed, mode, receive, history, publishRelease) {\n   const listener = event => {\n     const deliver = frame => {\n       history.record(frame);\n@@ -10,7 +10,9 @@\n     if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n     else deliver(decoded);\n   };\n+  const release = () => feed.target.removeEventListener(\"batch\", listener);\n   feed.target.addEventListener(\"batch\", listener);\n+  if (publishRelease) publishRelease(release);\n   feed.start(mode);\n-  return () => feed.target.removeEventListener(\"batch\", listener);\n+  return release;\n }\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [
+          {
+            "basis": "import_binding_candidate",
+            "call": "src/feed-panel.js::e8",
+            "kind": "candidate_call_target",
+            "qualification": "Lexical/import binding candidate only; execution, reassignment timing and arguments not proven.",
+            "target": "src/subscription.js::<module>/subscribeFeed"
+          }
+        ],
+        "coverage": [
+          {
+            "path": "src/batch-presenter.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/feed-panel.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/feed.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/metrics.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/subscription.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/workspace.js",
+            "status": "parsed"
+          }
+        ],
+        "events": [
+          {
+            "arguments": [
+              "feed",
+              "mode",
+              "frame =>\n        presentBatch(frame, { paintRows, showCount })",
+              "history"
+            ],
+            "binding": "import_binding_candidate",
+            "callee": "subscribeFeed",
+            "column": 16,
+            "conditions": [],
+            "end_column": 63,
+            "end_line": 10,
+            "id": "src/feed-panel.js::e8",
+            "import_name": "./subscription.js.subscribeFeed",
+            "kind": "call",
+            "line": 9,
+            "path": "src/feed-panel.js",
+            "receiver": "",
+            "scope": "<module>/createFeedPanel/show",
+            "text": "subscribeFeed(feed, mode, frame =>\n        presentBatch(frame, { paintRows, showCount }), history)"
+          },
+          {
+            "awaited": false,
+            "column": 6,
+            "conditions": [],
+            "end_column": 63,
+            "end_line": 10,
+            "id": "src/feed-panel.js::e9",
+            "kind": "write",
+            "line": 9,
+            "operator": "=",
+            "path": "src/feed-panel.js",
+            "scope": "<module>/createFeedPanel/show",
+            "target": "release",
+            "text": "release = subscribeFeed(feed, mode, frame =>\n        presentBatch(frame, { paintRows, showCount }), history)"
+          },
+          {
+            "column": 2,
+            "conditions": [],
+            "end_column": 25,
+            "end_line": 8,
+            "id": "src/metrics.js::e8",
+            "kind": "await",
+            "line": 8,
+            "path": "src/metrics.js",
+            "scope": "<module>/collectMetrics",
+            "text": "await Promise.resolve()"
+          },
+          {
+            "arguments": [
+              "\"batch\"",
+              "listener"
+            ],
+            "binding": "parameter_member",
+            "callee": "feed.target.removeEventListener",
+            "column": 2,
+            "conditions": [],
+            "end_column": 52,
+            "end_line": 10,
+            "id": "src/metrics.js::e10",
+            "kind": "call",
+            "line": 10,
+            "path": "src/metrics.js",
+            "receiver": "feed.target",
+            "scope": "<module>/collectMetrics",
+            "text": "feed.target.removeEventListener(\"batch\", listener)"
+          },
+          {
+            "column": 8,
+            "conditions": [],
+            "end_column": 53,
+            "end_line": 10,
+            "expression": "decoded && typeof decoded.then === \"function\"",
+            "id": "src/subscription.js::e8",
+            "kind": "guard",
+            "line": 10,
+            "path": "src/subscription.js",
+            "scope": "<module>/subscribeFeed/listener",
+            "text": "decoded && typeof decoded.then === \"function\""
+          },
+          {
+            "arguments": [
+              "deliver"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "decoded.then",
+            "column": 55,
+            "conditions": [
+              "if decoded && typeof decoded.then === \"function\""
+            ],
+            "end_column": 76,
+            "end_line": 10,
+            "id": "src/subscription.js::e9",
+            "kind": "call",
+            "line": 10,
+            "path": "src/subscription.js",
+            "receiver": "decoded",
+            "scope": "<module>/subscribeFeed/listener",
+            "text": "decoded.then(deliver)"
+          },
+          {
+            "arguments": [
+              "\"batch\"",
+              "listener"
+            ],
+            "binding": "parameter_member",
+            "callee": "feed.target.removeEventListener",
+            "column": 15,
+            "conditions": [],
+            "end_column": 65,
+            "end_line": 15,
+            "id": "src/subscription.js::e16",
+            "kind": "call",
+            "line": 15,
+            "path": "src/subscription.js",
+            "receiver": "feed.target",
+            "scope": "<module>/subscribeFeed/<callback>",
+            "text": "feed.target.removeEventListener(\"batch\", listener)"
+          }
+        ],
+        "findings": [
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "Check whether user callbacks can reenter the caller; reentry is not established.",
+            "evidence": [
+              "src/feed-panel.js::e8",
+              "src/feed-panel.js::e9"
+            ],
+            "message": "A cleanup-like handle is assigned after the right-hand call returns.",
+            "path": "src/feed-panel.js",
+            "review_question": "If a callback switches or closes the owner, can the old return overwrite a newer cleanup handle?",
+            "rule": "cleanup-handle-after-call",
+            "scope": "<module>/createFeedPanel/show"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "Co-occurrence only; verify that both concern the same work and lifecycle.",
+            "evidence": [
+              "src/subscription.js::e9",
+              "src/subscription.js::e16"
+            ],
+            "message": "Completion callback registration and listener removal coexist in this file.",
+            "path": "src/subscription.js",
+            "review_question": "If related, is validity checked when in-flight work completes after listener removal?",
+            "rule": "continuation-and-listener-removal",
+            "scope": "<module>/subscribeFeed/listener"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/metrics.js::e8",
+              "src/metrics.js::e10"
+            ],
+            "message": "完成回调/等待点与关闭、重新打开或清理边界名称线索出现在同一词法单元。",
+            "path": "src/metrics.js",
+            "review_question": "关闭、卸载和切换是否是不同边界？哪些边界应使旧结果失效，哪些工作应继续？需从仓库证据确认。",
+            "rule": "continuation-lifecycle-boundaries",
+            "scope": "<module>/collectMetrics"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/subscription.js::e9",
+              "src/subscription.js::e16"
+            ],
+            "message": "完成回调/等待点与关闭、重新打开或清理边界名称线索出现在同一词法单元。",
+            "path": "src/subscription.js",
+            "review_question": "关闭、卸载和切换是否是不同边界？哪些边界应使旧结果失效，哪些工作应继续？需从仓库证据确认。",
+            "rule": "continuation-lifecycle-boundaries",
+            "scope": "<module>/subscribeFeed"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/subscription.js::e8",
+              "src/subscription.js::e9",
+              "src/subscription.js::e16"
+            ],
+            "message": "列出相关词法单元中的条件判断，以及关闭/返回清理函数内的状态写入；存在判断不等于有效性保护。",
+            "path": "src/subscription.js",
+            "review_question": "回调检查了什么状态？关闭、卸载、重开分别更新了什么？只取消计时器能否约束已发请求？相同标识重新使用时判断是否仍适用？",
+            "rule": "continuation-guard-state-review",
+            "scope": "<module>/subscribeFeed"
+          }
+        ],
+        "limitations": [
+          "Syntax facts, candidate call links and review hints are not verified contracts, bugs, severity or difficulty scores.",
+          "API names are clues. Types, aliases, control flow, dynamic dispatch and callback targets are not fully resolved.",
+          "Local order is lexical order within a block; branches, exceptions, loops, short-circuiting and execution remain unchecked.",
+          "await may suspend; cancellation does not imply completed work or cleanup. Listener removal does not cancel work already started.",
+          "if/try/finally syntax does not prove adequate protection. The absence of hints does not imply safety.",
+          "No hidden scorers, reference patches, model results or human profiles are read. Operators must verify input provenance."
+        ],
+        "relations": [
+          {
+            "after": "src/feed-panel.js::e9",
+            "before": "src/feed-panel.js::e8",
+            "kind": "rhs_before_assignment",
+            "qualification": "Assignment occurs after successful RHS evaluation; call return alone does not imply asynchronous work completion."
+          }
+        ],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "parsed",
+        "target_definitions": [
+          {
+            "id": "src/subscription.js::<module>/subscribeFeed",
+            "line": 3,
+            "path": "src/subscription.js",
+            "scope": "<module>/subscribeFeed"
+          }
+        ]
+      },
+      "sources": {
+        "README.md": "# Cached activity feed\n\nThe activity panel reads a cached first batch and then incremental batches.\nThe host supplies rendering and history adapters. Use native ES modules;\nthere are no required dependencies.\n\nPublic workspace methods are select(feed, mode) and hide(). Selecting the same\nfeed after leaving creates a new panel visit. Changing selection or hiding stops\nthe previous visit's visible output; the selected visit must keep receiving new\nbatches. Reusing an existing feed object is supported.\n\npaintRows(frame, navigation) commits rows for the current visit and may\nsynchronously navigate or hide the panel. It can return a Promise for layout\ncompletion. The count belongs to those painted rows and becomes visible only\nafter that paint has completed, if its visit is still current. Ordinary live\ncounts remain required. A component or feed object can survive several visits.\n\nHistory records each received batch once its decoding completes. A batch already\naccepted by the subscriber remains useful to history after leaving the panel;\nretiring a view does not revoke accepted history work. Removing a listener stops\nnew reception, while already-started decoding and painting may still complete.\n\nThe independent metrics consumer intentionally ignores the cached snapshot and\nobserves deltas. Its policy is outside this panel repair unless separately\nauthorized. Preserve APIs, payloads, rendering timing and history behavior.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\"name\":\"cached-feed-lifecycle-repair\",\"version\":\"0.1.0\",\"private\":true,\"type\":\"module\"}\n",
+        "src/batch-presenter.js": "// paintRows may finish now or after layout. showCount reports that completed\n// paint; its host may have selected another feed while painting was in progress.\nexport function presentBatch(frame, { paintRows, showCount }) {\n  const painting = paintRows(frame);\n  if (painting && typeof painting.then === \"function\")\n    painting.then(() => showCount(frame));\n  else showCount(frame);\n}\n",
+        "src/feed-panel.js": "import { subscribeFeed } from \"./subscription.js\";\nimport { presentBatch } from \"./batch-presenter.js\";\n\nexport function createFeedPanel({ history, paintRows, showCount }) {\n  let release = () => {};\n  return {\n    show(feed, mode = \"synchronous\") {\n      release();\n      release = subscribeFeed(feed, mode, frame =>\n        presentBatch(frame, { paintRows, showCount }), history);\n    },\n    close() {\n      release();\n      release = () => {};\n    },\n  };\n}\n",
+        "src/feed.js": "class BatchEvent extends Event {\n  constructor(frame) { super(\"batch\"); this.detail = frame; }\n}\n\nexport function createFeed(token, { decode = frame => frame } = {}) {\n  const target = new EventTarget();\n  let sequence = 0;\n  const emit = (kind, seq) => target.dispatchEvent(new BatchEvent({\n    feed: token, kind, seq, rows: [token + \":\" + kind + \":\" + seq],\n  }));\n  return {\n    target,\n    decode,\n    start(mode = \"synchronous\") {\n      if (mode === \"deferred\") queueMicrotask(() => emit(\"snapshot\", 0));\n      else emit(\"snapshot\", 0);\n    },\n    emitDelta() { emit(\"delta\", ++sequence); },\n  };\n}\n",
+        "src/metrics.js": "// Cached state is not a new activity delta. This consumer deliberately starts\n// before observing so that synchronous snapshot delivery is excluded.\nexport async function collectMetrics(feed) {\n  const frames = [];\n  const listener = event => frames.push(event.detail);\n  feed.start(\"synchronous\");\n  feed.target.addEventListener(\"batch\", listener);\n  await Promise.resolve();\n  feed.emitDelta();\n  feed.target.removeEventListener(\"batch\", listener);\n  return frames;\n}\n",
+        "src/subscription.js": "// Decoding can return a value or a Promise. Detaching an EventTarget listener\n// cannot retract a decode that has already started.\nexport function subscribeFeed(feed, mode, receive, history) {\n  const listener = event => {\n    const deliver = frame => {\n      history.record(frame);\n      receive(frame);\n    };\n    const decoded = feed.decode(event.detail);\n    if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n    else deliver(decoded);\n  };\n  feed.start(mode);\n  feed.target.addEventListener(\"batch\", listener);\n  return () => feed.target.removeEventListener(\"batch\", listener);\n}\n",
+        "src/workspace.js": "import { createFeedPanel } from \"./feed-panel.js\";\n\n// Rendering is a host integration boundary, not a pure read of panel state.\nexport function createFeedWorkspace({ history, paintRows, showCount }) {\n  const panel = createFeedPanel({\n    history, showCount,\n    paintRows: frame => paintRows(frame, navigation),\n  });\n  const navigation = {\n    select(feed, mode = \"synchronous\") { panel.show(feed, mode); },\n    hide() { panel.close(); },\n  };\n  return navigation;\n}\n"
+      },
+      "task": "Fix the activity panel's startup and navigation lifecycle.\n\nOpening a feed backed by a warm cache sometimes leaves the first batch missing,\nalthough later activity appears. During quick feed changes or closing and\nreopening the panel, rows or the count can also appear for a previous visit.\n\nCorrect these timing problems while preserving normal live updates, history\nrecording, public APIs and the existing rendering adapters. The independent\nmetrics consumer is outside this repair.\n"
+    },
+    "source_sha256": "994ecc9d343f7589454986626626116636b0818456be921df3cf6b9e38df565c",
+    "task_id": "cached-feed-lifecycle-repair-vanilla"
+  },
+  "experience": {
+    "excludes": [
+      "shared_lifetime",
+      "attempt_resource",
+      "lazy_consumption",
+      "different_ownership_policy",
+      "discard_boundary_policy",
+      "no_lazy_shared_mechanism"
+    ],
+    "labels": [
+      "R",
+      "O",
+      "B",
+      "L",
+      "I",
+      "F",
+      "A"
+    ],
+    "limitations": [
+      "This guidance applies where each opening creates a distinct visit and does not establish requirements for systems whose ownership is shared across visits.",
+      "Public sources do not specify rejection or exception handling for decode, paint, history, or count operations.",
+      "Public sources do not require cancellation of accepted decoding or painting; they constrain history and visible effects at lifecycle checkpoints.",
+      "Public sources do not specify ordering among multiple asynchronously decoded or painted batches beyond requiring each count to follow its corresponding paint.",
+      "A single passing attempt supports compatibility but does not prove which individual change caused acceptance or that the mechanism generalizes to other tasks."
+    ],
+    "requires": [
+      "observer_lifetime",
+      "async_resume",
+      "deferred_batch",
+      "boundary_persistence",
+      "entry_snapshot",
+      "inline_reentry",
+      "effect_lifetimes"
+    ],
+    "rules": [
+      {
+        "body": "Applicability requires a cached-first observer whose owner has distinct visits. Evidence: TASK says, \"Opening a feed backed by a warm cache sometimes leaves the first batch missing, although later activity appears.\" README.md says, \"Selecting the same feed after leaving creates a new panel visit.\"",
+        "category": "applicability"
+      },
+      {
+        "body": "Register the visit listener before startup can synchronously emit the cached snapshot. Evidence: src/feed.js says, \"if (mode === \\\"deferred\\\") queueMicrotask(() => emit(\\\"snapshot\\\", 0));\\n      else emit(\\\"snapshot\\\", 0);\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "Create and publish an idempotent listener-release capability before invoking callback-capable startup. If startup synchronously causes navigation or hiding, retirement must already be able to detach that listener; after startup returns, an obsolete visit must not reacquire cleanup ownership.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Use per-visit identity rather than feed-object identity. Retire the current visit before a replacement may own visible output, and remove its listener so it accepts no later batches. Evidence: README.md says, \"Changing selection or hiding stops the previous visit's visible output; the selected visit must keep receiving new batches.\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "For every batch accepted before listener removal, allow decoding to complete and record history exactly once regardless of later retirement. Check current-visit identity only before visible painting. Evidence: README.md says, \"A batch already accepted by the subscriber remains useful to history after leaving the panel; retiring a view does not revoke accepted history work.\"",
+        "category": "preservation"
+      },
+      {
+        "body": "After invoking paintRows, show the corresponding count only after that paint completes and only after rechecking that the originating visit is current. Apply the recheck to both Promise completion and synchronous return because paintRows may synchronously navigate or hide. Evidence: README.md says, \"The count belongs to those painted rows and becomes visible only after that paint has completed, if its visit is still current.\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "Preserve ordinary live updates for the selected visit, history recording for accepted batches, public select(feed, mode) and hide() methods, payloads, and existing rendering adapters. Evidence: TASK says, \"Correct these timing problems while preserving normal live updates, history recording, public APIs and the existing rendering adapters.\"",
+        "category": "preservation"
+      },
+      {
+        "body": "Do not apply cached-snapshot subscription ordering to the independent metrics consumer. Evidence: TASK says, \"The independent metrics consumer is outside this repair.\" README.md says, \"The independent metrics consumer intentionally ignores the cached snapshot and observes deltas.\"",
+        "category": "exclusion"
+      },
+      {
+        "body": "Verify synchronous and deferred snapshots, ordinary live batches, selection and hiding during decode, synchronous reentry from paintRows, asynchronous paint completion after retirement, reopening the same feed object, history completion after retirement, and cleanup ownership when startup reenters navigation.",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "Before starting a feed, install the visit's batch listener so a synchronous cached snapshot can be received.",
+      "When decoding completes, record every batch accepted by that subscriber exactly once, even if its panel visit has since ended.",
+      "Before painting decoded rows, verify that the originating visit is still the selected visit.",
+      "After paintRows completes synchronously or asynchronously, verify the same visit is still current before showing its count.",
+      "After callback-capable startup, do not let an obsolete subscription's returned cleanup handle replace the cleanup handle for a newer reentrant selection.",
+      "On selection change or hide, retire the previous visit and remove its listener so it accepts no new batches."
+    ],
+    "forbidden_effects": [
+      "Do not change the public workspace methods select(feed, mode) and hide().",
+      "Do not change feed, frame, navigation, rendering-adapter, or history payloads.",
+      "Do not suppress ordinary live batches for the currently selected visit.",
+      "Do not revoke history work for a batch accepted before its visit was retired.",
+      "Do not allow decoded rows or a post-paint count from a retired visit to become visible.",
+      "Do not change the independent metrics consumer's cached-snapshot policy.",
+      "Do not treat reuse of the same feed object as continuation of an earlier visit."
+    ],
+    "lifecycle_identity": [
+      "Identity is per panel visit, not per feed object, feed token, mode, or component lifetime.",
+      "Every select operation that opens a feed creates a new visit; selecting the same feed after leaving still creates a distinct visit.",
+      "A visit remains current only until a later selection or hide retires it.",
+      "History-work validity is tied to whether the subscriber accepted the batch, while visible-output validity is tied to whether the originating visit is still current.",
+      "Count validity additionally belongs to the specific paint completion for the rows that produced it."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Register the panel subscriber before feed startup can synchronously emit the cached first batch, so the selected visit receives that batch."
+      },
+      {
+        "id": "O2",
+        "text": "Changing selection or hiding must immediately retire the prior visit's authority to produce visible rows or counts and must stop that subscriber from accepting new batches."
+      },
+      {
+        "id": "O3",
+        "text": "A decoded batch may paint rows only while its originating visit is current; completion from an older visit must not paint after navigation or hide."
+      },
+      {
+        "id": "O4",
+        "text": "showCount for a frame must occur only after paintRows for that frame has completed, and only if the frame's visit is still current at that completion checkpoint."
+      },
+      {
+        "id": "O5",
+        "text": "The current selected visit must continue receiving and presenting ordinary live batches."
+      },
+      {
+        "id": "O6",
+        "text": "Each batch already accepted by a subscriber must be recorded to history once decoding completes, even if its visit was retired before decode completion."
+      },
+      {
+        "id": "O7",
+        "text": "Synchronous navigation or hiding from paintRows must retire the painting visit before any corresponding count is shown."
+      },
+      {
+        "id": "O8",
+        "text": "Reentrant selection or hiding during callback-capable startup or rendering must not let an older operation overwrite the active visit or its cleanup ownership."
+      },
+      {
+        "id": "O9",
+        "text": "Preserve public APIs, payloads, rendering adapters, rendering timing, and history behavior, and leave collectMetrics behavior unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "Listener registration must precede feed.start(mode), including for synchronous startup.",
+      "Batch acceptance precedes decoding completion; accepted history work remains valid across later visit retirement.",
+      "Decoded delivery must pass a current-visit check before invoking paintRows.",
+      "paintRows(frame, navigation) completion precedes showCount(frame).",
+      "A second current-visit check is required after asynchronous paint completion and after any synchronous reentrant navigation performed by paintRows.",
+      "Retiring the old visit and removing its listener must occur before the replacement visit is allowed to own visible output.",
+      "Cleanup-handle publication after subscribeFeed returns must be conditional on the initiating visit still being current."
+    ],
+    "preservation": [
+      "Ordinary live updates for the selected visit remain visible.",
+      "Every accepted batch retains its existing history-recording behavior.",
+      "The host-provided paintRows and showCount adapters and the navigation argument to paintRows remain in use.",
+      "Public workspace methods and their default synchronous mode remain unchanged.",
+      "Feed reuse across multiple visits remains supported.",
+      "The independent metrics consumer continues to ignore the cached snapshot and observe deltas.",
+      "Native ES-module structure and dependency-free operation are preserved."
+    ],
+    "scope": [
+      "Repair cached-first-batch startup ordering in the activity panel subscription path.",
+      "Repair selection, hide, close, reopen, decode-completion, paint-completion, and reentrant-callback lifecycle handling for panel visits.",
+      "Apply changes only to activity-panel business code needed for those behaviors.",
+      "Exclude the independent metrics consumer from behavioral changes."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Opening a feed backed by a warm cache sometimes leaves the first batch missing, although later activity appears."
+      },
+      {
+        "file": "TASK",
+        "quote": "During quick feed changes or closing and reopening the panel, rows or the count can also appear for a previous visit."
+      },
+      {
+        "file": "TASK",
+        "quote": "Correct these timing problems while preserving normal live updates, history recording, public APIs and the existing rendering adapters."
+      },
+      {
+        "file": "TASK",
+        "quote": "The independent metrics consumer is outside this repair."
+      },
+      {
+        "file": "README.md",
+        "quote": "Public workspace methods are select(feed, mode) and hide(). Selecting the same feed after leaving creates a new panel visit."
+      },
+      {
+        "file": "README.md",
+        "quote": "Changing selection or hiding stops the previous visit's visible output; the selected visit must keep receiving new batches."
+      },
+      {
+        "file": "README.md",
+        "quote": "paintRows(frame, navigation) commits rows for the current visit and may synchronously navigate or hide the panel."
+      },
+      {
+        "file": "README.md",
+        "quote": "The count belongs to those painted rows and becomes visible only after that paint has completed, if its visit is still current."
+      },
+      {
+        "file": "README.md",
+        "quote": "History records each received batch once its decoding completes."
+      },
+      {
+        "file": "README.md",
+        "quote": "A batch already accepted by the subscriber remains useful to history after leaving the panel; retiring a view does not revoke accepted history work."
+      },
+      {
+        "file": "README.md",
+        "quote": "Removing a listener stops new reception, while already-started decoding and painting may still complete."
+      },
+      {
+        "file": "README.md",
+        "quote": "The independent metrics consumer intentionally ignores the cached snapshot and observes deltas."
+      },
+      {
+        "file": "src/feed.js",
+        "quote": "if (mode === \"deferred\") queueMicrotask(() => emit(\"snapshot\", 0));\n      else emit(\"snapshot\", 0);"
+      },
+      {
+        "file": "src/subscription.js",
+        "quote": "feed.start(mode);\n  feed.target.addEventListener(\"batch\", listener);"
+      },
+      {
+        "file": "src/subscription.js",
+        "quote": "history.record(frame);\n      receive(frame);"
+      },
+      {
+        "file": "src/batch-presenter.js",
+        "quote": "if (painting && typeof painting.then === \"function\")\n    painting.then(() => showCount(frame));\n  else showCount(frame);"
+      },
+      {
+        "file": "src/workspace.js",
+        "quote": "paintRows: frame => paintRows(frame, navigation),"
+      },
+      {
+        "file": "src/metrics.js",
+        "quote": "feed.start(\"synchronous\");\n  feed.target.addEventListener(\"batch\", listener);"
+      }
+    ],
+    "triggers": [
+      "navigation.select(feed, mode), including the default synchronous mode.",
+      "navigation.hide().",
+      "Synchronous or deferred cached snapshot emission from feed.start(mode).",
+      "A live batch event received by the active subscription.",
+      "Synchronous or Promise-based completion of feed.decode.",
+      "Synchronous or Promise-based completion of paintRows.",
+      "Synchronous navigation.select or navigation.hide invoked by paintRows.",
+      "Reopening with the same feed object after a prior visit ended."
+    ],
+    "unknowns": [
+      "The public sources do not specify error-handling requirements for rejected decode or paint promises, or exceptions thrown by history.record, paintRows, or showCount.",
+      "The public sources do not define whether selecting the already-current feed without first leaving should be coalesced; the existing public method currently starts a new show operation.",
+      "The public sources do not require cancellation of decoding or painting; they explicitly allow already-started work to complete and constrain only its history and visible effects.",
+      "The public sources do not specify ordering among multiple asynchronously decoded or painted batches beyond each count following its own paint.",
+      "The public sources do not authorize changes to feed.start semantics or to collectMetrics."
+    ]
+  },
+  "final_training_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "Before starting a feed, install the visit's batch listener so a synchronous cached snapshot can be received.",
+      "When decoding completes, record every batch accepted by that subscriber exactly once, even if its panel visit has since ended.",
+      "Before painting decoded rows, verify that the originating visit is still the selected visit.",
+      "After paintRows completes synchronously or asynchronously, verify the same visit is still current before showing its count.",
+      "After callback-capable startup, do not let an obsolete subscription's returned cleanup handle replace the cleanup handle for a newer reentrant selection.",
+      "On selection change or hide, retire the previous visit and remove its listener so it accepts no new batches."
+    ],
+    "forbidden_effects": [
+      "Do not change the public workspace methods select(feed, mode) and hide().",
+      "Do not change feed, frame, navigation, rendering-adapter, or history payloads.",
+      "Do not suppress ordinary live batches for the currently selected visit.",
+      "Do not revoke history work for a batch accepted before its visit was retired.",
+      "Do not allow decoded rows or a post-paint count from a retired visit to become visible.",
+      "Do not change the independent metrics consumer's cached-snapshot policy.",
+      "Do not treat reuse of the same feed object as continuation of an earlier visit."
+    ],
+    "lifecycle_identity": [
+      "Identity is per panel visit, not per feed object, feed token, mode, or component lifetime.",
+      "Every select operation that opens a feed creates a new visit; selecting the same feed after leaving still creates a distinct visit.",
+      "A visit remains current only until a later selection or hide retires it.",
+      "History-work validity is tied to whether the subscriber accepted the batch, while visible-output validity is tied to whether the originating visit is still current.",
+      "Count validity additionally belongs to the specific paint completion for the rows that produced it."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Register the panel subscriber before feed startup can synchronously emit the cached first batch, so the selected visit receives that batch."
+      },
+      {
+        "id": "O2",
+        "text": "Changing selection or hiding must immediately retire the prior visit's authority to produce visible rows or counts and must stop that subscriber from accepting new batches."
+      },
+      {
+        "id": "O3",
+        "text": "A decoded batch may paint rows only while its originating visit is current; completion from an older visit must not paint after navigation or hide."
+      },
+      {
+        "id": "O4",
+        "text": "showCount for a frame must occur only after paintRows for that frame has completed, and only if the frame's visit is still current at that completion checkpoint."
+      },
+      {
+        "id": "O5",
+        "text": "The current selected visit must continue receiving and presenting ordinary live batches."
+      },
+      {
+        "id": "O6",
+        "text": "Each batch already accepted by a subscriber must be recorded to history once decoding completes, even if its visit was retired before decode completion."
+      },
+      {
+        "id": "O7",
+        "text": "Synchronous navigation or hiding from paintRows must retire the painting visit before any corresponding count is shown."
+      },
+      {
+        "id": "O8",
+        "text": "Reentrant selection or hiding during callback-capable startup or rendering must not let an older operation overwrite the active visit or its cleanup ownership."
+      },
+      {
+        "id": "O9",
+        "text": "Preserve public APIs, payloads, rendering adapters, rendering timing, and history behavior, and leave collectMetrics behavior unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "Listener registration must precede feed.start(mode), including for synchronous startup.",
+      "Batch acceptance precedes decoding completion; accepted history work remains valid across later visit retirement.",
+      "Decoded delivery must pass a current-visit check before invoking paintRows.",
+      "paintRows(frame, navigation) completion precedes showCount(frame).",
+      "A second current-visit check is required after asynchronous paint completion and after any synchronous reentrant navigation performed by paintRows.",
+      "Retiring the old visit and removing its listener must occur before the replacement visit is allowed to own visible output.",
+      "Cleanup-handle publication after subscribeFeed returns must be conditional on the initiating visit still being current."
+    ],
+    "preservation": [
+      "Ordinary live updates for the selected visit remain visible.",
+      "Every accepted batch retains its existing history-recording behavior.",
+      "The host-provided paintRows and showCount adapters and the navigation argument to paintRows remain in use.",
+      "Public workspace methods and their default synchronous mode remain unchanged.",
+      "Feed reuse across multiple visits remains supported.",
+      "The independent metrics consumer continues to ignore the cached snapshot and observe deltas.",
+      "Native ES-module structure and dependency-free operation are preserved."
+    ],
+    "scope": [
+      "Repair cached-first-batch startup ordering in the activity panel subscription path.",
+      "Repair selection, hide, close, reopen, decode-completion, paint-completion, and reentrant-callback lifecycle handling for panel visits.",
+      "Apply changes only to activity-panel business code needed for those behaviors.",
+      "Exclude the independent metrics consumer from behavioral changes."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Opening a feed backed by a warm cache sometimes leaves the first batch missing, although later activity appears."
+      },
+      {
+        "file": "TASK",
+        "quote": "During quick feed changes or closing and reopening the panel, rows or the count can also appear for a previous visit."
+      },
+      {
+        "file": "TASK",
+        "quote": "Correct these timing problems while preserving normal live updates, history recording, public APIs and the existing rendering adapters."
+      },
+      {
+        "file": "TASK",
+        "quote": "The independent metrics consumer is outside this repair."
+      },
+      {
+        "file": "README.md",
+        "quote": "Public workspace methods are select(feed, mode) and hide(). Selecting the same feed after leaving creates a new panel visit."
+      },
+      {
+        "file": "README.md",
+        "quote": "Changing selection or hiding stops the previous visit's visible output; the selected visit must keep receiving new batches."
+      },
+      {
+        "file": "README.md",
+        "quote": "paintRows(frame, navigation) commits rows for the current visit and may synchronously navigate or hide the panel."
+      },
+      {
+        "file": "README.md",
+        "quote": "The count belongs to those painted rows and becomes visible only after that paint has completed, if its visit is still current."
+      },
+      {
+        "file": "README.md",
+        "quote": "History records each received batch once its decoding completes."
+      },
+      {
+        "file": "README.md",
+        "quote": "A batch already accepted by the subscriber remains useful to history after leaving the panel; retiring a view does not revoke accepted history work."
+      },
+      {
+        "file": "README.md",
+        "quote": "Removing a listener stops new reception, while already-started decoding and painting may still complete."
+      },
+      {
+        "file": "README.md",
+        "quote": "The independent metrics consumer intentionally ignores the cached snapshot and observes deltas."
+      },
+      {
+        "file": "src/feed.js",
+        "quote": "if (mode === \"deferred\") queueMicrotask(() => emit(\"snapshot\", 0));\n      else emit(\"snapshot\", 0);"
+      },
+      {
+        "file": "src/subscription.js",
+        "quote": "feed.start(mode);\n  feed.target.addEventListener(\"batch\", listener);"
+      },
+      {
+        "file": "src/subscription.js",
+        "quote": "history.record(frame);\n      receive(frame);"
+      },
+      {
+        "file": "src/batch-presenter.js",
+        "quote": "if (painting && typeof painting.then === \"function\")\n    painting.then(() => showCount(frame));\n  else showCount(frame);"
+      },
+      {
+        "file": "src/workspace.js",
+        "quote": "paintRows: frame => paintRows(frame, navigation),"
+      },
+      {
+        "file": "src/metrics.js",
+        "quote": "feed.start(\"synchronous\");\n  feed.target.addEventListener(\"batch\", listener);"
+      }
+    ],
+    "triggers": [
+      "navigation.select(feed, mode), including the default synchronous mode.",
+      "navigation.hide().",
+      "Synchronous or deferred cached snapshot emission from feed.start(mode).",
+      "A live batch event received by the active subscription.",
+      "Synchronous or Promise-based completion of feed.decode.",
+      "Synchronous or Promise-based completion of paintRows.",
+      "Synchronous navigation.select or navigation.hide invoked by paintRows.",
+      "Reopening with the same feed object after a prior visit ended."
+    ],
+    "unknowns": [
+      "The public sources do not specify error-handling requirements for rejected decode or paint promises, or exceptions thrown by history.record, paintRows, or showCount.",
+      "The public sources do not define whether selecting the already-current feed without first leaving should be coalesced; the existing public method currently starts a new show operation.",
+      "The public sources do not require cancellation of decoding or painting; they explicitly allow already-started work to complete and constrain only its history and visible effects.",
+      "The public sources do not specify ordering among multiple asynchronously decoded or painted batches beyond each count following its own paint.",
+      "The public sources do not authorize changes to feed.start semantics or to collectMetrics."
+    ]
+  },
+  "origin": "success",
+  "reflection_update": {
+    "change_summary": [
+      "Created independent reusable guidance because the frozen experience catalog and complete related-experience set contain no existing entry to revise or merge.",
+      "The guidance captures listener-before-start ordering, pre-start cleanup publication, per-visit identity, separate history and visible-effect lifetimes, post-paint validity checks, reentrant navigation handling, and preservation of the metrics consumer's distinct policy.",
+      "Attempt 1 already implemented most lifecycle checkpoints but published effective cleanup ownership only after callback-capable startup; attempt 2 moved release publication before startup and passed. The acceptance verdict alone does not prove that this delta caused the result."
+    ],
+    "failure_attribution": "unknown",
+    "operation": "new",
+    "reason": "No existing guidance is available. The public task and sources support a reusable observer-lifecycle mechanism spanning cached entry snapshots, asynchronous decode and paint resumptions, visit-bound visible effects, persistent accepted history work, and inline reentry during startup or rendering. Attempt 1's failed acceptance has no disclosed cause, so it cannot be attributed to an experience or implementation gap with confidence.",
+    "supporting_attempts": [
+      1,
+      2
+    ],
+    "target_sha256s": []
+  },
+  "related_experiences": [],
+  "source_sha256": "994ecc9d343f7589454986626626116636b0818456be921df3cf6b9e38df565c",
+  "status": "awaiting_content_review",
+  "task": "Fix the activity panel's startup and navigation lifecycle.\n\nOpening a feed backed by a warm cache sometimes leaves the first batch missing,\nalthough later activity appears. During quick feed changes or closing and\nreopening the panel, rows or the count can also appear for a previous visit.\n\nCorrect these timing problems while preserving normal live updates, history\nrecording, public APIs and the existing rendering adapters. The independent\nmetrics consumer is outside this repair.\n",
+  "training_accepted": true,
+  "trajectory": [
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "867142bff74b190dedcdca70af4fb4523e38ad102c5bdec053f0adb1d686869d",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "package.json": "3ce930835c817e52ca3d1094bc2d3a66633d085dd6a78f41920c157ec3bc9781",
+        "src/batch-presenter.js": "5d1e8878a8bf3e5bf35bda999958dc6288d1b7c3401d9761504b47bd86be9660",
+        "src/feed-panel.js": "fe14aff450c7c1104174b16b6e23386cbc820ad596ac0b71eb6115e5ed4cf1da",
+        "src/feed.js": "9e4813bcc97b4d57216b9975d1d4d5afa184f40315ac49ec435514a7bd7c1e01",
+        "src/metrics.js": "28b4815cc672d419057eea5d79f4434036d7657266761922fb8c6184005517ec",
+        "src/subscription.js": "dde4431b60b58385efc51d8e07e552c5bba0ec34f5f396c0d1cc3d43b9668c9e",
+        "src/workspace.js": "3fee30c91682f5193ff214d1c28d81c76168114c440697d02c45df07189d215c"
+      },
+      "candidate_sources": {
+        "README.md": "# Cached activity feed\n\nThe activity panel reads a cached first batch and then incremental batches.\nThe host supplies rendering and history adapters. Use native ES modules;\nthere are no required dependencies.\n\nPublic workspace methods are select(feed, mode) and hide(). Selecting the same\nfeed after leaving creates a new panel visit. Changing selection or hiding stops\nthe previous visit's visible output; the selected visit must keep receiving new\nbatches. Reusing an existing feed object is supported.\n\npaintRows(frame, navigation) commits rows for the current visit and may\nsynchronously navigate or hide the panel. It can return a Promise for layout\ncompletion. The count belongs to those painted rows and becomes visible only\nafter that paint has completed, if its visit is still current. Ordinary live\ncounts remain required. A component or feed object can survive several visits.\n\nHistory records each received batch once its decoding completes. A batch already\naccepted by the subscriber remains useful to history after leaving the panel;\nretiring a view does not revoke accepted history work. Removing a listener stops\nnew reception, while already-started decoding and painting may still complete.\n\nThe independent metrics consumer intentionally ignores the cached snapshot and\nobserves deltas. Its policy is outside this panel repair unless separately\nauthorized. Preserve APIs, payloads, rendering timing and history behavior.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\"name\":\"cached-feed-lifecycle-repair\",\"version\":\"0.1.0\",\"private\":true,\"type\":\"module\"}\n",
+        "src/batch-presenter.js": "// paintRows may finish now or after layout. showCount reports that completed\n// paint; its host may have selected another feed while painting was in progress.\nexport function presentBatch(frame, { paintRows, showCount, isCurrent = () => true }) {\n  if (!isCurrent()) return;\n  const painting = paintRows(frame);\n  if (painting && typeof painting.then === \"function\")\n    painting.then(() => {\n      if (isCurrent()) showCount(frame);\n    });\n  else if (isCurrent()) showCount(frame);\n}\n",
+        "src/feed-panel.js": "import { subscribeFeed } from \"./subscription.js\";\nimport { presentBatch } from \"./batch-presenter.js\";\n\nexport function createFeedPanel({ history, paintRows, showCount }) {\n  let currentVisit = null;\n\n  const retireCurrentVisit = () => {\n    const visit = currentVisit;\n    currentVisit = null;\n    if (visit) visit.release();\n  };\n\n  return {\n    show(feed, mode = \"synchronous\") {\n      retireCurrentVisit();\n\n      const visit = { release: () => {} };\n      currentVisit = visit;\n      const release = subscribeFeed(feed, mode, frame => {\n        if (currentVisit !== visit) return;\n        presentBatch(frame, {\n          paintRows,\n          showCount,\n          isCurrent: () => currentVisit === visit,\n        });\n      }, history);\n\n      // Startup can synchronously render, and rendering can navigate or hide.\n      // Do not publish this visit's cleanup after such a reentrant retirement.\n      if (currentVisit === visit) visit.release = release;\n      else release();\n    },\n    close() {\n      retireCurrentVisit();\n    },\n  };\n}\n",
+        "src/feed.js": "class BatchEvent extends Event {\n  constructor(frame) { super(\"batch\"); this.detail = frame; }\n}\n\nexport function createFeed(token, { decode = frame => frame } = {}) {\n  const target = new EventTarget();\n  let sequence = 0;\n  const emit = (kind, seq) => target.dispatchEvent(new BatchEvent({\n    feed: token, kind, seq, rows: [token + \":\" + kind + \":\" + seq],\n  }));\n  return {\n    target,\n    decode,\n    start(mode = \"synchronous\") {\n      if (mode === \"deferred\") queueMicrotask(() => emit(\"snapshot\", 0));\n      else emit(\"snapshot\", 0);\n    },\n    emitDelta() { emit(\"delta\", ++sequence); },\n  };\n}\n",
+        "src/metrics.js": "// Cached state is not a new activity delta. This consumer deliberately starts\n// before observing so that synchronous snapshot delivery is excluded.\nexport async function collectMetrics(feed) {\n  const frames = [];\n  const listener = event => frames.push(event.detail);\n  feed.start(\"synchronous\");\n  feed.target.addEventListener(\"batch\", listener);\n  await Promise.resolve();\n  feed.emitDelta();\n  feed.target.removeEventListener(\"batch\", listener);\n  return frames;\n}\n",
+        "src/subscription.js": "// Decoding can return a value or a Promise. Detaching an EventTarget listener\n// cannot retract a decode that has already started.\nexport function subscribeFeed(feed, mode, receive, history) {\n  const listener = event => {\n    const deliver = frame => {\n      history.record(frame);\n      receive(frame);\n    };\n    const decoded = feed.decode(event.detail);\n    if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n    else deliver(decoded);\n  };\n  feed.target.addEventListener(\"batch\", listener);\n  feed.start(mode);\n  return () => feed.target.removeEventListener(\"batch\", listener);\n}\n",
+        "src/workspace.js": "import { createFeedPanel } from \"./feed-panel.js\";\n\n// Rendering is a host integration boundary, not a pure read of panel state.\nexport function createFeedWorkspace({ history, paintRows, showCount }) {\n  const panel = createFeedPanel({\n    history, showCount,\n    paintRows: frame => paintRows(frame, navigation),\n  });\n  const navigation = {\n    select(feed, mode = \"synchronous\") { panel.show(feed, mode); },\n    hide() { panel.close(); },\n  };\n  return navigation;\n}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/batch-presenter.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/feed-panel.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/feed.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/metrics.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/subscription.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/workspace.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "867142bff74b190dedcdca70af4fb4523e38ad102c5bdec053f0adb1d686869d",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "package.json": "3ce930835c817e52ca3d1094bc2d3a66633d085dd6a78f41920c157ec3bc9781",
+        "src/batch-presenter.js": "5d1e8878a8bf3e5bf35bda999958dc6288d1b7c3401d9761504b47bd86be9660",
+        "src/feed-panel.js": "e147d3010edb8e48435d01f7d1075ef623e7ec82981526711cc0d30bed06ae92",
+        "src/feed.js": "9e4813bcc97b4d57216b9975d1d4d5afa184f40315ac49ec435514a7bd7c1e01",
+        "src/metrics.js": "28b4815cc672d419057eea5d79f4434036d7657266761922fb8c6184005517ec",
+        "src/subscription.js": "9c98564f5525fe6686033a522db05afa8acfce11332794ffbfdbcb4bbc8bc121",
+        "src/workspace.js": "3fee30c91682f5193ff214d1c28d81c76168114c440697d02c45df07189d215c"
+      },
+      "candidate_sources": {
+        "README.md": "# Cached activity feed\n\nThe activity panel reads a cached first batch and then incremental batches.\nThe host supplies rendering and history adapters. Use native ES modules;\nthere are no required dependencies.\n\nPublic workspace methods are select(feed, mode) and hide(). Selecting the same\nfeed after leaving creates a new panel visit. Changing selection or hiding stops\nthe previous visit's visible output; the selected visit must keep receiving new\nbatches. Reusing an existing feed object is supported.\n\npaintRows(frame, navigation) commits rows for the current visit and may\nsynchronously navigate or hide the panel. It can return a Promise for layout\ncompletion. The count belongs to those painted rows and becomes visible only\nafter that paint has completed, if its visit is still current. Ordinary live\ncounts remain required. A component or feed object can survive several visits.\n\nHistory records each received batch once its decoding completes. A batch already\naccepted by the subscriber remains useful to history after leaving the panel;\nretiring a view does not revoke accepted history work. Removing a listener stops\nnew reception, while already-started decoding and painting may still complete.\n\nThe independent metrics consumer intentionally ignores the cached snapshot and\nobserves deltas. Its policy is outside this panel repair unless separately\nauthorized. Preserve APIs, payloads, rendering timing and history behavior.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\"name\":\"cached-feed-lifecycle-repair\",\"version\":\"0.1.0\",\"private\":true,\"type\":\"module\"}\n",
+        "src/batch-presenter.js": "// paintRows may finish now or after layout. showCount reports that completed\n// paint; its host may have selected another feed while painting was in progress.\nexport function presentBatch(frame, { paintRows, showCount, isCurrent = () => true }) {\n  if (!isCurrent()) return;\n  const painting = paintRows(frame);\n  if (painting && typeof painting.then === \"function\")\n    painting.then(() => {\n      if (isCurrent()) showCount(frame);\n    });\n  else if (isCurrent()) showCount(frame);\n}\n",
+        "src/feed-panel.js": "import { subscribeFeed } from \"./subscription.js\";\nimport { presentBatch } from \"./batch-presenter.js\";\n\nexport function createFeedPanel({ history, paintRows, showCount }) {\n  let currentVisit = null;\n\n  const retireCurrentVisit = () => {\n    const visit = currentVisit;\n    currentVisit = null;\n    if (visit) visit.release();\n  };\n\n  return {\n    show(feed, mode = \"synchronous\") {\n      retireCurrentVisit();\n\n      const visit = { release: () => {} };\n      currentVisit = visit;\n      const release = subscribeFeed(\n        feed,\n        mode,\n        frame => {\n          if (currentVisit !== visit) return;\n          presentBatch(frame, {\n            paintRows,\n            showCount,\n            isCurrent: () => currentVisit === visit,\n          });\n        },\n        history,\n        visitRelease => { visit.release = visitRelease; },\n      );\n\n      // Startup can synchronously render, and rendering can navigate or hide.\n      // Ensure a visit retired during startup remains detached after it returns.\n      if (currentVisit !== visit) release();\n    },\n    close() {\n      retireCurrentVisit();\n    },\n  };\n}\n",
+        "src/feed.js": "class BatchEvent extends Event {\n  constructor(frame) { super(\"batch\"); this.detail = frame; }\n}\n\nexport function createFeed(token, { decode = frame => frame } = {}) {\n  const target = new EventTarget();\n  let sequence = 0;\n  const emit = (kind, seq) => target.dispatchEvent(new BatchEvent({\n    feed: token, kind, seq, rows: [token + \":\" + kind + \":\" + seq],\n  }));\n  return {\n    target,\n    decode,\n    start(mode = \"synchronous\") {\n      if (mode === \"deferred\") queueMicrotask(() => emit(\"snapshot\", 0));\n      else emit(\"snapshot\", 0);\n    },\n    emitDelta() { emit(\"delta\", ++sequence); },\n  };\n}\n",
+        "src/metrics.js": "// Cached state is not a new activity delta. This consumer deliberately starts\n// before observing so that synchronous snapshot delivery is excluded.\nexport async function collectMetrics(feed) {\n  const frames = [];\n  const listener = event => frames.push(event.detail);\n  feed.start(\"synchronous\");\n  feed.target.addEventListener(\"batch\", listener);\n  await Promise.resolve();\n  feed.emitDelta();\n  feed.target.removeEventListener(\"batch\", listener);\n  return frames;\n}\n",
+        "src/subscription.js": "// Decoding can return a value or a Promise. Detaching an EventTarget listener\n// cannot retract a decode that has already started.\nexport function subscribeFeed(feed, mode, receive, history, publishRelease) {\n  const listener = event => {\n    const deliver = frame => {\n      history.record(frame);\n      receive(frame);\n    };\n    const decoded = feed.decode(event.detail);\n    if (decoded && typeof decoded.then === \"function\") decoded.then(deliver);\n    else deliver(decoded);\n  };\n  const release = () => feed.target.removeEventListener(\"batch\", listener);\n  feed.target.addEventListener(\"batch\", listener);\n  if (publishRelease) publishRelease(release);\n  feed.start(mode);\n  return release;\n}\n",
+        "src/workspace.js": "import { createFeedPanel } from \"./feed-panel.js\";\n\n// Rendering is a host integration boundary, not a pure read of panel state.\nexport function createFeedWorkspace({ history, paintRows, showCount }) {\n  const panel = createFeedPanel({\n    history, showCount,\n    paintRows: frame => paintRows(frame, navigation),\n  });\n  const navigation = {\n    select(feed, mode = \"synchronous\") { panel.show(feed, mode); },\n    hide() { panel.close(); },\n  };\n  return navigation;\n}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/batch-presenter.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/feed-panel.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/feed.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/metrics.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/subscription.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/workspace.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 2,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ]
+}

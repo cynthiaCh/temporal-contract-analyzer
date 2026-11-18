@@ -1,0 +1,1282 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "847972afac5668d1ff314f8283480f6e3d3a4a1b44429c473576c69001a7ccef",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "e8f19df14d2674e4b41249c1681e37b4e56730614ce0547bac56c23b896a5b30",
+        "docs/host-api.md": "60a861fbdd51f1781d1f2fdd34f386df2a4a6c1b7f55ce66426e683a523cd038",
+        "package-lock.json": "2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59",
+        "package.json": "66db10140e649e83eadde7fe04cb4ccb1467c20f5a7db2117520ab1572467f1a",
+        "src/workflow.rb": "75fd5bee439a4201ca5a1f8868561b1f57cbddbd1b27283b516e8682731f1527"
+      },
+      "candidate_sources": {
+        "README.md": "Theatre operations — Document body, per-document buffer and navigation outline are separate responsibilities. Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Ruby 2.7.0\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "Store reads values and synchronously notifies saved integrations. Workspace exposes select(id), edit(text), close(), selection(), dispose(). Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail. Injected scheduler offers cancellable timer handles. Search preview is an adjacent transient consumer.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.rb": "class Store\n  def initialize(records)\n    @records = records.each_with_object({}) { |(id, text), copy| copy[id.dup.freeze] = text.dup.freeze }\n    @listeners, @serial, @revision = {}, 0, 0\n  end\n  def read(id); @records.fetch(id, '').dup.freeze; end\n  def subscribe(&block)\n    @serial += 1\n    @listeners[@serial] = block\n    @serial\n  end\n  def stop(token); @listeners.delete(token); end\n  def write(id, text)\n    @records[id] = text.dup.freeze\n    @revision += 1\n    event = {id: id.dup.freeze, text: @records[id], revision: @revision}\n    @listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }\n    event\n  end\nend\nclass Trailing\n  def initialize(env, delay, &work)\n    @env, @delay, @work = env, delay, work\n    @handle = @pending = nil\n  end\n  def push(value)\n    @env.cancel(@handle) unless @handle.nil?\n    @pending = value\n    @handle = @env.schedule(@delay) { flush }\n  end\n  def flush\n    @env.cancel(@handle) unless @handle.nil?\n    value = @pending\n    @handle = @pending = nil\n    @work.call(value) unless value.nil?\n  end\n  def cancel\n    @env.cancel(@handle) unless @handle.nil?\n    @handle = @pending = nil\n  end\nend\n\nclass Badge\n attr_reader :id,:buffer\n attr_accessor :visit\n def initialize(env,id,buffer);@env,@id,@buffer=env,id,buffer;@token=env.store.subscribe {|e| env.output('status',e) if e[:id]==id};end\n def detach;@env.store.stop(@token);end\nend\nclass BufferBank\n def initialize;@entries={};end\n def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end\nend\nclass Editor\n attr_reader :current\n def initialize(env);@env,@current,@generation=env,nil,0;@bank=BufferBank.new;end\n def retire\n  old,@current=@current,nil;old.detach if old && !false;@env.output('document',nil);nil if old;old.detach if old && false\n end\n def open(id,visit)\n  @generation+=1;request=@generation;retire;return if true && request!=@generation\n  buffer=@bank.get(@env,id);@current=Badge.new(@env,id,buffer);@current.visit=visit;@env.output('document',{'id'=>id,'visit'=>visit,'text'=>@env.store.read(id)})\n end\n def edit(text);view=@current;view.buffer.push(text) if view;end\n def close;@generation+=1;retire;end\n def dispose;close;end\nend\nclass Preview\n def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end\n def query(text);@task.push(text);end\n def hide;@task.cancel;end\nend\n\nclass Projection\n def initialize(env);@env,@selected,@trail=env,nil,[];end\n def publish;@env.output('projection',{'selected'=>@selected,'trail'=>@trail.map(&:dup)});end\n def commit(v);@selected=v.dup;@trail<<v.dup;publish;end\n def clear;@selected=nil;publish;end\nend\nclass Workspace\n def initialize(env);@editor,@projection,@epoch,@visit=Editor.new(env),Projection.new(env),0,0;end\n def selection;c=@editor.current;c ? {'id'=>c.id,'visit'=>c.visit} : nil;end\n def select(id);@epoch+=1;mine=@epoch;@visit+=1;v=@visit;@editor.open(id,v);@projection.commit({'id'=>id,'visit'=>v}) if true;end\n def edit(t);@editor.edit(t);end\n def close;@epoch+=1;mine=@epoch;@editor.close;@projection.clear if true;end\n def dispose;close;end\nend\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.rb",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "847972afac5668d1ff314f8283480f6e3d3a4a1b44429c473576c69001a7ccef",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "e8f19df14d2674e4b41249c1681e37b4e56730614ce0547bac56c23b896a5b30",
+        "docs/host-api.md": "60a861fbdd51f1781d1f2fdd34f386df2a4a6c1b7f55ce66426e683a523cd038",
+        "package-lock.json": "2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59",
+        "package.json": "66db10140e649e83eadde7fe04cb4ccb1467c20f5a7db2117520ab1572467f1a",
+        "src/workflow.rb": "ec9ec94c6790e6b527ea88c18cc5c081047b5181cca2fc5e2f5adfa41dadcc70"
+      },
+      "candidate_sources": {
+        "README.md": "Theatre operations — Document body, per-document buffer and navigation outline are separate responsibilities. Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Ruby 2.7.0\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "Store reads values and synchronously notifies saved integrations. Workspace exposes select(id), edit(text), close(), selection(), dispose(). Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail. Injected scheduler offers cancellable timer handles. Search preview is an adjacent transient consumer.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.rb": "class Store\n  def initialize(records)\n    @records = records.each_with_object({}) { |(id, text), copy| copy[id.dup.freeze] = text.dup.freeze }\n    @listeners, @serial, @revision = {}, 0, 0\n  end\n  def read(id); @records.fetch(id, '').dup.freeze; end\n  def subscribe(&block)\n    @serial += 1\n    @listeners[@serial] = block\n    @serial\n  end\n  def stop(token); @listeners.delete(token); end\n  def write(id, text)\n    @records[id] = text.dup.freeze\n    @revision += 1\n    event = {id: id.dup.freeze, text: @records[id], revision: @revision}\n    @listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }\n    event\n  end\nend\nclass Trailing\n  def initialize(env, delay, &work)\n    @env, @delay, @work = env, delay, work\n    @handle = @pending = nil\n  end\n  def push(value)\n    @env.cancel(@handle) unless @handle.nil?\n    @pending = value\n    @handle = @env.schedule(@delay) { flush }\n  end\n  def flush\n    @env.cancel(@handle) unless @handle.nil?\n    value = @pending\n    @handle = @pending = nil\n    @work.call(value) unless value.nil?\n  end\n  def cancel\n    @env.cancel(@handle) unless @handle.nil?\n    @handle = @pending = nil\n  end\nend\n\nclass Badge\n attr_reader :id,:buffer\n attr_accessor :visit\n def initialize(env,id,buffer);@env,@id,@buffer=env,id,buffer;@token=env.store.subscribe {|e| env.output('status',e) if e[:id]==id};end\n def detach;@env.store.stop(@token);end\nend\nclass BufferBank\n def initialize;@entries={};end\n def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end\nend\nclass Editor\n attr_reader :current\n def initialize(env);@env,@current,@generation=env,nil,0;@bank=BufferBank.new;end\n def retire\n  old,@current=@current,nil;old.detach if old && !false;@env.output('document',nil);nil if old;old.detach if old && false\n end\n def open(id,visit)\n  @generation+=1;request=@generation;retire;return if true && request!=@generation\n  buffer=@bank.get(@env,id);@current=Badge.new(@env,id,buffer);@current.visit=visit;@env.output('document',{'id'=>id,'visit'=>visit,'text'=>@env.store.read(id)})\n end\n def edit(text);view=@current;view.buffer.push(text) if view;end\n def close;@generation+=1;retire;end\n def dispose;close;end\nend\nclass Preview\n def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end\n def query(text);@task.push(text);end\n def hide;@task.cancel;end\nend\n\nclass Projection\n def initialize(env);@env,@selected,@trail=env,nil,[];end\n def publish;@env.output('projection',{'selected'=>@selected,'trail'=>@trail.map(&:dup)});end\n def commit(v);@selected=v.dup;@trail<<v.dup;publish;end\n def clear;@selected=nil;publish;end\nend\nclass Workspace\n def initialize(env);@editor,@projection,@epoch,@visit=Editor.new(env),Projection.new(env),0,0;end\n def selection;c=@editor.current;c ? {'id'=>c.id,'visit'=>c.visit} : nil;end\n def select(id);@epoch+=1;mine=@epoch;@visit+=1;v=@visit;@editor.open(id,v);@projection.commit({'id'=>id,'visit'=>v}) if mine==@epoch;end\n def edit(t);@editor.edit(t);end\n def close;@epoch+=1;mine=@epoch;@editor.close;@projection.clear if mine==@epoch;end\n def dispose;close;end\nend\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.rb",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 2,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "847972afac5668d1ff314f8283480f6e3d3a4a1b44429c473576c69001a7ccef",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "e8f19df14d2674e4b41249c1681e37b4e56730614ce0547bac56c23b896a5b30",
+        "docs/host-api.md": "60a861fbdd51f1781d1f2fdd34f386df2a4a6c1b7f55ce66426e683a523cd038",
+        "package-lock.json": "2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59",
+        "package.json": "66db10140e649e83eadde7fe04cb4ccb1467c20f5a7db2117520ab1572467f1a",
+        "src/workflow.rb": "26c968e6095bb646360b718d51b2740feda63f863cf4f205f1c8a9a537bcd1b9"
+      },
+      "candidate_sources": {
+        "README.md": "Theatre operations — Document body, per-document buffer and navigation outline are separate responsibilities. Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Ruby 2.7.0\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "Store reads values and synchronously notifies saved integrations. Workspace exposes select(id), edit(text), close(), selection(), dispose(). Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail. Injected scheduler offers cancellable timer handles. Search preview is an adjacent transient consumer.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.rb": "class Store\n  def initialize(records)\n    @records = records.each_with_object({}) { |(id, text), copy| copy[id.dup.freeze] = text.dup.freeze }\n    @listeners, @serial, @revision = {}, 0, 0\n  end\n  def read(id); @records.fetch(id, '').dup.freeze; end\n  def subscribe(&block)\n    @serial += 1\n    @listeners[@serial] = block\n    @serial\n  end\n  def stop(token); @listeners.delete(token); end\n  def write(id, text)\n    @records[id] = text.dup.freeze\n    @revision += 1\n    event = {id: id.dup.freeze, text: @records[id], revision: @revision}\n    @listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }\n    event\n  end\nend\nclass Trailing\n  def initialize(env, delay, &work)\n    @env, @delay, @work = env, delay, work\n    @handle = @pending = nil\n  end\n  def push(value)\n    @env.cancel(@handle) unless @handle.nil?\n    @pending = value\n    @handle = @env.schedule(@delay) { flush }\n  end\n  def flush\n    @env.cancel(@handle) unless @handle.nil?\n    value = @pending\n    @handle = @pending = nil\n    @work.call(value) unless value.nil?\n  end\n  def cancel\n    @env.cancel(@handle) unless @handle.nil?\n    @handle = @pending = nil\n  end\nend\n\nclass Badge\n attr_reader :id,:buffer\n attr_accessor :visit\n def initialize(env,id,buffer);@env,@id,@buffer=env,id,buffer;@token=env.store.subscribe {|e| env.output('status',e) if e[:id]==id};end\n def detach;@env.store.stop(@token);end\nend\nclass BufferBank\n def initialize;@entries={};end\n def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end\nend\nclass Editor\n attr_reader :current\n def initialize(env);@env,@current,@generation=env,nil,0;@bank=BufferBank.new;end\n def retire\n  old,@current=@current,nil;old.detach if old && !false;@env.output('document',nil);nil if old;old.detach if old && false\n end\n def open(id,visit)\n  @generation+=1;request=@generation;retire;return if true && request!=@generation\n  buffer=@bank.get(@env,id);@current=Badge.new(@env,id,buffer);@current.visit=visit;@env.output('document',{'id'=>id,'visit'=>visit,'text'=>@env.store.read(id)})\n end\n def edit(text);view=@current;view.buffer.push(text.dup.freeze) if view;end\n def close;@generation+=1;retire;end\n def dispose;close;end\nend\nclass Preview\n def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end\n def query(text);@task.push(text);end\n def hide;@task.cancel;end\nend\n\nclass Projection\n def initialize(env);@env,@selected,@trail=env,nil,[];end\n def publish;@env.output('projection',{'selected'=>@selected,'trail'=>@trail.map(&:dup)});end\n def commit(v);@selected=v.dup;@trail<<v.dup;publish;end\n def clear;@selected=nil;publish;end\nend\nclass Workspace\n def initialize(env);@editor,@projection,@epoch,@visit=Editor.new(env),Projection.new(env),0,0;end\n def selection;c=@editor.current;c ? {'id'=>c.id,'visit'=>c.visit} : nil;end\n def select(id);@epoch+=1;mine=@epoch;@visit+=1;v=@visit;@editor.open(id,v);@projection.commit({'id'=>id,'visit'=>v}) if mine==@epoch;end\n def edit(t);@editor.edit(t);end\n def close;@epoch+=1;mine=@epoch;@editor.close;@projection.clear if mine==@epoch;end\n def dispose;close;end\nend\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.rb",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 3,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "After each edit, the draft is pending rather than immediately persisted.",
+      "At 120 ms after the most recent edit for that document, exactly the latest pending text is written.",
+      "After navigation or close, any already-pending per-document save remains associated with its originating document.",
+      "Search preview still uses its existing 40 ms trailing task and cancellation behavior.",
+      "Ruby syntax remains valid under the declared Ruby 2.7.0 runtime."
+    ],
+    "forbidden_effects": [
+      "Do not write to the store on every editor edit.",
+      "Do not save superseded intermediate text from the same burst.",
+      "Do not attach a pending draft to whichever document happens to be selected when the timer fires.",
+      "Do not alter search preview timing or behavior.",
+      "Do not combine document body, per-document buffer, and navigation outline responsibilities.",
+      "Do not weaken synchronous navigation, selection, projection, subscription, or persistence behavior beyond the requested autosave change."
+    ],
+    "lifecycle_identity": [
+      "Each pending autosave belongs to the document identifier whose editor buffer received the edit.",
+      "The existing BufferBank retains one Trailing autosave task per document identifier.",
+      "A visit identifies navigation/display state; it must not replace document identity for persistence.",
+      "A committed projection trail contains copied visit records rather than aliases to mutable caller data."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Editor autosave must coalesce a burst of edits and persist only the latest text after 120 ms without another edit."
+      },
+      {
+        "id": "O2",
+        "text": "The autosave implementation should reuse the existing Trailing utility and the existing per-document BufferBank where appropriate."
+      },
+      {
+        "id": "O3",
+        "text": "Pending saves must remain scoped to their originating document so navigation does not redirect a draft save to another document."
+      },
+      {
+        "id": "O4",
+        "text": "Workspace navigation, selection, close, projection trail, and persistence behavior must otherwise remain unchanged."
+      },
+      {
+        "id": "O5",
+        "text": "Store writes must continue to synchronously notify active saved integrations."
+      },
+      {
+        "id": "O6",
+        "text": "Search preview behavior, including its existing 40 ms trailing timing and hide cancellation, must remain unchanged."
+      }
+    ],
+    "ordering_barriers": [
+      "A new edit for the same document cancels the prior timer before scheduling a new 120 ms timer.",
+      "The latest pending text is captured before the trailing task is scheduled; persistence occurs only when that task flushes.",
+      "A store write updates the record and revision before synchronously invoking currently active listeners.",
+      "Document retirement detaches its store listener before emitting the nil document output.",
+      "Opening a document retires the prior document before creating and publishing the new document badge.",
+      "Selection opens/publishes the document before committing the corresponding projection visit in the ordinary non-reentrant path.",
+      "Closing retires the document before clearing the projection in the ordinary non-reentrant path."
+    ],
+    "preservation": [
+      "Workspace continues to expose select(id), edit(text), close(), selection(), and dispose().",
+      "Selecting a document continues to publish its stored body with its document id and visit id.",
+      "Closing continues to clear the active document and projection selection.",
+      "Projection continues to retain a copied breadcrumb archive of committed visits.",
+      "Store reads continue to return copied frozen text, and writes continue to persist copied frozen text with increasing revisions.",
+      "Saved integrations continue to be notified synchronously and may navigate during callbacks.",
+      "A pending autosave survives ordinary navigation because buffers are maintained per document; the task does not require canceling drafts on document retirement.",
+      "Search preview remains an adjacent transient consumer with its independent 40 ms trailing task."
+    ],
+    "scope": [
+      "Change business code only in src/workflow.rb as needed to implement editor autosave coalescing.",
+      "The maintenance scope is editor draft persistence through the workspace store.",
+      "Navigation and outline/projection are preservation scope, not redesign scope.",
+      "Search preview is explicitly outside the change scope."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Change editor\nautosave to coalesce a burst of input: after 120 ms without another edit, save\nonly its latest text."
+      },
+      {
+        "file": "TASK",
+        "quote": "Reuse the existing trailing-task utility where appropriate."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve the workspace's existing navigation and persistence behavior."
+      },
+      {
+        "file": "TASK",
+        "quote": "Keep\nsearch preview behavior unchanged; its timing is outside this maintenance task."
+      },
+      {
+        "file": "README.md",
+        "quote": "Theatre operations — Document body, per-document buffer and navigation outline are separate responsibilities. Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Store reads values and synchronously notifies saved integrations."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Workspace exposes select(id), edit(text), close(), selection(), dispose()."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Injected scheduler offers cancellable timer handles. Search preview is an adjacent transient consumer."
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def edit(text);view=@current;@env.write(view.id,text) if view;end"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "@listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def hide;@task.cancel;end"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "def commit(v);@selected=v.dup;@trail<<v.dup;publish;end"
+      }
+    ],
+    "triggers": [
+      "Calling Workspace#edit while a document is selected submits text to that document's autosave buffer.",
+      "Each subsequent edit for the same document before expiry restarts the 120 ms quiet-period timer.",
+      "Expiry of the most recently scheduled timer flushes the latest pending text to Store#write.",
+      "Workspace#select opens a document and commits a visit to the projection.",
+      "Workspace#close or #dispose retires the active document and clears projection selection.",
+      "Preview#query continues to schedule its independent 40 ms trailing preview update."
+    ],
+    "unknowns": [
+      "The public task does not specify whether separate bursts containing identical text should each write; preserve the existing trailing utility semantics rather than adding deduplication.",
+      "The public task does not specify that close, dispose, or navigation must flush or cancel pending document drafts; the existing per-document BufferBank suggests pending saves remain scheduled.",
+      "The public sources do not define exception handling when scheduler, output, store listener, or integration callbacks raise.",
+      "The public sources do not define thread-safety or concurrent access guarantees.",
+      "The public sources do not state whether document identifiers are always immutable strings or whether callers may mutate them after selection.",
+      "Reentrant navigation is explicitly possible, but the precise desired result of every nested select/close callback sequence is not fully specified; existing observable ordering should be preserved."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 3,
+  "diagnoses": [
+    {
+      "attempt": 2,
+      "candidate_only_contract_evidence": [],
+      "contract_after": {
+        "checkpoints": [
+          "After each edit, the draft is pending rather than immediately persisted.",
+          "At 120 ms after the most recent edit for that document, exactly the latest pending text is written.",
+          "After navigation or close, any already-pending per-document save remains associated with its originating document.",
+          "Search preview still uses its existing 40 ms trailing task and cancellation behavior.",
+          "Ruby syntax remains valid under the declared Ruby 2.7.0 runtime."
+        ],
+        "forbidden_effects": [
+          "Do not write to the store on every editor edit.",
+          "Do not save superseded intermediate text from the same burst.",
+          "Do not attach a pending draft to whichever document happens to be selected when the timer fires.",
+          "Do not alter search preview timing or behavior.",
+          "Do not combine document body, per-document buffer, and navigation outline responsibilities.",
+          "Do not weaken synchronous navigation, selection, projection, subscription, or persistence behavior beyond the requested autosave change."
+        ],
+        "lifecycle_identity": [
+          "Each pending autosave belongs to the document identifier whose editor buffer received the edit.",
+          "The existing BufferBank retains one Trailing autosave task per document identifier.",
+          "A visit identifies navigation/display state; it must not replace document identity for persistence.",
+          "A committed projection trail contains copied visit records rather than aliases to mutable caller data."
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "text": "Editor autosave must coalesce a burst of edits and persist only the latest text after 120 ms without another edit."
+          },
+          {
+            "id": "O2",
+            "text": "The autosave implementation should reuse the existing Trailing utility and the existing per-document BufferBank where appropriate."
+          },
+          {
+            "id": "O3",
+            "text": "Pending saves must remain scoped to their originating document so navigation does not redirect a draft save to another document."
+          },
+          {
+            "id": "O4",
+            "text": "Workspace navigation, selection, close, projection trail, and persistence behavior must otherwise remain unchanged."
+          },
+          {
+            "id": "O5",
+            "text": "Store writes must continue to synchronously notify active saved integrations."
+          },
+          {
+            "id": "O6",
+            "text": "Search preview behavior, including its existing 40 ms trailing timing and hide cancellation, must remain unchanged."
+          }
+        ],
+        "ordering_barriers": [
+          "A new edit for the same document cancels the prior timer before scheduling a new 120 ms timer.",
+          "The latest pending text is captured before the trailing task is scheduled; persistence occurs only when that task flushes.",
+          "A store write updates the record and revision before synchronously invoking currently active listeners.",
+          "Document retirement detaches its store listener before emitting the nil document output.",
+          "Opening a document retires the prior document before creating and publishing the new document badge.",
+          "Selection opens/publishes the document before committing the corresponding projection visit in the ordinary non-reentrant path.",
+          "Closing retires the document before clearing the projection in the ordinary non-reentrant path."
+        ],
+        "preservation": [
+          "Workspace continues to expose select(id), edit(text), close(), selection(), and dispose().",
+          "Selecting a document continues to publish its stored body with its document id and visit id.",
+          "Closing continues to clear the active document and projection selection.",
+          "Projection continues to retain a copied breadcrumb archive of committed visits.",
+          "Store reads continue to return copied frozen text, and writes continue to persist copied frozen text with increasing revisions.",
+          "Saved integrations continue to be notified synchronously and may navigate during callbacks.",
+          "A pending autosave survives ordinary navigation because buffers are maintained per document; the task does not require canceling drafts on document retirement.",
+          "Search preview remains an adjacent transient consumer with its independent 40 ms trailing task."
+        ],
+        "scope": [
+          "Change business code only in src/workflow.rb as needed to implement editor autosave coalescing.",
+          "The maintenance scope is editor draft persistence through the workspace store.",
+          "Navigation and outline/projection are preservation scope, not redesign scope.",
+          "Search preview is explicitly outside the change scope."
+        ],
+        "supporting_evidence": [
+          {
+            "file": "TASK",
+            "quote": "Change editor\nautosave to coalesce a burst of input: after 120 ms without another edit, save\nonly its latest text."
+          },
+          {
+            "file": "TASK",
+            "quote": "Reuse the existing trailing-task utility where appropriate."
+          },
+          {
+            "file": "TASK",
+            "quote": "Preserve the workspace's existing navigation and persistence behavior."
+          },
+          {
+            "file": "TASK",
+            "quote": "Keep\nsearch preview behavior unchanged; its timing is outside this maintenance task."
+          },
+          {
+            "file": "README.md",
+            "quote": "Theatre operations — Document body, per-document buffer and navigation outline are separate responsibilities. Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "Store reads values and synchronously notifies saved integrations."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "Workspace exposes select(id), edit(text), close(), selection(), dispose()."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "Injected scheduler offers cancellable timer handles. Search preview is an adjacent transient consumer."
+          },
+          {
+            "file": "src/workflow.rb",
+            "quote": "def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end"
+          },
+          {
+            "file": "src/workflow.rb",
+            "quote": "def edit(text);view=@current;@env.write(view.id,text) if view;end"
+          },
+          {
+            "file": "src/workflow.rb",
+            "quote": "@listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }"
+          },
+          {
+            "file": "src/workflow.rb",
+            "quote": "def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end"
+          },
+          {
+            "file": "src/workflow.rb",
+            "quote": "def hide;@task.cancel;end"
+          },
+          {
+            "file": "src/workflow.rb",
+            "quote": "def commit(v);@selected=v.dup;@trail<<v.dup;publish;end"
+          }
+        ],
+        "triggers": [
+          "Calling Workspace#edit while a document is selected submits text to that document's autosave buffer.",
+          "Each subsequent edit for the same document before expiry restarts the 120 ms quiet-period timer.",
+          "Expiry of the most recently scheduled timer flushes the latest pending text to Store#write.",
+          "Workspace#select opens a document and commits a visit to the projection.",
+          "Workspace#close or #dispose retires the active document and clears projection selection.",
+          "Preview#query continues to schedule its independent 40 ms trailing preview update."
+        ],
+        "unknowns": [
+          "The public task does not specify whether separate bursts containing identical text should each write; preserve the existing trailing utility semantics rather than adding deduplication.",
+          "The public task does not specify that close, dispose, or navigation must flush or cancel pending document drafts; the existing per-document BufferBank suggests pending saves remain scheduled.",
+          "The public sources do not define exception handling when scheduler, output, store listener, or integration callbacks raise.",
+          "The public sources do not define thread-safety or concurrent access guarantees.",
+          "The public sources do not state whether document identifiers are always immutable strings or whether callers may mutate them after selection.",
+          "Reentrant navigation is explicitly possible, but the precise desired result of every nested select/close callback sequence is not fully specified; existing observable ordering should be preserved."
+        ]
+      },
+      "contract_changed": false,
+      "diagnosis": "unknown",
+      "explanation": "The behavioral contract remains supported by the original task and public sources, so no contract revision is justified. The previous candidate routes edits through the selected document's existing per-document 120 ms Trailing buffer, while leaving Store, navigation, projection, and Preview code unchanged. That is consistent with the stated obligations. The syntax check passed, and the failed acceptance verdict supplies no failure cause; therefore it cannot establish a specific implementation gap.",
+      "remaining_unknowns": [
+        "The failed acceptance verdict does not identify an observable behavior that differs from the original task or public-source contract.",
+        "No public behavioral test result demonstrates whether the candidate fails burst coalescing, document scoping, navigation preservation, synchronous store notification, or preview preservation.",
+        "The public task does not specify whether separate bursts containing identical text should each write.",
+        "The public task does not specify flush or cancellation behavior for pending drafts on close, dispose, or navigation.",
+        "The precise expected outcome of every reentrant navigation sequence remains unspecified."
+      ],
+      "restored_original_contract_evidence": false,
+      "routing_analysis": null,
+      "structured_delta": [],
+      "supporting_evidence": [
+        {
+          "file": "TASK",
+          "quote": "Change editor\nautosave to coalesce a burst of input: after 120 ms without another edit, save\nonly its latest text."
+        },
+        {
+          "file": "TASK",
+          "quote": "Reuse the existing trailing-task utility where appropriate."
+        },
+        {
+          "file": "TASK",
+          "quote": "Preserve the workspace's existing navigation and persistence behavior."
+        },
+        {
+          "file": "TASK",
+          "quote": "Keep\nsearch preview behavior unchanged; its timing is outside this maintenance task."
+        },
+        {
+          "file": "src/workflow.rb",
+          "quote": "def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.rb",
+          "quote": "def edit(text);view=@current;view.buffer.push(text) if view;end"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.rb",
+          "quote": "def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.rb",
+          "quote": "def hide;@task.cancel;end"
+        }
+      ],
+      "supporting_evidence_bindings": [
+        {
+          "file": "TASK",
+          "quote": "Change editor\nautosave to coalesce a burst of input: after 120 ms without another edit, save\nonly its latest text.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Reuse the existing trailing-task utility where appropriate.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Preserve the workspace's existing navigation and persistence behavior.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Keep\nsearch preview behavior unchanged; its timing is outside this maintenance task.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "src/workflow.rb",
+          "quote": "def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.rb",
+          "quote": "def edit(text);view=@current;view.buffer.push(text) if view;end",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.rb",
+          "quote": "def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.rb",
+          "quote": "def hide;@task.cancel;end",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        }
+      ],
+      "unused_routing_analysis": false
+    },
+    {
+      "attempt": 3,
+      "candidate_only_contract_evidence": [],
+      "contract_after": {
+        "checkpoints": [
+          "After each edit, the draft is pending rather than immediately persisted.",
+          "At 120 ms after the most recent edit for that document, exactly the latest pending text is written.",
+          "After navigation or close, any already-pending per-document save remains associated with its originating document.",
+          "Search preview still uses its existing 40 ms trailing task and cancellation behavior.",
+          "Ruby syntax remains valid under the declared Ruby 2.7.0 runtime."
+        ],
+        "forbidden_effects": [
+          "Do not write to the store on every editor edit.",
+          "Do not save superseded intermediate text from the same burst.",
+          "Do not attach a pending draft to whichever document happens to be selected when the timer fires.",
+          "Do not alter search preview timing or behavior.",
+          "Do not combine document body, per-document buffer, and navigation outline responsibilities.",
+          "Do not weaken synchronous navigation, selection, projection, subscription, or persistence behavior beyond the requested autosave change."
+        ],
+        "lifecycle_identity": [
+          "Each pending autosave belongs to the document identifier whose editor buffer received the edit.",
+          "The existing BufferBank retains one Trailing autosave task per document identifier.",
+          "A visit identifies navigation/display state; it must not replace document identity for persistence.",
+          "A committed projection trail contains copied visit records rather than aliases to mutable caller data."
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "text": "Editor autosave must coalesce a burst of edits and persist only the latest text after 120 ms without another edit."
+          },
+          {
+            "id": "O2",
+            "text": "The autosave implementation should reuse the existing Trailing utility and the existing per-document BufferBank where appropriate."
+          },
+          {
+            "id": "O3",
+            "text": "Pending saves must remain scoped to their originating document so navigation does not redirect a draft save to another document."
+          },
+          {
+            "id": "O4",
+            "text": "Workspace navigation, selection, close, projection trail, and persistence behavior must otherwise remain unchanged."
+          },
+          {
+            "id": "O5",
+            "text": "Store writes must continue to synchronously notify active saved integrations."
+          },
+          {
+            "id": "O6",
+            "text": "Search preview behavior, including its existing 40 ms trailing timing and hide cancellation, must remain unchanged."
+          }
+        ],
+        "ordering_barriers": [
+          "A new edit for the same document cancels the prior timer before scheduling a new 120 ms timer.",
+          "The latest pending text is captured before the trailing task is scheduled; persistence occurs only when that task flushes.",
+          "A store write updates the record and revision before synchronously invoking currently active listeners.",
+          "Document retirement detaches its store listener before emitting the nil document output.",
+          "Opening a document retires the prior document before creating and publishing the new document badge.",
+          "Selection opens/publishes the document before committing the corresponding projection visit in the ordinary non-reentrant path.",
+          "Closing retires the document before clearing the projection in the ordinary non-reentrant path."
+        ],
+        "preservation": [
+          "Workspace continues to expose select(id), edit(text), close(), selection(), and dispose().",
+          "Selecting a document continues to publish its stored body with its document id and visit id.",
+          "Closing continues to clear the active document and projection selection.",
+          "Projection continues to retain a copied breadcrumb archive of committed visits.",
+          "Store reads continue to return copied frozen text, and writes continue to persist copied frozen text with increasing revisions.",
+          "Saved integrations continue to be notified synchronously and may navigate during callbacks.",
+          "A pending autosave survives ordinary navigation because buffers are maintained per document; the task does not require canceling drafts on document retirement.",
+          "Search preview remains an adjacent transient consumer with its independent 40 ms trailing task."
+        ],
+        "scope": [
+          "Change business code only in src/workflow.rb as needed to implement editor autosave coalescing.",
+          "The maintenance scope is editor draft persistence through the workspace store.",
+          "Navigation and outline/projection are preservation scope, not redesign scope.",
+          "Search preview is explicitly outside the change scope."
+        ],
+        "supporting_evidence": [
+          {
+            "file": "TASK",
+            "quote": "Change editor\nautosave to coalesce a burst of input: after 120 ms without another edit, save\nonly its latest text."
+          },
+          {
+            "file": "TASK",
+            "quote": "Reuse the existing trailing-task utility where appropriate."
+          },
+          {
+            "file": "TASK",
+            "quote": "Preserve the workspace's existing navigation and persistence behavior."
+          },
+          {
+            "file": "TASK",
+            "quote": "Keep\nsearch preview behavior unchanged; its timing is outside this maintenance task."
+          },
+          {
+            "file": "README.md",
+            "quote": "Theatre operations — Document body, per-document buffer and navigation outline are separate responsibilities. Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "Store reads values and synchronously notifies saved integrations."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "Workspace exposes select(id), edit(text), close(), selection(), dispose()."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail."
+          },
+          {
+            "file": "docs/host-api.md",
+            "quote": "Injected scheduler offers cancellable timer handles. Search preview is an adjacent transient consumer."
+          },
+          {
+            "file": "src/workflow.rb",
+            "quote": "def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end"
+          },
+          {
+            "file": "src/workflow.rb",
+            "quote": "def edit(text);view=@current;@env.write(view.id,text) if view;end"
+          },
+          {
+            "file": "src/workflow.rb",
+            "quote": "@listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }"
+          },
+          {
+            "file": "src/workflow.rb",
+            "quote": "def initialize(env);@task=Trailing.new(env,40){|q| env.output('preview',{'query'=>q})};end"
+          },
+          {
+            "file": "src/workflow.rb",
+            "quote": "def hide;@task.cancel;end"
+          },
+          {
+            "file": "src/workflow.rb",
+            "quote": "def commit(v);@selected=v.dup;@trail<<v.dup;publish;end"
+          }
+        ],
+        "triggers": [
+          "Calling Workspace#edit while a document is selected submits text to that document's autosave buffer.",
+          "Each subsequent edit for the same document before expiry restarts the 120 ms quiet-period timer.",
+          "Expiry of the most recently scheduled timer flushes the latest pending text to Store#write.",
+          "Workspace#select opens a document and commits a visit to the projection.",
+          "Workspace#close or #dispose retires the active document and clears projection selection.",
+          "Preview#query continues to schedule its independent 40 ms trailing preview update."
+        ],
+        "unknowns": [
+          "The public task does not specify whether separate bursts containing identical text should each write; preserve the existing trailing utility semantics rather than adding deduplication.",
+          "The public task does not specify that close, dispose, or navigation must flush or cancel pending document drafts; the existing per-document BufferBank suggests pending saves remain scheduled.",
+          "The public sources do not define exception handling when scheduler, output, store listener, or integration callbacks raise.",
+          "The public sources do not define thread-safety or concurrent access guarantees.",
+          "The public sources do not state whether document identifiers are always immutable strings or whether callers may mutate them after selection.",
+          "Reentrant navigation is explicitly possible, but the precise desired result of every nested select/close callback sequence is not fully specified; existing observable ordering should be preserved."
+        ]
+      },
+      "contract_changed": false,
+      "diagnosis": "implementation_gap",
+      "explanation": "The behavioral contract does not need revision. The candidate correctly routes edits through the existing per-document trailing buffer, but it also changes navigation behavior outside the autosave scope: Workspace#select and Workspace#close condition projection updates on epoch equality, whereas the original public source performs those updates unconditionally with `if true`. Because the task explicitly requires preservation of existing navigation behavior, this is an implementation gap. The failed acceptance verdict alone supplies no additional requirement or failure cause.",
+      "remaining_unknowns": [
+        "The failed acceptance verdict provides no failure details, so it cannot establish which observed implementation difference caused rejection.",
+        "The intended outcomes of all reentrant navigation sequences are not fully specified beyond preserving the original public behavior.",
+        "The task does not specify flush-or-cancel behavior for pending saves on close, dispose, or navigation.",
+        "The task does not specify deduplication across distinct bursts containing identical text."
+      ],
+      "restored_original_contract_evidence": false,
+      "routing_analysis": null,
+      "structured_delta": [],
+      "supporting_evidence": [
+        {
+          "file": "TASK",
+          "quote": "Preserve the workspace's existing navigation and persistence behavior."
+        },
+        {
+          "file": "src/workflow.rb",
+          "quote": "def select(id);@epoch+=1;mine=@epoch;@visit+=1;v=@visit;@editor.open(id,v);@projection.commit({'id'=>id,'visit'=>v}) if true;end"
+        },
+        {
+          "file": "src/workflow.rb",
+          "quote": "def close;@epoch+=1;mine=@epoch;@editor.close;@projection.clear if true;end"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.rb",
+          "quote": "def select(id);@epoch+=1;mine=@epoch;@visit+=1;v=@visit;@editor.open(id,v);@projection.commit({'id'=>id,'visit'=>v}) if mine==@epoch;end"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.rb",
+          "quote": "def close;@epoch+=1;mine=@epoch;@editor.close;@projection.clear if mine==@epoch;end"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.rb",
+          "quote": "def edit(text);view=@current;view.buffer.push(text) if view;end"
+        },
+        {
+          "file": "src/workflow.rb",
+          "quote": "def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end"
+        }
+      ],
+      "supporting_evidence_bindings": [
+        {
+          "file": "TASK",
+          "quote": "Preserve the workspace's existing navigation and persistence behavior.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "src/workflow.rb",
+          "quote": "def select(id);@epoch+=1;mine=@epoch;@visit+=1;v=@visit;@editor.open(id,v);@projection.commit({'id'=>id,'visit'=>v}) if true;end",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "src/workflow.rb",
+          "quote": "def close;@epoch+=1;mine=@epoch;@editor.close;@projection.clear if true;end",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.rb",
+          "quote": "def select(id);@epoch+=1;mine=@epoch;@visit+=1;v=@visit;@editor.open(id,v);@projection.commit({'id'=>id,'visit'=>v}) if mine==@epoch;end",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.rb",
+          "quote": "def close;@epoch+=1;mine=@epoch;@editor.close;@projection.clear if mine==@epoch;end",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.rb",
+          "quote": "def edit(text);view=@current;view.buffer.push(text) if view;end",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "src/workflow.rb",
+          "quote": "def get(env,id);@entries[id] ||= Trailing.new(env,120) {|text| env.write(id,text)};end",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        }
+      ],
+      "unused_routing_analysis": false
+    }
+  ],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": false,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": false,
+    "valid": true,
+    "verdict": "UNDERREACH"
+  },
+  "finalized": true,
+  "first_pass_attempt": null,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": false,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": false,
+    "valid": true,
+    "verdict": "UNDERREACH"
+  },
+  "repair_stop_reason": "action_budget_exhausted",
+  "stages": [
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "7b563377d159b3e5d06ad6ea84bb0318e047ba824e156cf47b003da175c96003",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9996869703755
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "1f114d63fa6298df4f94ee201c75e4348d910a6ec14dc9ecaea10db811d9b7e5",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 12241,
+        "output_tokens": 1648,
+        "reasoning_output_tokens": 199,
+        "total_tokens": 13889
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "31e2a8a3e117901d3d08840e456fb65fedeb69b322ef421c351967bdc19d04c6",
+      "seconds": 33.31892423890531,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 12241,
+        "output_tokens": 1648,
+        "reasoning_output_tokens": 199,
+        "total_tokens": 13889
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "4f82c38c2c128fae1d75b278a5e8578902772b456c394701c83de3f842172933",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9996655033901
+          },
+          "number": 1,
+          "requests": 5,
+          "restart_reason": "initial",
+          "result_sha256": "0d3ff8204e7d686a58d37ebc818259acf9770f3eb9fd14c6fd4502ce682fe1eb",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 71296,
+        "input_tokens": 80502,
+        "output_tokens": 1240,
+        "reasoning_output_tokens": 276,
+        "total_tokens": 81742
+      },
+      "requests": 5,
+      "reserved_requests": 24,
+      "result_sha256": "2440116c528288aec281b8441e59b226fc500d68cf42af08a123a7ebfa0aafe4",
+      "seconds": 45.5542853763327,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 71296,
+        "input_tokens": 80502,
+        "output_tokens": 1240,
+        "reasoning_output_tokens": 276,
+        "total_tokens": 81742
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "b6bc50ab0dc1b9450b6df76ce9299ec5f17408978e8b3631c8feaa7e30891382",
+      "seconds": 0.5612836973741651,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 2.6168267922475934,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "diagnosis-2",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "c408be1adf0be33a366e80167db18ab1c57303e0e8e99f46d1d3f2aad09c4d9a",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9993379013613
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "07985690ba7331c4e494c29a341c1165dfe42008c80b832bad92fbd2521105cb",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-2",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 16297,
+        "output_tokens": 2180,
+        "reasoning_output_tokens": 280,
+        "total_tokens": 18477
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "24ff55bfccad226b051dd0763435146a89e2ef2ddf3ec86d5d98d01412385c47",
+      "seconds": 40.25563806295395,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 16297,
+        "output_tokens": 2180,
+        "reasoning_output_tokens": 280,
+        "total_tokens": 18477
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-2",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "e3291be36c1a9579feab46dda3e76cc270aaecf70447935e8166144987218571",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9990321258083
+          },
+          "number": 1,
+          "requests": 7,
+          "restart_reason": "initial",
+          "result_sha256": "a0ed5dcae70333e0f450882451e050fbc8ee4eb1488630402a9682d624da32d4",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-2",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 111872,
+        "input_tokens": 123380,
+        "output_tokens": 3518,
+        "reasoning_output_tokens": 1259,
+        "total_tokens": 126898
+      },
+      "requests": 7,
+      "reserved_requests": 24,
+      "result_sha256": "594a0b9425530420fb462592297018dd79b2fe5afa3383d0576115952fc9edff",
+      "seconds": 81.78968657460064,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 111872,
+        "input_tokens": 123380,
+        "output_tokens": 3518,
+        "reasoning_output_tokens": 1259,
+        "total_tokens": 126898
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-2",
+      "key": "visible-2",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "b6bc50ab0dc1b9450b6df76ce9299ec5f17408978e8b3631c8feaa7e30891382",
+      "seconds": 0.5514346659183502,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-2",
+      "key": "acceptance-2",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 2.592694512568414,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "diagnosis-3",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "dd8618fcee32269dabdabf6d25e31a592a52d2c3d82917cb077ec725cf8118da",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9992250194773
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "1ebbe4aa2e5d2e83d5190e4079db810858de464b5529a02fbac4e64a5cc0c584",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-3",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 16303,
+        "output_tokens": 2072,
+        "reasoning_output_tokens": 139,
+        "total_tokens": 18375
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "89c88d03d1a5fc7223128c7832dc0a74a366ed0efd4af5fc0672e40a4316b159",
+      "seconds": 40.530134569853544,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 16303,
+        "output_tokens": 2072,
+        "reasoning_output_tokens": 139,
+        "total_tokens": 18375
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-3",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "f22a4ba3e3681c3e3c2eba9cabfaa8f1ffcf4b216c11eef844f5b08f4c23a25c",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9993265625089
+          },
+          "number": 1,
+          "requests": 5,
+          "restart_reason": "initial",
+          "result_sha256": "87ac91755302a5d9af88d4505feb33901c01685dfda0f98d09d33a736ddb2ebc",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-3",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 73728,
+        "input_tokens": 83818,
+        "output_tokens": 2506,
+        "reasoning_output_tokens": 1344,
+        "total_tokens": 86324
+      },
+      "requests": 5,
+      "reserved_requests": 24,
+      "result_sha256": "f9564a50889b6595de6d16bfdc9ac4e72a502fcd76d86fa740a8a9a58a3bfcfd",
+      "seconds": 71.26104902569205,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 73728,
+        "input_tokens": 83818,
+        "output_tokens": 2506,
+        "reasoning_output_tokens": 1344,
+        "total_tokens": 86324
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-3",
+      "key": "visible-3",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "b6bc50ab0dc1b9450b6df76ce9299ec5f17408978e8b3631c8feaa7e30891382",
+      "seconds": 0.5748770702630281,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-3",
+      "key": "acceptance-3",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 2.61194393504411,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "awaiting_expert_summary",
+  "stop_reason": "action_budget_exhausted",
+  "training_accepted": false
+}

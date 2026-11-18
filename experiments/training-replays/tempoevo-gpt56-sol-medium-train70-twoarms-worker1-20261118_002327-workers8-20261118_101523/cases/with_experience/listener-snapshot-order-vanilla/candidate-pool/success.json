@@ -1,0 +1,1998 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/presence-panel.js\n+++ candidate/src/presence-panel.js\n@@ -2,15 +2,35 @@\n import { subscribeChannel } from \"./subscription.js\";\n \n export function createPresencePanel(publish) {\n-  let release = () => {};\n+  let currentVisit = null;\n+\n+  const retireCurrentVisit = () => {\n+    const visit = currentVisit;\n+    currentVisit = null;\n+    if (visit && visit.release) visit.release();\n+  };\n+\n   return {\n     show(channel, bootstrapMode = \"synchronous\") {\n-      release();\n-      release = subscribeChannel(channel, bootstrapMode, publish);\n+      retireCurrentVisit();\n+\n+      const visit = { release: null };\n+      currentVisit = visit;\n+      let release;\n+      try {\n+        release = subscribeChannel(channel, bootstrapMode, (value) => {\n+          if (currentVisit === visit) publish(value);\n+        });\n+      } catch (error) {\n+        if (currentVisit === visit) currentVisit = null;\n+        throw error;\n+      }\n+\n+      if (currentVisit === visit) visit.release = release;\n+      else release();\n     },\n     close() {\n-      release();\n-      release = () => {};\n+      retireCurrentVisit();\n     },\n   };\n }\n--- original/src/subscription.js\n+++ candidate/src/subscription.js\n@@ -1,12 +1,37 @@\n // The decoder may return a value or a Promise (compressed network frames).\n // EventTarget removal detaches reception; an already started decode still settles.\n export function subscribeChannel(channel, bootstrapMode, receive) {\n+  let active = true;\n+  let arrival = 0;\n+  let published = 0;\n+\n+  const publish = (sequence, value) => {\n+    if (!active || sequence <= published) return;\n+    published = sequence;\n+    receive(value);\n+  };\n+\n   const listener = (event) => {\n+    if (!active) return;\n+    const sequence = ++arrival;\n     const decoded = channel.decode(event.detail);\n-    if (decoded && typeof decoded.then === \"function\") decoded.then(receive);\n-    else receive(decoded);\n+    if (decoded && typeof decoded.then === \"function\") {\n+      decoded.then((value) => publish(sequence, value));\n+    } else {\n+      publish(sequence, decoded);\n+    }\n   };\n-  channel.connect(bootstrapMode);\n+\n   channel.target.addEventListener(\"presence\", listener);\n-  return () => channel.target.removeEventListener(\"presence\", listener);\n+  try {\n+    channel.connect(bootstrapMode);\n+  } catch (error) {\n+    active = false;\n+    channel.target.removeEventListener(\"presence\", listener);\n+    throw error;\n+  }\n+  return () => {\n+    active = false;\n+    channel.target.removeEventListener(\"presence\", listener);\n+  };\n }\n",
+        "from_previous": "--- previous/src/presence-panel.js\n+++ candidate/src/presence-panel.js\n@@ -2,15 +2,35 @@\n import { subscribeChannel } from \"./subscription.js\";\n \n export function createPresencePanel(publish) {\n-  let release = () => {};\n+  let currentVisit = null;\n+\n+  const retireCurrentVisit = () => {\n+    const visit = currentVisit;\n+    currentVisit = null;\n+    if (visit && visit.release) visit.release();\n+  };\n+\n   return {\n     show(channel, bootstrapMode = \"synchronous\") {\n-      release();\n-      release = subscribeChannel(channel, bootstrapMode, publish);\n+      retireCurrentVisit();\n+\n+      const visit = { release: null };\n+      currentVisit = visit;\n+      let release;\n+      try {\n+        release = subscribeChannel(channel, bootstrapMode, (value) => {\n+          if (currentVisit === visit) publish(value);\n+        });\n+      } catch (error) {\n+        if (currentVisit === visit) currentVisit = null;\n+        throw error;\n+      }\n+\n+      if (currentVisit === visit) visit.release = release;\n+      else release();\n     },\n     close() {\n-      release();\n-      release = () => {};\n+      retireCurrentVisit();\n     },\n   };\n }\n--- previous/src/subscription.js\n+++ candidate/src/subscription.js\n@@ -1,12 +1,37 @@\n // The decoder may return a value or a Promise (compressed network frames).\n // EventTarget removal detaches reception; an already started decode still settles.\n export function subscribeChannel(channel, bootstrapMode, receive) {\n+  let active = true;\n+  let arrival = 0;\n+  let published = 0;\n+\n+  const publish = (sequence, value) => {\n+    if (!active || sequence <= published) return;\n+    published = sequence;\n+    receive(value);\n+  };\n+\n   const listener = (event) => {\n+    if (!active) return;\n+    const sequence = ++arrival;\n     const decoded = channel.decode(event.detail);\n-    if (decoded && typeof decoded.then === \"function\") decoded.then(receive);\n-    else receive(decoded);\n+    if (decoded && typeof decoded.then === \"function\") {\n+      decoded.then((value) => publish(sequence, value));\n+    } else {\n+      publish(sequence, decoded);\n+    }\n   };\n-  channel.connect(bootstrapMode);\n+\n   channel.target.addEventListener(\"presence\", listener);\n-  return () => channel.target.removeEventListener(\"presence\", listener);\n+  try {\n+    channel.connect(bootstrapMode);\n+  } catch (error) {\n+    active = false;\n+    channel.target.removeEventListener(\"presence\", listener);\n+    throw error;\n+  }\n+  return () => {\n+    active = false;\n+    channel.target.removeEventListener(\"presence\", listener);\n+  };\n }\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [
+          {
+            "basis": "import_binding_candidate",
+            "call": "src/presence-panel.js::e5",
+            "kind": "candidate_call_target",
+            "qualification": "Lexical/import binding candidate only; execution, reassignment timing and arguments not proven.",
+            "target": "src/subscription.js::<module>/subscribeChannel"
+          }
+        ],
+        "coverage": [
+          {
+            "path": "src/channel.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/metrics-consumer.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/presence-panel.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/render-workspace.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/subscription.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/workspace-navigation.js",
+            "status": "parsed"
+          }
+        ],
+        "events": [
+          {
+            "arguments": [
+              "bootstrapMode"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "channel.connect",
+            "column": 2,
+            "conditions": [],
+            "end_column": 32,
+            "end_line": 28,
+            "id": "src/channel.js::e25",
+            "kind": "call",
+            "line": 28,
+            "path": "src/channel.js",
+            "receiver": "channel",
+            "scope": "<module>/observeChannel",
+            "text": "channel.connect(bootstrapMode)"
+          },
+          {
+            "arguments": [
+              "\"presence\"",
+              "(event) => events.push(event.detail)"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "channel.target.addEventListener",
+            "column": 2,
+            "conditions": [],
+            "end_column": 83,
+            "end_line": 29,
+            "id": "src/channel.js::e29",
+            "kind": "call",
+            "line": 29,
+            "path": "src/channel.js",
+            "receiver": "channel.target",
+            "scope": "<module>/observeChannel",
+            "text": "channel.target.addEventListener(\"presence\", (event) => events.push(event.detail))"
+          },
+          {
+            "arguments": [
+              "channel",
+              "bootstrapMode",
+              "publish"
+            ],
+            "binding": "import_binding_candidate",
+            "callee": "subscribeChannel",
+            "column": 16,
+            "conditions": [],
+            "end_column": 65,
+            "end_line": 9,
+            "id": "src/presence-panel.js::e5",
+            "import_name": "./subscription.js.subscribeChannel",
+            "kind": "call",
+            "line": 9,
+            "path": "src/presence-panel.js",
+            "receiver": "",
+            "scope": "<module>/createPresencePanel/show",
+            "text": "subscribeChannel(channel, bootstrapMode, publish)"
+          },
+          {
+            "awaited": false,
+            "column": 6,
+            "conditions": [],
+            "end_column": 65,
+            "end_line": 9,
+            "id": "src/presence-panel.js::e6",
+            "kind": "write",
+            "line": 9,
+            "operator": "=",
+            "path": "src/presence-panel.js",
+            "scope": "<module>/createPresencePanel/show",
+            "target": "release",
+            "text": "release = subscribeChannel(channel, bootstrapMode, publish)"
+          },
+          {
+            "column": 2,
+            "conditions": [],
+            "end_column": 25,
+            "end_line": 23,
+            "id": "src/presence-panel.js::e23",
+            "kind": "await",
+            "line": 23,
+            "path": "src/presence-panel.js",
+            "scope": "<module>/renderPresence",
+            "text": "await Promise.resolve()"
+          },
+          {
+            "arguments": [],
+            "binding": "local_value_unresolved",
+            "callee": "panel.close",
+            "column": 2,
+            "conditions": [],
+            "end_column": 15,
+            "end_line": 25,
+            "id": "src/presence-panel.js::e25",
+            "kind": "call",
+            "line": 25,
+            "path": "src/presence-panel.js",
+            "receiver": "panel",
+            "scope": "<module>/renderPresence",
+            "text": "panel.close()"
+          },
+          {
+            "column": 8,
+            "conditions": [],
+            "end_column": 53,
+            "end_line": 6,
+            "expression": "decoded && typeof decoded.then === \"function\"",
+            "id": "src/subscription.js::e4",
+            "kind": "guard",
+            "line": 6,
+            "path": "src/subscription.js",
+            "scope": "<module>/subscribeChannel/listener",
+            "text": "decoded && typeof decoded.then === \"function\""
+          },
+          {
+            "arguments": [
+              "receive"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "decoded.then",
+            "column": 55,
+            "conditions": [
+              "if decoded && typeof decoded.then === \"function\""
+            ],
+            "end_column": 76,
+            "end_line": 6,
+            "id": "src/subscription.js::e5",
+            "kind": "call",
+            "line": 6,
+            "path": "src/subscription.js",
+            "receiver": "decoded",
+            "scope": "<module>/subscribeChannel/listener",
+            "text": "decoded.then(receive)"
+          },
+          {
+            "arguments": [
+              "bootstrapMode"
+            ],
+            "binding": "parameter_member",
+            "callee": "channel.connect",
+            "column": 2,
+            "conditions": [],
+            "end_column": 32,
+            "end_line": 9,
+            "id": "src/subscription.js::e8",
+            "kind": "call",
+            "line": 9,
+            "path": "src/subscription.js",
+            "receiver": "channel",
+            "scope": "<module>/subscribeChannel",
+            "text": "channel.connect(bootstrapMode)"
+          },
+          {
+            "arguments": [
+              "\"presence\"",
+              "listener"
+            ],
+            "binding": "parameter_member",
+            "callee": "channel.target.addEventListener",
+            "column": 2,
+            "conditions": [],
+            "end_column": 55,
+            "end_line": 10,
+            "id": "src/subscription.js::e9",
+            "kind": "call",
+            "line": 10,
+            "path": "src/subscription.js",
+            "receiver": "channel.target",
+            "scope": "<module>/subscribeChannel",
+            "text": "channel.target.addEventListener(\"presence\", listener)"
+          },
+          {
+            "arguments": [
+              "\"presence\"",
+              "listener"
+            ],
+            "binding": "parameter_member",
+            "callee": "channel.target.removeEventListener",
+            "column": 15,
+            "conditions": [],
+            "end_column": 71,
+            "end_line": 11,
+            "id": "src/subscription.js::e12",
+            "kind": "call",
+            "line": 11,
+            "path": "src/subscription.js",
+            "receiver": "channel.target",
+            "scope": "<module>/subscribeChannel/<callback>",
+            "text": "channel.target.removeEventListener(\"presence\", listener)"
+          }
+        ],
+        "findings": [
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "Receiver expressions match; verify types, aliases, synchronous notifications and whether missed messages are allowed.",
+            "evidence": [
+              "src/channel.js::e25",
+              "src/channel.js::e29"
+            ],
+            "message": "Connect precedes listener registration in the same block.",
+            "path": "src/channel.js",
+            "review_question": "Should this consumer receive synchronous initial messages from connect? Statistics consumers may intentionally skip them.",
+            "rule": "connect-before-listen",
+            "scope": "<module>/observeChannel"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "Check whether user callbacks can reenter the caller; reentry is not established.",
+            "evidence": [
+              "src/presence-panel.js::e5",
+              "src/presence-panel.js::e6"
+            ],
+            "message": "A cleanup-like handle is assigned after the right-hand call returns.",
+            "path": "src/presence-panel.js",
+            "review_question": "If a callback switches or closes the owner, can the old return overwrite a newer cleanup handle?",
+            "rule": "cleanup-handle-after-call",
+            "scope": "<module>/createPresencePanel/show"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "Receiver expressions match; verify types, aliases, synchronous notifications and whether missed messages are allowed.",
+            "evidence": [
+              "src/subscription.js::e8",
+              "src/subscription.js::e9"
+            ],
+            "message": "Connect precedes listener registration in the same block.",
+            "path": "src/subscription.js",
+            "review_question": "Should this consumer receive synchronous initial messages from connect? Statistics consumers may intentionally skip them.",
+            "rule": "connect-before-listen",
+            "scope": "<module>/subscribeChannel"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "Co-occurrence only; verify that both concern the same work and lifecycle.",
+            "evidence": [
+              "src/subscription.js::e5",
+              "src/subscription.js::e12"
+            ],
+            "message": "Completion callback registration and listener removal coexist in this file.",
+            "path": "src/subscription.js",
+            "review_question": "If related, is validity checked when in-flight work completes after listener removal?",
+            "rule": "continuation-and-listener-removal",
+            "scope": "<module>/subscribeChannel/listener"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/presence-panel.js::e23",
+              "src/presence-panel.js::e25"
+            ],
+            "message": "完成回调/等待点与关闭、重新打开或清理边界名称线索出现在同一词法单元。",
+            "path": "src/presence-panel.js",
+            "review_question": "关闭、卸载和切换是否是不同边界？哪些边界应使旧结果失效，哪些工作应继续？需从仓库证据确认。",
+            "rule": "continuation-lifecycle-boundaries",
+            "scope": "<module>/renderPresence"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/subscription.js::e5",
+              "src/subscription.js::e12"
+            ],
+            "message": "完成回调/等待点与关闭、重新打开或清理边界名称线索出现在同一词法单元。",
+            "path": "src/subscription.js",
+            "review_question": "关闭、卸载和切换是否是不同边界？哪些边界应使旧结果失效，哪些工作应继续？需从仓库证据确认。",
+            "rule": "continuation-lifecycle-boundaries",
+            "scope": "<module>/subscribeChannel"
+          },
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。",
+            "evidence": [
+              "src/subscription.js::e4",
+              "src/subscription.js::e5",
+              "src/subscription.js::e12"
+            ],
+            "message": "列出相关词法单元中的条件判断，以及关闭/返回清理函数内的状态写入；存在判断不等于有效性保护。",
+            "path": "src/subscription.js",
+            "review_question": "回调检查了什么状态？关闭、卸载、重开分别更新了什么？只取消计时器能否约束已发请求？相同标识重新使用时判断是否仍适用？",
+            "rule": "continuation-guard-state-review",
+            "scope": "<module>/subscribeChannel"
+          }
+        ],
+        "limitations": [
+          "Syntax facts, candidate call links and review hints are not verified contracts, bugs, severity or difficulty scores.",
+          "API names are clues. Types, aliases, control flow, dynamic dispatch and callback targets are not fully resolved.",
+          "Local order is lexical order within a block; branches, exceptions, loops, short-circuiting and execution remain unchecked.",
+          "await may suspend; cancellation does not imply completed work or cleanup. Listener removal does not cancel work already started.",
+          "if/try/finally syntax does not prove adequate protection. The absence of hints does not imply safety.",
+          "No hidden scorers, reference patches, model results or human profiles are read. Operators must verify input provenance."
+        ],
+        "relations": [
+          {
+            "after": "src/channel.js::e29",
+            "before": "src/channel.js::e25",
+            "kind": "lexical_before_same_block",
+            "qualification": "Only if both statements execute on this path; not a whole-program happens-before proof."
+          },
+          {
+            "after": "src/presence-panel.js::e6",
+            "before": "src/presence-panel.js::e5",
+            "kind": "rhs_before_assignment",
+            "qualification": "Assignment occurs after successful RHS evaluation; call return alone does not imply asynchronous work completion."
+          },
+          {
+            "after": "src/subscription.js::e9",
+            "before": "src/subscription.js::e8",
+            "kind": "lexical_before_same_block",
+            "qualification": "Only if both statements execute on this path; not a whole-program happens-before proof."
+          }
+        ],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "parsed",
+        "target_definitions": [
+          {
+            "id": "src/subscription.js::<module>/subscribeChannel",
+            "line": 3,
+            "path": "src/subscription.js",
+            "scope": "<module>/subscribeChannel"
+          }
+        ]
+      },
+      "sources": {
+        "README.md": "# Presence snapshots\n\nThe panel displays full online-user snapshots, not an append-only event history.\nWithin one visit, channel event arrival order defines snapshot freshness.\nDecoding compressed frames can finish out of order. Once a newer snapshot has\nbeen published, an older frame must not roll the panel back. If an earlier\nframe finishes before any newer snapshot is published, it may still be shown.\nThis ordering is per visit; revisiting the same channel starts a new visit.\nClosing stops publication, but pending decodes can still settle.\nMetrics remains an incremental-only observer and must not adopt panel policy.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\n  \"name\": \"listener-snapshot-order-vanilla-fixture\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+        "src/channel.js": "// Presence frames are full snapshots; see ../README.md for ordering semantics.\nclass PresenceEvent extends Event {\n  constructor(detail) {\n    super(\"presence\");\n    this.detail = detail;\n  }\n}\n\nexport function createPresenceChannel(token, { decode = (value) => value } = {}) {\n  const target = new EventTarget();\n  const emit = (kind) => target.dispatchEvent(new PresenceEvent(`${token}:${kind}`));\n  return {\n    target,\n    decode,\n    connect(bootstrapMode) {\n      if (bootstrapMode === \"deferred\") queueMicrotask(() => emit(\"bootstrap\"));\n      else emit(\"bootstrap\");\n    },\n    emitUpdate() {\n      emit(\"update\");\n    },\n  };\n}\n\nexport async function observeChannel({ token, bootstrapMode }) {\n  const events = [];\n  const channel = createPresenceChannel(token);\n  channel.connect(bootstrapMode);\n  channel.target.addEventListener(\"presence\", (event) => events.push(event.detail));\n  await Promise.resolve();\n  channel.emitUpdate();\n  return { events };\n}\n",
+        "src/metrics-consumer.js": "import { observeChannel } from \"./channel.js\";\n\nexport function collectMetrics(token) {\n  // Metrics deliberately attach after the synchronous bootstrap and count deltas only.\n  return observeChannel({ token, bootstrapMode: \"synchronous\" });\n}\n",
+        "src/presence-panel.js": "import { createPresenceChannel } from \"./channel.js\";\nimport { subscribeChannel } from \"./subscription.js\";\n\nexport function createPresencePanel(publish) {\n  let release = () => {};\n  return {\n    show(channel, bootstrapMode = \"synchronous\") {\n      release();\n      release = subscribeChannel(channel, bootstrapMode, publish);\n    },\n    close() {\n      release();\n      release = () => {};\n    },\n  };\n}\n\nexport async function renderPresence(token, bootstrapMode) {\n  const events = [];\n  const panel = createPresencePanel((value) => events.push(value));\n  const channel = createPresenceChannel(token);\n  panel.show(channel, bootstrapMode);\n  await Promise.resolve();\n  channel.emitUpdate();\n  panel.close();\n  return { events };\n}\n",
+        "src/render-workspace.js": "import { collectMetrics } from \"./metrics-consumer.js\";\nimport { renderPresence } from \"./presence-panel.js\";\n\nexport async function render({ token, bootstrapMode }) {\n  const [presence, metrics] = await Promise.all([\n    renderPresence(token, bootstrapMode),\n    collectMetrics(token),\n  ]);\n  return { presence, metrics };\n}\n",
+        "src/subscription.js": "// The decoder may return a value or a Promise (compressed network frames).\n// EventTarget removal detaches reception; an already started decode still settles.\nexport function subscribeChannel(channel, bootstrapMode, receive) {\n  const listener = (event) => {\n    const decoded = channel.decode(event.detail);\n    if (decoded && typeof decoded.then === \"function\") decoded.then(receive);\n    else receive(decoded);\n  };\n  channel.connect(bootstrapMode);\n  channel.target.addEventListener(\"presence\", listener);\n  return () => channel.target.removeEventListener(\"presence\", listener);\n}\n",
+        "src/workspace-navigation.js": "import { createPresencePanel } from \"./presence-panel.js\";\n\n// Presence publication can synchronously select a different room or hide the\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot).\n// Reusing a transport object on a later visit is supported by the workspace.\nexport function createWorkspaceNavigation(renderState) {\n  const panel = createPresencePanel((value) => renderState(value, navigation));\n  const navigation = {\n    select(channel, mode = \"synchronous\") { panel.show(channel, mode); },\n    hide() { panel.close(); },\n  };\n  return navigation;\n}\n"
+      },
+      "task": "# Maintenance task\n\nImmediately after opening the presence panel, the initial online-user state is\nsometimes missing even though later presence updates appear. Fix the presence\npanel while preserving its existing behavior, including workspace navigation.\n\nDo not change the metrics consumer.\n"
+    },
+    "source_sha256": "7e2c2feff7a5f1693e890bb75f9b19c9579f856056ef99d40f945d927dbbb00e",
+    "task_id": "listener-snapshot-order-vanilla"
+  },
+  "experience": {
+    "excludes": [],
+    "labels": [
+      "O",
+      "L",
+      "I",
+      "F"
+    ],
+    "limitations": [
+      "Applies to full snapshots whose freshness follows arrival order within a visit; incremental consumers need their own policy.",
+      "Decoder rejection, thrown-error handling, auditing, persistence and cancellation requirements are not specified by the public sources.",
+      "Attempt 1 supplies an implementation example and passing observations, not proof of causality or cross-task effectiveness.",
+      "Source support: TASK: \"Fix the presence\\npanel while preserving its existing behavior, including workspace navigation.\" TASK: \"Do not change the metrics consumer.\"",
+      "Source support: README.md: \"Within one visit, channel event arrival order defines snapshot freshness.\" \"Closing stops publication, but pending decodes can still settle.\"",
+      "Source support: src/workspace-navigation.js: \"// Presence publication can synchronously select a different room or hide the\\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot).\""
+    ],
+    "requires": [
+      "inline_reentry",
+      "entry_snapshot",
+      "async_resume"
+    ],
+    "rules": [
+      {
+        "body": "Apply when startup can synchronously publish a full snapshot, publication can reenter navigation, and decoding can finish after its originating visit ends.",
+        "category": "applicability"
+      },
+      {
+        "body": "Register reception before startup can emit the initial snapshot. Establish provisional visit and cleanup ownership before callback-capable startup, while preserving immediate delivery for synchronously decoded values.\n\nRetire the old visit's logical authority before replacement or close proceeds. Check that authority before admitting each event into decoding and again before publishing its result. Logical retirement must work while physical cleanup is still unavailable.\n\nAfter startup returns its cleanup handle, retain it only for the still-active originating visit; otherwise release that captured resource. An outer startup must not overwrite ownership installed by nested navigation.\n\nAssign arrival order before decoding and maintain a per-visit published freshness watermark. Publish a completed frame only while its visit remains active and no newer frame has already published. Advance the watermark before invoking callback-capable publication.",
+        "category": "event_relation"
+      },
+      {
+        "body": "Allow an earlier frame to publish if it completes before any newer snapshot publishes. Allow already-started decoding to settle after retirement without granting it publication authority. Reopening the same transport creates fresh visit identity and ordering state.",
+        "category": "preservation"
+      },
+      {
+        "body": "Do not use the latest arrived frame as the publication watermark, transport identity as visit identity, or eventual listener removal as proof that admission stopped during startup. Preserve the metrics consumer's incremental-only behavior.\n\nCandidate limitations:\n- Applies to full snapshots whose freshness follows arrival order within a visit; incremental consumers need their own policy.\n- Decoder rejection, thrown-error handling, auditing, persistence and cancellation requirements are not specified by the public sources.\n- Attempt 1 supplies an implementation example and passing observations, not proof of causality or cross-task effectiveness.\n- Source support: TASK: \"Fix the presence\\npanel while preserving its existing behavior, including workspace navigation.\" TASK: \"Do not change the metrics consumer.\"\n- Source support: README.md: \"Within one visit, channel event arrival order defines snapshot freshness.\" \"Closing stops publication, but pending decodes can still settle.\"\n- Source support: src/workspace-navigation.js: \"// Presence publication can synchronously select a different room or hide the\\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot).\"",
+        "category": "exclusion"
+      },
+      {
+        "body": "Check synchronous and deferred bootstrap, immediate delivery, both decode completion orders, close and replacement during pending decoding, and reopening the same transport. Through the workspace wrapper, hide or select another visit during synchronous publication; verify that nested navigation remains authoritative, later old-visit events cannot enter decoding, and current-visit updates and cleanup still work.",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "Synchronous bootstrap is received and published immediately after show.",
+      "Deferred bootstrap is received, followed by later updates.",
+      "Both decode completion orders obey freshness: an older frame may publish first, but it cannot publish after a newer frame has published.",
+      "Closing during a pending decode prevents its eventual publication while allowing the decode to settle.",
+      "Selecting a replacement visit during a pending decode prevents the old result from publishing and permits current-visit updates.",
+      "Revisiting the same channel object uses fresh visit identity and fresh ordering state.",
+      "During synchronous bootstrap publication, nested select or hide remains authoritative after the outer show returns; the old listener cannot admit later events.",
+      "Metrics retains its existing delta-only behavior and does not receive synchronous bootstrap.",
+      "Run the public syntax/build checks after any Action."
+    ],
+    "forbidden_effects": [
+      "Do not change the metrics consumer or make it receive the synchronous bootstrap.",
+      "Do not treat presence snapshots as append-only events or combine them incrementally.",
+      "Do not let an older decoded snapshot roll back a newer snapshot already published in the same visit.",
+      "Do not publish results belonging to a closed or replaced visit.",
+      "Do not use channel/transport object identity as visit identity.",
+      "Do not let an outer reentrant show overwrite cleanup ownership established by nested navigation.",
+      "Do not require cancellation of pending decoding when closing; settlement without publication remains allowed.",
+      "Do not modify tests or configuration."
+    ],
+    "lifecycle_identity": [
+      "Each call that opens/shows a channel creates a distinct presence-panel visit.",
+      "Revisiting the same channel or transport object creates a new visit with independent authority and ordering state.",
+      "A visit loses publication authority before close or replacement can proceed through callback-capable behavior.",
+      "Listener cleanup belongs to the visit that created it; a returned cleanup handle is retained only if that visit is still current."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "The presence subscription must begin receiving events before connect can synchronously emit the bootstrap snapshot."
+      },
+      {
+        "id": "O2",
+        "text": "Synchronous decoded values must retain immediate publication behavior, including the ability of publication to synchronously select another channel or hide the panel."
+      },
+      {
+        "id": "O3",
+        "text": "Only the currently active visit may admit an event for decoding or publish its decoded result; close and replacement retire the old visit even if its physical listener cleanup is not yet available."
+      },
+      {
+        "id": "O4",
+        "text": "Within one visit, assign freshness by event arrival order. A decoded frame may publish if the visit is active and no newer-arriving frame has already published; once a newer frame publishes, older frames must not publish."
+      },
+      {
+        "id": "O5",
+        "text": "Advance the visit's published-freshness state before invoking the callback-capable publish function so reentrant navigation cannot restore stale authority."
+      },
+      {
+        "id": "O6",
+        "text": "After callback-capable startup returns a cleanup handle, install it only if its originating visit remains active; otherwise invoke that captured cleanup without disturbing cleanup installed by nested navigation."
+      },
+      {
+        "id": "O7",
+        "text": "Closing or replacing a visit must detach its reception and prevent already-started asynchronous decoding from publishing, while permitting that decoding to settle."
+      },
+      {
+        "id": "O8",
+        "text": "The metrics path must remain unchanged and continue attaching after synchronous bootstrap so that it counts deltas only."
+      }
+    ],
+    "ordering_barriers": [
+      "Install the presence event listener before invoking channel.connect for that visit.",
+      "Establish the new visit's logical identity and provisional cleanup ownership before connect or any other callback-capable startup.",
+      "Retire the previous visit before starting its replacement, and retire the current visit before close completes.",
+      "Check visit authority before starting decode and again when an asynchronous decode completes.",
+      "Record a frame's arrival sequence before decoding begins.",
+      "Record the published freshness watermark before calling publish.",
+      "Resolve cleanup ownership after startup returns without overwriting ownership created by nested navigation."
+    ],
+    "preservation": [
+      "Preserve immediate delivery for synchronously decoded presence values.",
+      "Preserve support for decoders that return either a direct value or a Promise.",
+      "Preserve the rule that an earlier frame may be shown when it finishes before any newer snapshot has published.",
+      "Preserve workspace navigation in which publication synchronously selects another room or hides the panel.",
+      "Preserve support for reusing the same transport object on a later visit.",
+      "Preserve close behavior that stops publication without requiring pending decodes to be cancelled.",
+      "Preserve the metrics consumer's incremental-only behavior and existing public interfaces."
+    ],
+    "scope": [
+      "Business-code changes are limited to the presence-panel subscription and lifecycle behavior under src/, principally src/subscription.js and src/presence-panel.js.",
+      "Workspace navigation behavior in src/workspace-navigation.js is an observable integration boundary to preserve.",
+      "src/metrics-consumer.js and its intentional post-bootstrap attachment behavior are out of modification scope.",
+      "Tests, configuration, scorer implementations, reference implementations, and hidden tests are outside scope."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Immediately after opening the presence panel, the initial online-user state is\nsometimes missing even though later presence updates appear."
+      },
+      {
+        "file": "TASK",
+        "quote": "Fix the presence\npanel while preserving its existing behavior, including workspace navigation."
+      },
+      {
+        "file": "TASK",
+        "quote": "Do not change the metrics consumer."
+      },
+      {
+        "file": "README.md",
+        "quote": "The panel displays full online-user snapshots, not an append-only event history."
+      },
+      {
+        "file": "README.md",
+        "quote": "Within one visit, channel event arrival order defines snapshot freshness."
+      },
+      {
+        "file": "README.md",
+        "quote": "Once a newer snapshot has\nbeen published, an older frame must not roll the panel back. If an earlier\nframe finishes before any newer snapshot is published, it may still be shown."
+      },
+      {
+        "file": "README.md",
+        "quote": "This ordering is per visit; revisiting the same channel starts a new visit."
+      },
+      {
+        "file": "README.md",
+        "quote": "Closing stops publication, but pending decodes can still settle."
+      },
+      {
+        "file": "README.md",
+        "quote": "Metrics remains an incremental-only observer and must not adopt panel policy."
+      },
+      {
+        "file": "src/subscription.js",
+        "quote": "// The decoder may return a value or a Promise (compressed network frames)."
+      },
+      {
+        "file": "src/subscription.js",
+        "quote": "// EventTarget removal detaches reception; an already started decode still settles."
+      },
+      {
+        "file": "src/channel.js",
+        "quote": "if (bootstrapMode === \"deferred\") queueMicrotask(() => emit(\"bootstrap\"));\n      else emit(\"bootstrap\");"
+      },
+      {
+        "file": "src/workspace-navigation.js",
+        "quote": "// Presence publication can synchronously select a different room or hide the\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot)."
+      },
+      {
+        "file": "src/workspace-navigation.js",
+        "quote": "// Reusing a transport object on a later visit is supported by the workspace."
+      },
+      {
+        "file": "src/metrics-consumer.js",
+        "quote": "// Metrics deliberately attach after the synchronous bootstrap and count deltas only."
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "These checks are required after an Action but do not test business behavior."
+      }
+    ],
+    "triggers": [
+      "Opening/showing the presence panel with synchronous bootstrap.",
+      "Opening/showing the presence panel with deferred bootstrap.",
+      "Receiving a presence frame whose decode is synchronous or asynchronous.",
+      "Decode completions occurring in a different order from event arrival.",
+      "Closing or hiding the panel while decoding is pending.",
+      "Selecting another channel while an old visit is active or decoding.",
+      "Publication synchronously reentering workspace navigation through select or hide.",
+      "Reopening the same channel object in a later visit."
+    ],
+    "unknowns": [
+      "Public sources do not specify decoder rejection or thrown-error handling; preserve existing behavior unless required by the stated obligations.",
+      "Public sources do not require cancellation of decoding or define a decoder cancellation API.",
+      "Public sources do not define error reporting, retry, persistence, or auditing behavior.",
+      "Public syntax/build checks do not establish the required business behavior.",
+      "Whether channel.connect itself can throw is not specified; no new exception policy should be inferred."
+    ]
+  },
+  "final_training_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "Synchronous bootstrap is received and published immediately after show.",
+      "Deferred bootstrap is received, followed by later updates.",
+      "Both decode completion orders obey freshness: an older frame may publish first, but it cannot publish after a newer frame has published.",
+      "Closing during a pending decode prevents its eventual publication while allowing the decode to settle.",
+      "Selecting a replacement visit during a pending decode prevents the old result from publishing and permits current-visit updates.",
+      "Revisiting the same channel object uses fresh visit identity and fresh ordering state.",
+      "During synchronous bootstrap publication, nested select or hide remains authoritative after the outer show returns; the old listener cannot admit later events.",
+      "Metrics retains its existing delta-only behavior and does not receive synchronous bootstrap.",
+      "Run the public syntax/build checks after any Action."
+    ],
+    "forbidden_effects": [
+      "Do not change the metrics consumer or make it receive the synchronous bootstrap.",
+      "Do not treat presence snapshots as append-only events or combine them incrementally.",
+      "Do not let an older decoded snapshot roll back a newer snapshot already published in the same visit.",
+      "Do not publish results belonging to a closed or replaced visit.",
+      "Do not use channel/transport object identity as visit identity.",
+      "Do not let an outer reentrant show overwrite cleanup ownership established by nested navigation.",
+      "Do not require cancellation of pending decoding when closing; settlement without publication remains allowed.",
+      "Do not modify tests or configuration."
+    ],
+    "lifecycle_identity": [
+      "Each call that opens/shows a channel creates a distinct presence-panel visit.",
+      "Revisiting the same channel or transport object creates a new visit with independent authority and ordering state.",
+      "A visit loses publication authority before close or replacement can proceed through callback-capable behavior.",
+      "Listener cleanup belongs to the visit that created it; a returned cleanup handle is retained only if that visit is still current."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "The presence subscription must begin receiving events before connect can synchronously emit the bootstrap snapshot."
+      },
+      {
+        "id": "O2",
+        "text": "Synchronous decoded values must retain immediate publication behavior, including the ability of publication to synchronously select another channel or hide the panel."
+      },
+      {
+        "id": "O3",
+        "text": "Only the currently active visit may admit an event for decoding or publish its decoded result; close and replacement retire the old visit even if its physical listener cleanup is not yet available."
+      },
+      {
+        "id": "O4",
+        "text": "Within one visit, assign freshness by event arrival order. A decoded frame may publish if the visit is active and no newer-arriving frame has already published; once a newer frame publishes, older frames must not publish."
+      },
+      {
+        "id": "O5",
+        "text": "Advance the visit's published-freshness state before invoking the callback-capable publish function so reentrant navigation cannot restore stale authority."
+      },
+      {
+        "id": "O6",
+        "text": "After callback-capable startup returns a cleanup handle, install it only if its originating visit remains active; otherwise invoke that captured cleanup without disturbing cleanup installed by nested navigation."
+      },
+      {
+        "id": "O7",
+        "text": "Closing or replacing a visit must detach its reception and prevent already-started asynchronous decoding from publishing, while permitting that decoding to settle."
+      },
+      {
+        "id": "O8",
+        "text": "The metrics path must remain unchanged and continue attaching after synchronous bootstrap so that it counts deltas only."
+      }
+    ],
+    "ordering_barriers": [
+      "Install the presence event listener before invoking channel.connect for that visit.",
+      "Establish the new visit's logical identity and provisional cleanup ownership before connect or any other callback-capable startup.",
+      "Retire the previous visit before starting its replacement, and retire the current visit before close completes.",
+      "Check visit authority before starting decode and again when an asynchronous decode completes.",
+      "Record a frame's arrival sequence before decoding begins.",
+      "Record the published freshness watermark before calling publish.",
+      "Resolve cleanup ownership after startup returns without overwriting ownership created by nested navigation."
+    ],
+    "preservation": [
+      "Preserve immediate delivery for synchronously decoded presence values.",
+      "Preserve support for decoders that return either a direct value or a Promise.",
+      "Preserve the rule that an earlier frame may be shown when it finishes before any newer snapshot has published.",
+      "Preserve workspace navigation in which publication synchronously selects another room or hides the panel.",
+      "Preserve support for reusing the same transport object on a later visit.",
+      "Preserve close behavior that stops publication without requiring pending decodes to be cancelled.",
+      "Preserve the metrics consumer's incremental-only behavior and existing public interfaces."
+    ],
+    "scope": [
+      "Business-code changes are limited to the presence-panel subscription and lifecycle behavior under src/, principally src/subscription.js and src/presence-panel.js.",
+      "Workspace navigation behavior in src/workspace-navigation.js is an observable integration boundary to preserve.",
+      "src/metrics-consumer.js and its intentional post-bootstrap attachment behavior are out of modification scope.",
+      "Tests, configuration, scorer implementations, reference implementations, and hidden tests are outside scope."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Immediately after opening the presence panel, the initial online-user state is\nsometimes missing even though later presence updates appear."
+      },
+      {
+        "file": "TASK",
+        "quote": "Fix the presence\npanel while preserving its existing behavior, including workspace navigation."
+      },
+      {
+        "file": "TASK",
+        "quote": "Do not change the metrics consumer."
+      },
+      {
+        "file": "README.md",
+        "quote": "The panel displays full online-user snapshots, not an append-only event history."
+      },
+      {
+        "file": "README.md",
+        "quote": "Within one visit, channel event arrival order defines snapshot freshness."
+      },
+      {
+        "file": "README.md",
+        "quote": "Once a newer snapshot has\nbeen published, an older frame must not roll the panel back. If an earlier\nframe finishes before any newer snapshot is published, it may still be shown."
+      },
+      {
+        "file": "README.md",
+        "quote": "This ordering is per visit; revisiting the same channel starts a new visit."
+      },
+      {
+        "file": "README.md",
+        "quote": "Closing stops publication, but pending decodes can still settle."
+      },
+      {
+        "file": "README.md",
+        "quote": "Metrics remains an incremental-only observer and must not adopt panel policy."
+      },
+      {
+        "file": "src/subscription.js",
+        "quote": "// The decoder may return a value or a Promise (compressed network frames)."
+      },
+      {
+        "file": "src/subscription.js",
+        "quote": "// EventTarget removal detaches reception; an already started decode still settles."
+      },
+      {
+        "file": "src/channel.js",
+        "quote": "if (bootstrapMode === \"deferred\") queueMicrotask(() => emit(\"bootstrap\"));\n      else emit(\"bootstrap\");"
+      },
+      {
+        "file": "src/workspace-navigation.js",
+        "quote": "// Presence publication can synchronously select a different room or hide the\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot)."
+      },
+      {
+        "file": "src/workspace-navigation.js",
+        "quote": "// Reusing a transport object on a later visit is supported by the workspace."
+      },
+      {
+        "file": "src/metrics-consumer.js",
+        "quote": "// Metrics deliberately attach after the synchronous bootstrap and count deltas only."
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "These checks are required after an Action but do not test business behavior."
+      }
+    ],
+    "triggers": [
+      "Opening/showing the presence panel with synchronous bootstrap.",
+      "Opening/showing the presence panel with deferred bootstrap.",
+      "Receiving a presence frame whose decode is synchronous or asynchronous.",
+      "Decode completions occurring in a different order from event arrival.",
+      "Closing or hiding the panel while decoding is pending.",
+      "Selecting another channel while an old visit is active or decoding.",
+      "Publication synchronously reentering workspace navigation through select or hide.",
+      "Reopening the same channel object in a later visit."
+    ],
+    "unknowns": [
+      "Public sources do not specify decoder rejection or thrown-error handling; preserve existing behavior unless required by the stated obligations.",
+      "Public sources do not require cancellation of decoding or define a decoder cancellation API.",
+      "Public sources do not define error reporting, retry, persistence, or auditing behavior.",
+      "Public syntax/build checks do not establish the required business behavior.",
+      "Whether channel.connect itself can throw is not specified; no new exception policy should be inferred."
+    ]
+  },
+  "origin": "success",
+  "reflection_update": {
+    "change_summary": [],
+    "deduplication": "exact_normalized_content",
+    "failure_attribution": "not_applicable",
+    "operation": "evidence",
+    "reason": "The existing experience exactly covers the public task's synchronous bootstrap reception, reentrant workspace navigation, asynchronous decode settlement, per-visit arrival-order freshness, cleanup handoff, same-channel reopening, and unchanged incremental-only metrics policy. Attempt 1 is consistent with that guidance, but its passing verdict and syntax observations do not prove causality or justify revising the rules.",
+    "supporting_attempts": [
+      1
+    ],
+    "target_sha256s": [
+      "2b46ebef0210d193cf3c224d408cd690d5870460673f7bc67205090a7ff7b310"
+    ]
+  },
+  "related_experiences": [
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "836e5beb19e447dad2842941ad458290202205a90555d94e2e4576d3c6806077"
+          }
+        ]
+      },
+      "body_sha256": "d267cd69c4488bc16ac3a7d9b08a84f115697fbbaa9f99fc2c0658bd68336af8",
+      "excludes": [],
+      "id": "candidate-c74ac7e89370f376a10037e61f952581",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "F"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "inline_reentry",
+        "entry_snapshot",
+        "async_resume"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "836e5beb19e447dad2842941ad458290202205a90555d94e2e4576d3c6806077",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when startup can synchronously publish a full snapshot, publication can reenter navigation, and decoding can finish after its originating visit ends.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Register reception before startup can emit the initial snapshot. Establish provisional visit and cleanup ownership before callback-capable startup, while preserving immediate delivery for synchronously decoded values.\n\nRetire the old visit's logical authority before replacement or close proceeds. Check that authority before admitting each event into decoding and again before publishing its result. Logical retirement must work while physical cleanup is still unavailable.\n\nAfter startup returns its cleanup handle, retain it only for the still-active originating visit; otherwise release that captured resource. An outer startup must not overwrite ownership installed by nested navigation.\n\nAssign arrival order before decoding and maintain a per-visit published freshness watermark. Publish a completed frame only while its visit remains active and no newer frame has already published. Advance the watermark before invoking callback-capable publication.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Allow an earlier frame to publish if it completes before any newer snapshot publishes. Allow already-started decoding to settle after retirement without granting it publication authority. Reopening the same transport creates fresh visit identity and ordering state.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Do not use the latest arrived frame as the publication watermark, transport identity as visit identity, or eventual listener removal as proof that admission stopped during startup. Preserve the metrics consumer's incremental-only behavior.\n\nCandidate limitations:\n- Applies to full snapshots whose freshness follows arrival order within a visit; incremental consumers need their own policy.\n- Decoder rejection, thrown-error handling, auditing, persistence and cancellation requirements are not specified by the public sources.\n- Attempt 1 supplies an implementation example and passing observations, not proof of causality or cross-task effectiveness.\n- Source support: TASK: \"Fix the presence\\npanel while preserving its existing behavior, including workspace navigation.\" TASK: \"Do not change the metrics consumer.\"\n- Source support: README.md: \"Within one visit, channel event arrival order defines snapshot freshness.\" \"Closing stops publication, but pending decodes can still settle.\"\n- Source support: src/workspace-navigation.js: \"// Presence publication can synchronously select a different room or hide the\\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot).\"",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Check synchronous and deferred bootstrap, immediate delivery, both decode completion orders, close and replacement during pending decoding, and reopening the same transport. Through the workspace wrapper, hide or select another visit during synchronous publication; verify that nested navigation remains authoritative, later old-visit events cannot enter decoding, and current-visit updates and cleanup still work.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "2b46ebef0210d193cf3c224d408cd690d5870460673f7bc67205090a7ff7b310",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "59009f12c5ee2b4a91f778ccc50863a6f846a470574e3d096e7b78af749f3f18"
+          }
+        ]
+      },
+      "body_sha256": "bfdab375cc05844e855f420f7aafade4b92265fdddb8e34e37da8bed106c3967",
+      "excludes": [],
+      "id": "candidate-4430e06fd36ababf0e24c81278eccb53",
+      "labels": [
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "inline_reentry",
+        "entry_snapshot"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "59009f12c5ee2b4a91f778ccc50863a6f846a470574e3d096e7b78af749f3f18",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when adding an active-only discard operation to an instance-owned buffered result whose completion delivers callbacks synchronously. TASK: \"Clear must have no effect on a completed, errored, or unsubscribed subject.\" README.md: \"Subscribers may invoke APIs inline.\"",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Identify the earliest published completion state, rather than relying solely on the later stopped state. Preserve the existing snapshot and completion publication before notification; an inline clear must already be ineffective during buffered-value delivery. Original rxjs/src/internal/AsyncSubject.ts: \"const { _hasValue, _value, _isComplete } = this;\" and \"this._isComplete = true;\\n      _hasValue && super.next(_value!);\\n      super.complete();\"",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "While active, discard both the stored result and its presence state through the existing storage ownership, without changing subscriber or terminal state. Keep absence distinct from a buffered undefined. TASK: \"Calling it when no value is buffered, or calling it repeatedly, is harmless. A later next call can establish a new buffered value, including undefined.\"\n\nPreserve completed replay, error precedence, nested subscription order, value identity and instance independence. TASK: \"Preserve the current behavior of next, error, complete, and subscribe, and keep each instance independent.\" README.md: \"opaque handles retain original value identity.\" Original rxjs/spec/subjects/AsyncSubject-spec.ts: \"expect(results).to.deep.equal(['inner: 2', 'inner: done', 'outer: 1', 'outer: done']);\"",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Do not equate clearing a buffered result with retiring its subject or removing observers. TASK: \"without discarding the subject or its subscribers.\" Navigation ownership, retry retention and physical cleanup ordering from related experiences do not establish requirements for this operation.\n\nCandidate limitations:\n- Workspace inspection of rxjs/src/internal/NativeSlot.ts and docs/host-api.md failed because the sandbox could not create a namespace; host encoding and binding details remain unverified.\n- Attempt 1 supplies one acceptance verdict, without behavioral traces. It does not establish causality or cross-task effectiveness.\n- Guidance applies where clearing is explicitly restricted to active storage; other discard policies require separate evidence.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Check empty and repeated clears, buffered-value removal followed by completion alone, and replacement with undefined followed by value delivery and completion. Check harmless clears after completion, error and subject unsubscribe. Invoke clear inside completion's value callback, subscribe again inline and later, and verify the preserved result and existing notification order. Exercise two instances independently and retain the named upstream regression checks. These checks derive from TASK's active-only clear and behavior-preservation requirements and the public reentrant-subscription regression.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "b470b9906940cd4fc90dd20201cf69a5c82cff16c7d4dd4fe2172f46ec9dc116",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "deferred-persistence.json",
+            "sha256": "f067f05890f4f941383afff0c0212a3cdd1c2ed9d245b98f6937ce47c7b51d6c"
+          }
+        ]
+      },
+      "body_sha256": "287efcb13d653ec39ccf630087f881d75c6e2a4fed77688ecacf4546f4290bdf",
+      "excludes": [],
+      "id": "editor-navigation-reentry",
+      "labels": [
+        "O",
+        "L",
+        "I"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "inline_reentry"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "f067f05890f4f941383afff0c0212a3cdd1c2ed9d245b98f6937ce47c7b51d6c",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Saving or subscription cleanup synchronously calls host listeners that may open another document or close the workspace.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Capture the old view and remove its current ownership. Finish final old-view effects, such as clearing its display, before callback-capable saving, or check authority for effects remaining after callbacks. An outer open rechecks its request identity after retirement.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Nested open/close, nested editing and the new view's rendering remain authoritative. Disposal also cleans up captured resources rather than clearing objects installed by a callback.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Protecting only final view installation can still leave a later stale clearing render. Do not require every host to detach first; notification order follows the current contract.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Invoke open/close inside listeners for timer-driven and departure-driven saves. Check document output, subscriptions and nested edits after the outer call returns, through both direct calls and actual unmounting.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "31faef50eabcb3d6d44db85ca28f59fee054835294dc351f3362cb6b1bee12eb"
+          }
+        ]
+      },
+      "body_sha256": "4dd7e40142c8718a69fede8dcb01c3743f4c31974d9de7f506825c8a20c4e58f",
+      "excludes": [],
+      "id": "candidate-b9be3577c3115d1d2aa29a4f1fe273c2",
+      "labels": [
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "inline_reentry",
+        "entry_snapshot"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "31faef50eabcb3d6d44db85ca28f59fee054835294dc351f3362cb6b1bee12eb",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when an operation silently discards an active buffered result while terminal results must remain intact, and notification callbacks may reenter the API. TASK: \"Clear must have no effect on a completed, errored, or unsubscribed subject.\" README.md: \"Subscribers may invoke APIs inline.\"",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Identify the logical terminal boundary before adding invalidation. Preserve publication of completion before callback-capable value delivery, and make clear respect that published state even before the outer completion call returns. Original rxjs/src/internal/AsyncSubject.ts: \"      this._isComplete = true;\\n      _hasValue && super.next(_value!);\\n      super.complete();\" Preserve the completion entry snapshot: \"    const { _hasValue, _value, _isComplete } = this;\" A local snapshot protects the current delivery; terminal protection must also preserve the stored result used by reentrant and later subscriptions.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Keep value presence separate from value content, clear only the owning instance's active buffer, and retain the subject and subscribers. TASK: \"Calling it when no value is buffered, or calling it repeatedly, is harmless. A later next call can establish a new buffered value, including undefined.\" TASK: \"Preserve the current behavior of next, error, complete, and subscribe, and keep each instance independent.\" Trace the public operation through the actual storage binding rather than assuming wrapper-local state is authoritative. TASK: \"Actual native buffer source and host consumer are under src/. Preserve the full declared upstream API and regression behavior.\"",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Do not implement clear by completing, unsubscribing, removing subscribers, or changing synchronous notification order. TASK: \"While the subject is active, clear must remove its buffered value without emitting a notification or completing the subject.\" Existing inline subscription order is supported by rxjs/spec/subjects/AsyncSubject-spec.ts: \"    expect(results).to.deep.equal(['inner: 2', 'inner: done', 'outer: 1', 'outer: done']);\" Do not import navigation ownership, retry retention, or listener retirement requirements from superficially related experiences.\n\nCandidate limitations:\n- Workspace inspection failed because the sandbox could not create a namespace. NativeSlot.ts and docs/host-api.md remain unverified; no omitted source wording is assumed.\n- Attempt 1 reports acceptance and syntax checks passing, but provides no behavioral trace. This does not establish causality or cross-task effectiveness.\n- The rules apply where the public contract preserves completed results. They do not establish a universal policy for cancellation, navigation, or buffer invalidation.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Check empty and repeated clear; buffered clear followed by completion without a value; clear followed by next(undefined) and completion; clear after completion, error, and subject unsubscription; and independence of two instances. Invoke clear inside completion-time next callbacks, then subscribe both inline and after the outer complete returns to check preserved replay and ordering. Preserve existing regression tests and configuration, and distinguish syntax checks from behavioral checks. These checkpoints follow TASK's active-clear, terminal-no-effect, undefined-value, and preservation requirements together with the original completion ordering.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "e674d9c3e84a302fa3aea69789cc2d962616a40c69926bfc357cf885cede0e94",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "0cc5c9b766a7c957f2147101b619ff025ef1ffd5f7feeeca7acc92f229dd43bb"
+          }
+        ]
+      },
+      "body_sha256": "44b20b3b5792770cf1fb13490d592697dd89d50f7c7a76b6caf0e11cfd5d5688",
+      "excludes": [],
+      "id": "candidate-4ce83ea099a090e356038a9c7390914f",
+      "labels": [
+        "L",
+        "O"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "shared_lifetime",
+        "async_resume"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "0cc5c9b766a7c957f2147101b619ff025ef1ffd5f7feeeca7acc92f229dd43bb",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when a first-match consumer owns a retained asynchronous source whose cleanup can suspend independently of consumer completion. TASK: \"Looking up an early matching record can leave the stream resource occupied. Repair the record scan in Controller in src/workflow.rb while preserving scan order and error behavior.\" README.md: \"Producer cleanup can suspend; the producer is retained independently of the consumer.\" Consumer termination alone therefore does not establish release of the owned resource.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "On an early match, initiate the source's asynchronous close and publish terminal completion only after its callback completes. docs/host-api.md: \"first_match owns a supplied retained asynchronous record source and a supplied predicate.\" It also states: \"The source has next/aclose asynchronous operations; cancellation interrupts a suspended read, and cleanup may suspend.\" Original src/workflow.rb exposes the native close operation through \"@env.resolve('close',@key,nil)\". Use that completion boundary rather than a delay or merely returning from the scan.\n\nRetain the terminal guard and selected outcome before initiating callback-based cleanup. Original src/workflow.rb: \"return if @finishing;@finishing=true;@kind,@value,@failure=kind,value,error\". While finishing, prevent further reads and predicate work; repeated terminal entry must not initiate cleanup again or replace the selected outcome. Set done at the required cleanup completion boundary.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Route predicate failure and cancelled-read termination through owned-source cleanup while retaining the selected error or cancelled outcome. Original src/workflow.rb contains \"if row['cancelled'];finish('cancelled',nil,nil)\" and \"rescue => error;finish('error',nil,error);end\". Its predicate contains \"raise ArgumentError,'predicate failed' if config['predicateError']\". Cleanup must not silently replace these established outcomes.\n\nPreserve sequential predicate evaluation, first-match selection and exhaustion returning nil. Original src/workflow.rb: \"@predicate.call(row['value']) ? finish('return',row['value'],nil) : scan\" and \"elsif row['done'];finish('return',nil,nil)\". Preserve the existing non-nil configured-match condition, rather than introducing new matching semantics. The current predicate excludes nil matches; do not generalize a value-based exhaustion distinction to interfaces that permit nil matches.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Keep public methods, cancellation input and terminal snapshot shape. Original src/workflow.rb: \"def cancel;@env.output('cancelInput',@key,nil);end\" and \"def snapshot;s={done:@done};s.merge!({kind:@kind,value:@value,message:@failure&&@failure.message}) if @done;s;end\". TASK: \"Keep the documented public interfaces and unrelated behavior. Use only the Ruby standard library.\" Do not transfer shared-source reuse policies, visit identities, configuration-readiness APIs or network retry gates from unrelated consumers.\n\nCandidate limitations:\n- Only TASK and supplied public source/documents establish requirements; automatic contracts and frozen experiences are fallible guidance.\n- The documents do not specify cleanup-failure reporting or precedence over the selected result.\n- The documents do not establish whether explicit close is necessary after natural exhaustion.\n- The environment implementation and callback scheduling guarantees are not supplied.\n- Attempt 1 reports passing syntax and acceptance, with no behavioral observations establishing completeness, causality or cross-task benefit.\n- This reflection modifies no files and accesses no scorer, reference implementation or hidden tests.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Verify an early match with suspended close: cleanup begins, no further record is requested, snapshot remains incomplete, and releasing cleanup publishes the matching value. Repeat for predicate failure and cancellation during a suspended read, preserving the original message or cancelled kind. Check ordered nonmatches followed by a match, natural exhaustion returning nil, immediate cleanup completion, and repeated terminal entry. Preserve tests/configuration. VISIBLE_CHECKS.md: \"These checks are required after an Action but do not test business behavior.\" Syntax success alone does not establish resource release.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "4a344162be345350744e4de69aeb9d51b8d11f805cc594c0392e26d5649535d1",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "e3de76e2ce57d52ee8e957aef41215ec173f04692094973d9428469d787a7c35"
+          }
+        ]
+      },
+      "body_sha256": "c1646c9bc345a988b89fe991e9ac9b9c246e2a3fee03ab7afd01ae7abb15b286",
+      "excludes": [],
+      "id": "candidate-c0347d330c77e95e8895a8e5580e7f96",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "shared_lifetime",
+        "attempt_resource",
+        "entry_snapshot",
+        "inline_reentry",
+        "effect_lifetimes",
+        "async_resume"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "e3de76e2ce57d52ee8e957aef41215ec173f04692094973d9428469d787a7c35",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when reusable progress reception serves distinct visits and attempts, startup can emit synchronously, decoding can complete later, and audit outlives visible presentation. README.md: \"Decoding may return a value or a Promise. The same file and source can be reused\\nby multiple panel visits. Each selected or retried attempt starts one subscription.\" README.md: \"opens a new visit, including when the exact same file object is selected again.\" Confirm these premises in each target.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Establish reception before callback-capable startup while preserving ordinary streaming and subsequent reuse. TASK: \"A transfer with a warm progress source shows no initial progress until a later\\npacket arrives.\" Original src/progress.js: \"  feed.start();\\n  feed.target.addEventListener(\\\"progress\\\", listener);\" README.md: \"Starting a view of the stream may synchronously\\nemit its cached progress event; further progress events arrive on the same target.\" Check subscription activity and originating visit eligibility before decoding each packet. README.md: \"A retired visit\\naccepts no new progress events.\" This must hold during synchronous startup even before its caller receives the returned cleanup handle; eventual physical removal alone cannot establish that boundary.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Separate admission, retained audit and visible delivery. Capture originating file and attempt identity for admitted decoding. Preserve audit once at completion even after cancellation, retirement or disposal; then check originating visit authority before visible publication. README.md: \"Every accepted progress event is recorded exactly once when decoding\\nfinishes, including work accepted before the visit closes.\" README.md: \"Removing a listener does not retract a decode\\nthat already started. Closing or replacing the visit stops visible progress;\\nnew visits remain live.\" Original src/progress.js: \"    const deliver = frame => { record(frame); receive(frame); };\" Original src/queue.js: \"      if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });\" Preserve this visit-based publication check: attempt cancellation alone does not revoke visible delivery of previously admitted decoding while its visit remains current. Reopening the identical file creates a different visit and does not authorize old results to paint it.\n\nCoordinate cleanup ownership before synchronous startup can navigate. Make retirement prevent new admission immediately, reconcile resources returned after retirement, and prevent resumed older work from overwriting newer ownership. README.md: \"`showProgress` may synchronously select or hide through\\nthe workspace, and normal current progress must remain visible.\" Retire captured panel ownership before canceling it, and recheck navigation identity afterward. Original src/panel.js: \"  const previous = state.current;\\n  state.current = null;\\n  if (previous) releaseVisit(previous);\\n  if (state.disposed || state.nextVisit !== requestId) return null;\" README.md: \"Selection and hiding may themselves cancel an old handle and synchronously\\nreceive newer navigation; the newer navigation keeps ownership.\" Preserve native cancellation and cleanup-before-notification ordering. Original src/transfer.js: \"  controller.signal.addEventListener(\\\"abort\\\", () => {\\n    stopProgress();\\n    onCancel({ file, attemptId, signal: controller.signal });\\n  }, { once: true });\" Preserve idempotence and independent workspace disposal. README.md: \"Disposal removes subscriptions and cancels transfers; work already accepted\\nfor audit remains retained.\"\n\nBind accepted retries to their entry file and visit across cancellation reentry. Cancel the previous attempt before enqueueing, retain exactly one accepted command and queue record even if cancellation navigates, cancel its resulting transfer if retired, and suppress its retired queued notice. README.md: \"The accepted old retry must still enqueue and record once after such navigation.\\nIts newly created transfer is canceled immediately if its visit has ended; this\\ndoes not remove its retained queue record.\" Original src/retry.js: \"  const previous = visit.handle;\\n  previous.cancel();\\n  const handle = enqueueTransfer(state, visit, \\\"retry\\\");\\n  if (state.current === visit) visit.handle = handle;\\n  else handle.cancel();\\n  if (state.current === visit) publishQueued(state, visit, handle);\" Preserve record-before-transfer construction and independent counters. Original src/queue.js: \"  const attemptId = ++state.nextAttempt;\\n  state.record(makeQueueRecord(visit.file, attemptId, visit.id, kind));\"",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Keep the repair within progress reception and necessary lifecycle coordination. TASK: \"Restore the initial progress update without changing the public\\ntransfer, retry, navigation, cleanup, or audit behavior. Preserve the ordinary\\nstreaming path and subsequent uses. The queue-record format is outside this fix.\" Preserve adapter interfaces and exact payload shapes. README.md: \"Every queue record remains exactly `{fileId, attemptId, visitId, kind}`;\" README.md: \"Notices remain\\n`{fileId, attemptId, visitId, status: \\\"queued\\\"}`.\" Do not add byteCount, introduce arrival-order or numeric filtering, or import diagnostic-consumer policies without target-specific public authorization. The current source delivers accepted decodes as they complete and checks visit identity for presentation.\n\nCandidate limitations:\n- Only TASK and supplied public documents/code establish requirements. Experiences, automatic contracts and evaluation observations are fallible guidance.\n- Attempt 1 reports passing syntax checks and acceptance, with no behavioral observations proving completeness, causality or cross-task benefit.\n- The public sources establish no arrival-order freshness or numeric monotonicity requirement. Do not infer one from frame fields or other experiences.\n- Decoder rejection, malformed thenables, adapter exceptions and physical transfer completion recovery are unspecified.\n- No diagnostic telemetry consumer or listener-detachment host callback is established by these public sources.\n- Cleanup handoff hooks, provisional handles and generation counters are implementation options, not required public interfaces.\n- This reflection modifies no files and accesses no scorer, reference implementation or hidden tests.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Verify synchronous cached startup followed by ordinary streaming, immediate and Promise decoding, and reuse of the same file and source. Trigger hide, selection, same-file reopening and disposal from showProgress during startup; emit another packet before the outer startup returns. Check that retired reception admits no additional decoding, previously admitted decoding retains its original audit identity, old completions cannot paint new visits, and retired resources are cleaned without replacing newer ownership. Complete accepted decoding after attempt cancellation while the visit remains current and preserve existing visit-based delivery. Separately exercise navigation during cancellation, accepted entry-bound retry recording and retired-result cancellation, current-only queued notices, hidden retry rejection, repeated cleanup, independent workspaces and unchanged payload shapes. These checks derive from README.md's lifecycle and original src/progress.js, src/queue.js, src/panel.js and src/retry.js; they impose no ordering among independently completing decodes. After an Action run public syntax/build checks. VISIBLE_CHECKS.md: \"These checks are required after an Action but do not test business behavior.\"",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "0eb9f0eed8d81d6243641548ce5b24ac86e02a272a28fd0d6e27c107bcd652c9",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "561a8d6020c36d973abf855a883aac98b15f7aa175fffd6ccd01a07399b3d0bd"
+          }
+        ]
+      },
+      "body_sha256": "47180488e3e3dba95b124e47765162ae50395d04c08badbf09546983acb00174",
+      "excludes": [],
+      "id": "candidate-0d1b162a43baf1fa91434f1dd06610d6",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "inline_reentry",
+        "effect_lifetimes"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "561a8d6020c36d973abf855a883aac98b15f7aa175fffd6ccd01a07399b3d0bd",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when subscription startup can synchronously deliver work whose host callbacks navigate, and navigation retires the originating visit. README.md: \"paintRows(frame, navigation) commits rows for the current visit and may\\nsynchronously navigate or hide the panel.\" src/feed.js: \"if (mode === \\\"deferred\\\") queueMicrotask(() => emit(\\\"snapshot\\\", 0));\\n      else emit(\\\"snapshot\\\", 0);\"",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Install reception before startup can emit a required cached batch. Establish the originating visit's ability to detach that reception before callback-capable startup begins. A cleanup handle assigned only after startup returns leaves a window in which nested navigation can retire the visit but its listener can still accept new batches. Returning later and cleaning up then does not close that earlier window. The original ordering in src/subscription.js is \"feed.start(mode);\\n  feed.target.addEventListener(\\\"batch\\\", listener);\"; README.md requires \"The activity panel reads a cached first batch and then incremental batches.\"\n\nGive each visit a distinct identity. Revoke its visible-output authority before retirement effects, and clean up its captured subscription without overwriting ownership established by nested navigation. Recheck authority after callback-capable startup returns. README.md: \"Selecting the same\\nfeed after leaving creates a new panel visit.\" Also: \"Changing selection or hiding stops\\nthe previous visit's visible output; the selected visit must keep receiving new\\nbatches.\"",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Keep accepted history work separate from permission to display. Preserve history-before-receive delivery, then check visit authority before painting. Recheck immediately before count publication after either synchronous painting or asynchronous completion, retaining the painted frame. README.md: \"retiring a view does not revoke accepted history work. Removing a listener stops\\nnew reception, while already-started decoding and painting may still complete.\" Also: \"The count belongs to those painted rows and becomes visible only\\nafter that paint has completed, if its visit is still current.\" src/subscription.js: \"history.record(frame);\\n      receive(frame);\"",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Preserve immediate delivery and count publication when decoding and painting are synchronous and the visit remains current. Keep ordinary live batches and independent consumer policies. Do not treat stale-output guards as a substitute for detaching retired reception, or listener removal as cancellation of already accepted history work. README.md: \"Preserve APIs, payloads, rendering timing and history behavior.\" Also: \"The independent metrics consumer intentionally ignores the cached snapshot and\\nobserves deltas.\"\n\nCandidate limitations:\n- This revision addresses callback-capable subscription startup and navigation; document saving and submission durability rules require separate source support.\n- TASK: \"Correct these timing problems while preserving normal live updates, history\nrecording, public APIs and the existing rendering adapters. The independent\nmetrics consumer is outside this repair.\"\n- The public requirements do not define callback exception handling or supersession between overlapping asynchronous batches within one visit.\n- Attempts 1 and 2 provide implementation comparison and verdicts only. No failure cause was supplied, and the passing verdict does not establish causality or cross-task effectiveness.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Check synchronous and deferred snapshots followed by deltas; asynchronous decoding across switch, hide and same-feed reopening; navigation inside history recording; and navigation during synchronous or asynchronous painting. Specifically exercise nested selection during synchronous startup, then emit another batch before the outer startup returns: the retired listener must stop new reception, accepted decoding must retain its history effect, and the new visit must retain its subscription and visible output. Check counts after paint completion and immediate counts for synchronous current-visit painting. These checkpoints follow the quoted public reception, history and visibility requirements; they do not depend on an evaluator verdict.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "8ce034522ca1b3d945f0a27901b32b03ee0b6b2cc8aacd52d51913f5cb6c2424",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "fc27048c4e0a5a1c35ea5064e64ae22c82b93751a702b21ecb834d3892981bc1"
+          }
+        ]
+      },
+      "body_sha256": "04af1533e4fe1b7ad98030f1b892b16fe367863117df7282cb4e8e0538fe98cb",
+      "excludes": [],
+      "id": "candidate-c0da785a3d7ea483aa0ecc0bf3b47c22",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "shared_lifetime",
+        "attempt_resource",
+        "entry_snapshot",
+        "inline_reentry",
+        "effect_lifetimes",
+        "async_resume"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "fc27048c4e0a5a1c35ea5064e64ae22c82b93751a702b21ecb834d3892981bc1",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when a reusable progress source serves distinct visits and attempts, startup can emit synchronously, decoding can finish later, and retained audit differs from visible presentation. README.md: \"The same file and source can be reused\\nby multiple panel visits. Each selected or retried attempt starts one subscription.\" Confirm these premises in each target system.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Register reception before starting the source, preserving subsequent streaming and public interfaces. Original src/workflow.py invokes \"        env.call('start',file['token'])\\n        subscription=env.call('listen',file['token'],callback)\". README.md states: \"Starting a view of the stream may synchronously\\nemit its cached progress event; further progress events arrive on the same target.\"\n\nCheck originating subscription and visit eligibility before decoding each packet. Retirement immediately prevents subsequent admission, including additional packets emitted before startup returns; do not depend solely on physical listener removal. README.md: \"A retired visit\\naccepts no new progress events.\"",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Separate admission, retained audit and visible publication. Record each admitted event exactly once when decoding completes, including after retirement or disposal; check originating visit validity before visible publication. README.md: \"Every accepted progress event is recorded exactly once when decoding\\nfinishes, including work accepted before the visit closes.\" It also states: \"Removing a listener does not retract a decode\\nthat already started. Closing or replacing the visit stops visible progress;\\nnew visits remain live.\" Reopening the identical file creates a distinct visit.\n\nCoordinate cleanup and ownership across callback-capable startup and cancellation. Retire old ownership before cleanup can reenter navigation; when an older operation resumes, prevent it from overwriting newer ownership and clean up its retired resources. Preserve idempotent cancellation and disposal. README.md: \"Selection and hiding may themselves cancel an old handle and synchronously\\nreceive newer navigation; the newer navigation keeps ownership.\" Also: \"Disposal removes subscriptions and cancels transfers; work already accepted\\nfor audit remains retained.\" A provisional cleanup handle is an implementation option, not a mandated public interface.\n\nKeep accepted retries bound to their entry file and visit. Cancel the prior transfer before enqueueing, preserve exactly one accepted command and record across cancellation navigation, cancel the resulting transfer if its visit ended, and suppress retired queued notices. README.md: \"The accepted old retry must still enqueue and record once after such navigation.\\nIts newly created transfer is canceled immediately if its visit has ended; this\\ndoes not remove its retained queue record.\" Also: \"Queued notices are visible output: a notice\\nfrom a retired visit must not be sent, including after reopening the same file.\" Preserve independent workspace counters and cancellation.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Keep the repair within reception and necessary lifecycle coordination. Preserve queue and notice shapes and adapter interfaces. README.md: \"Every queue record remains exactly `{fileId, attemptId, visitId, kind}`;\" and \"Notices remain\\n`{fileId, attemptId, visitId, status: \\\"queued\\\"}`.\" Do not introduce decode freshness suppression without a target-specific requirement: VISIBLE_CHECKS.md states, \"These maintenance examples do not impose composition-specific out-of-order display rules.\" Do not transfer unrelated diagnostic-consumer policies into this repair.\n\nCandidate limitations:\n- Evidence is the supplied original TASK and public documents/code; automatic contracts, experience text and evaluation observations do not establish requirements.\n- TASK: \"Restore the initial update while preserving the existing transfer, retry, navigation, cleanup and audit behavior, ordinary streaming and subsequent uses. The queue-record format is outside this fix.\"\n- VISIBLE_CHECKS.md: \"These maintenance examples do not impose composition-specific out-of-order display rules.\" No arrival-order suppression or numeric monotonicity requirement is established.\n- Decoder failures, adapter exceptions and visibility of already accepted decoding from a canceled attempt whose visit remains current are unspecified.\n- Attempt 1 supports the reflection context but its passing examples do not establish complete correctness, causality or cross-task benefit. No implementation failure is established.\n- Diagnostic-consumer requirements from other experiences are not established for this public source. No files were modified.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Verify cached startup and later streaming, immediate and deferred decoding, retained audit after hide/disposal, and new delivery after same-file reopening. Exercise synchronous hide, switch and reopening during startup, with subsequent packets before the outer startup returns: retired listeners must reject new admission while previously admitted decoding retains audit. Separately verify newer ownership after cancellation reentry, accepted entry-bound retry recording and cancellation, current queued notices, repeated cleanup, workspace independence and unchanged record shapes. These checkpoints follow README.md's documented lifecycle; they do not prescribe an order among independently completing decodes.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "6fcd6376641fabd68811e2b973e73444b5f602f80ab32d029097d93133147320",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "81a8a0abf2ba4dca3815798ddd9e24eb0a0a42eabfd15cef03e96bb468430d36"
+          }
+        ]
+      },
+      "body_sha256": "3e071fb0fa3416ce088cc78701caac548f9c257c1166bc19e03e1f52868ca338",
+      "excludes": [
+        "discard_boundary_policy"
+      ],
+      "id": "candidate-3d45d771f541faa0212f119d57c6003e",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "F",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "deferred_batch",
+        "boundary_persistence",
+        "inline_reentry",
+        "entry_snapshot"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "81a8a0abf2ba4dca3815798ddd9e24eb0a0a42eabfd15cef03e96bb468430d36",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when introducing trailing persistence into a synchronous editor whose save listeners can navigate. TASK requires \"after a 120 ms quiet interval write only the latest text in that editing burst. Subsequent bursts must continue to save.\" README.md requires \"Returning to a document creates a fresh editor visit and restores persisted text.\" These requirements make persistence boundaries and visit identity part of preserving supported behavior.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Keep the visit's immutable in-memory text current immediately, then push it into that visit's reusable trailing task. Preserve pending edits at departure and before submission capture rather than canceling them. Preserve the utility's clearing of pending state before invoking work: src/workflow.rb contains \"    @handle = @pending = nil\\n    @work.call(value) unless value.nil?\" This allows edits admitted by a save callback to form an independent subsequent batch.\n\nCapture the departing visit and remove its current ownership before flushing its pending save. Finish its passive clearing output before the flush, or guard remaining output after callbacks. Complete cleanup using the captured visit. After departure, an outer open must recheck its navigation request before installing its destination. Saving is callback-capable: src/workflow.rb states \"    @listeners.to_a.each { |token, block| block.call(event) if @listeners.key?(token) }\" Nested navigation, edits, subscriptions and rendering must remain authoritative.\n\nFor submission, capture the selected visit, its snapshot and its confirmation capability before flushing pending persistence. Flush before archive capture, then return the receipt even if navigation suppresses its notice. Recheck the originating visit immediately before notice output, including after archive listeners run. README.md states \"An outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity.\" src/workflow.rb enforces identity with \"  def active;!@owner.nil?&&@owner.equal?(@current.call);end\".",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Preserve synchronous public interfaces, immutable text copies, subscription delivery and fresh visits, including reopening the same document ID. Preserve the null result when no editor is selected and receipt delivery independently of notice permission. Leave preview scheduling and cancellation unchanged: TASK states \"Preserve other supported behavior and the synchronous public interfaces. The adjacent search preview is outside this maintenance change.\"",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Do not let a successful receipt authorize output for a retired visit, use document ID equality as visit identity, or assume that code after a save still owns navigation. A guard on final installation alone does not protect stale clearing output. Apply the current task's explicit boundary policy; this guidance does not require flushing work that another contract explicitly discards.\n\nCandidate limitations:\n- The supplied source does not expose integration detachment facilities. README.md states \"Dispose detaches integrations before closing the workspace.\" Preserve that ordering where those facilities exist; do not invent an adapter API.\n- Timer exception behavior and cancellation races are unspecified. The supplied Store.stop deletes a subscription without invoking application callbacks; callback-capable cleanup is not established here.\n- Attempt 1 passed the reported checks, but no behavioral observations were supplied. This does not establish causality, exhaustive correctness, or cross-task effectiveness.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Check several edits within 120 ms yield one latest-text write and a later burst saves again. Check close, switch, same-document reopening and disposal preserve pending text. During timer-driven, departure-driven and submission-driven saves, have a store listener open or close the workspace and edit the resulting visit; verify the outer continuation preserves that visit and its pending batch. During submission, navigate from both store and archive listeners; verify the original snapshot and returned receipt survive while stale notices are suppressed. Also check no-selection submission, subscription delivery, and the unchanged 40 ms preview and hide behavior.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "c8e38b6f8a680f012db4bd5030c99007bb5e65ff85ac5bc828499e6cbb59721f",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "c89ef61c81f086d4d77034a9ee88129c8848d33b9c5148445b1150b71aea8e5e"
+          }
+        ]
+      },
+      "body_sha256": "8eb4dad8a46fdff46cbb8b18523a6b57d9e513839faea18d39d07b6ba46e08ac",
+      "excludes": [],
+      "id": "candidate-a53e1c39502d6adeae537ab294c718b7",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "shared_lifetime",
+        "attempt_resource",
+        "entry_snapshot",
+        "inline_reentry",
+        "effect_lifetimes",
+        "async_resume"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "c89ef61c81f086d4d77034a9ee88129c8848d33b9c5148445b1150b71aea8e5e",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when progress reception serves distinct visits and attempts, startup can emit synchronously, decoding may finish later, and history and presentation have different lifetimes. README.md: \"Selecting a file creates a visit. Retry replaces the physical attempt without\\nopening another visit. Selecting the same file again does open another visit.\" README.md: \"The feed object is shared by attempts and visits for that file. Its `start()`\\nmethod may synchronously emit cached data, and `decode(packet)` may return a\\nvalue or a Promise.\" Confirm the target's explicit display-order requirement before transferring freshness filtering.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Install panel reception before callback-capable startup, preserving later streaming and reusable sources. Original src/progress.js: \"  feed.start();\\n  feed.target.addEventListener(\\\"progress\\\", listener);\" TASK: \"A transfer with a warm progress source shows no initial progress until a later\\npacket arrives.\" Check originating subscription and visit eligibility before decoding each packet. Retirement must stop new admission during startup even when physical cleanup is not yet available. README.md: \"One startup window is relevant to this maintenance request: `start()` may emit\\nmore than one packet synchronously. A `showProgress` callback may select or hide\\nanother visit before `start()` returns, while its caller has not yet received\\nthe returned cleanup handle.\"\n\nFor explicit full-frame freshness requirements, capture reception order before decoding or callback-capable processing. Scope publication ordering to the visit, spanning retries. Suppress an older completion from presentation after a newer-received frame has been published, while retaining both history effects. Recheck authority and freshness after the history callback; commit publication ordering before invoking presentation, which may reenter delivery. TASK: \"Full\\nprogress frames may decode out of order; do not allow an older frame to roll the\\ncurrent display backward.\" README.md: \"Retry replaces the physical attempt without\\nopening another visit.\" Do not compare numeric progress values or require suppression merely because a newer packet remains pending.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Separate packet admission, retained history and visible publication. Bind admitted decoding to its originating file and attempt; retain its history effect on completion even after cancellation, hiding, replacement or disposal. Original src/progress.js: \"    const deliver = frame => { record(frame); receive(frame); };\" README.md: \"`recordProgress` appends transfer history. `showProgress` paints the panel.\" Recheck visit authority after recording because host callbacks may navigate synchronously. Original src/queue.js: \"      if (state.current === visit) state.showProgress({ fileId: visit.file.id, attemptId, frame });\" Cancellation of an attempt alone does not revoke presentation of already admitted decoding while its visit remains current and its frame remains eligible.\n\nCoordinate cleanup ownership across synchronous startup, listener removal and cancellation. Retire captured ownership before releasing resources; after callbacks return, verify that an older operation cannot overwrite newer navigation. Original src/panel.js: \"  const previous = state.current;\\n  state.current = null;\\n  if (previous) releaseVisit(previous);\\n  if (state.disposed || state.nextVisit !== requestId) return null;\" Preserve removal commitment and repeated-removal behavior. src/progress-source.js: \"// Removal commits before notifying the host. The host callback is synchronous\\n// and may call workspace.select(...) or workspace.hide(). Repeated removal is inert.\" Preserve abort, progress cleanup and cancellation notification order from src/transfer.js: \"  controller.signal.addEventListener(\\\"abort\\\", () => {\\n    stopProgress();\\n    onCancel({ file, attemptId, signal: controller.signal });\\n  }, { once: true });\" Reconcile resources returned after retirement without replacing newer ownership.\n\nKeep an accepted retry bound to its entry visit and file across cancellation callbacks. Cancel the previous attempt before enqueueing; preserve the accepted retry's record and transfer construction even if cancellation navigates; cancel the resulting retired handle and suppress its queued notice. Original src/retry.js: \"  const previous = visit.handle;\\n  previous.cancel();\\n  const handle = enqueueTransfer(state, visit, \\\"retry\\\");\\n  if (state.current === visit) visit.handle = handle;\\n  else handle.cancel();\\n  if (state.current === visit) publishQueued(state, visit, handle);\" Preserve queue recording before transfer construction, independent workspace counters and idempotent disposal. src/queue.js: \"// Queue records are retained even when their originating panel visit ends.\"",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Keep the repair specific to panel reception and necessary lifecycle/freshness coordination. Preserve adapter interfaces and payloads. src/queue.js: \"  return { fileId: file.id, attemptId, visitId, kind };\" src/notice.js: \"  state.showQueued({ fileId: visit.file.id, attemptId: handle.attemptId,\\n    visitId: visit.id, status: \\\"queued\\\" });\" Preserve diagnostic startup ordering and live decoded-delta handling rather than applying the panel's bootstrap or freshness policy globally. src/telemetry.js: \"// Diagnostics count live deltas only. A cached bootstrap is panel state, not a delta.\" Its existing sequence is \"  feed.start();\\n  feed.target.addEventListener(\\\"progress\\\", listener);\" README.md: \"It is not the panel and must keep its existing behavior while the panel defect\\nis repaired.\" This preserves that consumer's own bootstrap exclusion; it does not establish a new global classification of packets emitted by other users of the shared target.\n\nCandidate limitations:\n- Only TASK and supplied public documents/code establish requirements. Frozen experiences, automatic contracts and evaluation observations are fallible guidance.\n- Attempt 1 reports passing syntax checks and acceptance, but supplies no behavioral observations proving completeness, causality or cross-task effectiveness.\n- Decoder rejection, malformed thenables, adapter exceptions and physical transfer completion have no specified recovery policy.\n- Reception order is the supported interpretation of frame age; no public source specifies frame sequence metadata or numeric monotonicity.\n- Provisional handles, generation counters and publication watermarks are implementation options, not mandated public interfaces.\n- No files were modified, and no scorer, reference implementation or hidden tests were accessed.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Verify cached startup and later streaming, immediate and deferred decoding, newer publication followed by older completion with both history effects retained, and later-received lower-valued frames. Check ordering across retries and nested delivery/navigation from history and presentation callbacks. During startup, hide, switch or reopen the same file, then emit another packet before startup returns: retired reception must stop new decoding while admitted history remains retained. Exercise navigation during listener removal and cancellation, entry-bound retries, retired-notice suppression, repeated cleanup, disposal, independent workspaces, unchanged payloads and unchanged telemetry. TASK: \"Preserve ordinary streaming, diagnostic telemetry,\\nand subsequent uses.\" Treat syntax checks separately from behavior: VISIBLE_CHECKS.md: \"These checks are required after an Action but do not test business behavior.\"",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "cee153e498e5a17c34bdc3c38b488b584b11a5c521164878785bc582aa87293d",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "95b3cd1bdb1a75450cd25cf37e1289944ee486f4d06f5caacc1ab9f1d955305d"
+          }
+        ]
+      },
+      "body_sha256": "f11ced99347494e68067b0344971832ae4ad8cbe0e54a707818ca3c53a45aec7",
+      "excludes": [],
+      "id": "candidate-4eef3174d35ed68b9826638aa3cae7e4",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "shared_lifetime",
+        "attempt_resource",
+        "entry_snapshot",
+        "inline_reentry",
+        "effect_lifetimes",
+        "async_resume"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "95b3cd1bdb1a75450cd25cf37e1289944ee486f4d06f5caacc1ab9f1d955305d",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when a shared progress source serves distinct visits and physical attempts, startup can synchronously emit packets, full-frame decoding can finish later, and history and visible output have different lifetimes. README.md: \"Selecting a file creates a visit. Retry replaces the physical attempt without\\nopening another visit. Selecting the same file object again opens a new visit.\" README.md: \"The source is shared by attempts and visits for that file. start may emit cached\\npackets synchronously; decoding yields a full frame, immediately or later.\\nDecode completion order can differ from packet arrival order.\" Confirm these premises and the target's explicit freshness requirement before applying.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Register panel reception before starting the source, preserving subsequent streaming and reuse. Original src/workflow.php has \"$env->call('start',$file->token);$subscription=$env->call('listen',$file->token,$callback);\" Check subscription cancellation and originating visit eligibility before admitting each packet to decoding. Logical retirement must reject further packets even while synchronous startup has not returned its handle. README.md: \"One startup window is relevant to this maintenance request: start may emit\\nmore than one packet synchronously. A showProgress callback may select or hide\\nanother visit before start returns, while its caller has not yet received the\\nreturned cleanup handle.\"\n\nSeparate reception order, audit completion and visible publication. Bind admitted decoding to its original file, attempt and visit; retain its audit once on completion even after cancellation, navigation or disposal. Original src/workflow.php executes \"$audit($frame);$view($frame,$order);\" and records progress using \"['fileId'=>$v->file->id,'attemptId'=>$n,'frame'=>$frame]\". Recheck originating visit eligibility after auditing because host callbacks can navigate. For targets requiring full-frame freshness, assign reception sequence within the visit, spanning retries, and publish only completions newer than the last displayed sequence. Recheck freshness after audit callbacks, which may synchronously deliver newer progress, and advance displayed sequence before invoking the display callback. TASK: \"Full\\nprogress frames may decode out of order; do not allow an older frame to roll the\\ncurrent display backward.\" README.md: \"A full frame replaces displayed state; loaded values can decrease or reset.\" Compare reception sequence rather than loaded values; stale display suppression must not suppress audit.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Preserve newer navigation across callback-capable startup and cleanup. Retire old ownership before canceling captured resources, recheck request identity after callbacks, and prevent resumed older work from overwriting or canceling newer resources. Original src/workflow.php uses \"$request=++$this->registry->serial;$old=$this->registry->visit;$this->registry->visit=null;if($old)$this->release($old);if($this->registry->disposed||$this->registry->serial!==$request)return null;\" Coordinate cleanup while startup has not returned, without requiring a particular internal mechanism. README.md: \"Removing a listener commits removal before calling the host detach callback;\\nthat callback may synchronously select, hide or dispose. Repeated removal is\\ninert. Host callbacks execute synchronously unless explicitly deferred.\" Preserve idempotent cancellation and disposal. Keep accepted retry work bound to its entry visit and file: cancel the preceding attempt before enqueueing, retain the accepted command and record across cancellation reentry, cancel its resulting handle if its visit ended, and suppress its retired queued notice. Original src/workflow.php: \"$v->handle->cancel(); $accepted=$v;$h=$this->enqueue($accepted,'retry');if($this->current($accepted))$accepted->handle=$h;else $h->cancel();if($this->current($accepted))$this->notice($accepted,$h);\"",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Preserve queue recording before transfer startup, adapter interfaces, payload identities, per-workspace counters and ordinary streaming. TASK: \"Restore the initial progress update without changing the public\\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior.\" Original src/workflow.php constructs \"$entry=['fileId'=>$v->file->id,'attemptId'=>$n,'visitId'=>$v->id,'kind'=>$kind];\" and queued notices as \"['fileId'=>$v->file->id,'attemptId'=>$h->number,'visitId'=>$v->id,'status'=>'queued']\". Do not add queue fields under this repair. Keep panel freshness changes separate from diagnostic behavior. README.md: \"The same source service also has a diagnostic consumer, Telemetry/\\ncollectProgressTelemetry, whose existing live delta observations are separate\\nfrom the panel. Keep its existing behavior during this maintenance.\" Do not transfer the panel's startup or freshness policy to Telemetry.\n\nCandidate limitations:\n- Only TASK and supplied public documents/code establish requirements. Automatic contracts, prior experiences and evaluation observations are fallible guidance.\n- Attempt 1 reports passing syntax and acceptance checks, but provides no behavioral observations establishing completeness, causality or cross-task benefit.\n- README.md states: \"A decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime.\" Adapter exception recovery is unspecified.\n- Reception-order display suppression applies where full-frame freshness is required; it must not be generalized to diagnostic delta consumers or used to suppress retained audit.\n- Cleanup coordination and reception sequencing are implementation choices; the sources do not mandate a particular provisional-handle interface.\n- No files were modified during this reflection.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Verify cached startup and later streaming; immediate and deferred decoding; reverse decode completion with both audits retained and no older display replacement; legitimate decreases in newer frames; and freshness across retries in one visit. Exercise navigation from recordProgress and showProgress, including newer progress delivered during auditing. During multi-packet synchronous startup, hide, switch, reopen the identical file or dispose: retired reception must stop while already admitted audit remains associated with its original identity. Exercise navigation during listener detachment and cancellation; confirm newer ownership, accepted retry recording, cancellation of retired resulting transfers, current queued notices, repeated cleanup, independent workspaces and unchanged queue/notice shapes. Verify diagnostic live delta observations remain unchanged. These checkpoints derive from TASK's freshness and preservation requirements, README.md's synchronous callback model, and the original src/workflow.php lifecycle; passing syntax alone does not establish them.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "78616bbce7c537e7b3a3bdc31ff765c79152aaf344a6831281305ac9387ec652",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "fdcee6ff5b80dc40692e279fb872e01901bd29903421052406eff0d2aa44fd85"
+          }
+        ]
+      },
+      "body_sha256": "8cc37d38868922c638afffc90d27f919453bdca000c11d923f3e0019feb76bad",
+      "excludes": [],
+      "id": "candidate-a5cf77fe32dac9733b2de62909d9d7bb",
+      "labels": [
+        "I",
+        "A",
+        "L"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "inline_reentry",
+        "discard_boundary_policy"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "fdcee6ff5b80dc40692e279fb872e01901bd29903421052406eff0d2aa44fd85",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when adding buffer discard while retaining the owning subject and its subscribers. TASK: \"Add a public `clear(): void` operation to `AsyncSubject` so callers can discard a buffered result that is no longer needed, without discarding the subject or its subscribers.\" Distinguish the buffered result's lifetime from the subject's and subscribers' lifetimes.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Discard both stored content and its presence while active, without notifying subscribers or changing terminal state. TASK: \"While the subject is active, clear must remove its buffered value without emitting a notification or completing the subject. Calling it when no value is buffered, or calling it repeatedly, is harmless.\" Keep presence distinct from content: TASK also states, \"A later next call can establish a new buffered value, including undefined.\" Do not implement clearing as next(undefined), completion, or unsubscription.\n\nProtect the earliest terminal boundary, including synchronous delivery before completion returns. TASK: \"Clear must have no effect on a completed, errored, or unsubscribed subject.\" Original rxjs/src/internal/AsyncSubject.ts contains \"this._isComplete = true;\\n      _hasValue && super.next(_value!);\\n      super.complete();\" and subscription finalization checks \"} else if (isStopped || _isComplete) {\". Therefore clear must respect _isComplete during inline value callbacks, rather than relying solely on a stopped flag set by the later superclass completion. Preserve the committed buffer for reentrant and subsequent subscriptions.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Keep the change local to buffer discard and preserve existing operation semantics and instance ownership. TASK: \"Preserve the current behavior of next, error, complete, and subscribe, and keep each instance independent.\" README.md: \"The consumer can call API operations from inline subscriber callbacks; instances keep separate buffers.\" Original rxjs/src/internal/AsyncSubject.ts snapshots \"const { _hasValue, _value, _isComplete } = this;\" at completion entry. Retain that delivery behavior; adding clear does not authorize changing existing next or completion reentry semantics.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Do not transfer unrelated queue, preview, readiness, cancellation or asynchronous cleanup policies into this API. TASK: \"Preserve the full declared upstream API and regression behavior.\" Preserve the framework dispatch and subscription results; src/Workspace.vue already contains \"case 'clear':if(typeof s.subject.clear==='function')s.subject.clear();else throw Error('clear API unavailable');break;\". The presence of multiple subscribers does not establish independent-consumer policies from other cases.\n\nCandidate limitations:\n- Only TASK and supplied public code/documents establish requirements; experiences, automatic contracts, AST hints and evaluation observations remain fallible guidance.\n- Workspace reads failed because the sandbox could not create a namespace. Omitted files, including rxjs/src/internal/Subject.ts and docs/host-api.md, could not be inspected; no conclusions depend on invented contents.\n- Attempt 1 reports passing syntax checks and acceptance without detailed behavioral observations. This establishes neither causality nor cross-task effectiveness.\n- This reflection modifies no files and accesses no scorer, reference implementation or hidden tests.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Verify buffered-clear-complete produces completion alone; empty and repeated clears produce no notifications; replacement next values, including undefined, are delivered on completion; and clear after completion, error or unsubscribe is harmless. Invoke clear inline during completion value delivery, then subscribe reentrantly and afterward, checking unchanged terminal results. Preserve the existing reentrant subscription regression in rxjs/spec/subjects/AsyncSubject-spec.ts: \"expect(results).to.deep.equal(['inner: 2', 'inner: done', 'outer: 1', 'outer: done']);\". Check separate instances and the mounted consumer. After an Action, run the existing checks requested by TASK where available, preserve tests/configuration, and direct generated artifacts and caches to /tmp. VISIBLE_CHECKS.md states: \"These checks are required after an Action but do not test business behavior.\"",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "c70d1eafa5a1b90b850238c3f22861de20a82ccc328ca5666f80e71da8123710",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "43b1737ecafc493e90f2bd7e6269af64768d01523fdbe72b74e071b42af09450"
+          }
+        ]
+      },
+      "body_sha256": "161afdfacd25b5b13579f91be786f60387dffeeefebef56e014ec7c9352bc14c",
+      "excludes": [],
+      "id": "candidate-5f841e3771ba666f297915fbe668d6c4",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "shared_lifetime",
+        "attempt_resource",
+        "entry_snapshot",
+        "inline_reentry",
+        "effect_lifetimes",
+        "async_resume"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "43b1737ecafc493e90f2bd7e6269af64768d01523fdbe72b74e071b42af09450",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when a shared progress source serves distinct visits and attempts, startup can emit synchronously, full-frame decoding may finish later, and history and presentation have different lifetimes. README.md: \"Selecting a file creates a visit. Retry replaces the physical attempt without\\nopening another visit. Selecting the same file object again opens a new visit.\" README.md: \"The source is shared by attempts and visits for that file. start may emit cached\\npackets synchronously; decoding yields a full frame, immediately or later.\\nDecode completion order can differ from packet arrival order.\" Confirm these premises and the target's display-order requirement before applying freshness suppression.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Register panel reception before invoking startup, preserving later streaming. Original src/workflow.go: \"env.Call(\\\"start\\\",file.Token);subscription=env.Call(\\\"listen\\\",file.Token,callback)\". TASK: \"Restore the initial progress update without changing the public\\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior.\" Make retirement effective during startup so subsequent packets cannot start new work through an obsolete subscription, even before the outer startup returns. Keep already admitted decoding separate from that admission decision.\n\nWhen the task requires full-frame freshness, assign ordering at packet reception before decoding or callback-capable work. Scope ordering to the display owner, including attempts sharing one visit. After a newer frame has been published, suppress older frames only from presentation. Recheck both visit authority and publication order after audit callbacks; commit the publication watermark before calling the display sink, which may reenter delivery. TASK: \"Full\\nprogress frames may decode out of order; do not allow an older frame to roll the\\ncurrent display backward.\" README.md: \"A full frame replaces displayed state; loaded values can decrease or reset.\" Reception order, rather than loaded magnitude or completion order, determines freshness. Buffering every result until arrival order can be reconstructed is not required.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Keep audit completion independent of display permission. Capture the originating file, attempt and visit; retain the existing audit effect for each admitted decode, including completion after hide, replacement, cancellation or disposal. Audit before deciding whether to paint, then recheck visit authority and freshness because audit may synchronously navigate or complete another decode. README.md: \"recordProgress appends transfer history; showProgress paints the open panel.\" Original src/workflow.go: \"deliver:=func(frame interface{}){;audit(frame);view(frame,order)}\". A stale display frame still retains its history effect.\n\nCoordinate ownership across callback-capable startup and cleanup. Publish cleanup ownership before startup callbacks can navigate; reconcile the returned handle without overwriting resources installed by newer navigation. Remove old resources from current ownership before canceling them, and recheck the navigation request after cleanup returns. Cancel captured retired resources and preserve repeated cleanup behavior. README.md: \"One startup window is relevant to this maintenance request: start may emit\\nmore than one packet synchronously. A showProgress callback may select or hide\\nanother visit before start returns, while its caller has not yet received the\\nreturned cleanup handle.\" README.md: \"Removing a listener commits removal before calling the host detach callback;\\nthat callback may synchronously select, hide or dispose. Repeated removal is\\ninert. Host callbacks execute synchronously unless explicitly deferred.\" Preserve cancellation order from src/workflow.go: \"h.CancelContext();h.Stop();h.Env.Call(\\\"cancel\\\",h.File.Token,h.Number)\". A provisional handle is an implementation option, not a required public API.\n\nKeep an accepted retry bound to its entry visit and file across cancellation reentry. Cancel the previous attempt before enqueueing, retain the accepted command's record and attempt creation, cancel its resulting attempt if its visit has ended, and publish its queued notice only while that visit remains current. Original src/workflow.go: \"v.Handle.Cancel();accepted:=v;h:=s.enqueue(accepted,\\\"retry\\\");if s.current(accepted){accepted.Handle=h}else{h.Cancel()};if s.current(accepted){s.notice(accepted,h)}\". Preserve record-before-transport ordering, independent session counters and disposal. Preserve the exact queue fields from src/workflow.go: \"entry:=map[string]interface{}{\\\"fileId\\\":v.File.ID,\\\"attemptId\\\":n,\\\"visitId\\\":v.ID,\\\"kind\\\":kind}\" and notice fields: \"map[string]interface{}{\\\"fileId\\\":v.File.ID,\\\"attemptId\\\":h.Number,\\\"visitId\\\":v.ID,\\\"status\\\":\\\"queued\\\"}\".",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Do not generalize panel reception or freshness changes to diagnostic consumers, introduce numeric monotonicity, extend queue records, or discard required audit. README.md: \"The same source service also has a diagnostic consumer, Telemetry/\\ncollectProgressTelemetry, whose existing live delta observations are separate\\nfrom the panel. Keep its existing behavior during this maintenance.\" README.md: \"Queue records are {fileId, attemptId, visitId, kind}\\nunless a separate authorization adds byteCount from file.size.\" Conversely, do not transfer an earlier task's absence of out-of-order display requirements into a target whose TASK explicitly requires freshness protection.\n\nCandidate limitations:\n- Only TASK and the supplied public documents and source establish requirements. Automatic contracts, prior experiences and evaluation observations do not.\n- Attempt 1 reports passing syntax and acceptance checks, but supplies no behavioral observations establishing completeness, causality or cross-task benefit.\n- Rejected decoding, adapter exceptions and physical transfer completion are outside the documented model.\n- Cancellation does not establish a requirement to discard decoding already accepted by an older attempt while its visit remains current.\n- The earlier experience's lack of a freshness requirement applied to its earlier sources. This task explicitly requires freshness protection; that difference does not invalidate the earlier task's boundary.\n- No workspace files were modified and no scorer, reference implementation or hidden tests were accessed.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Check cached startup and later streaming; immediate and deferred decoding; newer-then-older completion with both audit effects retained; and later packets whose loaded values decrease. Exercise nested delivery from audit and display callbacks to verify authority checks and watermark commitment. Navigate during startup, emit another packet before startup returns, and verify retired admission, cleanup, newer ownership and subsequent delivery. Complete admitted decoding after hide, replacement and disposal; reopen the identical file as a new visit. Exercise navigation from unlisten and cancellation, accepted entry-bound retries, retired queued-notice suppression, repeated cleanup, independent sessions, unchanged payloads and unchanged telemetry. These checks follow TASK's preservation and freshness requirements and README.md's synchronous callback model. VISIBLE_CHECKS.md: \"These checks are required after an Action but do not test business behavior.\"",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "77c68e0f51d195985b1ffb123979ed2c80b9a1736302f9949e38bf08649913c1",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "5aea9d9e32312ca8e1f98fcff76864bab6a6b90d81e2d8e16df4e9b03aa5076d"
+          }
+        ]
+      },
+      "body_sha256": "5722bdb60dfdf22240b26bfd2c28729da383ae8a778d227243654c7a61befa3a",
+      "excludes": [
+        "discard_boundary_policy"
+      ],
+      "id": "candidate-2d2f84317705b65174a7ca9474026d1e",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "deferred_batch",
+        "boundary_persistence",
+        "entry_snapshot",
+        "inline_reentry",
+        "effect_lifetimes"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "5aea9d9e32312ca8e1f98fcff76864bab6a6b90d81e2d8e16df4e9b03aa5076d",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when editor persistence is deferred, persistence or queue delivery invokes synchronous listeners, and a submission retains its entry values while confirmation authority belongs to a particular visit. Evidence: src/Workflow.java: \"Consumer<Map<String,Object>> fn=listeners.get(token); if(fn!=null) fn.accept(event);\" README.md: \"An outlet acquires the visit active when binding is called; it cannot infer an earlier action from a receipt. Each opening creates a new identity.\"",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Update the accepting visit's in-memory text immediately, then push its text into a visit-owned trailing task. Keep the task usable after each completed burst. TASK: \"Coalesce edits using the trailing-task utility: after a 120 ms quiet interval write only the latest text in that editing burst. Subsequent bursts must continue to save.\"\n\nConsume and clear pending work before invoking persistence, so listener-enqueued edits become later work rather than being erased by completion of the old save. Preserve the existing utility's ordering: src/Workflow.java: \"void flush() { if(handle!=null)env.cancel(handle); String text=pending; handle=null;pending=null; if(text!=null)work.accept(text); }\"\n\nOn departure, capture the old session, revoke its current ownership, detach its captured subscription and finish old-view clearing before flushing its pending persistence. Complete that persistence before reading a replacement document. After callback-capable retirement, an outer open must recheck navigation request identity before installing its destination. README.md: \"Returning to a document creates a fresh editor visit and restores persisted text.\"\n\nAt submit entry, capture the originating visit, its document/text snapshot and its acquired confirmation capability before flushing pending persistence. Deliver the captured snapshot afterward and return its queue receipt even if a persistence callback navigates. Evidence: src/Workflow.java: \"Map<String,Object> snapshot=value(visit.id,visit.text);\" README.md: \"A submission returns the queue receipt, or null when no\\neditor is selected.\"",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Keep durable submission ownership separate from confirmation authority. A receipt may remain valid after navigation, but show it only while the exact acquired session remains current, including when the same document has been reopened. src/Workflow.java: \"boolean active(){return owner!=null&&owner==current.get();}\" Preserve nested navigation, nested edits, immutable receipts, listing copies and captured-resource cleanup. Follow the documented disposal order: README.md: \"Dispose detaches integrations before closing the workspace.\"",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "A guard on final destination installation alone does not protect against stale clearing after a persistence callback. Binding confirmation after flushing also cannot recover the entry visit from receipt contents. Do not discard pending edits merely because their visit departs, and do not import accepted-command retention into contracts that revoke commands on navigation.\n\nCandidate limitations:\n- This guidance applies where accepted edits must survive visit boundaries and accepted submissions retain entry-bound values; other ownership or discard policies require separate analysis.\n- TASK: \"Preserve other supported behavior and the synchronous public interfaces. The adjacent search preview is outside this maintenance change.\" Preserve the shared trailing utility's preview behavior.\n- Exception recovery, null text semantics and ordering of simultaneously due timers are unspecified by the supplied public evidence.\n- Attempt 1 reports successful compilation and acceptance, but provides no behavioral observations establishing causality or cross-task effectiveness.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Check no writes before the quiet deadline, one latest-value write per burst and successful later bursts. Exercise open, close and dispose with pending edits, then reopen the document. Navigate, reopen the same document and enqueue edits inside store and queue listeners. Independently check persisted text, accepted snapshot and receipt count, returned receipt, current document output, subscription ownership and confirmation suppression. Verify that callback-enqueued edits save later and that preview timing, hide cancellation and later-query usability remain preserved.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "a04433da533a5c05b710123e9ecb543dd21063c01c0ed779d3cae7552b809b0a",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "72c033b35046c87f2d1e4ce92fb7adeea42ae8db84fe95ae1d3972a8a52dedf8"
+          }
+        ]
+      },
+      "body_sha256": "aa56b3cd7fafc6047108379d143d8588b9347de9e044bac3c68da714faf99477",
+      "excludes": [],
+      "id": "candidate-336b1242c288bc81992c930ba0a2b835",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "shared_lifetime",
+        "attempt_resource",
+        "entry_snapshot",
+        "inline_reentry",
+        "effect_lifetimes",
+        "async_resume"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "72c033b35046c87f2d1e4ce92fb7adeea42ae8db84fe95ae1d3972a8a52dedf8",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when progress reception serves distinct visits and physical attempts, startup can emit synchronously, decoding may finish later, and audit and presentation have different lifetimes. README.md: \"Selecting a file creates a visit. Retry replaces the physical attempt without\\nopening another visit. Selecting the same file object again opens a new visit.\" README.md: \"The source is shared by attempts and visits for that file. start may emit cached\\npackets synchronously; decoding yields a full frame, immediately or later.\\nDecode completion order can differ from packet arrival order.\" Confirm these premises before transferring this guidance.",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Install panel reception before starting the source, while preserving subsequent streaming and source reuse. Original src/workflow.rb: \"env.call('start',file['token']);subscription=env.call('listen',file['token'],callback)\". Guard admission using the originating subscription and visit, including during startup before the outer caller receives its handle. README.md: \"One startup window is relevant to this maintenance request: start may emit\\nmore than one packet synchronously. A showProgress callback may select or hide\\nanother visit before start returns, while its caller has not yet received the\\nreturned cleanup handle.\" Retirement must prevent subsequent admission without relying solely on eventual physical cleanup.\n\nWhere the task explicitly requires protection against out-of-order full frames, capture reception order before decoding and retain a publication watermark for the visit, spanning its retries. Publish an eligible completion only if it cannot replace a newer frame already displayed. Commit the watermark before invoking callback-capable presentation so reentrant publication cannot restore older authority. TASK: \"Full\\nprogress frames may decode out of order; do not allow an older frame to roll the\\ncurrent display backward.\" Compare reception order rather than numeric progress: README.md states, \"A full frame replaces displayed state; loaded values can decrease or reset.\" Continue auditing suppressed older completions.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Bind accepted decoding to its originating file, attempt and visit. Preserve its audit effect when decoding completes, including after cancellation or retirement, then recheck visit eligibility before visible publication. Original src/workflow.rb: \"deliver=->(frame){ audit.call(frame);view.call(frame,order)}\" and \"->(frame,order){@env.call('showProgress',{fileId:v.file['id'],attemptId:n,frame:frame}) if current(v)}\". README.md: \"recordProgress appends transfer history; showProgress paints the open panel.\" Because audit callbacks may navigate synchronously, an admission-time validity check cannot replace the publication-time check. Already accepted decoding is not automatically ineligible for display solely because retry canceled its attempt while the visit remains current.\n\nEstablish cleanup ownership before callback-capable startup, remove captured old ownership before cancellation, and recheck authority after callbacks. An older startup must clean its own retired resources without overwriting newer navigation. Original src/workflow.rb: \"@serial+=1;request=@serial;old=@visit;@visit=nil;release(old) if old\\n  return nil if @disposed||@serial!=request\". Preserve removal commitment and idempotence: README.md states, \"Removing a listener commits removal before calling the host detach callback;\\nthat callback may synchronously select, hide or dispose. Repeated removal is\\ninert. Host callbacks execute synchronously unless explicitly deferred.\" Keep cancellation and disposal independent for each workspace.\n\nKeep an accepted retry bound to its entry visit across cancellation callbacks. Cancel the prior handle before enqueueing; preserve its one queue record and transfer construction even if cancellation navigates; cancel the resulting transfer if its visit ended and suppress retired queued notices. Original src/workflow.rb: \"v.handle.cancel\\n  accepted=v;h=enqueue(accepted,'retry');if current(accepted);accepted.handle=h;else;h.cancel;end;notice(accepted,h) if current(accepted);h\". Preserve queue recording before transfer construction and existing counters. Original src/workflow.rb: \"@attempts+=1;n=@attempts;entry={fileId:v.file['id'],attemptId:n,visitId:v.id,kind:kind};;@env.call('record',entry)\".",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Keep freshness filtering specific to the panel requirement; do not transfer it to unrelated consumers or tasks without supporting evidence. Preserve public queue and notice fields and adapter interfaces. README.md: \"Queue records are {fileId, attemptId, visitId, kind}\\nunless a separate authorization adds byteCount from file.size.\" No separate authorization is supplied. Preserve diagnostic behavior, including its existing startup sequence: README.md states, \"The same source service also has a diagnostic consumer, Telemetry/\\ncollectProgressTelemetry, whose existing live delta observations are separate\\nfrom the panel. Keep its existing behavior during this maintenance.\"\n\nCandidate limitations:\n- Only TASK and the supplied public README.md and src/workflow.rb establish requirements. Automatic contracts, frozen experiences and evaluation observations are guidance.\n- Attempt 1 passed the reported syntax check and acceptance verdict. No behavioral observations establish complete correctness, causality or cross-task effectiveness.\n- README.md states: \"A decode result resolves once; rejected decode and physical transfer completion are outside this embedding's model.\" Adapter exception behavior is unspecified.\n- An older completion need not be suppressed merely because a newer packet is still decoding. The documented requirement prevents rollback after a newer frame has been displayed.\n- Provisional handles, generation counters and sequence counters are implementation options, not required public interfaces.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Verify cached startup and later streaming; immediate and deferred decoding; newer completion followed by older completion with both audits retained; and a later-received lower loaded value replacing an earlier display. Verify freshness across retries and reentrant publication, including navigation during recordProgress. During startup, hide, switch or reopen from showProgress and emit further packets before startup returns: retired admission must stop, accepted audits must remain, and newer ownership must survive. Exercise navigation during cancellation and listener removal, accepted entry-bound retries, current queued notices, same-file reopening, repeated cleanup, disposal, workspace independence, unchanged record shapes and unchanged Telemetry behavior. TASK: \"Preserve ordinary streaming, diagnostic telemetry,\\nand subsequent uses.\"",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "6dca1fc16aa5e7cc79660bf098beac72edffa9aed4e86dceda44d1800261f778",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    },
+    {
+      "audit": {
+        "notes": [],
+        "outcome_refs": [],
+        "rule_links": [],
+        "sources": [
+          {
+            "path": "candidates.json",
+            "sha256": "dc6032568e690da6e0e573a2bc756d3dfadd87f88c6c5fe41aaf79c328e710b3"
+          }
+        ]
+      },
+      "body_sha256": "ab5d2aadb46ece7e6c2a00c84763f0c020345fc115da7177d3b255e799ae078a",
+      "excludes": [],
+      "id": "candidate-59965f4d1a7398730c6ed2c6906fa0bc",
+      "labels": [
+        "R",
+        "L",
+        "I"
+      ],
+      "parent_sha256": null,
+      "requires": [
+        "attempt_resource",
+        "async_resume",
+        "effect_lifetimes"
+      ],
+      "review": {
+        "kind": "ai_assisted",
+        "limitations": [
+          "Content acceptance does not establish cross-task effectiveness."
+        ],
+        "source_sha256": "dc6032568e690da6e0e573a2bc756d3dfadd87f88c6c5fe41aaf79c328e710b3",
+        "status": "candidate"
+      },
+      "rules": [
+        {
+          "body": "Apply when preparation reports pending repeatedly, the client owns retries, and foreground presentation and background preparation have separate lifetimes. TASK states: \"Update the foreground preparation client so it keeps checking pending preparation and delivers the package only after a ready status.\" README.md states: \"The transport asynchronously fulfills false (pending) or true (ready). It can\\nreport pending repeatedly. It does not issue retries itself.\"",
+          "category": "applicability",
+          "id": "R01"
+        },
+        {
+          "body": "Treat pending as a continuation of preparation. Schedule another check after every pending response until readiness or lifecycle invalidation; pending must not record or deliver completion. Preserve the existing ready-only completion branch in src/workflow.py: \"if ready is True:\" and its duplicate prevention: \"if token not in self.state['completed']:self.state['completed'].append(token)\".\n\nReuse the existing cancellable scheduling boundary for retries while preserving immediate initial check entry and asynchronous future notification. README.md states: \"Retry callbacks are\\nscheduled for a later event turn and can be cancelled; no real-time interval is\\npart of this API.\" src/workflow.py states: \"# Host futures notify through the asyncio loop; timers are injected separately.\" Do not replace scheduling with immediate recursive polling or invent a required retry interval.\n\nKeep each response bound to its captured token and generation. Check lifecycle authority before response effects and queued retry work. src/workflow.py captures \"token=self.state['token']\" and guards both callbacks with \"if self.disposed or generation!=self.generation:return\". Preserve invalidation and retry cancellation on foreground start, reopen, close and owner disposal so obsolete work cannot publish, complete or check for a replacement lifecycle.",
+          "category": "event_relation",
+          "id": "R02"
+        },
+        {
+          "body": "Keep foreground closure separate from workspace ownership. README.md states: \"The adjacent workspace job has its own\\nlifetime; its panel is only a display. Final owner disposal releases resources.\" Preserve WorkspaceJob preparation after panel closure and resource release on disposal; do not propagate foreground cancellation policy into workspace close.\n\nPreserve public commands, token identity, check counting, unique completed tokens and snapshot isolation. src/workflow.py copies completion state with \"return dict(self.state,completed=list(self.state['completed']))\". Reuse existing completion and scheduling behavior without changing tests, configuration, dependencies or unrelated resource policy.",
+          "category": "preservation",
+          "id": "R03"
+        },
+        {
+          "body": "Not specified in this candidate.\n\nCandidate limitations:\n- Only attempts 1 and 2 are supplied. Both passed syntax checks; their differing acceptance verdicts contain no behavioral observations or failure explanation.\n- The verdict difference does not establish that clearing loading during pending caused failure. TASK and public documentation do not explicitly prescribe loading presentation between checks.\n- Transport exceptions, retry limits, backoff and timeout policy are unspecified.\n- Render reentry is explicitly excluded by README.md; arbitrary callback reentry is not established.\n- These rules do not establish cross-task effectiveness or introduce shared-cache, network-mode, transfer-record or persistence requirements.",
+          "category": "exclusion",
+          "id": "R04"
+        },
+        {
+          "body": "Check multiple pending responses followed by ready: initial checking enters immediately, each pending schedules a cancellable later-turn check, and completion occurs only on ready for the originating token. Separately exercise close, restart, reopen and disposal with outstanding responses and queued retries; release old callbacks after replacement and confirm no obsolete effects. Check completed-list snapshot isolation, duplicate prevention, check counts, workspace continuation after panel close and disposal cleanup.",
+          "category": "verification",
+          "id": "R05"
+        }
+      ],
+      "schema_version": "experience-bundle-v2",
+      "sha256": "98295aa2919059b252b315192210813df312e80c68473cfb51d4056f44860fbd",
+      "taxonomy_version": "temporal-obligation-taxonomy-7-v1",
+      "version": "single-file-v1"
+    }
+  ],
+  "source_sha256": "7e2c2feff7a5f1693e890bb75f9b19c9579f856056ef99d40f945d927dbbb00e",
+  "status": "awaiting_content_review",
+  "task": "# Maintenance task\n\nImmediately after opening the presence panel, the initial online-user state is\nsometimes missing even though later presence updates appear. Fix the presence\npanel while preserving its existing behavior, including workspace navigation.\n\nDo not change the metrics consumer.\n",
+  "training_accepted": true,
+  "trajectory": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "81b872186ec7455d361453a2b788e1e252823c35b98372763181741fda405136",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "package.json": "7984c67f416880985803329ef982d2ab714819400f5cae2a06568ed077db0683",
+        "src/channel.js": "ba40ce05391f80582611e3850cc8f2c45a5db8d39a31b753174a690dcefc3a85",
+        "src/metrics-consumer.js": "73445d7fb5ede97450b4f339370c1f0987394808ce312bb0407694575b380213",
+        "src/presence-panel.js": "606650cc1f4c3e857ed5266173622b545a7dc713c9092735538f889014e9f4ae",
+        "src/render-workspace.js": "0d1412acc6eeda2ea6fa3d1b50314be93fa28b7e74e124faec0354129aa19035",
+        "src/subscription.js": "9d0ceb1a2dd1b20bebb383b2dc4ce2baec61d9e0ddd2f01ba2cb90254ec2300f",
+        "src/workspace-navigation.js": "3745d2d03240263eea523df10e5bf4d6b7c52aa20496406b1959035b2fe2040d"
+      },
+      "candidate_sources": {
+        "README.md": "# Presence snapshots\n\nThe panel displays full online-user snapshots, not an append-only event history.\nWithin one visit, channel event arrival order defines snapshot freshness.\nDecoding compressed frames can finish out of order. Once a newer snapshot has\nbeen published, an older frame must not roll the panel back. If an earlier\nframe finishes before any newer snapshot is published, it may still be shown.\nThis ordering is per visit; revisiting the same channel starts a new visit.\nClosing stops publication, but pending decodes can still settle.\nMetrics remains an incremental-only observer and must not adopt panel policy.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\n  \"name\": \"listener-snapshot-order-vanilla-fixture\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+        "src/channel.js": "// Presence frames are full snapshots; see ../README.md for ordering semantics.\nclass PresenceEvent extends Event {\n  constructor(detail) {\n    super(\"presence\");\n    this.detail = detail;\n  }\n}\n\nexport function createPresenceChannel(token, { decode = (value) => value } = {}) {\n  const target = new EventTarget();\n  const emit = (kind) => target.dispatchEvent(new PresenceEvent(`${token}:${kind}`));\n  return {\n    target,\n    decode,\n    connect(bootstrapMode) {\n      if (bootstrapMode === \"deferred\") queueMicrotask(() => emit(\"bootstrap\"));\n      else emit(\"bootstrap\");\n    },\n    emitUpdate() {\n      emit(\"update\");\n    },\n  };\n}\n\nexport async function observeChannel({ token, bootstrapMode }) {\n  const events = [];\n  const channel = createPresenceChannel(token);\n  channel.connect(bootstrapMode);\n  channel.target.addEventListener(\"presence\", (event) => events.push(event.detail));\n  await Promise.resolve();\n  channel.emitUpdate();\n  return { events };\n}\n",
+        "src/metrics-consumer.js": "import { observeChannel } from \"./channel.js\";\n\nexport function collectMetrics(token) {\n  // Metrics deliberately attach after the synchronous bootstrap and count deltas only.\n  return observeChannel({ token, bootstrapMode: \"synchronous\" });\n}\n",
+        "src/presence-panel.js": "import { createPresenceChannel } from \"./channel.js\";\nimport { subscribeChannel } from \"./subscription.js\";\n\nexport function createPresencePanel(publish) {\n  let currentVisit = null;\n\n  const retireCurrentVisit = () => {\n    const visit = currentVisit;\n    currentVisit = null;\n    if (visit && visit.release) visit.release();\n  };\n\n  return {\n    show(channel, bootstrapMode = \"synchronous\") {\n      retireCurrentVisit();\n\n      const visit = { release: null };\n      currentVisit = visit;\n      let release;\n      try {\n        release = subscribeChannel(channel, bootstrapMode, (value) => {\n          if (currentVisit === visit) publish(value);\n        });\n      } catch (error) {\n        if (currentVisit === visit) currentVisit = null;\n        throw error;\n      }\n\n      if (currentVisit === visit) visit.release = release;\n      else release();\n    },\n    close() {\n      retireCurrentVisit();\n    },\n  };\n}\n\nexport async function renderPresence(token, bootstrapMode) {\n  const events = [];\n  const panel = createPresencePanel((value) => events.push(value));\n  const channel = createPresenceChannel(token);\n  panel.show(channel, bootstrapMode);\n  await Promise.resolve();\n  channel.emitUpdate();\n  panel.close();\n  return { events };\n}\n",
+        "src/render-workspace.js": "import { collectMetrics } from \"./metrics-consumer.js\";\nimport { renderPresence } from \"./presence-panel.js\";\n\nexport async function render({ token, bootstrapMode }) {\n  const [presence, metrics] = await Promise.all([\n    renderPresence(token, bootstrapMode),\n    collectMetrics(token),\n  ]);\n  return { presence, metrics };\n}\n",
+        "src/subscription.js": "// The decoder may return a value or a Promise (compressed network frames).\n// EventTarget removal detaches reception; an already started decode still settles.\nexport function subscribeChannel(channel, bootstrapMode, receive) {\n  let active = true;\n  let arrival = 0;\n  let published = 0;\n\n  const publish = (sequence, value) => {\n    if (!active || sequence <= published) return;\n    published = sequence;\n    receive(value);\n  };\n\n  const listener = (event) => {\n    if (!active) return;\n    const sequence = ++arrival;\n    const decoded = channel.decode(event.detail);\n    if (decoded && typeof decoded.then === \"function\") {\n      decoded.then((value) => publish(sequence, value));\n    } else {\n      publish(sequence, decoded);\n    }\n  };\n\n  channel.target.addEventListener(\"presence\", listener);\n  try {\n    channel.connect(bootstrapMode);\n  } catch (error) {\n    active = false;\n    channel.target.removeEventListener(\"presence\", listener);\n    throw error;\n  }\n  return () => {\n    active = false;\n    channel.target.removeEventListener(\"presence\", listener);\n  };\n}\n",
+        "src/workspace-navigation.js": "import { createPresencePanel } from \"./presence-panel.js\";\n\n// Presence publication can synchronously select a different room or hide the\n// panel (for example, a room chooser reacting to an empty bootstrap snapshot).\n// Reusing a transport object on a later visit is supported by the workspace.\nexport function createWorkspaceNavigation(renderState) {\n  const panel = createPresencePanel((value) => renderState(value, navigation));\n  const navigation = {\n    select(channel, mode = \"synchronous\") { panel.show(channel, mode); },\n    hide() { panel.close(); },\n  };\n  return navigation;\n}\n"
+      },
+      "delivered_sha256s": [
+        "2b46ebef0210d193cf3c224d408cd690d5870460673f7bc67205090a7ff7b310",
+        "b470b9906940cd4fc90dd20201cf69a5c82cff16c7d4dd4fe2172f46ec9dc116",
+        "092e85e09f09609c924bb3d41747f72d8a7558392eccffd0341e8694cee4fdce",
+        "e674d9c3e84a302fa3aea69789cc2d962616a40c69926bfc357cf885cede0e94",
+        "4a344162be345350744e4de69aeb9d51b8d11f805cc594c0392e26d5649535d1"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/channel.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/metrics-consumer.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/presence-panel.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/render-workspace.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/subscription.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/workspace-navigation.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ]
+}

@@ -1,0 +1,677 @@
+{
+  "effectiveness_verified": false,
+  "evidence": {
+    "diffs": [
+      {
+        "from_original": "--- original/src/editor.js\n+++ candidate/src/editor.js\n@@ -1,4 +1,5 @@\n import { attachSaveStatus } from \"./save-status.js\";\n+import { createTrailingTask } from \"./trailing-task.js\";\n \n export function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n   let current = null;\n@@ -11,11 +12,15 @@\n   return {\n     open(id) {\n       close();\n-      current = { id, stop: attachSaveStatus(store, id, renderStatus) };\n+      current = {\n+        id,\n+        save: createTrailingTask(text => store.write(id, text), 120, timers),\n+        stop: attachSaveStatus(store, id, renderStatus),\n+      };\n       renderDocument({ id, text: store.read(id) });\n     },\n     edit(text) {\n-      if (current) store.write(current.id, text);\n+      if (current) current.save.push(text);\n     },\n     close,\n   };\n",
+        "from_previous": "--- previous/src/editor.js\n+++ candidate/src/editor.js\n@@ -1,4 +1,5 @@\n import { attachSaveStatus } from \"./save-status.js\";\n+import { createTrailingTask } from \"./trailing-task.js\";\n \n export function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n   let current = null;\n@@ -11,11 +12,15 @@\n   return {\n     open(id) {\n       close();\n-      current = { id, stop: attachSaveStatus(store, id, renderStatus) };\n+      current = {\n+        id,\n+        save: createTrailingTask(text => store.write(id, text), 120, timers),\n+        stop: attachSaveStatus(store, id, renderStatus),\n+      };\n       renderDocument({ id, text: store.read(id) });\n     },\n     edit(text) {\n-      if (current) store.write(current.id, text);\n+      if (current) current.save.push(text);\n     },\n     close,\n   };\n"
+      },
+      {
+        "from_original": "--- original/src/editor.js\n+++ candidate/src/editor.js\n@@ -1,21 +1,29 @@\n import { attachSaveStatus } from \"./save-status.js\";\n+import { createTrailingTask } from \"./trailing-task.js\";\n \n export function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n   let current = null;\n   function close() {\n     const leaving = current;\n     current = null;\n-    if (leaving) leaving.stop();\n+    if (leaving) {\n+      leaving.stop();\n+      leaving.save.flush();\n+    }\n     renderDocument(null);\n   }\n   return {\n     open(id) {\n       close();\n-      current = { id, stop: attachSaveStatus(store, id, renderStatus) };\n+      current = {\n+        id,\n+        save: createTrailingTask(text => store.write(id, text), 120, timers),\n+        stop: attachSaveStatus(store, id, renderStatus),\n+      };\n       renderDocument({ id, text: store.read(id) });\n     },\n     edit(text) {\n-      if (current) store.write(current.id, text);\n+      if (current) current.save.push(text);\n     },\n     close,\n   };\n",
+        "from_previous": "--- previous/src/editor.js\n+++ candidate/src/editor.js\n@@ -6,7 +6,10 @@\n   function close() {\n     const leaving = current;\n     current = null;\n-    if (leaving) leaving.stop();\n+    if (leaving) {\n+      leaving.stop();\n+      leaving.save.flush();\n+    }\n     renderDocument(null);\n   }\n   return {\n"
+      }
+    ],
+    "public_inputs": {
+      "ast": {
+        "call_links": [],
+        "coverage": [
+          {
+            "path": "src/draft-store.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/editor.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/save-status.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/search-preview.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/timers.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/trailing-task.js",
+            "status": "parsed"
+          },
+          {
+            "path": "src/workspace.js",
+            "status": "parsed"
+          }
+        ],
+        "events": [
+          {
+            "arguments": [
+              "id",
+              "text"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "records.set",
+            "column": 6,
+            "conditions": [],
+            "end_column": 27,
+            "end_line": 7,
+            "id": "src/draft-store.js::e10",
+            "kind": "call",
+            "line": 7,
+            "path": "src/draft-store.js",
+            "receiver": "records",
+            "scope": "<module>/createDraftStore/write",
+            "text": "records.set(id, text)"
+          },
+          {
+            "arguments": [
+              "event"
+            ],
+            "binding": "local_value_unresolved",
+            "callee": "listener",
+            "column": 45,
+            "conditions": [
+              "ForOfStatement path; execution/repetition not proven"
+            ],
+            "end_column": 60,
+            "end_line": 9,
+            "id": "src/draft-store.js::e13",
+            "kind": "call",
+            "line": 9,
+            "path": "src/draft-store.js",
+            "receiver": "",
+            "scope": "<module>/createDraftStore/write",
+            "text": "listener(event)"
+          }
+        ],
+        "findings": [
+          {
+            "classification": "review_hint_not_bug_verdict",
+            "condition": "回调未位于另一个嵌套函数体，且此前未发现 await/yield；只是源码上的候选直接通知路径。名称、循环元素和路径可达性未作类型/控制流证明，未证明它与其他文件中的订阅者是同一实例。",
+            "evidence": [
+              "src/draft-store.js::e10",
+              "src/draft-store.js::e13"
+            ],
+            "message": "成员写入或集合/持久化名称调用之后，同一非 async 函数直接调用参数回调或循环取出的可调用项。",
+            "path": "src/draft-store.js",
+            "review_question": "该调用是否通知外部消费者？消费者能否在返回前重新进入当前对象？调用后继续使用的状态是否仍有效，最新请求如何决定优先级？",
+            "rule": "state-write-inline-notification",
+            "scope": "<module>/createDraftStore/write"
+          }
+        ],
+        "limitations": [
+          "Syntax facts, candidate call links and review hints are not verified contracts, bugs, severity or difficulty scores.",
+          "API names are clues. Types, aliases, control flow, dynamic dispatch and callback targets are not fully resolved.",
+          "Local order is lexical order within a block; branches, exceptions, loops, short-circuiting and execution remain unchecked.",
+          "await may suspend; cancellation does not imply completed work or cleanup. Listener removal does not cancel work already started.",
+          "if/try/finally syntax does not prove adequate protection. The absence of hints does not imply safety.",
+          "No hidden scorers, reference patches, model results or human profiles are read. Operators must verify input provenance."
+        ],
+        "relations": [
+          {
+            "after": "src/draft-store.js::e13",
+            "before": "src/draft-store.js::e10",
+            "kind": "lexical_write_before_direct_call",
+            "qualification": "Source order in one function; path execution, callback type and reentry remain unproven."
+          }
+        ],
+        "selection": "Rule-matched evidence only; an incomplete review aid, not a complete execution path.",
+        "skipped": [],
+        "status": "parsed",
+        "target_definitions": []
+      },
+      "sources": {
+        "README.md": "# Workspace draft editor\n\n`editor.js` drives one visible document editor. The workspace store retains draft\ntext across navigation and closed editor views. Returning to a document restores\nits last accepted edit. Save-status listeners belong to the visible editor view;\nthey stop when that view begins closing.\n\n`search-preview.js` is an adjacent transient search panel. It publishes after a\n40 ms quiet interval. Hiding it discards an unpublished query, and the panel can\nbe reused afterward.\n\nThe editor exposes synchronous `open`, `edit`, and `close` methods. `store`\nprovides `read`, `write`, and `subscribe`; `timers` provides\n`schedule(callback, delay)` and `cancel(handle)`. Keep these public interfaces.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\n  \"name\": \"draft-autosave-handoff-v2-fixture\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+        "src/draft-store.js": "export function createDraftStore(initial = {}) {\n  const records = new Map(Object.entries(initial));\n  const listeners = new Set();\n  return {\n    read(id) { return records.get(id) ?? \"\"; },\n    write(id, text) {\n      records.set(id, text);\n      const event = { id, text };\n      for (const listener of [...listeners]) listener(event);\n      return event;\n    },\n    subscribe(listener) {\n      listeners.add(listener);\n      return () => listeners.delete(listener);\n    },\n  };\n}\n",
+        "src/editor.js": "import { attachSaveStatus } from \"./save-status.js\";\n\nexport function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n  let current = null;\n  function close() {\n    const leaving = current;\n    current = null;\n    if (leaving) leaving.stop();\n    renderDocument(null);\n  }\n  return {\n    open(id) {\n      close();\n      current = { id, stop: attachSaveStatus(store, id, renderStatus) };\n      renderDocument({ id, text: store.read(id) });\n    },\n    edit(text) {\n      if (current) store.write(current.id, text);\n    },\n    close,\n  };\n}\n",
+        "src/save-status.js": "export function attachSaveStatus(store, id, renderStatus) {\n  return store.subscribe(event => {\n    if (event.id === id) renderStatus(event);\n  });\n}\n",
+        "src/search-preview.js": "import { createTrailingTask } from \"./trailing-task.js\";\n\nexport function createSearchPreview({ timers, publish }) {\n  const task = createTrailingTask(query => publish({ query }), 40, timers);\n  return {\n    query(value) { task.push(value); },\n    hide() { task.cancel(); },\n  };\n}\n",
+        "src/timers.js": "export const browserTimers = {\n  schedule(callback, delay) { return setTimeout(callback, delay); },\n  cancel(handle) { clearTimeout(handle); },\n};\n",
+        "src/trailing-task.js": "import { browserTimers } from \"./timers.js\";\n\n// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.\n// Retire the old batch before invoking work so a callback may enqueue a new batch.\nexport function createTrailingTask(work, delay, timers = browserTimers) {\n  let handle = null;\n  let pending = null;\n  function flush() {\n    if (handle !== null) timers.cancel(handle);\n    handle = null;\n    const args = pending;\n    pending = null;\n    if (args !== null) work(...args);\n  }\n  return {\n    push(...args) {\n      if (handle !== null) timers.cancel(handle);\n      pending = args;\n      handle = timers.schedule(flush, delay);\n    },\n    flush,\n    cancel() {\n      if (handle !== null) timers.cancel(handle);\n      handle = null;\n      pending = null;\n    },\n  };\n}\n",
+        "src/workspace.js": "import { createDraftEditor } from \"./editor.js\";\n\nexport function createWorkspace(options) {\n  const editor = createDraftEditor(options);\n  return {\n    open(id) { editor.open(id); },\n    edit(text) { editor.edit(text); },\n    close() { editor.close(); },\n    dispose() { editor.close(); },\n  };\n}\n"
+      },
+      "task": "The workspace draft editor currently writes to the store on every keystroke.\nCoalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces.\nThe adjacent search preview is outside this maintenance change.\n"
+    },
+    "source_sha256": "81c2d77a3db860124cde11c8906286eb3aa7a190966c96ed216eda9e8db68c33",
+    "task_id": "draft-autosave-handoff-v2-vanilla"
+  },
+  "experience": {
+    "excludes": [
+      "discard_boundary_policy",
+      "different_ownership_policy",
+      "no_lazy_shared_mechanism"
+    ],
+    "labels": [
+      "O",
+      "B",
+      "L",
+      "I"
+    ],
+    "limitations": [
+      "Apply boundary flushing only when accepted pending edits must persist across navigation or closure; other transient features may intentionally discard pending work.",
+      "The public sources do not define ordering for an edit exactly concurrent with the timer callback.",
+      "Acceptance outcomes alone do not prove that boundary flushing caused success or that its absence caused failure."
+    ],
+    "requires": [
+      "deferred_batch",
+      "boundary_persistence",
+      "observer_lifetime",
+      "effect_lifetimes"
+    ],
+    "rules": [
+      {
+        "body": "Apply this pattern when edits are coalesced through a trailing task and accepted pending edits must survive navigation or closure. TASK requires: \"after a 120 ms quiet\\ninterval, write only the latest text in that editing burst,\" while README.md requires: \"The workspace store retains draft\\ntext across navigation and closed editor views. Returning to a document restores\\nits last accepted edit.\"",
+        "category": "applicability"
+      },
+      {
+        "body": "Associate each trailing save task with the document active when that task is created, submit edits to that task, and let each newer submission replace the pending text and restart the 120 ms delay. src/trailing-task.js states: \"Coalesce calls until a quiet interval. cancel discards work; flush runs it now.\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "At a navigation, close, or disposal boundary, stop the departing view's save-status subscription before flushing its pending save. This preserves the pending draft without delivering its resulting status event to a view that has begun closing. README.md states: \"Save-status listeners belong to the visible editor view;\\nthey stop when that view begins closing.\"",
+        "category": "event_relation"
+      },
+      {
+        "body": "Retire the pending batch before invoking the store write so completion leaves the trailing task reusable for later bursts and callback reentry cannot consume the old batch again. src/trailing-task.js states: \"Retire the old batch before invoking work so a callback may enqueue a new batch.\"",
+        "category": "preservation"
+      },
+      {
+        "body": "Preserve synchronous open, edit, and close methods and the documented store and timer interfaces; keep rendering the closed document state and do not modify the adjacent search preview. TASK states: \"Preserve the editor's other behavior and public interfaces.\\nThe adjacent search preview is outside this maintenance change.\"",
+        "category": "exclusion"
+      },
+      {
+        "body": "Verify that one burst produces exactly one write containing its latest text after 120 ms, a later burst produces another write, closing or opening another document preserves a pending accepted edit, and the departing view's status listener does not observe the boundary flush.",
+        "category": "verification"
+      }
+    ]
+  },
+  "final_contract": {
+    "checkpoints": [
+      "Verify multiple edits within one burst produce one store write containing only the latest text after a 120 ms quiet interval.",
+      "Verify a later burst still produces another store write.",
+      "Verify existing editor behavior and public interfaces are preserved except for delayed, coalesced writes.",
+      "Verify search-preview behavior and its 40 ms interval remain unchanged."
+    ],
+    "forbidden_effects": [
+      "Do not write intermediate text from the same editing burst.",
+      "Do not prevent subsequent editing bursts from saving.",
+      "Do not change public interfaces.",
+      "Do not change the adjacent search preview.",
+      "Do not weaken documented draft restoration or visible-view save-status listener behavior."
+    ],
+    "lifecycle_identity": [
+      "A pending burst is associated with the document being edited when its text is submitted.",
+      "Within an editing burst, only the latest submitted text remains pending.",
+      "After a burst runs, the trailing task must be capable of accepting a subsequent burst.",
+      "A save-status subscription belongs to its visible editor view and is stopped as that view begins closing."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Use the existing trailing-task utility to coalesce editor edits, writing only the latest text after a 120 ms quiet interval."
+      },
+      {
+        "id": "O2",
+        "text": "Allow subsequent editing bursts to continue saving."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve the editor's other documented behavior and public interfaces."
+      },
+      {
+        "id": "O4",
+        "text": "Keep the adjacent search preview outside the change."
+      }
+    ],
+    "ordering_barriers": [
+      "Each newer edit in an active burst replaces the pending text and restarts the trailing delay.",
+      "The burst's store write occurs after a 120 ms interval without a newer edit.",
+      "Completion of one batch must leave the trailing task ready to accept later batches.",
+      "The existing close sequence clears current view state and stops its listener before rendering the closed document state."
+    ],
+    "preservation": [
+      "The workspace store retains draft text across navigation and closed editor views.",
+      "Returning to a document restores its last accepted edit.",
+      "Save-status listeners remain associated with the visible editor view and stop when that view begins closing.",
+      "Opening a document continues to close the prior view and render the stored text for the requested id.",
+      "Editing without a current document remains a no-op.",
+      "Closing continues to render a null document.",
+      "The synchronous open, edit, and close public methods and the documented store and timers interfaces remain available."
+    ],
+    "scope": [
+      "Change the draft editor's per-keystroke store-write behavior.",
+      "Use src/trailing-task.js for editor edit coalescing.",
+      "Preserve other editor and workspace behavior.",
+      "Exclude src/search-preview.js from the maintenance change."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst."
+      },
+      {
+        "file": "TASK",
+        "quote": "Subsequent bursts\nmust continue to save."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve the editor's other behavior and public interfaces."
+      },
+      {
+        "file": "TASK",
+        "quote": "The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "The workspace store retains draft\ntext across navigation and closed editor views. Returning to a document restores\nits last accepted edit."
+      },
+      {
+        "file": "README.md",
+        "quote": "Save-status listeners belong to the visible editor view;\nthey stop when that view begins closing."
+      },
+      {
+        "file": "README.md",
+        "quote": "The editor exposes synchronous `open`, `edit`, and `close` methods. `store`\nprovides `read`, `write`, and `subscribe`; `timers` provides\n`schedule(callback, delay)` and `cancel(handle)`. Keep these public interfaces."
+      },
+      {
+        "file": "src/trailing-task.js",
+        "quote": "// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.\n// Retire the old batch before invoking work so a callback may enqueue a new batch."
+      },
+      {
+        "file": "src/editor.js",
+        "quote": "edit(text) {\n      if (current) store.write(current.id, text);\n    }"
+      },
+      {
+        "file": "src/editor.js",
+        "quote": "function close() {\n    const leaving = current;\n    current = null;\n    if (leaving) leaving.stop();\n    renderDocument(null);\n  }"
+      },
+      {
+        "file": "src/search-preview.js",
+        "quote": "const task = createTrailingTask(query => publish({ query }), 40, timers);"
+      }
+    ],
+    "triggers": [
+      "Calling edit(text) while a document is open submits text to the editor's trailing save batch.",
+      "A 120 ms quiet interval triggers the pending latest text to be written.",
+      "An edit after a completed save starts a subsequent burst.",
+      "Open, close, and workspace disposal invoke existing editor lifecycle behavior that may intersect with pending work."
+    ],
+    "unknowns": [
+      "The public task and sources do not explicitly specify whether pending editor text is flushed, canceled, or allowed to remain scheduled when open, close, or dispose occurs; the chosen behavior must still satisfy the documented preservation requirements.",
+      "The public sources do not define ordering when a new edit and the scheduled callback occur at exactly the same timer boundary.",
+      "The public sources do not specify save-status rendering beyond matching store events for the subscribed document.",
+      "The phrase \"last accepted edit\" is not operationally defined for an edit that remains pending when a lifecycle boundary occurs."
+    ]
+  },
+  "final_training_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "initial_contract": {
+    "checkpoints": [
+      "Verify multiple edits within one burst produce one store write containing only the latest text after a 120 ms quiet interval.",
+      "Verify a later burst still produces another store write.",
+      "Verify existing editor behavior and public interfaces are preserved except for delayed, coalesced writes.",
+      "Verify search-preview behavior and its 40 ms interval remain unchanged."
+    ],
+    "forbidden_effects": [
+      "Do not write intermediate text from the same editing burst.",
+      "Do not prevent subsequent editing bursts from saving.",
+      "Do not change public interfaces.",
+      "Do not change the adjacent search preview.",
+      "Do not weaken documented draft restoration or visible-view save-status listener behavior."
+    ],
+    "lifecycle_identity": [
+      "A pending burst is associated with the document being edited when its text is submitted.",
+      "Within an editing burst, only the latest submitted text remains pending.",
+      "After a burst runs, the trailing task must be capable of accepting a subsequent burst.",
+      "A save-status subscription belongs to its visible editor view and is stopped as that view begins closing."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Use the existing trailing-task utility to coalesce editor edits, writing only the latest text after a 120 ms quiet interval."
+      },
+      {
+        "id": "O2",
+        "text": "Allow subsequent editing bursts to continue saving."
+      },
+      {
+        "id": "O3",
+        "text": "Preserve the editor's other documented behavior and public interfaces."
+      },
+      {
+        "id": "O4",
+        "text": "Keep the adjacent search preview outside the change."
+      }
+    ],
+    "ordering_barriers": [
+      "Each newer edit in an active burst replaces the pending text and restarts the trailing delay.",
+      "The burst's store write occurs after a 120 ms interval without a newer edit.",
+      "Completion of one batch must leave the trailing task ready to accept later batches.",
+      "The existing close sequence clears current view state and stops its listener before rendering the closed document state."
+    ],
+    "preservation": [
+      "The workspace store retains draft text across navigation and closed editor views.",
+      "Returning to a document restores its last accepted edit.",
+      "Save-status listeners remain associated with the visible editor view and stop when that view begins closing.",
+      "Opening a document continues to close the prior view and render the stored text for the requested id.",
+      "Editing without a current document remains a no-op.",
+      "Closing continues to render a null document.",
+      "The synchronous open, edit, and close public methods and the documented store and timers interfaces remain available."
+    ],
+    "scope": [
+      "Change the draft editor's per-keystroke store-write behavior.",
+      "Use src/trailing-task.js for editor edit coalescing.",
+      "Preserve other editor and workspace behavior.",
+      "Exclude src/search-preview.js from the maintenance change."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst."
+      },
+      {
+        "file": "TASK",
+        "quote": "Subsequent bursts\nmust continue to save."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve the editor's other behavior and public interfaces."
+      },
+      {
+        "file": "TASK",
+        "quote": "The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "The workspace store retains draft\ntext across navigation and closed editor views. Returning to a document restores\nits last accepted edit."
+      },
+      {
+        "file": "README.md",
+        "quote": "Save-status listeners belong to the visible editor view;\nthey stop when that view begins closing."
+      },
+      {
+        "file": "README.md",
+        "quote": "The editor exposes synchronous `open`, `edit`, and `close` methods. `store`\nprovides `read`, `write`, and `subscribe`; `timers` provides\n`schedule(callback, delay)` and `cancel(handle)`. Keep these public interfaces."
+      },
+      {
+        "file": "src/trailing-task.js",
+        "quote": "// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.\n// Retire the old batch before invoking work so a callback may enqueue a new batch."
+      },
+      {
+        "file": "src/editor.js",
+        "quote": "edit(text) {\n      if (current) store.write(current.id, text);\n    }"
+      },
+      {
+        "file": "src/editor.js",
+        "quote": "function close() {\n    const leaving = current;\n    current = null;\n    if (leaving) leaving.stop();\n    renderDocument(null);\n  }"
+      },
+      {
+        "file": "src/search-preview.js",
+        "quote": "const task = createTrailingTask(query => publish({ query }), 40, timers);"
+      }
+    ],
+    "triggers": [
+      "Calling edit(text) while a document is open submits text to the editor's trailing save batch.",
+      "A 120 ms quiet interval triggers the pending latest text to be written.",
+      "An edit after a completed save starts a subsequent burst.",
+      "Open, close, and workspace disposal invoke existing editor lifecycle behavior that may intersect with pending work."
+    ],
+    "unknowns": [
+      "The public task and sources do not explicitly specify whether pending editor text is flushed, canceled, or allowed to remain scheduled when open, close, or dispose occurs; the chosen behavior must still satisfy the documented preservation requirements.",
+      "The public sources do not define ordering when a new edit and the scheduled callback occur at exactly the same timer boundary.",
+      "The public sources do not specify save-status rendering beyond matching store events for the subscribed document.",
+      "The phrase \"last accepted edit\" is not operationally defined for an edit that remains pending when a lifecycle boundary occurs."
+    ]
+  },
+  "origin": "success",
+  "reflection_update": {
+    "change_summary": [
+      "Created independent guidance because both the frozen experience catalog and complete related-experience set are empty; there is no existing lineage that can be revised or merged.",
+      "The guidance captures trailing-batch coalescing, document-bound task identity, reusable subsequent bursts, and the source-supported boundary rule that pending accepted drafts are flushed only after the departing view's listener is stopped.",
+      "It keeps the incompatible discard-at-boundary policy explicitly excluded and preserves public interfaces, closed-state rendering, and the out-of-scope search preview."
+    ],
+    "failure_attribution": "unknown",
+    "operation": "new",
+    "reason": "Attempts 1 and 2 differ at the lifecycle boundary: attempt 2 stops the departing listener and flushes its pending save, while attempt 1 leaves that save scheduled. The README supports persistence across navigation and listener shutdown as the view begins closing, but the only evaluation evidence is a pass/fail verdict with no causal observation. Therefore the reusable boundary guidance is source-supported, while attribution of attempt 1's failure remains unknown rather than being labeled an implementation or experience gap.",
+    "supporting_attempts": [
+      1,
+      2
+    ],
+    "target_sha256s": []
+  },
+  "related_experiences": [],
+  "source_sha256": "81c2d77a3db860124cde11c8906286eb3aa7a190966c96ed216eda9e8db68c33",
+  "status": "awaiting_content_review",
+  "task": "The workspace draft editor currently writes to the store on every keystroke.\nCoalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save. Preserve the editor's other behavior and public interfaces.\nThe adjacent search preview is outside this maintenance change.\n",
+  "training_accepted": true,
+  "trajectory": [
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "274b180f70cd8835f6e04e30bb11669a0e5d1bdba7e6ab59b6098c12e658832e",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "package.json": "749a9a4fea45dd8a5eec9e4a51f9437ffd5496b599b237ab62043335293b48a2",
+        "src/draft-store.js": "8a3374b0c5e60865685c05f687c3ac8434b326908e31066cfbdee2f1f75f8c7a",
+        "src/editor.js": "50fd434430ef94e87dc801f43649d3209da78b315ec76397ead1f1f1be2d0786",
+        "src/save-status.js": "a474e1a4e91b172563468e663d2ddbb6a069bcd297c0cbc6250abe94c5d2c780",
+        "src/search-preview.js": "6c6a9c8276c539eb680e916174db66c7ef4209d5a237b0e340c1bb9aec3524d8",
+        "src/timers.js": "db6d40d6bdf9c27a74d012dbafe7bce3230ab168e57061d33f73574349d2acc7",
+        "src/trailing-task.js": "a5eab4a56995aa183bca380390525f61d2f55e51aa20b6dde06602c84c60d54b",
+        "src/workspace.js": "94e38c1382cbef5bc5eaa5031696afa46cd5ce35b34928dd93b7c557209251e0"
+      },
+      "candidate_sources": {
+        "README.md": "# Workspace draft editor\n\n`editor.js` drives one visible document editor. The workspace store retains draft\ntext across navigation and closed editor views. Returning to a document restores\nits last accepted edit. Save-status listeners belong to the visible editor view;\nthey stop when that view begins closing.\n\n`search-preview.js` is an adjacent transient search panel. It publishes after a\n40 ms quiet interval. Hiding it discards an unpublished query, and the panel can\nbe reused afterward.\n\nThe editor exposes synchronous `open`, `edit`, and `close` methods. `store`\nprovides `read`, `write`, and `subscribe`; `timers` provides\n`schedule(callback, delay)` and `cancel(handle)`. Keep these public interfaces.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\n  \"name\": \"draft-autosave-handoff-v2-fixture\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+        "src/draft-store.js": "export function createDraftStore(initial = {}) {\n  const records = new Map(Object.entries(initial));\n  const listeners = new Set();\n  return {\n    read(id) { return records.get(id) ?? \"\"; },\n    write(id, text) {\n      records.set(id, text);\n      const event = { id, text };\n      for (const listener of [...listeners]) listener(event);\n      return event;\n    },\n    subscribe(listener) {\n      listeners.add(listener);\n      return () => listeners.delete(listener);\n    },\n  };\n}\n",
+        "src/editor.js": "import { attachSaveStatus } from \"./save-status.js\";\nimport { createTrailingTask } from \"./trailing-task.js\";\n\nexport function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n  let current = null;\n  function close() {\n    const leaving = current;\n    current = null;\n    if (leaving) leaving.stop();\n    renderDocument(null);\n  }\n  return {\n    open(id) {\n      close();\n      current = {\n        id,\n        save: createTrailingTask(text => store.write(id, text), 120, timers),\n        stop: attachSaveStatus(store, id, renderStatus),\n      };\n      renderDocument({ id, text: store.read(id) });\n    },\n    edit(text) {\n      if (current) current.save.push(text);\n    },\n    close,\n  };\n}\n",
+        "src/save-status.js": "export function attachSaveStatus(store, id, renderStatus) {\n  return store.subscribe(event => {\n    if (event.id === id) renderStatus(event);\n  });\n}\n",
+        "src/search-preview.js": "import { createTrailingTask } from \"./trailing-task.js\";\n\nexport function createSearchPreview({ timers, publish }) {\n  const task = createTrailingTask(query => publish({ query }), 40, timers);\n  return {\n    query(value) { task.push(value); },\n    hide() { task.cancel(); },\n  };\n}\n",
+        "src/timers.js": "export const browserTimers = {\n  schedule(callback, delay) { return setTimeout(callback, delay); },\n  cancel(handle) { clearTimeout(handle); },\n};\n",
+        "src/trailing-task.js": "import { browserTimers } from \"./timers.js\";\n\n// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.\n// Retire the old batch before invoking work so a callback may enqueue a new batch.\nexport function createTrailingTask(work, delay, timers = browserTimers) {\n  let handle = null;\n  let pending = null;\n  function flush() {\n    if (handle !== null) timers.cancel(handle);\n    handle = null;\n    const args = pending;\n    pending = null;\n    if (args !== null) work(...args);\n  }\n  return {\n    push(...args) {\n      if (handle !== null) timers.cancel(handle);\n      pending = args;\n      handle = timers.schedule(flush, delay);\n    },\n    flush,\n    cancel() {\n      if (handle !== null) timers.cancel(handle);\n      handle = null;\n      pending = null;\n    },\n  };\n}\n",
+        "src/workspace.js": "import { createDraftEditor } from \"./editor.js\";\n\nexport function createWorkspace(options) {\n  const editor = createDraftEditor(options);\n  return {\n    open(id) { editor.open(id); },\n    edit(text) { editor.edit(text); },\n    close() { editor.close(); },\n    dispose() { editor.close(); },\n  };\n}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/draft-store.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/editor.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/save-status.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/search-preview.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/timers.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/trailing-task.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/workspace.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "274b180f70cd8835f6e04e30bb11669a0e5d1bdba7e6ab59b6098c12e658832e",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "package.json": "749a9a4fea45dd8a5eec9e4a51f9437ffd5496b599b237ab62043335293b48a2",
+        "src/draft-store.js": "8a3374b0c5e60865685c05f687c3ac8434b326908e31066cfbdee2f1f75f8c7a",
+        "src/editor.js": "86f92f5a91f7ac5174aac65fa21f57b08e9c4909c8a0d34463fd150e19654870",
+        "src/save-status.js": "a474e1a4e91b172563468e663d2ddbb6a069bcd297c0cbc6250abe94c5d2c780",
+        "src/search-preview.js": "6c6a9c8276c539eb680e916174db66c7ef4209d5a237b0e340c1bb9aec3524d8",
+        "src/timers.js": "db6d40d6bdf9c27a74d012dbafe7bce3230ab168e57061d33f73574349d2acc7",
+        "src/trailing-task.js": "a5eab4a56995aa183bca380390525f61d2f55e51aa20b6dde06602c84c60d54b",
+        "src/workspace.js": "94e38c1382cbef5bc5eaa5031696afa46cd5ce35b34928dd93b7c557209251e0"
+      },
+      "candidate_sources": {
+        "README.md": "# Workspace draft editor\n\n`editor.js` drives one visible document editor. The workspace store retains draft\ntext across navigation and closed editor views. Returning to a document restores\nits last accepted edit. Save-status listeners belong to the visible editor view;\nthey stop when that view begins closing.\n\n`search-preview.js` is an adjacent transient search panel. It publishes after a\n40 ms quiet interval. Hiding it discards an unpublished query, and the panel can\nbe reused afterward.\n\nThe editor exposes synchronous `open`, `edit`, and `close` methods. `store`\nprovides `read`, `write`, and `subscribe`; `timers` provides\n`schedule(callback, delay)` and `cancel(handle)`. Keep these public interfaces.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "package.json": "{\n  \"name\": \"draft-autosave-handoff-v2-fixture\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+        "src/draft-store.js": "export function createDraftStore(initial = {}) {\n  const records = new Map(Object.entries(initial));\n  const listeners = new Set();\n  return {\n    read(id) { return records.get(id) ?? \"\"; },\n    write(id, text) {\n      records.set(id, text);\n      const event = { id, text };\n      for (const listener of [...listeners]) listener(event);\n      return event;\n    },\n    subscribe(listener) {\n      listeners.add(listener);\n      return () => listeners.delete(listener);\n    },\n  };\n}\n",
+        "src/editor.js": "import { attachSaveStatus } from \"./save-status.js\";\nimport { createTrailingTask } from \"./trailing-task.js\";\n\nexport function createDraftEditor({ store, timers, renderDocument, renderStatus }) {\n  let current = null;\n  function close() {\n    const leaving = current;\n    current = null;\n    if (leaving) {\n      leaving.stop();\n      leaving.save.flush();\n    }\n    renderDocument(null);\n  }\n  return {\n    open(id) {\n      close();\n      current = {\n        id,\n        save: createTrailingTask(text => store.write(id, text), 120, timers),\n        stop: attachSaveStatus(store, id, renderStatus),\n      };\n      renderDocument({ id, text: store.read(id) });\n    },\n    edit(text) {\n      if (current) current.save.push(text);\n    },\n    close,\n  };\n}\n",
+        "src/save-status.js": "export function attachSaveStatus(store, id, renderStatus) {\n  return store.subscribe(event => {\n    if (event.id === id) renderStatus(event);\n  });\n}\n",
+        "src/search-preview.js": "import { createTrailingTask } from \"./trailing-task.js\";\n\nexport function createSearchPreview({ timers, publish }) {\n  const task = createTrailingTask(query => publish({ query }), 40, timers);\n  return {\n    query(value) { task.push(value); },\n    hide() { task.cancel(); },\n  };\n}\n",
+        "src/timers.js": "export const browserTimers = {\n  schedule(callback, delay) { return setTimeout(callback, delay); },\n  cancel(handle) { clearTimeout(handle); },\n};\n",
+        "src/trailing-task.js": "import { browserTimers } from \"./timers.js\";\n\n// Coalesce calls until a quiet interval. cancel discards work; flush runs it now.\n// Retire the old batch before invoking work so a callback may enqueue a new batch.\nexport function createTrailingTask(work, delay, timers = browserTimers) {\n  let handle = null;\n  let pending = null;\n  function flush() {\n    if (handle !== null) timers.cancel(handle);\n    handle = null;\n    const args = pending;\n    pending = null;\n    if (args !== null) work(...args);\n  }\n  return {\n    push(...args) {\n      if (handle !== null) timers.cancel(handle);\n      pending = args;\n      handle = timers.schedule(flush, delay);\n    },\n    flush,\n    cancel() {\n      if (handle !== null) timers.cancel(handle);\n      handle = null;\n      pending = null;\n    },\n  };\n}\n",
+        "src/workspace.js": "import { createDraftEditor } from \"./editor.js\";\n\nexport function createWorkspace(options) {\n  const editor = createDraftEditor(options);\n  return {\n    open(id) { editor.open(id); },\n    edit(text) { editor.edit(text); },\n    close() { editor.close(); },\n    dispose() { editor.close(); },\n  };\n}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/draft-store.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/editor.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/save-status.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/search-preview.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/timers.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/trailing-task.js",
+            "error": null,
+            "passed": true
+          },
+          {
+            "check": "syntax:src/workspace.js",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 2,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ]
+}

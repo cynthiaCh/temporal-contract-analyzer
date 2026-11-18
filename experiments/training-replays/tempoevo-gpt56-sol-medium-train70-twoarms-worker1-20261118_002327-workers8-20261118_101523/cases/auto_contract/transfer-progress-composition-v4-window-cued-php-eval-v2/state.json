@@ -1,0 +1,1362 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "661930943d4f0e6c78c3d7c1ceebdbff0ac6ed6b6fbafd76b80e7e9cfd1efcb6",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "b388145cd33fbe361ccc97653a087456ad7bc8b573f458a57b54ee3966f9e5da",
+        "src/workflow.php": "a7beeee0b12c0e959f84cf54b7782f344f9b2e4b6d75f765681da18bca0213bb"
+      },
+      "candidate_sources": {
+        "README.md": "# Insurance damage evidence transfer\n\nThis workspace selects payload files, starts transfers, records queue and\nprogress history, and paints progress for its open panel. Runtime: PHP 7.4.3.\nDependencies: JSON extension 7.4.3. See src for the session/component entry API.\n\nSelecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit.\nThe source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order.\n\nrecordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size.\n\nOne startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle.\n\nThe same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance.\nRemoving a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred.\n\nFiles have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset.\nA decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime.\n\nEnvironment.call/bind provides a synchronous source embedding: listen(file\n token, callback token) returns a subscription, start can invoke it before\nreturning, and unlisten may reenter navigation. decode(file token, packet,\ncompletion token) returns {deferred:false,frame} or {deferred:true}. Deferred\ncompletion invokes the bound native closure on an explicit later host turn.\nTransport receives a physical cancellation observer corresponding to the\nnative attempt state; cancel is idempotent. The wire embedding interns file\nobjects and forwards source/sink calls. Go uses context cancellation; the other\nnative ports use object flags. No native DOM/Promise runtime is claimed.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"PHP 7.4.3\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true,\n  \"extensions\": {\n    \"json\": \"PHP 7.4.3-4ubuntu2.29, ABI 20190902\"\n  },\n  \"runtime_artifacts\": [\n    {\n      \"package\": \"php7.4-cli\",\n      \"version\": \"7.4.3-4ubuntu2.29\",\n      \"filename\": \"php7.4-cli_7.4.3-4ubuntu2.29_amd64.deb\",\n      \"sha256\": \"b4a8a4ce4c579c61a6b068b17312283ca9130b4ed8f1018aa4b451d306b1e811\"\n    },\n    {\n      \"package\": \"php7.4-json\",\n      \"version\": \"7.4.3-4ubuntu2.29\",\n      \"filename\": \"php7.4-json_7.4.3-4ubuntu2.29_amd64.deb\",\n      \"sha256\": \"623f199331acd5b807f977c5a5a6bc56027461452c3eebf80a87e20277414efb\"\n    }\n  ],\n  \"host_binary\": null,\n  \"bootstrap_lock_sha256\": \"fdfaea057ebf9cb9f8e44f99591c0da4292f4a7a6a138c9fe479abf725128c25\"\n}\n",
+        "src/workflow.php": "<?php\n// Claim sessions use object identities; source and decode observers are Closures.\nclass Visit {public $id,$file,$handle=null;function __construct($id,$file){$this->id=$id;$this->file=$file;}}\nclass Attempt {\n public $env,$file,$number,$aborted=false,$stop;\n function __construct($env,$file,$number,$active=null,$audit=null,$view=null){\n  $active=$active??function(){return 1;};$audit=$audit??function($f){};$view=$view??function($f,$o){};\n  $this->env=$env;$this->file=$file;$this->number=$number;$this->stop=function(){};\n  $env->call('transport',$file->token,$number);\n  if($file->feed){$callback=$env->bind(function($packet)use($env,$file,$active,$audit,$view){$order=$active();\n    $deliver=function($frame)use($active,$audit,$view,$order){ $audit($frame);$view($frame,$order);};\n    $value=$env->call('decode',$file->token,$packet,$env->bind($deliver));if(!$value->deferred)$deliver($value->frame);});\n   $subscription=$env->call('listen',$file->token,$callback);\n   $this->stop=function()use($env,$file,$subscription){$env->call('unlisten',$file->token,$subscription);};if($this->aborted)($this->stop)();else $env->call('start',$file->token);}\n }\n function cancel(){if($this->aborted)return;$this->aborted=true;($this->stop)();$this->env->call('cancel',$this->file->token,$this->number);}\n}\nclass VisitRegistry {public $visit=null,$serial=0,$disposed=false;}\nclass Session {\n public $env,$registry,$attempts=0,$tasks=[];\n function __construct($env){$this->env=$env;$this->registry=new VisitRegistry();}\n function current($v){return $this->registry->visit===$v;}\n function enqueue($v,$kind){$n=++$this->attempts;$entry=['fileId'=>$v->file->id,'attemptId'=>$n,'visitId'=>$v->id,'kind'=>$kind]; $this->env->call('record',$entry);\n  $observed=0;$displayed=0;\n  $h=new Attempt($this->env,$v->file,$n,function()use(&$observed){return ++$observed;},function($frame)use($v,$n){$this->env->call('recordProgress',['fileId'=>$v->file->id,'attemptId'=>$n,'frame'=>$frame]);},function($frame,$order)use($v,$n,&$displayed){if($order<=$displayed)return;$displayed=$order;if($this->current($v))$this->env->call('showProgress',['fileId'=>$v->file->id,'attemptId'=>$n,'frame'=>$frame]);});$this->tasks[]=$h;return $h;}\n function notice($v,$h){ $this->env->call('showQueued',['fileId'=>$v->file->id,'attemptId'=>$h->number,'visitId'=>$v->id,'status'=>'queued']);}\n function release($v){$h=$v->handle;$v->handle=null;if($h)$h->cancel();}\n function select($file){if($this->registry->disposed)return null;$request=++$this->registry->serial;$old=$this->registry->visit;$this->registry->visit=null;if($old)$this->release($old);if($this->registry->disposed||$this->registry->serial!==$request)return null;$v=new Visit($request,$file);$this->registry->visit=$v;$h=$this->enqueue($v,'select');if($this->current($v)){$v->handle=$h;$this->notice($v,$h);}else $h->cancel();return $h;}\n function retry(){$v=$this->registry->visit;if(!$v||!$v->handle||$this->registry->disposed)return null;$v->handle->cancel(); $accepted=$v;$h=$this->enqueue($accepted,'retry');if($this->current($accepted))$accepted->handle=$h;else $h->cancel();if($this->current($accepted))$this->notice($accepted,$h);return $h;}\n function hide(){$this->registry->serial++;$old=$this->registry->visit;$this->registry->visit=null;if($old)$this->release($old);}\n function dispose(){if($this->registry->disposed)return;$this->registry->disposed=true;$this->hide();foreach($this->tasks as $h)$h->cancel();}\n function snapshot(){$v=$this->registry->visit;return ['visitId'=>$v?$v->id:null,'fileId'=>$v?$v->file->id:null,'attemptId'=>$v&&$v->handle?$v->handle->number:null,'disposed'=>$this->registry->disposed,'attempts'=>$this->attempts];}\n}\n\nclass Telemetry {public $stop;function __construct($env,$file){$callback=$env->bind(function($packet)use($env,$file){$deliver=function($frame)use($env){$env->call('recordDelta',$frame);};$value=$env->call('decode',$file->token,$packet,$env->bind($deliver));if(!$value->deferred)$deliver($value->frame);});$env->call('start',$file->token);$subscription=$env->call('listen',$file->token,$callback); $this->stop=function()use($env,$file,$subscription){$env->call('unlisten',$file->token,$subscription);};}}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.php",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "661930943d4f0e6c78c3d7c1ceebdbff0ac6ed6b6fbafd76b80e7e9cfd1efcb6",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "b388145cd33fbe361ccc97653a087456ad7bc8b573f458a57b54ee3966f9e5da",
+        "src/workflow.php": "5dd5f0304a2f83e777f620327a3682081f396eead9811792d20f6cac9938ae15"
+      },
+      "candidate_sources": {
+        "README.md": "# Insurance damage evidence transfer\n\nThis workspace selects payload files, starts transfers, records queue and\nprogress history, and paints progress for its open panel. Runtime: PHP 7.4.3.\nDependencies: JSON extension 7.4.3. See src for the session/component entry API.\n\nSelecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit.\nThe source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order.\n\nrecordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size.\n\nOne startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle.\n\nThe same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance.\nRemoving a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred.\n\nFiles have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset.\nA decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime.\n\nEnvironment.call/bind provides a synchronous source embedding: listen(file\n token, callback token) returns a subscription, start can invoke it before\nreturning, and unlisten may reenter navigation. decode(file token, packet,\ncompletion token) returns {deferred:false,frame} or {deferred:true}. Deferred\ncompletion invokes the bound native closure on an explicit later host turn.\nTransport receives a physical cancellation observer corresponding to the\nnative attempt state; cancel is idempotent. The wire embedding interns file\nobjects and forwards source/sink calls. Go uses context cancellation; the other\nnative ports use object flags. No native DOM/Promise runtime is claimed.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"PHP 7.4.3\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true,\n  \"extensions\": {\n    \"json\": \"PHP 7.4.3-4ubuntu2.29, ABI 20190902\"\n  },\n  \"runtime_artifacts\": [\n    {\n      \"package\": \"php7.4-cli\",\n      \"version\": \"7.4.3-4ubuntu2.29\",\n      \"filename\": \"php7.4-cli_7.4.3-4ubuntu2.29_amd64.deb\",\n      \"sha256\": \"b4a8a4ce4c579c61a6b068b17312283ca9130b4ed8f1018aa4b451d306b1e811\"\n    },\n    {\n      \"package\": \"php7.4-json\",\n      \"version\": \"7.4.3-4ubuntu2.29\",\n      \"filename\": \"php7.4-json_7.4.3-4ubuntu2.29_amd64.deb\",\n      \"sha256\": \"623f199331acd5b807f977c5a5a6bc56027461452c3eebf80a87e20277414efb\"\n    }\n  ],\n  \"host_binary\": null,\n  \"bootstrap_lock_sha256\": \"fdfaea057ebf9cb9f8e44f99591c0da4292f4a7a6a138c9fe479abf725128c25\"\n}\n",
+        "src/workflow.php": "<?php\n// Claim sessions use object identities; source and decode observers are Closures.\nclass Visit {public $id,$file,$handle=null;function __construct($id,$file){$this->id=$id;$this->file=$file;}}\nclass Attempt {\n public $env,$file,$number,$aborted=false,$stop;\n function __construct($env,$file,$number,$active=null,$audit=null,$view=null){\n  $active=$active??function(){return 1;};$audit=$audit??function($f){};$view=$view??function($f,$o){};\n  $this->env=$env;$this->file=$file;$this->number=$number;$this->stop=function(){};\n  $env->call('transport',$file->token,$number);\n  if($file->feed){$callback=$env->bind(function($packet)use($env,$file,$active,$audit,$view){$order=$active();\n    $deliver=function($frame)use($audit,$view,$order){$audit($frame);if(!$this->aborted)$view($frame,$order);};\n    $value=$env->call('decode',$file->token,$packet,$env->bind($deliver));if(!$value->deferred)$deliver($value->frame);});\n   $subscription=$env->call('listen',$file->token,$callback);\n   $this->stop=function()use($env,$file,$subscription){$env->call('unlisten',$file->token,$subscription);};if($this->aborted)($this->stop)();else $env->call('start',$file->token);}\n }\n function cancel(){if($this->aborted)return;$this->aborted=true;($this->stop)();$this->env->call('cancel',$this->file->token,$this->number);}\n}\nclass VisitRegistry {public $visit=null,$serial=0,$disposed=false;}\nclass Session {\n public $env,$registry,$attempts=0,$tasks=[];\n function __construct($env){$this->env=$env;$this->registry=new VisitRegistry();}\n function current($v){return $this->registry->visit===$v;}\n function enqueue($v,$kind){$n=++$this->attempts;$entry=['fileId'=>$v->file->id,'attemptId'=>$n,'visitId'=>$v->id,'kind'=>$kind]; $this->env->call('record',$entry);\n  $observed=0;$displayed=0;\n  $h=new Attempt($this->env,$v->file,$n,function()use(&$observed){return ++$observed;},function($frame)use($v,$n){$this->env->call('recordProgress',['fileId'=>$v->file->id,'attemptId'=>$n,'frame'=>$frame]);},function($frame,$order)use($v,$n,&$displayed){if($order<=$displayed)return;$displayed=$order;if($this->current($v))$this->env->call('showProgress',['fileId'=>$v->file->id,'attemptId'=>$n,'frame'=>$frame]);});$this->tasks[]=$h;return $h;}\n function notice($v,$h){ $this->env->call('showQueued',['fileId'=>$v->file->id,'attemptId'=>$h->number,'visitId'=>$v->id,'status'=>'queued']);}\n function release($v){$h=$v->handle;$v->handle=null;if($h)$h->cancel();}\n function select($file){if($this->registry->disposed)return null;$request=++$this->registry->serial;$old=$this->registry->visit;$this->registry->visit=null;if($old)$this->release($old);if($this->registry->disposed||$this->registry->serial!==$request)return null;$v=new Visit($request,$file);$this->registry->visit=$v;$h=$this->enqueue($v,'select');if($this->current($v)){$v->handle=$h;$this->notice($v,$h);}else $h->cancel();return $h;}\n function retry(){$v=$this->registry->visit;if(!$v||!$v->handle||$this->registry->disposed)return null;$request=$this->registry->serial;$old=$v->handle;$v->handle=null;$old->cancel();if($this->registry->disposed||$this->registry->serial!==$request||!$this->current($v))return null;$h=$this->enqueue($v,'retry');if($this->current($v))$v->handle=$h;else $h->cancel();if($this->current($v))$this->notice($v,$h);return $h;}\n function hide(){$this->registry->serial++;$old=$this->registry->visit;$this->registry->visit=null;if($old)$this->release($old);}\n function dispose(){if($this->registry->disposed)return;$this->registry->disposed=true;$this->hide();foreach($this->tasks as $h)$h->cancel();}\n function snapshot(){$v=$this->registry->visit;return ['visitId'=>$v?$v->id:null,'fileId'=>$v?$v->file->id:null,'attemptId'=>$v&&$v->handle?$v->handle->number:null,'disposed'=>$this->registry->disposed,'attempts'=>$this->attempts];}\n}\n\nclass Telemetry {public $stop;function __construct($env,$file){$callback=$env->bind(function($packet)use($env,$file){$deliver=function($frame)use($env){$env->call('recordDelta',$frame);};$value=$env->call('decode',$file->token,$packet,$env->bind($deliver));if(!$value->deferred)$deliver($value->frame);});$env->call('start',$file->token);$subscription=$env->call('listen',$file->token,$callback); $this->stop=function()use($env,$file,$subscription){$env->call('unlisten',$file->token,$subscription);};}}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.php",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 2,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    },
+    {
+      "acceptance_passed": false,
+      "candidate_inventory": {
+        "README.md": "661930943d4f0e6c78c3d7c1ceebdbff0ac6ed6b6fbafd76b80e7e9cfd1efcb6",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "b388145cd33fbe361ccc97653a087456ad7bc8b573f458a57b54ee3966f9e5da",
+        "src/workflow.php": "eb00d33918e218533800b07e60a2174d7a720730ac4063b647603ec79966c972"
+      },
+      "candidate_sources": {
+        "README.md": "# Insurance damage evidence transfer\n\nThis workspace selects payload files, starts transfers, records queue and\nprogress history, and paints progress for its open panel. Runtime: PHP 7.4.3.\nDependencies: JSON extension 7.4.3. See src for the session/component entry API.\n\nSelecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit.\nThe source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order.\n\nrecordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size.\n\nOne startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle.\n\nThe same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance.\nRemoving a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred.\n\nFiles have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset.\nA decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime.\n\nEnvironment.call/bind provides a synchronous source embedding: listen(file\n token, callback token) returns a subscription, start can invoke it before\nreturning, and unlisten may reenter navigation. decode(file token, packet,\ncompletion token) returns {deferred:false,frame} or {deferred:true}. Deferred\ncompletion invokes the bound native closure on an explicit later host turn.\nTransport receives a physical cancellation observer corresponding to the\nnative attempt state; cancel is idempotent. The wire embedding interns file\nobjects and forwards source/sink calls. Go uses context cancellation; the other\nnative ports use object flags. No native DOM/Promise runtime is claimed.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"PHP 7.4.3\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true,\n  \"extensions\": {\n    \"json\": \"PHP 7.4.3-4ubuntu2.29, ABI 20190902\"\n  },\n  \"runtime_artifacts\": [\n    {\n      \"package\": \"php7.4-cli\",\n      \"version\": \"7.4.3-4ubuntu2.29\",\n      \"filename\": \"php7.4-cli_7.4.3-4ubuntu2.29_amd64.deb\",\n      \"sha256\": \"b4a8a4ce4c579c61a6b068b17312283ca9130b4ed8f1018aa4b451d306b1e811\"\n    },\n    {\n      \"package\": \"php7.4-json\",\n      \"version\": \"7.4.3-4ubuntu2.29\",\n      \"filename\": \"php7.4-json_7.4.3-4ubuntu2.29_amd64.deb\",\n      \"sha256\": \"623f199331acd5b807f977c5a5a6bc56027461452c3eebf80a87e20277414efb\"\n    }\n  ],\n  \"host_binary\": null,\n  \"bootstrap_lock_sha256\": \"fdfaea057ebf9cb9f8e44f99591c0da4292f4a7a6a138c9fe479abf725128c25\"\n}\n",
+        "src/workflow.php": "<?php\n// Claim sessions use object identities; source and decode observers are Closures.\nclass Visit {public $id,$file,$handle=null;function __construct($id,$file){$this->id=$id;$this->file=$file;}}\nclass Attempt {\n public $env,$file,$number,$aborted=false,$stop;\n function __construct($env,$file,$number,$active=null,$audit=null,$view=null){\n  $active=$active??function(){return 1;};$audit=$audit??function($f){};$view=$view??function($f,$o){};\n  $this->env=$env;$this->file=$file;$this->number=$number;$this->stop=function(){};\n  $env->call('transport',$file->token,$number);\n  if($file->feed){$attempt=$this;$callback=$env->bind(function($packet)use($env,$file,$active,$audit,$view,$attempt){$order=$active();\n    $deliver=function($frame)use($audit,$view,$order,$attempt){$audit($frame);if(!$attempt->aborted)$view($frame,$order);};\n    $value=$env->call('decode',$file->token,$packet,$env->bind($deliver));if(!$value->deferred)$deliver($value->frame);});\n   $subscription=$env->call('listen',$file->token,$callback);\n   $this->stop=function()use($env,$file,$subscription){$env->call('unlisten',$file->token,$subscription);};if($this->aborted)($this->stop)();else $env->call('start',$file->token);}\n }\n function cancel(){if($this->aborted)return;$this->aborted=true;($this->stop)();$this->env->call('cancel',$this->file->token,$this->number);}\n}\nclass VisitRegistry {public $visit=null,$serial=0,$disposed=false;}\nclass Session {\n public $env,$registry,$attempts=0,$tasks=[];\n function __construct($env){$this->env=$env;$this->registry=new VisitRegistry();}\n function current($v){return $this->registry->visit===$v;}\n function enqueue($v,$kind){$n=++$this->attempts;$entry=['fileId'=>$v->file->id,'attemptId'=>$n,'visitId'=>$v->id,'kind'=>$kind]; $this->env->call('record',$entry);\n  $observed=0;$displayed=0;\n  $h=new Attempt($this->env,$v->file,$n,function()use(&$observed){return ++$observed;},function($frame)use($v,$n){$this->env->call('recordProgress',['fileId'=>$v->file->id,'attemptId'=>$n,'frame'=>$frame]);},function($frame,$order)use($v,$n,&$displayed){if($order<=$displayed)return;$displayed=$order;if($this->current($v))$this->env->call('showProgress',['fileId'=>$v->file->id,'attemptId'=>$n,'frame'=>$frame]);});$this->tasks[]=$h;return $h;}\n function notice($v,$h){ $this->env->call('showQueued',['fileId'=>$v->file->id,'attemptId'=>$h->number,'visitId'=>$v->id,'status'=>'queued']);}\n function release($v){$h=$v->handle;$v->handle=null;if($h)$h->cancel();}\n function select($file){if($this->registry->disposed)return null;$request=++$this->registry->serial;$old=$this->registry->visit;$this->registry->visit=null;if($old)$this->release($old);if($this->registry->disposed||$this->registry->serial!==$request)return null;$v=new Visit($request,$file);$this->registry->visit=$v;$h=$this->enqueue($v,'select');if($this->current($v)){$v->handle=$h;$this->notice($v,$h);}else $h->cancel();return $h;}\n function retry(){$v=$this->registry->visit;if(!$v||!$v->handle||$this->registry->disposed)return null;$request=$this->registry->serial;$old=$v->handle;$v->handle=null;$old->cancel();if($this->registry->disposed||$this->registry->serial!==$request||!$this->current($v))return null;$h=$this->enqueue($v,'retry');if($this->current($v))$v->handle=$h;else $h->cancel();if($this->current($v))$this->notice($v,$h);return $h;}\n function hide(){$this->registry->serial++;$old=$this->registry->visit;$this->registry->visit=null;if($old)$this->release($old);}\n function dispose(){if($this->registry->disposed)return;$this->registry->disposed=true;$this->hide();foreach($this->tasks as $h)$h->cancel();}\n function snapshot(){$v=$this->registry->visit;return ['visitId'=>$v?$v->id:null,'fileId'=>$v?$v->file->id:null,'attemptId'=>$v&&$v->handle?$v->handle->number:null,'disposed'=>$this->registry->disposed,'attempts'=>$this->attempts];}\n}\n\nclass Telemetry {public $stop;function __construct($env,$file){$callback=$env->bind(function($packet)use($env,$file){$deliver=function($frame)use($env){$env->call('recordDelta',$frame);};$value=$env->call('decode',$file->token,$packet,$env->bind($deliver));if(!$value->deferred)$deliver($value->frame);});$env->call('start',$file->token);$subscription=$env->call('listen',$file->token,$callback); $this->stop=function()use($env,$file,$subscription){$env->call('unlisten',$file->token,$subscription);};}}\n"
+      },
+      "delivered_sha256s": [],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.php",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 3,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": false,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": false,
+        "valid": true,
+        "verdict": "UNDERREACH"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "Run the public PHP syntax check after any Action; VISIBLE_CHECKS.md states that this is required but does not verify business behavior.",
+      "Verify a warm source can synchronously provide initial progress and that the current visit displays it without waiting for a later packet.",
+      "Verify multiple packets whose decodes complete out of order cannot make the current panel display an older frame after a newer frame.",
+      "Verify progress callbacks that synchronously select or hide another visit during startup cannot install the superseded attempt as the visit handle, paint it afterward, or announce it afterward.",
+      "Verify retry retains the visit identity while replacing the physical attempt, and selecting the same file object again creates a new visit.",
+      "Verify telemetry continues recording its existing live deltas independently of panel-display ordering."
+    ],
+    "forbidden_effects": [
+      "Do not change public transfer, retry, navigation, cleanup, audit, or queue-record behavior.",
+      "Do not suppress ordinary streaming progress after restoring the initial update.",
+      "Do not apply panel stale-frame filtering to diagnostic telemetry in a way that changes its existing live delta observations.",
+      "Do not infer frame freshness by comparing loaded values, because a full frame may legitimately decrease or reset.",
+      "Do not add byteCount to queue records without separate authorization.",
+      "Do not let callbacks from a superseded, hidden, or disposed visit paint the open panel.",
+      "Do not access a scorer, reference implementation, hidden tests, or independent Oracle implementation/references."
+    ],
+    "lifecycle_identity": [
+      "A file has stable object identity and immutable id and size during these commands.",
+      "Selecting a file creates a visit; selecting the same file object again creates another visit.",
+      "Retry keeps the existing visit and replaces its physical attempt.",
+      "The source is shared by attempts and visits for the same file.",
+      "Each workspace has its own lifetime.",
+      "Cancellation belongs to the native physical-attempt state and is idempotent.",
+      "A decode result resolves once, whether immediately or on a later host turn."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Restore delivery of the warm source's initial progress update so the current transfer can display progress without waiting for a later packet."
+      },
+      {
+        "id": "O2",
+        "text": "For panel display within an attempt, establish frame freshness from packet/observation order rather than decoded numeric values, and prevent a decode completing later for an older packet from replacing a newer displayed full frame."
+      },
+      {
+        "id": "O3",
+        "text": "Continue appending transfer progress history through recordProgress while showProgress paints only the open current visit."
+      },
+      {
+        "id": "O4",
+        "text": "Preserve ordinary streaming after the initial update, including immediate and deferred decode completion."
+      },
+      {
+        "id": "O5",
+        "text": "Preserve transfer, retry, navigation, cleanup, audit, cancellation, notice, and queue-record behavior, including reentrant callbacks during startup and detach."
+      },
+      {
+        "id": "O6",
+        "text": "Preserve Telemetry/collectProgressTelemetry live delta behavior separately from panel display behavior."
+      },
+      {
+        "id": "O7",
+        "text": "Keep queue records in the existing {fileId, attemptId, visitId, kind} shape unless separately authorized to add byteCount from file.size."
+      }
+    ],
+    "ordering_barriers": [
+      "The progress listener must be able to observe packets emitted synchronously during start; the public embedding explicitly permits start to invoke the listener before returning.",
+      "Assign panel freshness according to packet observation order before decode can defer, so decode completion order cannot redefine which frame is newest.",
+      "Before painting a decoded frame, confirm that its visit remains current; startup callbacks may synchronously select or hide another visit before start returns.",
+      "Do not install the returned attempt as the visit handle or emit its queued notice when the visit became non-current during reentrant startup; preserve the existing cleanup-handle return behavior.",
+      "Listener removal commits before the host detach callback, because detach may synchronously reenter selection, hiding, or disposal.",
+      "Repeated listener removal and cancellation must remain inert."
+    ],
+    "preservation": [
+      "Public transfer behavior and physical cancellation semantics.",
+      "Retry behavior: replace the physical attempt without opening another visit.",
+      "Navigation behavior for select, hide, and dispose, including synchronous reentrancy.",
+      "Cleanup behavior, including listener removal and idempotent repeated removal/cancellation.",
+      "Audit/history behavior: recordProgress continues to append transfer history.",
+      "Queue record and queued-notice behavior and existing record shape.",
+      "Ordinary immediate and deferred streaming progress.",
+      "Diagnostic Telemetry/collectProgressTelemetry live delta observations.",
+      "Subsequent uses of the shared source across attempts and visits.",
+      "Legitimate full-frame decreases and resets."
+    ],
+    "scope": [
+      "Business behavior in src/workflow.php for Session/Attempt panel progress startup and stale-display prevention.",
+      "Existing Telemetry behavior is in preservation scope but is not a target for semantic redesign.",
+      "Any Action is limited to business code under /workspace; tests and configuration remain unchanged."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "Restore the initial progress update without changing the public transfer, retry, navigation, cleanup, audit, or queue-record behavior."
+      },
+      {
+        "file": "TASK",
+        "quote": "Full progress frames may decode out of order; do not allow an older frame to roll the current display backward."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve ordinary streaming, diagnostic telemetry, and subsequent uses."
+      },
+      {
+        "file": "README.md",
+        "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without opening another visit. Selecting the same file object again opens a new visit."
+      },
+      {
+        "file": "README.md",
+        "quote": "start may emit cached packets synchronously; decoding yields a full frame, immediately or later. Decode completion order can differ from packet arrival order."
+      },
+      {
+        "file": "README.md",
+        "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+      },
+      {
+        "file": "README.md",
+        "quote": "Queue records, notices, cancellation, retry, navigation, and cleanup retain their existing behavior."
+      },
+      {
+        "file": "README.md",
+        "quote": "Queue records are {fileId, attemptId, visitId, kind} unless a separate authorization adds byteCount from file.size."
+      },
+      {
+        "file": "README.md",
+        "quote": "One startup window is relevant to this maintenance request: start may emit more than one packet synchronously."
+      },
+      {
+        "file": "README.md",
+        "quote": "A showProgress callback may select or hide another visit before start returns, while its caller has not yet received the returned cleanup handle."
+      },
+      {
+        "file": "README.md",
+        "quote": "The same source service also has a diagnostic consumer, Telemetry/ collectProgressTelemetry, whose existing live delta observations are separate from the panel. Keep its existing behavior during this maintenance."
+      },
+      {
+        "file": "README.md",
+        "quote": "Removing a listener commits removal before calling the host detach callback; that callback may synchronously select, hide or dispose. Repeated removal is inert."
+      },
+      {
+        "file": "README.md",
+        "quote": "Files have stable object identity and immutable id/size during these commands. A full frame replaces displayed state; loaded values can decrease or reset."
+      },
+      {
+        "file": "README.md",
+        "quote": "A decode result resolves once; rejected decode and physical transfer completion are outside this embedding's model. Each workspace has its own lifetime."
+      },
+      {
+        "file": "README.md",
+        "quote": "listen(file token, callback token) returns a subscription, start can invoke it before returning, and unlisten may reenter navigation."
+      },
+      {
+        "file": "README.md",
+        "quote": "Deferred completion invokes the bound native closure on an explicit later host turn."
+      },
+      {
+        "file": "README.md",
+        "quote": "Transport receives a physical cancellation observer corresponding to the native attempt state; cancel is idempotent."
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "$env->call('start',$file->token);$subscription=$env->call('listen',$file->token,$callback);"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "if($this->current($v))$this->env->call('showProgress',['fileId'=>$v->file->id,'attemptId'=>$n,'frame'=>$frame]);"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "if($this->current($v)){$v->handle=$h;$this->notice($v,$h);}else $h->cancel();return $h;"
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "These checks are required after an Action but do not test business behavior."
+      }
+    ],
+    "triggers": [
+      "Selecting a file starts a new visit and physical attempt.",
+      "Retrying the current visit cancels and replaces its physical attempt.",
+      "A warm source emits one or more cached packets synchronously during start.",
+      "A source emits an ordinary later packet.",
+      "Decode returns an immediate full frame.",
+      "Deferred decode completion runs on a later host turn.",
+      "showProgress synchronously selects or hides another visit.",
+      "Host detach synchronously selects, hides, or disposes.",
+      "The session is hidden or disposed."
+    ],
+    "unknowns": [
+      "The public sources do not define the fields inside a full progress frame or provide a numeric sequence field.",
+      "The public sources do not specify whether an older decoded frame must still be appended to audit history; they explicitly require only that it not roll the current display backward while preserving audit behavior.",
+      "Rejected decode and physical transfer completion are explicitly outside this embedding's model.",
+      "The exact public command or harness for business-behavior verification is not supplied; only syntax/build-check requirements are documented.",
+      "The failed acceptance verdict supplies no failure cause and therefore does not establish an implementation defect."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 3,
+  "diagnoses": [
+    {
+      "attempt": 2,
+      "candidate_only_contract_evidence": [],
+      "contract_after": {
+        "checkpoints": [
+          "Run the public PHP syntax check after any Action; VISIBLE_CHECKS.md states that this is required but does not verify business behavior.",
+          "Verify a warm source can synchronously provide initial progress and that the current visit displays it without waiting for a later packet.",
+          "Verify multiple packets whose decodes complete out of order cannot make the current panel display an older frame after a newer frame.",
+          "Verify progress callbacks that synchronously select or hide another visit during startup cannot attach, paint, or announce the superseded visit afterward.",
+          "Verify retry retains the visit identity while replacing the physical attempt, and selecting the same file object again creates a new visit.",
+          "Verify telemetry continues recording its existing live deltas independently of panel-display ordering."
+        ],
+        "forbidden_effects": [
+          "Do not change public transfer, retry, navigation, cleanup, audit, or queue-record behavior.",
+          "Do not suppress ordinary streaming progress after restoring the initial update.",
+          "Do not apply panel stale-frame filtering to diagnostic telemetry in a way that changes its existing live delta observations.",
+          "Do not infer frame freshness by comparing loaded values, because a full frame may legitimately decrease or reset.",
+          "Do not add byteCount to queue records without separate authorization.",
+          "Do not let callbacks from a superseded, hidden, or disposed visit paint the open panel.",
+          "Do not access a scorer, reference implementation, hidden tests, or independent Oracle implementation/references."
+        ],
+        "lifecycle_identity": [
+          "A file has stable object identity and immutable id and size during these commands.",
+          "Selecting a file creates a visit; selecting the same file object again creates another visit.",
+          "Retry keeps the existing visit and replaces its physical attempt.",
+          "The source is shared by attempts and visits for the same file.",
+          "Each workspace has its own lifetime.",
+          "Cancellation belongs to the native physical-attempt state and is idempotent.",
+          "A decode result resolves once, whether immediately or on a later host turn."
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "text": "Restore delivery of the warm source's initial progress update so the current transfer can display progress without waiting for a later packet."
+          },
+          {
+            "id": "O2",
+            "text": "For panel display within an attempt, establish frame freshness from packet/observation order rather than decoded numeric values, and prevent a decode completing later for an older packet from replacing a newer displayed full frame."
+          },
+          {
+            "id": "O3",
+            "text": "Continue appending transfer progress history through recordProgress while showProgress paints only the open current visit."
+          },
+          {
+            "id": "O4",
+            "text": "Preserve ordinary streaming after the initial update, including immediate and deferred decode completion."
+          },
+          {
+            "id": "O5",
+            "text": "Preserve transfer, retry, navigation, cleanup, audit, cancellation, notice, and queue-record behavior, including reentrant callbacks during startup and detach."
+          },
+          {
+            "id": "O6",
+            "text": "Preserve Telemetry/collectProgressTelemetry live delta behavior separately from panel display behavior."
+          },
+          {
+            "id": "O7",
+            "text": "Keep queue records in the existing {fileId, attemptId, visitId, kind} shape unless separately authorized to add byteCount from file.size."
+          }
+        ],
+        "ordering_barriers": [
+          "The progress listener must be able to observe packets emitted synchronously during start; the public embedding explicitly permits start to invoke the listener before returning.",
+          "Assign panel freshness according to packet observation order before decode can defer, so decode completion order cannot redefine which frame is newest.",
+          "Before painting a decoded frame, confirm that its visit remains current; startup callbacks may synchronously select or hide another visit before start returns.",
+          "Do not publish the returned attempt handle or queued notice for a visit that became non-current during reentrant startup.",
+          "Listener removal commits before the host detach callback, because detach may synchronously reenter selection, hiding, or disposal.",
+          "Repeated listener removal and cancellation must remain inert."
+        ],
+        "preservation": [
+          "Public transfer behavior and physical cancellation semantics.",
+          "Retry behavior: replace the physical attempt without opening another visit.",
+          "Navigation behavior for select, hide, and dispose, including synchronous reentrancy.",
+          "Cleanup behavior, including listener removal and idempotent repeated removal/cancellation.",
+          "Audit/history behavior: recordProgress continues to append transfer history.",
+          "Queue record and queued-notice behavior and existing record shape.",
+          "Ordinary immediate and deferred streaming progress.",
+          "Diagnostic Telemetry/collectProgressTelemetry live delta observations.",
+          "Subsequent uses of the shared source across attempts and visits.",
+          "Legitimate full-frame decreases and resets."
+        ],
+        "scope": [
+          "Business behavior in src/workflow.php for Session/Attempt panel progress startup and stale-display prevention.",
+          "Existing Telemetry behavior is in preservation scope but is not a target for semantic redesign.",
+          "Any Action is limited to business code under /workspace; tests and configuration remain unchanged."
+        ],
+        "supporting_evidence": [
+          {
+            "file": "TASK",
+            "quote": "Restore the initial progress update without changing the public transfer, retry, navigation, cleanup, audit, or queue-record behavior."
+          },
+          {
+            "file": "TASK",
+            "quote": "Full progress frames may decode out of order; do not allow an older frame to roll the current display backward."
+          },
+          {
+            "file": "TASK",
+            "quote": "Preserve ordinary streaming, diagnostic telemetry, and subsequent uses."
+          },
+          {
+            "file": "README.md",
+            "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without opening another visit. Selecting the same file object again opens a new visit."
+          },
+          {
+            "file": "README.md",
+            "quote": "start may emit cached packets synchronously; decoding yields a full frame, immediately or later. Decode completion order can differ from packet arrival order."
+          },
+          {
+            "file": "README.md",
+            "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+          },
+          {
+            "file": "README.md",
+            "quote": "Queue records, notices, cancellation, retry, navigation, and cleanup retain their existing behavior."
+          },
+          {
+            "file": "README.md",
+            "quote": "Queue records are {fileId, attemptId, visitId, kind} unless a separate authorization adds byteCount from file.size."
+          },
+          {
+            "file": "README.md",
+            "quote": "One startup window is relevant to this maintenance request: start may emit more than one packet synchronously."
+          },
+          {
+            "file": "README.md",
+            "quote": "A showProgress callback may select or hide another visit before start returns, while its caller has not yet received the returned cleanup handle."
+          },
+          {
+            "file": "README.md",
+            "quote": "The same source service also has a diagnostic consumer, Telemetry/ collectProgressTelemetry, whose existing live delta observations are separate from the panel. Keep its existing behavior during this maintenance."
+          },
+          {
+            "file": "README.md",
+            "quote": "Removing a listener commits removal before calling the host detach callback; that callback may synchronously select, hide or dispose. Repeated removal is inert."
+          },
+          {
+            "file": "README.md",
+            "quote": "Files have stable object identity and immutable id/size during these commands. A full frame replaces displayed state; loaded values can decrease or reset."
+          },
+          {
+            "file": "README.md",
+            "quote": "A decode result resolves once; rejected decode and physical transfer completion are outside this embedding's model. Each workspace has its own lifetime."
+          },
+          {
+            "file": "README.md",
+            "quote": "listen(file token, callback token) returns a subscription, start can invoke it before returning, and unlisten may reenter navigation."
+          },
+          {
+            "file": "README.md",
+            "quote": "Deferred completion invokes the bound native closure on an explicit later host turn."
+          },
+          {
+            "file": "README.md",
+            "quote": "Transport receives a physical cancellation observer corresponding to the native attempt state; cancel is idempotent."
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "$env->call('start',$file->token);$subscription=$env->call('listen',$file->token,$callback);"
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "if($this->current($v))$this->env->call('showProgress',['fileId'=>$v->file->id,'attemptId'=>$n,'frame'=>$frame]);"
+          },
+          {
+            "file": "VISIBLE_CHECKS.md",
+            "quote": "These checks are required after an Action but do not test business behavior."
+          }
+        ],
+        "triggers": [
+          "Selecting a file starts a new visit and physical attempt.",
+          "Retrying the current visit cancels and replaces its physical attempt.",
+          "A warm source emits one or more cached packets synchronously during start.",
+          "A source emits an ordinary later packet.",
+          "Decode returns an immediate full frame.",
+          "Deferred decode completion runs on a later host turn.",
+          "showProgress synchronously selects or hides another visit.",
+          "Host detach synchronously selects, hides, or disposes.",
+          "The session is hidden or disposed."
+        ],
+        "unknowns": [
+          "The public sources do not define the fields inside a full progress frame or provide a numeric sequence field.",
+          "The public sources do not specify whether an older decoded frame must still be appended to audit history; they explicitly require only that it not roll the current display backward while preserving audit behavior.",
+          "Rejected decode and physical transfer completion are explicitly outside this embedding's model.",
+          "The exact public command or harness for business-behavior verification is not supplied; only syntax/build-check requirements are documented."
+        ]
+      },
+      "contract_changed": false,
+      "diagnosis": "implementation_gap",
+      "explanation": "The behavioral contract remains supported by the original task and public documentation. The original implementation starts the source before registering its listener and has no packet-order display barrier, so it has implementation gaps against O1 and O2. The previous candidate reverses listener/start ordering for Session attempts and assigns monotonic observation order before decode, while leaving Telemetry unchanged. The supplied syntax result passes, but the failed acceptance verdict supplies no failure cause and therefore does not justify revising the behavioral contract or inferring another requirement.",
+      "remaining_unknowns": [
+        "The cause of the failed acceptance verdict is not supplied.",
+        "The public sources do not provide a business-behavior harness or its expected event traces.",
+        "The fields inside a decoded full frame remain unspecified.",
+        "Whether stale decoded frames must be audited is not independently specified beyond preserving existing audit behavior."
+      ],
+      "restored_original_contract_evidence": false,
+      "routing_analysis": null,
+      "structured_delta": [],
+      "supporting_evidence": [
+        {
+          "file": "TASK",
+          "quote": "A transfer with a warm progress source shows no initial progress until a later packet arrives."
+        },
+        {
+          "file": "TASK",
+          "quote": "Full progress frames may decode out of order; do not allow an older frame to roll the current display backward."
+        },
+        {
+          "file": "README.md",
+          "quote": "start may emit cached packets synchronously; decoding yields a full frame, immediately or later."
+        },
+        {
+          "file": "README.md",
+          "quote": "Decode completion order can differ from packet arrival order."
+        },
+        {
+          "file": "src/workflow.php",
+          "quote": "$env->call('start',$file->token);$subscription=$env->call('listen',$file->token,$callback);"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "$subscription=$env->call('listen',$file->token,$callback);"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "$observed=0;$displayed=0;"
+        },
+        {
+          "file": "VISIBLE_CHECKS.md",
+          "quote": "These checks are required after an Action but do not test business behavior."
+        }
+      ],
+      "supporting_evidence_bindings": [
+        {
+          "file": "TASK",
+          "quote": "A transfer with a warm progress source shows no initial progress until a later packet arrives.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "TASK",
+          "quote": "Full progress frames may decode out of order; do not allow an older frame to roll the current display backward.",
+          "source_versions": [
+            "original"
+          ]
+        },
+        {
+          "file": "README.md",
+          "quote": "start may emit cached packets synchronously; decoding yields a full frame, immediately or later.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "README.md",
+          "quote": "Decode completion order can differ from packet arrival order.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "src/workflow.php",
+          "quote": "$env->call('start',$file->token);$subscription=$env->call('listen',$file->token,$callback);",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "$subscription=$env->call('listen',$file->token,$callback);",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "$observed=0;$displayed=0;",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "VISIBLE_CHECKS.md",
+          "quote": "These checks are required after an Action but do not test business behavior.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        }
+      ],
+      "unused_routing_analysis": false
+    },
+    {
+      "attempt": 3,
+      "candidate_only_contract_evidence": [],
+      "contract_after": {
+        "checkpoints": [
+          "Run the public PHP syntax check after any Action; VISIBLE_CHECKS.md states that this is required but does not verify business behavior.",
+          "Verify a warm source can synchronously provide initial progress and that the current visit displays it without waiting for a later packet.",
+          "Verify multiple packets whose decodes complete out of order cannot make the current panel display an older frame after a newer frame.",
+          "Verify progress callbacks that synchronously select or hide another visit during startup cannot install the superseded attempt as the visit handle, paint it afterward, or announce it afterward.",
+          "Verify retry retains the visit identity while replacing the physical attempt, and selecting the same file object again creates a new visit.",
+          "Verify telemetry continues recording its existing live deltas independently of panel-display ordering."
+        ],
+        "forbidden_effects": [
+          "Do not change public transfer, retry, navigation, cleanup, audit, or queue-record behavior.",
+          "Do not suppress ordinary streaming progress after restoring the initial update.",
+          "Do not apply panel stale-frame filtering to diagnostic telemetry in a way that changes its existing live delta observations.",
+          "Do not infer frame freshness by comparing loaded values, because a full frame may legitimately decrease or reset.",
+          "Do not add byteCount to queue records without separate authorization.",
+          "Do not let callbacks from a superseded, hidden, or disposed visit paint the open panel.",
+          "Do not access a scorer, reference implementation, hidden tests, or independent Oracle implementation/references."
+        ],
+        "lifecycle_identity": [
+          "A file has stable object identity and immutable id and size during these commands.",
+          "Selecting a file creates a visit; selecting the same file object again creates another visit.",
+          "Retry keeps the existing visit and replaces its physical attempt.",
+          "The source is shared by attempts and visits for the same file.",
+          "Each workspace has its own lifetime.",
+          "Cancellation belongs to the native physical-attempt state and is idempotent.",
+          "A decode result resolves once, whether immediately or on a later host turn."
+        ],
+        "obligations": [
+          {
+            "id": "O1",
+            "text": "Restore delivery of the warm source's initial progress update so the current transfer can display progress without waiting for a later packet."
+          },
+          {
+            "id": "O2",
+            "text": "For panel display within an attempt, establish frame freshness from packet/observation order rather than decoded numeric values, and prevent a decode completing later for an older packet from replacing a newer displayed full frame."
+          },
+          {
+            "id": "O3",
+            "text": "Continue appending transfer progress history through recordProgress while showProgress paints only the open current visit."
+          },
+          {
+            "id": "O4",
+            "text": "Preserve ordinary streaming after the initial update, including immediate and deferred decode completion."
+          },
+          {
+            "id": "O5",
+            "text": "Preserve transfer, retry, navigation, cleanup, audit, cancellation, notice, and queue-record behavior, including reentrant callbacks during startup and detach."
+          },
+          {
+            "id": "O6",
+            "text": "Preserve Telemetry/collectProgressTelemetry live delta behavior separately from panel display behavior."
+          },
+          {
+            "id": "O7",
+            "text": "Keep queue records in the existing {fileId, attemptId, visitId, kind} shape unless separately authorized to add byteCount from file.size."
+          }
+        ],
+        "ordering_barriers": [
+          "The progress listener must be able to observe packets emitted synchronously during start; the public embedding explicitly permits start to invoke the listener before returning.",
+          "Assign panel freshness according to packet observation order before decode can defer, so decode completion order cannot redefine which frame is newest.",
+          "Before painting a decoded frame, confirm that its visit remains current; startup callbacks may synchronously select or hide another visit before start returns.",
+          "Do not install the returned attempt as the visit handle or emit its queued notice when the visit became non-current during reentrant startup; preserve the existing cleanup-handle return behavior.",
+          "Listener removal commits before the host detach callback, because detach may synchronously reenter selection, hiding, or disposal.",
+          "Repeated listener removal and cancellation must remain inert."
+        ],
+        "preservation": [
+          "Public transfer behavior and physical cancellation semantics.",
+          "Retry behavior: replace the physical attempt without opening another visit.",
+          "Navigation behavior for select, hide, and dispose, including synchronous reentrancy.",
+          "Cleanup behavior, including listener removal and idempotent repeated removal/cancellation.",
+          "Audit/history behavior: recordProgress continues to append transfer history.",
+          "Queue record and queued-notice behavior and existing record shape.",
+          "Ordinary immediate and deferred streaming progress.",
+          "Diagnostic Telemetry/collectProgressTelemetry live delta observations.",
+          "Subsequent uses of the shared source across attempts and visits.",
+          "Legitimate full-frame decreases and resets."
+        ],
+        "scope": [
+          "Business behavior in src/workflow.php for Session/Attempt panel progress startup and stale-display prevention.",
+          "Existing Telemetry behavior is in preservation scope but is not a target for semantic redesign.",
+          "Any Action is limited to business code under /workspace; tests and configuration remain unchanged."
+        ],
+        "supporting_evidence": [
+          {
+            "file": "TASK",
+            "quote": "Restore the initial progress update without changing the public transfer, retry, navigation, cleanup, audit, or queue-record behavior."
+          },
+          {
+            "file": "TASK",
+            "quote": "Full progress frames may decode out of order; do not allow an older frame to roll the current display backward."
+          },
+          {
+            "file": "TASK",
+            "quote": "Preserve ordinary streaming, diagnostic telemetry, and subsequent uses."
+          },
+          {
+            "file": "README.md",
+            "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without opening another visit. Selecting the same file object again opens a new visit."
+          },
+          {
+            "file": "README.md",
+            "quote": "start may emit cached packets synchronously; decoding yields a full frame, immediately or later. Decode completion order can differ from packet arrival order."
+          },
+          {
+            "file": "README.md",
+            "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+          },
+          {
+            "file": "README.md",
+            "quote": "Queue records, notices, cancellation, retry, navigation, and cleanup retain their existing behavior."
+          },
+          {
+            "file": "README.md",
+            "quote": "Queue records are {fileId, attemptId, visitId, kind} unless a separate authorization adds byteCount from file.size."
+          },
+          {
+            "file": "README.md",
+            "quote": "One startup window is relevant to this maintenance request: start may emit more than one packet synchronously."
+          },
+          {
+            "file": "README.md",
+            "quote": "A showProgress callback may select or hide another visit before start returns, while its caller has not yet received the returned cleanup handle."
+          },
+          {
+            "file": "README.md",
+            "quote": "The same source service also has a diagnostic consumer, Telemetry/ collectProgressTelemetry, whose existing live delta observations are separate from the panel. Keep its existing behavior during this maintenance."
+          },
+          {
+            "file": "README.md",
+            "quote": "Removing a listener commits removal before calling the host detach callback; that callback may synchronously select, hide or dispose. Repeated removal is inert."
+          },
+          {
+            "file": "README.md",
+            "quote": "Files have stable object identity and immutable id/size during these commands. A full frame replaces displayed state; loaded values can decrease or reset."
+          },
+          {
+            "file": "README.md",
+            "quote": "A decode result resolves once; rejected decode and physical transfer completion are outside this embedding's model. Each workspace has its own lifetime."
+          },
+          {
+            "file": "README.md",
+            "quote": "listen(file token, callback token) returns a subscription, start can invoke it before returning, and unlisten may reenter navigation."
+          },
+          {
+            "file": "README.md",
+            "quote": "Deferred completion invokes the bound native closure on an explicit later host turn."
+          },
+          {
+            "file": "README.md",
+            "quote": "Transport receives a physical cancellation observer corresponding to the native attempt state; cancel is idempotent."
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "$env->call('start',$file->token);$subscription=$env->call('listen',$file->token,$callback);"
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "if($this->current($v))$this->env->call('showProgress',['fileId'=>$v->file->id,'attemptId'=>$n,'frame'=>$frame]);"
+          },
+          {
+            "file": "src/workflow.php",
+            "quote": "if($this->current($v)){$v->handle=$h;$this->notice($v,$h);}else $h->cancel();return $h;"
+          },
+          {
+            "file": "VISIBLE_CHECKS.md",
+            "quote": "These checks are required after an Action but do not test business behavior."
+          }
+        ],
+        "triggers": [
+          "Selecting a file starts a new visit and physical attempt.",
+          "Retrying the current visit cancels and replaces its physical attempt.",
+          "A warm source emits one or more cached packets synchronously during start.",
+          "A source emits an ordinary later packet.",
+          "Decode returns an immediate full frame.",
+          "Deferred decode completion runs on a later host turn.",
+          "showProgress synchronously selects or hides another visit.",
+          "Host detach synchronously selects, hides, or disposes.",
+          "The session is hidden or disposed."
+        ],
+        "unknowns": [
+          "The public sources do not define the fields inside a full progress frame or provide a numeric sequence field.",
+          "The public sources do not specify whether an older decoded frame must still be appended to audit history; they explicitly require only that it not roll the current display backward while preserving audit behavior.",
+          "Rejected decode and physical transfer completion are explicitly outside this embedding's model.",
+          "The exact public command or harness for business-behavior verification is not supplied; only syntax/build-check requirements are documented.",
+          "The failed acceptance verdict supplies no failure cause and therefore does not establish an implementation defect."
+        ]
+      },
+      "contract_changed": true,
+      "diagnosis": "contract_gap",
+      "explanation": "The behavioral contract incorrectly prohibited publishing the returned attempt handle after reentrant startup. The public source explicitly returns the cleanup handle even when the visit became non-current, while the README calls it a “returned cleanup handle” and requires existing navigation and cleanup behavior to remain unchanged. The actual barrier is that the superseded attempt must not be installed as the visit's active handle or receive a queued notice; it is still returned after being cancelled. The previous candidate follows that public behavior and also places listen before start, assigns freshness at packet observation, suppresses stale panel paints, preserves audit delivery, and leaves Telemetry unchanged. The failed acceptance verdict has no stated cause, so it cannot establish a separate implementation gap.",
+      "remaining_unknowns": [
+        "The acceptance failure cause is unavailable.",
+        "No public business-behavior harness is supplied.",
+        "The fields of a decoded full progress frame are unspecified.",
+        "Whether every older decoded frame must remain in audit history is not stated beyond the general requirement to preserve audit behavior."
+      ],
+      "restored_original_contract_evidence": false,
+      "routing_analysis": null,
+      "structured_delta": [
+        "Revised the reentrant-startup ordering barrier: a superseded attempt must not be installed as the visit handle or announced, but its existing cancelled cleanup-handle return behavior must be preserved.",
+        "Clarified the corresponding checkpoint to distinguish installing a visit handle from returning the cleanup handle.",
+        "Added the literal public source return statement and README cleanup-handle wording as evidence.",
+        "Recorded that the unexplained failed acceptance verdict does not establish a behavioral requirement or defect."
+      ],
+      "supporting_evidence": [
+        {
+          "file": "README.md",
+          "quote": "A showProgress callback may select or hide another visit before start returns, while its caller has not yet received the returned cleanup handle."
+        },
+        {
+          "file": "README.md",
+          "quote": "Queue records, notices, cancellation, retry, navigation, and cleanup retain their existing behavior."
+        },
+        {
+          "file": "src/workflow.php",
+          "quote": "if($this->current($v)){$v->handle=$h;$this->notice($v,$h);}else $h->cancel();return $h;"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "if($this->current($v)){$v->handle=$h;$this->notice($v,$h);}else $h->cancel();return $h;"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "$subscription=$env->call('listen',$file->token,$callback);"
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "if($order<=$displayed)return;$displayed=$order;if($this->current($v))$this->env->call('showProgress',['fileId'=>$v->file->id,'attemptId'=>$n,'frame'=>$frame]);"
+        }
+      ],
+      "supporting_evidence_bindings": [
+        {
+          "file": "README.md",
+          "quote": "A showProgress callback may select or hide another visit before start returns, while its caller has not yet received the returned cleanup handle.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "README.md",
+          "quote": "Queue records, notices, cancellation, retry, navigation, and cleanup retain their existing behavior.",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "src/workflow.php",
+          "quote": "if($this->current($v)){$v->handle=$h;$this->notice($v,$h);}else $h->cancel();return $h;",
+          "source_versions": [
+            "original",
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "if($this->current($v)){$v->handle=$h;$this->notice($v,$h);}else $h->cancel();return $h;",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "$subscription=$env->call('listen',$file->token,$callback);",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        },
+        {
+          "file": "PREVIOUS_CANDIDATE:src/workflow.php",
+          "quote": "if($order<=$displayed)return;$displayed=$order;if($this->current($v))$this->env->call('showProgress',['fileId'=>$v->file->id,'attemptId'=>$n,'frame'=>$frame]);",
+          "source_versions": [
+            "previous_candidate"
+          ]
+        }
+      ],
+      "unused_routing_analysis": false
+    }
+  ],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": false,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": false,
+    "valid": true,
+    "verdict": "UNDERREACH"
+  },
+  "finalized": true,
+  "first_pass_attempt": null,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": false,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": false,
+    "valid": true,
+    "verdict": "UNDERREACH"
+  },
+  "repair_stop_reason": "action_budget_exhausted",
+  "stages": [
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "d9322f6f9b3129def31d7cf093db735ab2f46213f80cadf413becbb8663836f8",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9998216107488
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "91a8d63328ef25f24e81a5bed8e6e016caf111dbf351f9ae39f69848fd558231",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 13162,
+        "output_tokens": 1954,
+        "reasoning_output_tokens": 144,
+        "total_tokens": 15116
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "32ef38526ecfd8f3c8616545e059c34be04463f57dd54bf20fad06d92c8f9bc5",
+      "seconds": 49.22843201737851,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 13162,
+        "output_tokens": 1954,
+        "reasoning_output_tokens": 144,
+        "total_tokens": 15116
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "0fd29a3bcc7c9a1a071d5a64f8ce20cebb17dda47e7019be36d98f0cc1619bae",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9996699802577
+          },
+          "number": 1,
+          "requests": 5,
+          "restart_reason": "initial",
+          "result_sha256": "afd8a7eae6a07da23e3889bcead9ad1fcb381fc14b46340a267bbce3e113c161",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 78080,
+        "input_tokens": 102373,
+        "output_tokens": 4535,
+        "reasoning_output_tokens": 2392,
+        "total_tokens": 106908
+      },
+      "requests": 5,
+      "reserved_requests": 24,
+      "result_sha256": "e6bdd53bf09922029eb876092b2113068eb784e681adfbf7932752f88f97f5ab",
+      "seconds": 83.69950417336076,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 78080,
+        "input_tokens": 102373,
+        "output_tokens": 4535,
+        "reasoning_output_tokens": 2392,
+        "total_tokens": 106908
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "5bba7cb3dba180fe89970abaf3ef7f8a27ca318d9bc8e6f0c8fcdcea0e1e72dd",
+      "seconds": 0.4937328966334462,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 0.9692286718636751,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "diagnosis-2",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "e9d746080db40b37fbb3d7c00cddf35c65a2f4b07aab39718e4c5082e06dc05e",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9993882244453
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "1648a82951cd558ab795112729d988adaff53b05732d3a0dc9e041e7c8f2890e",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-2",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 18550,
+        "output_tokens": 3071,
+        "reasoning_output_tokens": 894,
+        "total_tokens": 21621
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "15b29b000211263db2839c87aa26a20d33788644459abd2d7a11e6c39c9869d5",
+      "seconds": 50.388152805157006,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 18550,
+        "output_tokens": 3071,
+        "reasoning_output_tokens": 894,
+        "total_tokens": 21621
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-2",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "f8b1a68a16383e98c04ba9b8992a42fed4fbe52713482034ea613b85b6c55480",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.999395201914
+          },
+          "number": 1,
+          "requests": 4,
+          "restart_reason": "initial",
+          "result_sha256": "14a2dfc7c52a2256d58dc6fc588621e5dbb9b2f0cf37ef0fd645e6f401a9ac43",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-2",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 64896,
+        "input_tokens": 79267,
+        "output_tokens": 3134,
+        "reasoning_output_tokens": 2242,
+        "total_tokens": 82401
+      },
+      "requests": 4,
+      "reserved_requests": 24,
+      "result_sha256": "30689b38fda70dd2229e51920ab77160a0da689c416ae585f1f0ab8a50fdb4e7",
+      "seconds": 65.7108935220167,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 64896,
+        "input_tokens": 79267,
+        "output_tokens": 3134,
+        "reasoning_output_tokens": 2242,
+        "total_tokens": 82401
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-2",
+      "key": "visible-2",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "5bba7cb3dba180fe89970abaf3ef7f8a27ca318d9bc8e6f0c8fcdcea0e1e72dd",
+      "seconds": 0.4928715378046036,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-2",
+      "key": "acceptance-2",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 0.9339155806228518,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "diagnosis-3",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "92f27afbf31b2eaac5348ecbdf2c23fddcd2ae4ad9b8cb1329307daec7fa67f9",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9985341569409
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "93b26bc6ecc52ce6e71a4268a0b6ef65d71ae737e4af974548fb3153c406dc89",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "diagnosis-3",
+      "kind": "diagnosis",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 18556,
+        "output_tokens": 3366,
+        "reasoning_output_tokens": 953,
+        "total_tokens": 21922
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "725e6ac014fb1c66c6a7d5cb12d40be7e21154a2603eec180d9036e7e952aa9c",
+      "seconds": 60.725139821879566,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 9088,
+        "input_tokens": 18556,
+        "output_tokens": 3366,
+        "reasoning_output_tokens": 953,
+        "total_tokens": 21922
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-3",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "a8fcd868830d2647bcb0d2dddab0e8d8e26d37b985f9515821b2a7e45c9f9bf4",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9992070682347
+          },
+          "number": 1,
+          "requests": 4,
+          "restart_reason": "initial",
+          "result_sha256": "075e97121ea3439d03653bd50a7849047ff5bc9454426431f04f8a323209c079",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-3",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 67968,
+        "input_tokens": 85389,
+        "output_tokens": 5698,
+        "reasoning_output_tokens": 4965,
+        "total_tokens": 91087
+      },
+      "requests": 4,
+      "reserved_requests": 24,
+      "result_sha256": "f7d25ca4de12efc4525e705c5236741b28e8c699098d6adfd7e92d84c51df74d",
+      "seconds": 98.25253649242222,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 67968,
+        "input_tokens": 85389,
+        "output_tokens": 5698,
+        "reasoning_output_tokens": 4965,
+        "total_tokens": 91087
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-3",
+      "key": "visible-3",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "5bba7cb3dba180fe89970abaf3ef7f8a27ca318d9bc8e6f0c8fcdcea0e1e72dd",
+      "seconds": 0.4877355555072427,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-3",
+      "key": "acceptance-3",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "2eb6489a0cb1353616c60396db8e673040382eee77b92db965d78b37b79854c7",
+      "seconds": 0.9969391580671072,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "awaiting_expert_summary",
+  "stop_reason": "action_budget_exhausted",
+  "training_accepted": false
+}

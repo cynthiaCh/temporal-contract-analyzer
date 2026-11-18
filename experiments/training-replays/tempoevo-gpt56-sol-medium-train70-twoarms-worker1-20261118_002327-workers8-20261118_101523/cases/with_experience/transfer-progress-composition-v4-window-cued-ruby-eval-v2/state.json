@@ -1,0 +1,539 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "d4c875259a8d3ffc6747c46e80eb55699b63c6bf88baf6017e06830d7ec93f3f",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "eb8499af9ac2b1d9d01c38559168e889245c375b35faf97e6129db6b6cd2f458",
+        "src/workflow.rb": "272d0517b55b8497b484123782b8419d03ac3851c260d8431bf5023cd1290c38"
+      },
+      "candidate_sources": {
+        "README.md": "# Library sound restoration upload\n\nThis workspace selects payload files, starts transfers, records queue and\nprogress history, and paints progress for its open panel. Runtime: Ruby 2.7.0p0.\nDependencies: Ruby standard library. See src for the session/component entry API.\n\nSelecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit.\nThe source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order.\n\nrecordProgress appends transfer history; showProgress paints the open panel.\nQueue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size.\n\nOne startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle.\n\nThe same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance.\nRemoving a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred.\n\nFiles have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset.\nA decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime.\n\nEnvironment.call/bind provides a synchronous source embedding: listen(file\n token, callback token) returns a subscription, start can invoke it before\nreturning, and unlisten may reenter navigation. decode(file token, packet,\ncompletion token) returns {deferred:false,frame} or {deferred:true}. Deferred\ncompletion invokes the bound native closure on an explicit later host turn.\nTransport receives a physical cancellation observer corresponding to the\nnative attempt state; cancel is idempotent. The wire embedding interns file\nobjects and forwards source/sink calls. Go uses context cancellation; the other\nnative ports use object flags. No native DOM/Promise runtime is claimed.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Ruby 2.7.0\",\n  \"external_dependencies\": [],\n  \"stdlib_only\": true,\n  \"runtime_artifacts\": [\n    {\n      \"package\": \"libruby2.7\",\n      \"version\": \"2.7.0-5ubuntu1.18\",\n      \"filename\": \"libruby2.7_2.7.0-5ubuntu1.18_amd64.deb\",\n      \"sha256\": \"f0a82a76d22a450afa7bddc633410147574cf220aac281145b576b203ab2ca57\"\n    },\n    {\n      \"package\": \"ruby2.7\",\n      \"version\": \"2.7.0-5ubuntu1.18\",\n      \"filename\": \"ruby2.7_2.7.0-5ubuntu1.18_amd64.deb\",\n      \"sha256\": \"be1896d6a9a9cc5dab9e3919f5aa4a72126f568b599c83ebe342fbe4e582aac7\"\n    }\n  ],\n  \"host_binary\": null,\n  \"bootstrap_lock_sha256\": \"fdfaea057ebf9cb9f8e44f99591c0da4292f4a7a6a138c9fe479abf725128c25\"\n}\n",
+        "src/workflow.rb": "# Preservation sessions use block observers and distinct Struct visits.\nVisit=Struct.new(:id,:file,:handle)\nmodule Cancellation\n def cancel\n  return if @aborted\n  @aborted=true;@stop.call;@env.call('cancel',@file['token'],@number)\n end\nend\nclass Attempt\n include Cancellation\n attr_reader :file,:number,:aborted\n def initialize(env,file,number,active=-> {1},audit=->(f){},view=->(f,o){})\n  @env,@file,@number,@aborted=env,file,number,false;@stop=->{};env.call('transport',file['token'],number)\n  yield self if block_given?\n  if file['feed']\n   callback=env.bind(->(packet){\n    next if @aborted\n    order=active.call;\n    next if order.nil?||@aborted\n    deliver=->(frame){ audit.call(frame);view.call(frame,order)}\n    value=env.call('decode',file['token'],packet,env.bind(deliver));deliver.call(value['frame']) unless value['deferred']\n   })\n   subscription=env.call('listen',file['token'],callback)\n   @stop=-> {env.call('unlisten',file['token'],subscription)}\n   if @aborted;@stop.call;else;env.call('start',file['token']);end\n  end\n end\nend\nclass Session\n def initialize(env);@env=env;@visit=nil;@serial=0;@attempts=0;@tasks={};@progress={}.compare_by_identity;@disposed=false;end\n def current(v);@visit.equal?(v);end\n def admit(v)\n  return nil unless current(v)\n  state=@progress[v];state[:received]+=1\n end\n def publish(v,order)\n  return false unless current(v)\n  state=@progress[v];return false if order<=state[:published]\n  state[:published]=order;true\n end\n def enqueue(v,kind)\n  @attempts+=1;n=@attempts;entry={fileId:v.file['id'],attemptId:n,visitId:v.id,kind:kind};;@env.call('record',entry)\n  h=Attempt.new(@env,v.file,n,->{admit(v)},->(frame){@env.call('recordProgress',{fileId:v.file['id'],attemptId:n,frame:frame})},->(frame,order){@env.call('showProgress',{fileId:v.file['id'],attemptId:n,frame:frame}) if publish(v,order)}){|attempt|v.handle=attempt if current(v)};@tasks[n]=h;h\n end\n def notice(v,h);;@env.call('showQueued',{fileId:v.file['id'],attemptId:h.number,visitId:v.id,status:'queued'});end\n def release(v);h=v.handle;v.handle=nil;h.cancel if h;end\n def select(file)\n  return nil if @disposed\n  @serial+=1;request=@serial;old=@visit;@visit=nil;release(old) if old\n  return nil if @disposed||@serial!=request\n  v=Visit.new(request,file,nil);@progress[v]={received:0,published:0};@visit=v;h=enqueue(v,'select');if current(v)&&v.handle.equal?(h);notice(v,h);else;h.cancel;end;h\n end\n def retry\n  v=@visit;return nil if !v||!v.handle||@disposed\n  v.handle.cancel\n  accepted=v;h=enqueue(accepted,'retry');if current(accepted)&&accepted.handle.equal?(h);notice(accepted,h);else;h.cancel;end;h\n end\n def hide;@serial+=1;old=@visit;@visit=nil;release(old) if old;end\n def dispose;return if @disposed;@disposed=true;hide;@tasks.each_value(&:cancel);end\n def snapshot;v=@visit;{visitId:v ? v.id : nil,fileId:v ? v.file['id'] : nil,attemptId:v&&v.handle ? v.handle.number : nil,disposed:@disposed,attempts:@attempts};end\nend\n\nclass Telemetry\n attr_reader :stop\n def initialize(env,file)\n  callback=env.bind(->(packet){deliver=->(frame){env.call('recordDelta',frame)};value=env.call('decode',file['token'],packet,env.bind(deliver));deliver.call(value['frame']) unless value['deferred']})\n  env.call('start',file['token']);subscription=env.call('listen',file['token'],callback)\n  @stop=->{env.call('unlisten',file['token'],subscription)}\n end\nend\n"
+      },
+      "delivered_sha256s": [
+        "77c68e0f51d195985b1ffb123979ed2c80b9a1736302f9949e38bf08649913c1",
+        "6fcd6376641fabd68811e2b973e73444b5f602f80ab32d029097d93133147320",
+        "6dca1fc16aa5e7cc79660bf098beac72edffa9aed4e86dceda44d1800261f778",
+        "cee153e498e5a17c34bdc3c38b488b584b11a5c521164878785bc582aa87293d",
+        "78616bbce7c537e7b3a3bdc31ff765c79152aaf344a6831281305ac9387ec652"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.rb",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "A warm source's synchronously emitted cached packet is received by the panel and produces the initial progress update.",
+      "Packets emitted later through the same panel subscription continue to decode, audit, and display normally.",
+      "When a later-received frame is displayed before an earlier-received frame finishes decoding, the earlier frame is still audited but does not replace the display.",
+      "A later-received frame whose loaded value is lower or reset may still replace the display.",
+      "Freshness ordering spans retry attempts within the same visit, while selecting the same file again creates a new ordering lifetime.",
+      "Navigation or disposal during synchronous startup prevents the retired visit from admitting subsequent startup packets; any already admitted decode retains its audit effect.",
+      "Navigation reentered from showProgress, unlisten, or cancellation does not let an older operation overwrite the newer visit or its resources.",
+      "An accepted retry remains associated with its entry visit, retains its queue record, cancels its resulting attempt if that visit has ended, and emits a queued notice only if the visit is still current.",
+      "Repeated cancellation, listener removal, and disposal remain inert after their first effective action.",
+      "Telemetry retains its existing start-before-listen sequence and live delta behavior.",
+      "Queue records and queued notices retain their existing fields, and record remains before transfer construction.",
+      "Ruby public syntax is checked after any Action; this check is not treated as proof of business behavior."
+    ],
+    "forbidden_effects": [
+      "Do not change public transfer, retry, navigation, cleanup, audit, cancellation, notice, or queue-record behavior beyond coordination necessary for the panel repair.",
+      "Do not add byteCount or any other field to queue records.",
+      "Do not suppress recordProgress for an admitted decode merely because its frame is no longer eligible for display.",
+      "Do not use loaded magnitude as the freshness rule; loaded values may legitimately decrease or reset.",
+      "Do not apply the panel's initial-frame or full-frame freshness policy to Telemetry.",
+      "Do not allow retired subscriptions to admit new decoding during callback-capable startup.",
+      "Do not allow an older startup, listener-removal callback, or cancellation callback to replace or cancel resources owned by newer navigation.",
+      "Do not treat physical cancellation or listener removal as retracting decoding that was already admitted.",
+      "Do not merge separate workspaces' lifecycle, attempt counters, visits, or display watermarks."
+    ],
+    "lifecycle_identity": [
+      "A visit is created by selection; retry replaces the physical attempt while retaining that visit.",
+      "Selecting the same file object again creates a distinct visit even though the file and source are shared.",
+      "An admitted packet is associated with its originating file, physical attempt, visit, and reception order.",
+      "Display freshness belongs to the visit and therefore spans retries in that visit; a newly selected visit has a distinct freshness lifetime.",
+      "Attempt numbering and workspace disposal state remain local to each Session instance.",
+      "The current visit is determined by object identity through Session#current, not merely by file id."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "The panel must establish progress reception before starting a warm source so cached packets emitted synchronously by start can produce the initial progress update, while preserving reception of later packets."
+      },
+      {
+        "id": "O2",
+        "text": "Each packet admitted by the originating live visit must be assigned reception order before decoding, because decoding may complete immediately or on a later host turn."
+      },
+      {
+        "id": "O3",
+        "text": "Every admitted decode completion must retain its existing recordProgress audit effect exactly once, including when its visit or attempt has since been retired."
+      },
+      {
+        "id": "O4",
+        "text": "After auditing, a decoded full frame may be shown only if its originating visit is still current and no newer-received frame has already been published for that visit."
+      },
+      {
+        "id": "O5",
+        "text": "The publication watermark must advance before showProgress is invoked, and authority and freshness must be rechecked after recordProgress, because host callbacks may synchronously navigate or deliver other progress."
+      },
+      {
+        "id": "O6",
+        "text": "Logical retirement must immediately stop a subscription from admitting further packets, including additional synchronous packets emitted before startup returns and before physical unlisten is available."
+      },
+      {
+        "id": "O7",
+        "text": "Startup and cleanup ownership must be reconciled so a handle returned after its visit was retired is cleaned up without overwriting resources installed by newer navigation."
+      },
+      {
+        "id": "O8",
+        "text": "Retry must preserve its existing entry-visit semantics: cancel the previous attempt, enqueue and record the accepted retry once, retain the new handle only if that visit remains current, otherwise cancel it, and publish its queued notice only while current."
+      },
+      {
+        "id": "O9",
+        "text": "Queue recording, transport construction, cancellation order, payload shapes, per-session counters, idempotent cleanup, and subsequent source reuse must remain observably unchanged."
+      },
+      {
+        "id": "O10",
+        "text": "Telemetry must retain its existing diagnostic behavior and must not inherit the panel's bootstrap reception or freshness filtering changes."
+      }
+    ],
+    "ordering_barriers": [
+      "For the panel, listener registration must occur before the callback-capable start call.",
+      "Packet reception order must be captured before decode begins.",
+      "recordProgress must occur before the decision and action to showProgress.",
+      "After recordProgress returns, current-visit authority and the publication watermark must be checked again.",
+      "The publication watermark must be committed before invoking showProgress.",
+      "A retiring visit must lose logical admission authority before callback-capable unlisten or cancellation runs.",
+      "Older ownership must be detached from current session state before cleanup callbacks can reenter navigation.",
+      "Queue record creation must remain before Attempt construction and transport startup.",
+      "Retry cancellation of the previous handle must remain before enqueueing the accepted retry.",
+      "Attempt cancellation must preserve stop/unlisten before the environment cancel notification."
+    ],
+    "preservation": [
+      "Ordinary later streaming through the panel subscription remains active.",
+      "recordProgress continues to append history for every admitted decoded frame even if presentation is suppressed.",
+      "Existing transfer creation, retry acceptance, visit navigation, disposal, and cleanup behavior remains intact.",
+      "The existing queue record is exactly {fileId, attemptId, visitId, kind}.",
+      "The existing queued notice remains {fileId, attemptId, visitId, status: 'queued'}.",
+      "The same file and source remain reusable by later visits and attempts.",
+      "Cancellation and listener removal remain idempotent.",
+      "Telemetry continues to observe its existing live decoded deltas with its existing startup ordering.",
+      "Each workspace retains an independent lifetime and attempt counter.",
+      "A newer-received frame may legitimately show a lower or reset loaded value."
+    ],
+    "scope": [
+      "Business behavior in src/workflow.rb for panel progress setup, admission, decode completion, display freshness, and the lifecycle coordination required to preserve Session behavior.",
+      "The panel path created by Session#enqueue and Attempt, including synchronous start, later streaming, immediate decode, and deferred decode completion.",
+      "Existing Session selection, retry, hiding, disposal, cancellation, ownership, audit, notice, and queue-record behavior insofar as it must be preserved.",
+      "Telemetry is in preservation scope only: its behavior must remain unchanged.",
+      "No tests, configuration, dependency metadata, scorer, reference implementation, or hidden tests are in scope."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "A transfer with a warm progress source shows no initial progress until a later\npacket arrives. Restore the initial progress update without changing the public\ntransfer, retry, navigation, cleanup, audit, or queue-record behavior."
+      },
+      {
+        "file": "TASK",
+        "quote": "Full\nprogress frames may decode out of order; do not allow an older frame to roll the\ncurrent display backward."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve ordinary streaming, diagnostic telemetry,\nand subsequent uses."
+      },
+      {
+        "file": "README.md",
+        "quote": "Selecting a file creates a visit. Retry replaces the physical attempt without\nopening another visit. Selecting the same file object again opens a new visit."
+      },
+      {
+        "file": "README.md",
+        "quote": "The source is shared by attempts and visits for that file. start may emit cached\npackets synchronously; decoding yields a full frame, immediately or later.\nDecode completion order can differ from packet arrival order."
+      },
+      {
+        "file": "README.md",
+        "quote": "recordProgress appends transfer history; showProgress paints the open panel."
+      },
+      {
+        "file": "README.md",
+        "quote": "Queue records, notices, cancellation, retry, navigation, and cleanup retain\ntheir existing behavior. Queue records are {fileId, attemptId, visitId, kind}\nunless a separate authorization adds byteCount from file.size."
+      },
+      {
+        "file": "README.md",
+        "quote": "One startup window is relevant to this maintenance request: start may emit\nmore than one packet synchronously. A showProgress callback may select or hide\nanother visit before start returns, while its caller has not yet received the\nreturned cleanup handle."
+      },
+      {
+        "file": "README.md",
+        "quote": "The same source service also has a diagnostic consumer, Telemetry/\ncollectProgressTelemetry, whose existing live delta observations are separate\nfrom the panel. Keep its existing behavior during this maintenance."
+      },
+      {
+        "file": "README.md",
+        "quote": "Removing a listener commits removal before calling the host detach callback;\nthat callback may synchronously select, hide or dispose. Repeated removal is\ninert. Host callbacks execute synchronously unless explicitly deferred."
+      },
+      {
+        "file": "README.md",
+        "quote": "Files have stable object identity and immutable id/size during these commands.\nA full frame replaces displayed state; loaded values can decrease or reset."
+      },
+      {
+        "file": "README.md",
+        "quote": "A decode result resolves once; rejected decode and physical transfer completion\nare outside this embedding's model. Each workspace has its own lifetime."
+      },
+      {
+        "file": "README.md",
+        "quote": "Environment.call/bind provides a synchronous source embedding: listen(file\n token, callback token) returns a subscription, start can invoke it before\nreturning, and unlisten may reenter navigation."
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "env.call('start',file['token']);subscription=env.call('listen',file['token'],callback)"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "deliver=->(frame){ audit.call(frame);view.call(frame,order)}"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "@stop=-> {env.call('unlisten',file['token'],subscription)};@stop.call if @aborted"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "@aborted=true;@stop.call;@env.call('cancel',@file['token'],@number)"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "@attempts+=1;n=@attempts;entry={fileId:v.file['id'],attemptId:n,visitId:v.id,kind:kind};;@env.call('record',entry)"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "v.handle.cancel\n  accepted=v;h=enqueue(accepted,'retry');if current(accepted);accepted.handle=h;else;h.cancel;end;notice(accepted,h) if current(accepted);h"
+      },
+      {
+        "file": "src/workflow.rb",
+        "quote": "callback=env.bind(->(packet){deliver=->(frame){env.call('recordDelta',frame)};value=env.call('decode',file['token'],packet,env.bind(deliver));deliver.call(value['frame']) unless value['deferred']})\n  env.call('start',file['token']);subscription=env.call('listen',file['token'],callback)"
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "These checks are required after an Action but do not test business behavior."
+      }
+    ],
+    "triggers": [
+      "Session#select starts a panel transfer for a selected file with a progress feed.",
+      "Session#retry starts a replacement physical attempt within the current visit.",
+      "Attempt initialization invokes the progress source's callback-capable start operation.",
+      "A source packet invokes the bound panel callback, either synchronously during start or later.",
+      "decode returns an immediate full frame or invokes its completion token on a later host turn.",
+      "recordProgress or showProgress synchronously reenters selection, hiding, retry, or disposal.",
+      "Listener removal or cancellation synchronously reenters navigation.",
+      "Session#hide, Session#select, or Session#dispose retires the current visit.",
+      "Telemetry initialization uses the same source service through its separate diagnostic path."
+    ],
+    "unknowns": [
+      "Behavior for rejected decode is outside the documented model.",
+      "Physical transfer completion is outside the documented model.",
+      "Recovery from exceptions raised by environment adapters or host callbacks is not specified.",
+      "No public source supplies packet sequence metadata; reception order is the supported meaning of older and newer frames.",
+      "The public sources do not mandate a particular internal mechanism such as a provisional handle, generation token, or counter.",
+      "The task does not require holding an older completed frame merely because a newer-received frame is still decoding; it only forbids rollback after a newer frame has been displayed.",
+      "No separate authorization permits adding byteCount from file.size to queue records."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 1,
+  "diagnoses": [],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "finalized": true,
+  "first_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "repair_stop_reason": "oracle_accepted",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "3241da1d5da5994bf7a536063a6823692f2b603c29ecf72c7b21a996ffe6d797",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9996524779126
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "42adfad351cb1405cf3c9f999c3a5070e44c7bf73e9da8c2be93b484fc896408",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 23296,
+        "input_tokens": 29491,
+        "output_tokens": 2838,
+        "reasoning_output_tokens": 1208,
+        "total_tokens": 32329
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "1c59176ba3858c89cbf18a21d35c0a83f7f7b4fb1eb3c549a869007525daacdf",
+      "seconds": 55.267792855389416,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 23296,
+        "input_tokens": 29491,
+        "output_tokens": 2838,
+        "reasoning_output_tokens": 1208,
+        "total_tokens": 32329
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "1b239c4b0a557fc5b42a8a61b2b5aeec80ff248ae045af99d0d31367546640d0",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9998081261292
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "1ab14e5490a21b84c00d98213c5ae5446dc4a0ee4f49813ba79481639838c521",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 20473,
+        "output_tokens": 2628,
+        "reasoning_output_tokens": 71,
+        "total_tokens": 23101
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "abfb6e95d9141fb6c82a06b6c83a876fcc48ca085296dc4115796591c80ef9a8",
+      "seconds": 57.19814940728247,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 20473,
+        "output_tokens": 2628,
+        "reasoning_output_tokens": 71,
+        "total_tokens": 23101
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "ebae6c960315cbc3b64d4fbf53b7892a46780bd696c6d57d83cb39c0c55a107b",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9996304940432
+          },
+          "number": 1,
+          "requests": 8,
+          "restart_reason": "initial",
+          "result_sha256": "c866d0698362f267b4e2614d850dacbe55b3c5d641ec54bd9fb090c674edfb00",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 218112,
+        "input_tokens": 245391,
+        "output_tokens": 8851,
+        "reasoning_output_tokens": 3788,
+        "total_tokens": 254242
+      },
+      "requests": 8,
+      "reserved_requests": 24,
+      "result_sha256": "c812a651e1c1120afa00f9a3dc50feb2ea50c9ec84f656e528ba92d763f074cf",
+      "seconds": 151.32730531413108,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 218112,
+        "input_tokens": 245391,
+        "output_tokens": 8851,
+        "reasoning_output_tokens": 3788,
+        "total_tokens": 254242
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "b6bc50ab0dc1b9450b6df76ce9299ec5f17408978e8b3631c8feaa7e30891382",
+      "seconds": 0.5550377918407321,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 1.9031403362751007,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "cbd81c0404fddda87da532b4330c1e0b8cfc1c1d73998df49751e6cf46131c77",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9946622261778
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "bc4722149dbfb4f2285c6b403ef68f34ef62cddea3caae45209f746090ecffa7",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 77024,
+        "output_tokens": 1847,
+        "reasoning_output_tokens": 166,
+        "total_tokens": 78871
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "065ea4ed2f6a7c3c209fbb7380b22bca5e1bd6b9808e70fd2be22b1bd03d3aef",
+      "seconds": 47.80236754659563,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 77024,
+        "output_tokens": 1847,
+        "reasoning_output_tokens": 166,
+        "total_tokens": 78871
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "training_accepted": true
+}

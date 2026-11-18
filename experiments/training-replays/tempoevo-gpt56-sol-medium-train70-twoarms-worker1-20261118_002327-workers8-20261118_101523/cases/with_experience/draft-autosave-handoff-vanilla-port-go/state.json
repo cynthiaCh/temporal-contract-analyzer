@@ -1,0 +1,512 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "9a5f082905aab54390fe542d9288bfab8d174d44764262740464a7d408bcaca3",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "8e4d1187aef61f84697a095737757708ec13fbb97851f94a02512116894c1d5e",
+        "docs/host-api.md": "191f3a39cbf21303313def3e9000b28324cb2386bcc1cd5dc40ef6e2e9edb4dc",
+        "package-lock.json": "2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59",
+        "package.json": "66db10140e649e83eadde7fe04cb4ccb1467c20f5a7db2117520ab1572467f1a",
+        "src/workflow.go": "fb1e7007d7d1738bf47047d3c8eab97a3501ca5c6a816c684163af5533c69cbc"
+      },
+      "candidate_sources": {
+        "README.md": "Harbor logistics — A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: separate BufferBank service\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"Go 1.13.8\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide(). Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled. Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription. A store listener may call navigation synchronously. All source identities/text and status payloads retain original semantics.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.go": "package main\nimport \"sort\"\ntype Value map[string]interface{}\ntype Store struct { records map[string]string; listeners map[int]func(Value); serial, revision int }\nfunc NewStore(initial Value) *Store {\n    s:=&Store{records:map[string]string{},listeners:map[int]func(Value){}}\n    for id,text:=range initial { s.records[id]=text.(string) };return s\n}\nfunc(s *Store) Read(id string) string { return s.records[id] }\nfunc(s *Store) Subscribe(fn func(Value)) int { s.serial++;s.listeners[s.serial]=fn;return s.serial }\nfunc(s *Store) Stop(token int) { delete(s.listeners,token) }\nfunc(s *Store) Write(id,text string) Value {\n    s.records[id]=text;s.revision++;event:=Value{\"id\":id,\"text\":text,\"revision\":s.revision}\n    tokens:=[]int{};for token:=range s.listeners { tokens=append(tokens,token) };sort.Ints(tokens)\n    for _,token:=range tokens { if fn,ok:=s.listeners[token];ok { fn(event) } };return event\n}\n\ntype Environment interface { Store() *Store; Schedule(func(),int) interface{}; Cancel(interface{}); Output(string,interface{}); Write(string,string) }\ntype Trailing struct { env Environment; delay int; work func(string); handle interface{}; pending *string }\nfunc NewTrailing(env Environment,delay int,work func(string)) *Trailing { return &Trailing{env:env,delay:delay,work:work} }\nfunc(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}\nfunc(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}\nfunc(t *Trailing) Cancel() { if t.handle!=nil {t.env.Cancel(t.handle)};t.handle=nil;t.pending=nil }\n\ntype Badge struct{env Environment;id string;buffer *Trailing;token int}\nfunc NewBadge(env Environment,id string,buffer *Trailing)*Badge{token:=env.Store().Subscribe(func(e Value){if e[\"id\"]==id{env.Output(\"status\",e)}});return &Badge{env,id,buffer,token}}\nfunc(b *Badge)detach(){b.env.Store().Stop(b.token)}\ntype BufferBank struct{entries map[string]*Trailing}\nfunc(b *BufferBank)get(env Environment,id string)*Trailing{if b.entries==nil{b.entries=map[string]*Trailing{}};if b.entries[id]==nil{b.entries[id]=NewTrailing(env,120,func(text string){env.Write(id,text)})};return b.entries[id]}\ntype Workspace struct{env Environment;current *Badge;generation uint64;bank BufferBank}\nfunc NewWorkspace(env Environment)*Workspace{return &Workspace{env:env,}}\nfunc(w *Workspace)retire(){old:=w.current;w.current=nil;if old!=nil{old.detach()};w.env.Output(\"document\",nil);if old!=nil{old.buffer.Flush()}}\nfunc(w *Workspace)Open(id string){w.generation++;request:=w.generation;w.retire();if true&&request!=w.generation{return};buffer:=w.bank.get(w.env,id);w.current=NewBadge(w.env,id,buffer);w.env.Output(\"document\",Value{\"id\":id,\"text\":w.env.Store().Read(id)})}\nfunc(w *Workspace)Edit(text string){view:=w.current;if view!=nil{view.buffer.Push(text)}}\nfunc(w *Workspace)Close(){w.generation++;w.retire()}\nfunc(w *Workspace)Dispose(){w.Close()}\ntype Preview struct{task *Trailing}\nfunc NewPreview(env Environment)*Preview{return &Preview{NewTrailing(env,40,func(query string){env.Output(\"preview\",Value{\"query\":query})})}}\nfunc(p *Preview)Query(text string){p.task.Push(text)}\nfunc(p *Preview)Hide(){p.task.Cancel()}\n"
+      },
+      "delivered_sha256s": [
+        "2835752e4b6c1eaf8c6a1161c94a3ab57363a3bf4dd4f02741daa7deacab28bb",
+        "0ea9f43b81fb85f8cf3a595e10e414b2aab5dd33ef3d6b3ca161f18433bf5388",
+        "608ccdab70e6b385434803bdea4a3500713795a42e8b9650e7e79b6c3398dd88",
+        "81628bcb9a025f7b94947e61093b3a16b10b58aa6b043c14fac4e8a53f5cf1b0",
+        "2b46ebef0210d193cf3c224d408cd690d5870460673f7bc67205090a7ff7b310"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.go",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "Verify multiple edits within one burst reset the timer and produce exactly one store write containing the latest text after 120 ms of quiet.",
+      "Verify a later edit burst schedules and completes another save.",
+      "Verify an empty-string edit is saved.",
+      "Verify Edit is a no-op when no document is open.",
+      "Verify pending edits remain associated with the document that accepted them when switching documents, reopening the same document, closing, or disposing.",
+      "Verify departure preserves the prior synchronous persistence behavior: a pending edit is available to the destination read before Open returns and is not lost by Close or Dispose.",
+      "Verify synchronous navigation from a save listener leaves the nested navigation authoritative and does not install the superseded outer document.",
+      "Verify the departing Badge subscription is removed and status output remains filtered to the current document.",
+      "Verify Preview still uses its 40 ms trailing task and Hide cancels pending preview work."
+    ],
+    "forbidden_effects": [
+      "Do not continue writing every keystroke directly to the store.",
+      "Do not save an earlier value from a burst after a later edit has been accepted.",
+      "Do not redirect pending text to whichever document is current when the timer fires.",
+      "Do not cancel or discard an accepted document edit merely because its Badge is detached.",
+      "Do not let an outer Open overwrite navigation performed synchronously by a save callback.",
+      "Do not change Store event payloads, revision behavior, listener ordering, document/status output shapes, or public interfaces.",
+      "Do not change search-preview timing, cancellation, or publication behavior.",
+      "Do not merge Badge subscription ownership with BufferBank ownership."
+    ],
+    "lifecycle_identity": [
+      "A document buffer is identified by document ID and is retained in BufferBank independently of any current Badge.",
+      "A Badge represents the current document view and owns only that view's live store subscription.",
+      "An accepted edit belongs to the current Badge's captured document buffer, even if navigation occurs before consumption.",
+      "Workspace generation identifies the currently authoritative Open or Close operation; synchronous nested navigation supersedes an older request.",
+      "A Trailing burst ends when its latest pending value is consumed after the quiet interval or explicitly flushed during departure."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Workspace.Edit must capture the current Badge and push the accepted text into that Badge's reusable document buffer; it must remain a no-op when there is no current Badge."
+      },
+      {
+        "id": "O2",
+        "text": "Each document buffer must use Trailing with a 120 ms delay so repeated edits reset the quiet interval and only the latest text in that burst is written."
+      },
+      {
+        "id": "O3",
+        "text": "After a burst is consumed, the Trailing task must remain reusable so subsequent bursts also save, including an empty-string value."
+      },
+      {
+        "id": "O4",
+        "text": "Pending text must retain the document ID captured by the BufferBank entry and must not be reassigned according to later workspace state."
+      },
+      {
+        "id": "O5",
+        "text": "When retiring a Badge, Workspace must revoke current ownership, detach the captured subscription, clear the document presentation, and preserve accepted pending text by flushing its captured buffer before retirement completes."
+      },
+      {
+        "id": "O6",
+        "text": "Because flushing can synchronously invoke store listeners that navigate, an outer Open must revalidate its generation after retirement and must not install a destination when a nested navigation has superseded it."
+      },
+      {
+        "id": "O7",
+        "text": "Trailing.Flush must retire its pending handle and value before invoking callback-capable save work, preventing duplicate nested consumption while allowing later pushes to form a new burst."
+      },
+      {
+        "id": "O8",
+        "text": "The implementation must preserve existing Store reads/writes, revision and event payload semantics, current-document status filtering, subscription cleanup, document output behavior, and the public Workspace interfaces."
+      },
+      {
+        "id": "O9",
+        "text": "Preview must remain outside the change: Query continues to use its existing 40 ms trailing task and Hide continues to cancel it."
+      }
+    ],
+    "ordering_barriers": [
+      "At Edit acceptance, resolve the current Badge and its buffer before navigation can change workspace state.",
+      "On departure, set current to nil before callback-capable persistence so reentrant operations cannot act through the departing Badge.",
+      "Detach the departing Badge and publish the cleared document state before flushing its buffer.",
+      "In Trailing.Flush, cancel/retire the timer and clear pending state before invoking the save callback.",
+      "After retirement and any resulting synchronous navigation, compare the captured Open request generation with the current generation before creating a destination Badge or rendering its document.",
+      "Store.Write must continue to update the record and revision before notifying subscribed listeners."
+    ],
+    "preservation": [
+      "Public methods remain createWorkspace-equivalent Open, Edit, Close, Dispose behavior through the existing Go types, and Preview retains Query and Hide.",
+      "BufferBank continues to provide one reusable Trailing buffer per document ID.",
+      "Badge subscriptions continue to emit status only when the event ID equals the Badge's document ID.",
+      "Opening continues to render the selected document using the current store value; retirement continues to output a nil document.",
+      "Store writes retain id, text, and revision fields and synchronous listener notification.",
+      "Closing and disposing continue to retire the current view and its subscription.",
+      "Search preview retains its distinct 40 ms quiet interval and cancellation behavior."
+    ],
+    "scope": [
+      "Change only the workspace draft editor's edit persistence path and the lifecycle handling needed to preserve editor behavior while introducing delayed saves.",
+      "Use the existing Trailing utility and separate BufferBank service in src/workflow.go.",
+      "Include Open, Close, and Dispose boundaries where accepted delayed edits could otherwise be lost or where saving can synchronously navigate.",
+      "Exclude the adjacent search preview from behavioral changes."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "The workspace draft editor currently writes to the store on every keystroke."
+      },
+      {
+        "file": "TASK",
+        "quote": "Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\ninterval, write only the latest text in that editing burst. Subsequent bursts\nmust continue to save."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve the editor's other behavior and public interfaces."
+      },
+      {
+        "file": "TASK",
+        "quote": "The adjacent search preview is outside this maintenance change."
+      },
+      {
+        "file": "README.md",
+        "quote": "Harbor logistics — A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval. Document-buffer responsibility: separate BufferBank service"
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "createWorkspace offers open(id), edit(text), close(), dispose(); createSearchPreview offers query(text), hide()."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Store read/write/subscribe is synchronous; timer schedule(callback,delay), cancel(handle) is explicitly controlled."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Document buffers are owned by a separate BufferBank service, while Badge owns only a live subscription."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "A store listener may call navigation synchronously."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "All source identities/text and status payloads retain original semantics."
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(t *Trailing) Push(text string) {\n    if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)\n}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(t *Trailing) Flush() {\n    if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\n    if text!=nil { t.work(*text) }\n}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(b *BufferBank)get(env Environment,id string)*Trailing{if b.entries==nil{b.entries=map[string]*Trailing{}};if b.entries[id]==nil{b.entries[id]=NewTrailing(env,120,func(text string){env.Write(id,text)})};return b.entries[id]}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func NewBadge(env Environment,id string,buffer *Trailing)*Badge{token:=env.Store().Subscribe(func(e Value){if e[\"id\"]==id{env.Output(\"status\",e)}});return &Badge{env,id,buffer,token}}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(w *Workspace)Open(id string){w.generation++;request:=w.generation;w.retire();if true&&request!=w.generation{return};buffer:=w.bank.get(w.env,id);w.current=NewBadge(w.env,id,buffer);w.env.Output(\"document\",Value{\"id\":id,\"text\":w.env.Store().Read(id)})}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(w *Workspace)Edit(text string){view:=w.current;if view!=nil{w.env.Write(view.id,text)}}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func NewPreview(env Environment)*Preview{return &Preview{NewTrailing(env,40,func(query string){env.Output(\"preview\",Value{\"query\":query})})}}"
+      },
+      {
+        "file": "src/workflow.go",
+        "quote": "func(p *Preview)Hide(){p.task.Cancel()}"
+      }
+    ],
+    "triggers": [
+      "Workspace.Edit(text) while a Badge is current.",
+      "Expiration of the document buffer's 120 ms quiet interval.",
+      "A second or later edit before the current quiet interval expires.",
+      "Workspace.Open(id), including switching documents and reopening the same ID.",
+      "Workspace.Close() or Workspace.Dispose() while a document edit is pending.",
+      "Synchronous navigation invoked by a listener during Store.Write.",
+      "Preview.Query(text) and Preview.Hide(), solely as preservation boundaries."
+    ],
+    "unknowns": [
+      "The public sources do not specify exception or panic recovery for timer callbacks, outputs, store listeners, or navigation.",
+      "The timer implementation's behavior when Cancel is called on the currently firing handle is not specified beyond explicit schedule/cancel control.",
+      "The public sources establish synchronous navigation from store listeners but do not state that Output, Subscribe, Stop, Schedule, or Cancel can reenter navigation.",
+      "No explicit timer clock granularity or equal-deadline ordering is specified.",
+      "The task does not prescribe a specific internal method name or data layout for departure flushing; only observable persistence, navigation, and ownership behavior constrain it."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 1,
+  "diagnoses": [],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "finalized": true,
+  "first_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "repair_stop_reason": "oracle_accepted",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "a2c389d92f9e643bd9a9c709987f2fb219866411ff84c9c8e3be77db6925245e",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9997251555324
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "9c8b17051fd7984918345d92432228bafa7c7de52aaf21b75be869df4d9ae14c",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 22656,
+        "input_tokens": 28331,
+        "output_tokens": 2848,
+        "reasoning_output_tokens": 1081,
+        "total_tokens": 31179
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "286b3451e50be8a2e5fbf20504428d581af56a60540ac2bbb948d9afe5621be2",
+      "seconds": 56.92035860661417,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 22656,
+        "input_tokens": 28331,
+        "output_tokens": 2848,
+        "reasoning_output_tokens": 1081,
+        "total_tokens": 31179
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "b0c18116689bfa76bc488534ebdb67a8026ad0d2e8c20a13ce0551e5625daf5b",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9996076915413
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "9552fa4af66a04dac1c958f1d9575901bfc1d417392812332adc8af9f00675c8",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 17865,
+        "output_tokens": 2365,
+        "reasoning_output_tokens": 325,
+        "total_tokens": 20230
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "b6204475801f54a1f9ecbb3cf526839351cd1c648fec536b6208d43f895e126c",
+      "seconds": 50.160758923739195,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8704,
+        "input_tokens": 17865,
+        "output_tokens": 2365,
+        "reasoning_output_tokens": 325,
+        "total_tokens": 20230
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "ef1b187e85be267fd866a5c49b0f88783cad6c6b98f0f296cd0b407b68900dc6",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9996124012396
+          },
+          "number": 1,
+          "requests": 5,
+          "restart_reason": "initial",
+          "result_sha256": "6cfd31ccbd231776b493a32d9f17c18b9a635e54ab1c1c774b862a8a7dfe7a62",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 96384,
+        "input_tokens": 113177,
+        "output_tokens": 1715,
+        "reasoning_output_tokens": 786,
+        "total_tokens": 114892
+      },
+      "requests": 5,
+      "reserved_requests": 24,
+      "result_sha256": "18db04e8e5948f086e47738328b2ce821b21ef7cef92a8f86331566bf514085c",
+      "seconds": 52.67822207510471,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 96384,
+        "input_tokens": 113177,
+        "output_tokens": 1715,
+        "reasoning_output_tokens": 786,
+        "total_tokens": 114892
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "7c3e5ebc58a9f96de27955ce9b3f3d94b2d9c47a34357f2d7a821592cf1cc93d",
+      "seconds": 0.4900431567803025,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 2.0459632286801934,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "174ca95b54d664479eecc626b5184b6e354626176a1c4de857d17caae0ccbe2c",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.996214337647
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "d88d3e5ba54f0aeb23f6a58468aa1bccf7f146dcdf04f8a9431948f096bb2e71",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 70560,
+        "output_tokens": 1530,
+        "reasoning_output_tokens": 243,
+        "total_tokens": 72090
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "af9d061ccc11416f15e7387eeb2d94ecfc7763fa2fa51e81c8cdcd127a3d1542",
+      "seconds": 32.20923391636461,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 70560,
+        "output_tokens": 1530,
+        "reasoning_output_tokens": 243,
+        "total_tokens": 72090
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "training_accepted": true
+}
