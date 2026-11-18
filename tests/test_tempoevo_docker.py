@@ -33,6 +33,31 @@ class DockerV4Tests(unittest.TestCase):
   self.assertIn(runtime+'/native-launch-receipts',temporary)
   self.assertIn('/opt/swe-tempoc/results/multi-family-expansion-20261005/rxjs-executions',temporary)
   self.assertNotIn('/opt/swe-tempoc/results/multi-family-expansion-20261005/rxjs-cache',temporary)
+ def test_container_command_on_windows_without_unix_user_ids(self):
+  from temporal_contract_analyzer.docker_backend import container_command
+  with patch('temporal_contract_analyzer.docker_backend.os',SimpleNamespace()):
+   command,_=container_command(IMAGE,'test')
+  self.assertEqual(command[command.index('--user')+1],'1000:1000')
+ def test_public_runtime_can_opt_out_of_only_gold_specific_tmpfs(self):
+  candidate=self.root/'candidate';candidate.mkdir()
+  payload=dict(candidate=str(candidate),purpose='auxiliary_public_check',
+      evaluator=dict(image=IMAGE,command=['python3','/checks/public.py'],trusted_gold_runtime=False))
+  with patch('temporal_contract_analyzer.tempoevo_docker.image_identity'),patch('temporal_contract_analyzer.tempoevo_docker.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout='{"passed": null}',stderr='')) as run,patch('temporal_contract_analyzer._session_runtime.docker_transport.stop'):
+   result=evaluate(payload,self.root)
+  self.assertTrue(result['valid']);self.assertIsNone(result['passed'])
+  command=run.call_args.args[0]
+  temporary=[command[i+1].split(':',1)[0] for i,arg in enumerate(command) if arg=='--tmpfs']
+  self.assertIn('/tmp',temporary)
+  self.assertFalse(any(path.startswith('/opt/swe-tempoc/') for path in temporary))
+ def test_v12_gold_purposes_preserve_behavior_failure_and_public_boundary(self):
+  candidate=self.root/'candidate';candidate.mkdir()
+  for purpose,valid in [('training_acceptance',True),('final_scoring',True),
+                        ('auxiliary_public_check',False),('independent_testing',False)]:
+   with self.subTest(purpose=purpose),patch('temporal_contract_analyzer.tempoevo_docker.image_identity'),patch('temporal_contract_analyzer.tempoevo_docker.subprocess.run',return_value=SimpleNamespace(returncode=1,stdout='{"verdict":"UNDERREACH"}',stderr='')),patch('temporal_contract_analyzer._session_runtime.docker_transport.stop'):
+    result=evaluate(dict(candidate=str(candidate),purpose=purpose,
+        evaluator=dict(image=IMAGE,command=['python3','/checks/check.py'])),self.root)
+   self.assertIs(result['valid'],valid)
+   if valid:self.assertEqual(result['verdict'],'UNDERREACH')
  def test_stage_dispatches_to_existing_docker_runner(self):
   directory=self.root/'stage';directory.mkdir()
   backend=NativeV4Backend(dict(binary='/public/codex',backend=dict(kind='docker',solver_image=IMAGE)))

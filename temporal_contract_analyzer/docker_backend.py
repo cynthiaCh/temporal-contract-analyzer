@@ -51,9 +51,12 @@ def project_score(outcome, raw_sha256):
 
 
 def container_command(image, name, mounts=(), network='none'):
+    # Docker Desktop accepts Linux container IDs; Windows has no getuid/getgid.
+    uid = os.getuid() if hasattr(os, 'getuid') else 1000
+    gid = os.getgid() if hasattr(os, 'getgid') else 1000
     args = ['docker','run','-i','--pull=never','--name',name,'--read-only','--cap-drop','ALL',
             '--security-opt','no-new-privileges','--network',network,'--init',
-            '--user',str(os.getuid())+':'+str(os.getgid()),'--memory','8g','--cpus','4',
+            '--user',str(uid)+':'+str(gid),'--memory','8g','--cpus','4',
             '--pids-limit','512','--tmpfs','/tmp:rw,exec,mode=1777,size=4g',
             '--env','HOME=/tmp','--env','PYTHONDONTWRITEBYTECODE=1']
     for source, destination in mounts:

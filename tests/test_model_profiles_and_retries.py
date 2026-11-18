@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 import test_tempoevo_v4 as fixtures
-from temporal_contract_analyzer.core import EvidenceError
+from temporal_contract_analyzer.core import EvidenceError, sha
 from temporal_contract_analyzer.tempoevo_v4 import MODEL, read
 from temporal_contract_analyzer._session_runtime.model_settings import resolve_profile, identity, validate_settings
 from temporal_contract_analyzer.stage_retry import transient_transport
@@ -32,6 +32,31 @@ class RetryBackend(fixtures.Backend):
 class ModelRetryTests(unittest.TestCase):
     setUp=fixtures.V4Tests.setUp
     prepare=fixtures.V4Tests.prepare
+    def test_external_provider_never_copies_chatgpt_auth(self):
+        import importlib.util,sys
+        source=Path(__file__).resolve().parents[1]/'temporal_contract_analyzer/_session_runtime'
+        old=list(sys.path);sys.path.insert(0,str(source))
+        try:
+            spec=importlib.util.spec_from_file_location('external_provider_native_fixture',source/'native_backend.py')
+            native=importlib.util.module_from_spec(spec);spec.loader.exec_module(native)
+            native.BINARY=self.root/'codex'
+            home=self.root/'fake-home';(home/'.codex').mkdir(parents=True)
+            (home/'.codex/auth.json').write_text('SYNTHETIC_AUTH_MUST_NOT_BE_COPIED')
+            (home/'.codex/config.toml').write_text('')
+            with patch.object(Path,'home',return_value=home):
+                command=native.command('provider-test',self.root/'call','extraction',runtime=self.root/'runtime',
+                    socket_dir=self.root/'socket',settings=resolve_profile('deepseek-flash-high'))
+            self.assertFalse((self.root/'runtime/.runtime/provider-test/auth.json').exists())
+            self.assertIn('model_catalog_json="/home/agent/.codex/models.json"',command)
+            catalog=self.root/'runtime/.runtime/provider-test/models.json'
+            metadata=json.loads(catalog.read_text())['models'][0]
+            self.assertEqual(metadata['slug'],'deepseek-flash')
+            official=json.loads((source/'deepseek-model-catalog.json').read_text())['models'][0]
+            self.assertEqual(metadata['base_instructions'],official['base_instructions'])
+            receipt=json.loads((self.root/'call/archive/configuration-before.json').read_text())
+            self.assertEqual(receipt['model_catalog_sha256'],sha(catalog.read_bytes()))
+            self.assertIsNone(native.provider_catalog(resolve_profile()))
+        finally:sys.path[:]=old
 
     def config_file(self, retries=2, model='synthetic-other-model', effort=None):
         settings=resolve_profile();settings.update(profile='custom',model=model,reasoning_effort=effort,service_tier=None)
@@ -60,6 +85,10 @@ class ModelRetryTests(unittest.TestCase):
         self.assertEqual(state['status'],'execution_invalid');self.assertEqual(len(b.trials),3);self.assertEqual(state['attempts'],[])
         self.assertFalse((loop.root/'expert-summary-task.json').exists());self.assertFalse((loop.root/'candidate-pool').exists())
         before=len(b.trials);loop.run(b,execute=True);self.assertEqual(len(b.trials),before)
+
+    def test_v12_cannot_stack_legacy_revisions_on_preparation_correction(self):
+        with self.assertRaisesRegex(EvidenceError,'V12 owns preparation correction'):
+            self.prepare(model_config=str(self.config_file()),max_readonly_output_revisions=1)
 
     def test_nontransport_failure_does_not_retry(self):
         for failure in ['timeout','invalid_output','authentication_error','infrastructure_error']:

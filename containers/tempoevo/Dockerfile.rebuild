@@ -1,0 +1,32 @@
+# New public-only solver, not a reproduction of the historical provisioned image.
+# Build ONLY the allowlisted context emitted by prepare_solver_build.py.
+# This public base and Debian snapshot match benchmark/Dockerfile.
+ARG BASE=python:3.9.20-bullseye@sha256:4b6e1677a7095ad7934ba803f9eaa71afe5f8e7089e359f242b17b59aee6f0ed
+FROM --platform=linux/amd64 ${BASE}
+
+RUN printf '%s\n' 'deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/20241001T000000Z/ bullseye main' > /etc/apt/sources.list \
+ && rm -f /etc/apt/sources.list.d/* \
+ && apt-get -o Acquire::Check-Valid-Until=false update \
+ && apt-get install -y --no-install-recommends ca-certificates curl git ripgrep build-essential openjdk-11-jdk-headless php7.4-cli php7.4-json ruby2.7 ruby2.7-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL --retry 3 https://dl.google.com/go/go1.13.8.linux-amd64.tar.gz -o /tmp/go.tar.gz \
+ && echo '0567734d558aef19112f2b2873caa0c600f1b4a5827930eb5a7f35235219e9d8  /tmp/go.tar.gz' | sha256sum -c - \
+ && tar -xzf /tmp/go.tar.gz -C /opt \
+ && mv /opt/go /opt/go1.13.8 \
+ && rm /tmp/go.tar.gz
+
+# No benchmark source root, cases, scorer, reference, credentials or experience.
+COPY tools/setup_swe_tempoc.py /opt/solver-build/tools/setup_swe_tempoc.py
+COPY runtimes/ /opt/solver-build/runtimes/
+COPY parser/ /runtime/frontend/
+COPY install_public_runtime.py smoke_public_runtime.py public-inputs.json /opt/solver-build/
+RUN python3 -B /opt/solver-build/install_public_runtime.py \
+ && dpkg-query -W > /runtime/container-packages.tsv
+
+ENV PATH="/runtime/node16/bin:/runtime/bin:/opt/go1.13.8/bin:/usr/local/bin:/usr/bin:/bin" \
+    NODE_PATH="/runtime/frontend/node_modules" \
+    PYTHONDONTWRITEBYTECODE=1
+RUN python3 -B /opt/solver-build/smoke_public_runtime.py
+WORKDIR /workspace
+CMD ["/bin/bash"]

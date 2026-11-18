@@ -41,15 +41,21 @@ def case_input(case_id, root, upstream_loader=None, public_destination=None):
 def project_public_base(base,destination):
     """All product sources and selected ORIGINAL public tests; no trusted inputs."""
     from .candidate_files import write_files
+    files, projection = project_public_files({p.relative_to(base).as_posix():p.read_bytes()
+        for p in base.rglob('*') if p.is_file()})
+    write_files(destination,files)
+    return destination,projection
+
+
+def project_public_files(original):
+    """The same public projection applied to a verified frozen blob inventory."""
     names={'README.md','package.json','dependencies.lock.json','rxjs/README.md','rxjs/package.json','rxjs/tsconfig.json',
            'rxjs/spec/subjects/AsyncSubject-spec.ts','rxjs/spec/Subject-spec.ts',
            'rxjs/spec/subjects/BehaviorSubject-spec.ts','rxjs/spec/subjects/ReplaySubject-spec.ts'}
-    files={p.relative_to(base).as_posix():p.read_bytes() for p in base.rglob('*') if p.is_file() and
-           (p.relative_to(base).as_posix().startswith(('src/','docs/','rxjs/src/')) or p.relative_to(base).as_posix() in names)}
+    files={name:raw for name,raw in original.items() if name.startswith(('src/','docs/','rxjs/src/')) or name in names}
     if 'rxjs/src/internal/AsyncSubject.ts' not in files:raise EvidenceError('Projection missing public product target')
     projection=dict(kind='frozen_base_public_projection_v1',paths=sorted(files),files_sha256={k:sha(v) for k,v in files.items()},
         scope='All original native and RxJS product src, original named public regression tests and public root documents. Unprojected original files restored only in trusted scorer.',
         local_dependency_limit='Full npm dependencies/build fixtures are only available in grader; public source projection is not a complete local installation.')
     files['PROJECTION.md']=(projection['scope']+'\n'+projection['local_dependency_limit']+'\n').encode()
-    write_files(destination,files)
-    return destination,projection
+    return files,projection

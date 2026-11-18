@@ -207,6 +207,18 @@ class Trajectory:
         if policy=='online' and (cfg.get('mode')!='learning' or cfg.get('condition') not in ('structured','bm25') or not cfg.get('online_memory') or not memory.text(cfg.get('task_id'))):raise EvidenceError('Online memory requires memory-enabled learning and an explicit training pool')
         if policy!='online' and cfg.get('online_memory'):raise EvidenceError('Frozen/testing trajectories cannot access an online pool')
         cfg['learning_policy']=policy
+        review_policy=cfg.get('review_policy','human')
+        if review_policy not in ('human','ai_delegated'):raise EvidenceError('Unknown review policy')
+        analysis_tools=cfg.get('analysis_tools',True)
+        if type(analysis_tools) is not bool:raise EvidenceError('analysis_tools must be boolean')
+        # V12 owns the single preparation correction and its original stage budget.
+        # The retired experiment wrapper must not add a second revision loop.
+        revisions=cfg.get('max_readonly_output_revisions',0)
+        if type(revisions) is not int or revisions!=0:
+            raise EvidenceError('Legacy read-only output revisions are retired; V12 owns preparation correction')
+        if cfg.get('evaluation_purpose')=='development_pilot' or cfg.get('evaluation_manifest'):
+            raise EvidenceError('Legacy development pilots are retired; use an explicit evaluation_split_file')
+        cfg.update(review_policy=review_policy,analysis_tools=analysis_tools,max_readonly_output_revisions=0)
         for key in ('task','candidate','store','mode','condition'):
             if key not in cfg:raise EvidenceError('Missing '+key)
         if cfg['mode'] not in ('learning','testing') or cfg['condition'] not in CONDITIONS:raise EvidenceError('Invalid mode/condition')
@@ -261,10 +273,16 @@ class Trajectory:
             pool=Path(cfg['online_memory']).resolve()
             if any(pool==p or pool in p.parents or p in pool.parents for p in (store,source,self.root)):raise EvidenceError('Online pool must be separate from long-term store and trajectory/candidate')
             cfg['online_memory']=str(pool)
-        bank=approval.validate_snapshot(store,cfg['memory_snapshot']) if cfg.get('memory_snapshot') else approval.freeze(store)
+        ai_snapshot=(cfg.get('memory_snapshot') or {}).get('schema_version')=='experience-ai-reviewed-snapshot-v1'
+        if ai_snapshot:
+            if review_policy!='ai_delegated':raise EvidenceError('AI snapshot requires an explicit delegated review policy')
+            from .delegated_review import validate_snapshot
+            bank=validate_snapshot(store,cfg['memory_snapshot'])
+        else:bank=approval.validate_snapshot(store,cfg['memory_snapshot']) if cfg.get('memory_snapshot') else approval.freeze(store)
         supplements=cfg.get('approved_memory_supplements',[])
         if not isinstance(supplements,list):raise EvidenceError('Approved memory supplements must be a list')
         if supplements:
+            if ai_snapshot:raise EvidenceError('AI-reviewed snapshots cannot mix human-approved supplemental entries')
             if cfg['mode']!='testing' or policy!='frozen' or cfg['condition']!='structured':raise EvidenceError('Approved supplements require frozen structured testing')
             bank=deepcopy(bank);seen={e['bundle']['sha256'] for e in bank['entries']}
             for supplement in supplements:
@@ -344,7 +362,7 @@ class Trajectory:
         self.save('binding.json',dict(protocol=sha((self.root/'protocol.json').read_bytes()),
             bank=sha((self.root/'memory-snapshot.json').read_bytes()),ast=sha((self.root/'ast-evidence.json').read_bytes()),
             implementation=sha(Path(__file__).read_bytes()),evaluators=evaluator_hashes,
-            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name(name) for name in ('business_retrieval.py','prompt_context.py','preparation_validation.py','semantic_retrieval.py','experience_routing.py','experience_memory.py','experience_approval.py','experience_updates.py','compact_experience.py','taxonomy.py','contract-taxonomy.json')]+[Path(__file__).with_name('evaluation_split.py'),Path(__file__).resolve().parents[1]/'experiments/evaluation-splits.json',Path(__file__).with_name('online_memory.py'),Path(__file__).with_name('experience_reflection.py'),Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
+            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name(name) for name in ('delegated_review.py','business_retrieval.py','prompt_context.py','preparation_validation.py','semantic_retrieval.py','experience_routing.py','experience_memory.py','experience_approval.py','experience_updates.py','compact_experience.py','taxonomy.py','contract-taxonomy.json')]+[Path(__file__).with_name('evaluation_split.py'),Path(__file__).resolve().parents[1]/'experiments/evaluation-splits.json',Path(__file__).with_name('online_memory.py'),Path(__file__).with_name('experience_reflection.py'),Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml',Path(__file__).with_name('_session_runtime')/'deepseek-model-catalog.json']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
         self.report();return self.state()
 
     def verify(self):

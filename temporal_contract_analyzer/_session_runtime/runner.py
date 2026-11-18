@@ -19,10 +19,16 @@ def command(call,folder,phase,case,*,runtime,socket_dir,copy_auth=True):
     """Original autonomous Codex CLI and role flags, no host archive bind mounts."""
     readonly_evidence = phase=='reflect' and case.get('reflection_readonly') is True
     backend_mode='reflection' if phase=='reflect' and not readonly_evidence else 'extraction'
-    cmd=backend.command(call,folder,backend_mode,copy_auth=copy_auth,runtime=runtime,socket_dir=socket_dir,settings=case.get('model_settings'))
+    cmd=backend.command(call,folder,backend_mode,copy_auth=copy_auth,runtime=runtime,socket_dir=socket_dir,settings=case.get('model_settings'),
+                        readonly_no_tools=phase!='repair' and case.get('readonly_no_tools',False),readonly_tools=phase!='repair')
     if phase in ['repair','reflect']:
         if phase=='repair':
             i=cmd.index(str(folder/'workspace'));assert cmd[i-1]=='--ro-bind';cmd[i-1]='--bind'
+        cmd[cmd.index('--sandbox')+1]='danger-full-access'
+    if case.get('external_container_isolation'):
+        # Docker supplies the namespace, read-only workspace and capability drop.
+        # CLI bwrap cannot create a nested user namespace in this container.
+        # The host-owned closed read grammar and request guard remain mandatory.
         cmd[cmd.index('--sandbox')+1]='danger-full-access'
     # Native role permissions and output schema are separate decisions.
     old_schema=str(O/('reflection.schema.json' if backend_mode=='reflection' else 'extraction.schema.json'))
@@ -89,7 +95,7 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
     """
     phase=slot['phase'];model,effort,cap,mode=ROLE[phase]
     settings=validate_settings(config.get('model_settings') or resolve_profile())
-    model,effort=settings['model'],settings['reasoning_effort'];case=dict(case,model_settings=settings)
+    model,effort=settings['model'],settings['reasoning_effort'];case=dict(case,model_settings=settings,external_container_isolation=transport is not None)
     requested_cap=config.get('requests_per_session',cap)
     if type(requested_cap) is not int or not 0<requested_cap<=cap:
         raise ValueError('cannot increase the role request limit')
@@ -107,11 +113,12 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
     a=Archive(run_dir).prepare(candidate,task,prompt,frozen)
     if 'candidate_files' in case and backend.hashes(a.original)!=case['candidate_files']:raise ValueError('candidate version mismatch before launch')
     if case.get('task_sha256') and sha(a.root/'input/task.md')!=case['task_sha256']:raise ValueError('task version mismatch before launch')
-    runtime=Path(tempfile.mkdtemp(prefix='research-archive-runtime-'));proc=None;launcher=None;transport_stopped=True
+    # Docker named-volume mountpoints are long; AF_UNIX socket paths are bounded.
+    runtime=Path(tempfile.mkdtemp(prefix='tca-'));proc=None;launcher=None;transport_stopped=True
     outcome={**slot,'status':'LAUNCHED','started_at':time.time(),'failure_class':None,'stop_reason':None,'offline_fixture':fixture}
     events=[];answer=None
     try:
-        with GuardServer(runtime/'hook-control',a.root/'meter',slot['slot'],cap,mode) as guard:
+        with GuardServer(runtime/'hook-control',a.root/'meter',slot['slot'],cap,mode,stop_file=config.get('stop_file')) as guard:
             try:
                 cmd=command_factory(a,runtime,guard) if fixture else command(slot['slot'],a.run_dir,phase,case,runtime=runtime,socket_dir=guard.directory)
                 if transport is not None:
@@ -146,7 +153,7 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
         outcome.update(failure_class=outcome['failure_class'] or 'runner_exception',stop_reason=outcome['stop_reason'] or 'runner_exception',exception=repr(exc))
     finally:
         stop_process(proc)
-        if 'guard' in locals():save(a.root/'guard-collector-status.json',{'errors':guard.errors})
+        if 'guard' in locals():save(a.root/'guard-collector-status.json',{'errors':guard.errors,'error_contexts':guard.error_contexts})
         outcome['seconds']=time.time()-outcome['started_at']
         if proc is not None:outcome['exit_code']=proc.returncode
         outcome['status']='STOPPED'
@@ -188,6 +195,8 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
     if not isinstance(ledger,dict):ledger={}
     native=(ledger.get('sessions') or {}).get(slot['slot'],{});budget_hit=bool(outcome.get('resource_limit')) or bool(native.get('blocked_requests') and native.get('started')==cap)
     if budget_hit and outcome['failure_class'] in [None,'model_or_cli_abnormal_exit']:outcome['failure_class']='model_resource_limit'
+    if any(e.get('reason')=='user_requested_pause' for e in ledger.get('events',[])):
+        outcome.update(failure_class='user_requested_pause',stop_reason='user_requested_pause')
     model_events=[x['event'] for x in (ledger.get('events') or []) if isinstance(x,dict) and isinstance(x.get('event'),dict) and x['event'].get('hook_event_name') in ['PreModelRequest','PostModelRequest']]
     posts=[e for e in model_events if e['hook_event_name']=='PostModelRequest'];pending=native.get('started',0)-native.get('completed',0)
     accounted=bool(native.get('started')) and (pending==0 or budget_hit and pending==1) and len(posts)==native.get('completed')

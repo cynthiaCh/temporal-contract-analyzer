@@ -21,7 +21,7 @@ from .case_evaluation import scoring_inputs, terminate
 SOURCE = Path(__file__).resolve().parent/'_session_runtime'
 DEPENDENCIES = ('model_settings.py','runner.py','native_backend.py','archive.py','guard_server.py','guard_client.py',
                 'request_guard.py','read_policy.py','usage.py','structured.py','schema_validator.py','docker_transport.py',
-                'research-config.toml','model-profiles.json','maintenance.schema.json','extraction.schema.json')
+                'research-config.toml','model-profiles.json','deepseek-model-catalog.json','maintenance.schema.json','extraction.schema.json')
 ROLES = {
     'analysis':dict(model=MODEL, effort=EFFORT, requests=12, seconds=600),
     'repair':dict(model=MODEL, effort=EFFORT, requests=24, seconds=600),
@@ -33,6 +33,7 @@ v=json.load(sys.stdin)
 runner.backend.BINARY=Path(v['binary'])
 case={'node':v['node'],'task_sha256':v['task_sha256']}
 case['reflection_readonly']=v['config'].get('reflection_readonly',False)
+case['readonly_no_tools']=v['config'].get('readonly_no_tools',False)
 if v.get('candidate_files') is not None:case['candidate_files']=v['candidate_files']
 r=runner.session(v['slot'],v['prompt'],case=case,candidate=Path(v['candidate']),
  task=v['task'],config=v['config'],run_dir=Path(v['run_dir']),allow_model_execution=True,transport=v.get('transport'))
@@ -136,9 +137,10 @@ class NativeBackend:
             slot=dict(slot=directory.name, phase=role,logical_role=logical_role), prompt=prompt, task=str(task_path.resolve()),
             task_sha256=task_sha,candidate_files=None if evidence else protocol.get('candidate_files'),
             candidate=evidence or protocol['input_path'], run_dir=str((directory/'native').resolve()),
-            config=dict(frozen_files=frozen,seconds_per_session=limits['seconds'],
+            config=dict(frozen_files=frozen,seconds_per_session=limits['seconds'],stop_file=os.environ.get('TCA_STOP_FILE'),
                         requests_per_session=limits['requests'],protocol_schema=protocol.get('execution_policy'),
-                        reflection_readonly=bool(evidence),model_settings=validate_settings(protocol.get('model_settings') or resolve_profile())))
+                        reflection_readonly=bool(evidence),readonly_no_tools=bool(protocol.get('readonly_no_tools',False)),
+                        model_settings=validate_settings(protocol.get('model_settings') or resolve_profile())))
         request.update(self.session_options(protocol))
         archive.atomic_json(directory/'native-request.json',request)
         cleanup_error=None

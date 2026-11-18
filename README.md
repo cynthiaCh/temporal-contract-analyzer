@@ -1,3 +1,5 @@
+> 当前经验增长实验审查入口：[CURRENT_EXPERIMENT.md](CURRENT_EXPERIMENT.md)。本分支对应实际运行 v4，未合并后续 master 更新。
+
 # TempoEvo
 
 TempoEvo combines temporal-contract analysis, contract-guided repair and reusable experience. Its Temporal Contract Analyzer component extracts syntax facts, source locations and conservative review hints for JavaScript, TypeScript, Vue and Python. A parsed report is not a proof of a defect or of safety.

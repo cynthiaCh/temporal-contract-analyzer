@@ -44,6 +44,27 @@ def registered_cases():
                 rows=[r for r in rows if r['id'] not in {entry[2]['id'] for entry in entries}]
             entries.extend((source, root, row) for row in rows
                 if index not in (ROOT/'experiments/training-cases.json',ROOT/'experiments/testing-cases.json') or (root/row['manifest']).is_file())
+    # The central benchmark roster owns the current paths of migrated arms.
+    # Older development registries remain authoritative for their existing IDs.
+    central = bench/'benchmark/swe-tempoc.json'
+    known = {row['id'] for _, _, row in entries}
+    if central.is_file():
+        for row in read(central)['cases']:
+            if row['case_id'] in known:
+                continue
+            path = inside(bench, row['manifest'])
+            if not path.is_file():
+                continue
+            manifest = read(path)
+            runtime = manifest.get('framework', {}).get('runtime')
+            python = manifest.get('language') == 'python'
+            adapter = 'python' if python else 'legacy-js' if runtime in {
+                'vanilla-js','jquery','react18','vue2','vue3','java','python3','php','ruby','go'} else 'upstream'
+            conditions = ['latent-maintenance'] if python or manifest.get('diagnostic_tasks', {}).get('maintenance', {}).get('core_prompt') else []
+            entries.append(('bench', bench, dict(id=row['case_id'], manifest=row['manifest'],
+                adapter=adapter, conditions=conditions, language=runtime or manifest.get('language',''),
+                mechanism=manifest.get('mechanism',''), prior_exposure='exposed_benchmark_registry')))
+            known.add(row['case_id'])
     if not entries:
         raise EvidenceError('未找到可运行的案例列表')
     return entries

@@ -37,12 +37,13 @@ def evaluate(payload,directory):
         args,image=container_command(ev['image'],name,mounts)
         # Native trusted adapters compile candidate code and retain wire logs.
         # These are disposable caches, never writable benchmark source.
-        for target in ('/opt/swe-tempoc/results/multi-family-expansion-20261005/rxjs-executions',
+        for target in (() if ev.get('trusted_gold_runtime') is False else (
+                       '/opt/swe-tempoc/results/multi-family-expansion-20261005/rxjs-executions',
                        '/opt/swe-tempoc/results/student-case-expansion-runtime/builds',
                        '/opt/swe-tempoc/results/student-case-expansion-runtime/go-cache',
                        '/opt/swe-tempoc/results/transfer-v4-window-runtime/builds',
                        '/opt/swe-tempoc/results/transfer-v4-window-runtime/go-cache',
-                       '/opt/swe-tempoc/results/transfer-v4-window-runtime/native-launch-receipts'):
+                       '/opt/swe-tempoc/results/transfer-v4-window-runtime/native-launch-receipts')):
             args+=['--tmpfs',target+':rw,exec,mode=1777,size=1g']
         command=args+['--entrypoint',ev['command'][0],image]+ev['command'][1:]+['/submission']
         archive.atomic_json(directory/'command.json',command)

@@ -18,12 +18,15 @@ class NativeV4Backend:
         settings=validate_settings(self.protocol.get('model_settings') or resolve_profile())
         if model!=identity(settings):raise EvidenceError('Native model drift')
         role='repair' if kind=='action' else 'analysis'
+        readonly_no_tools=kind!='action' and self.protocol.get('analysis_tools') is False
         source=directory/'public-input';write_files(source,{k:v.encode() for k,v in payload.get('candidate_sources',payload['sources']).items()})
         protocol=dict(binary=self.protocol['binary'],node=self.protocol.get('node','/usr/bin/node'),case=dict(id=self.protocol.get('task_id','v4-task')),
             execution_policy=VERSION,model_settings=settings,visible=dict(task=payload['task']),input_path=str(source),
-            candidate_files=inventory(capture(source)[0]),session_limits=limits,boundary_preflight_complete=True)
+            candidate_files=inventory(capture(source)[0]),session_limits=limits,boundary_preflight_complete=True,readonly_no_tools=readonly_no_tools)
         from .prompt_context import compact
         wire_payload,context_report=compact(payload)
+        if readonly_no_tools and context_report.get('compacted'):
+            raise EvidenceError('Read-only tools are disabled but full public context requires workspace reads; no model call made')
         archive.atomic_json(directory/'prompt-context.json',context_report)
         prompt=('Use only the original task and supplied public code/documents as normative evidence. '
             'Experience and automatic Contract are fallible guidance. Evaluation observations do not create business requirements. '
@@ -34,6 +37,27 @@ class NativeV4Backend:
             'Analysis tools permit workspace reads with cat, rg, nl, head, tail and sed -n N,Mp; '
             'the public workspace may not be a Git repository, so prefer these readers to Git probes. '
             'Other stages return structured output without modifying files.\n'+canonical(wire_payload))
+        if kind!='action' and not readonly_no_tools:
+            prompt=('Runtime tool boundary for this read-only stage: read only /workspace public files. '
+                'Use rg --files or find . -maxdepth 3 -type f; exclude folders with rg --files -g "!node_modules/**" '
+                'or find . -type f -not -path "*/node_modules/*". find permits depth/type/name/path predicates, '
+                '-not/-and/-or, balanced parentheses, -print and only -printf "%p\\n", "%P\\n", "%f\\n". '
+                'sort permits read-only sorting flags, never -o or helper programs. rg permits ordinary pattern, glob and context flags, '
+                'never --pre, pattern files or symlink following. test -f/-d/-e accepts one workspace path. '
+                'Reader pipelines and &&/|| composition are permitted; no redirects, writes, scripts, command substitution, '
+                'credentials, network, installations or agents. Unsupported tool syntax terminates this stage; do not try an alternative '
+                'after a denial or request extra attempts. TASK is the supplied task text, not a guaranteed workspace file.\n'+prompt)
+        if readonly_no_tools:
+            prompt='READ-ONLY STAGE: Tools are disabled. Use the complete supplied public context and return only the requested JSON. Do not fix the candidate or call tools.\n'+prompt
+        # DeepSeek accepted json_schema on wire but returned invalid JSON strings.
+        # This is a format instruction, not answer repair or schema relaxation.
+        if settings['provider'].get('name')=='DeepSeek':
+            prompt+=('\nFINAL OUTPUT FORMAT: Return exactly one valid JSON object conforming to the supplied schema. '
+                'Do not wrap it in Markdown fences or add prose outside the JSON object. '
+                'Inside JSON strings, escape line breaks as \\n, quotes as \\" and backslashes as \\\\. '
+                'Do not put literal line breaks inside a quoted JSON string. '
+                'Formatting example only: {"report":"First line\\nSecond line with a \\"quoted\\" word."}. '
+                'Use the actual stage schema and your actual findings, not the example content.')
         (directory/'native-stage').mkdir()
         backend=NativeBackend()
         if self.protocol.get('backend',{}).get('kind')=='docker':
@@ -47,7 +71,7 @@ class NativeV4Backend:
         out=dict(valid=valid,model=identity(settings),requests=usage.get('requests_started'),tokens=tokens,output=result.get('output'),
             observed_tokens=usage.get('observed_usage_subtotal'),usage_incomplete=usage.get('usage_incomplete',False),
             unknown_usage_requests=usage.get('usage_unknown_requests',0),
-            failure_type=('timeout' if result.get('receipt',{}).get('stop_reason')=='timeout' else result.get('receipt',{}).get('failure_class') or 'invalid_output'),
+            failure_type=None if valid else ('timeout' if result.get('receipt',{}).get('stop_reason')=='timeout' else result.get('receipt',{}).get('failure_class') or 'invalid_output'),
             error=result.get('bridge_error') or result.get('output_parse_error'),native_receipt=result.get('receipt'))
         if not valid:
             errors=directory/'native-stage/native/archive/service-errors.json'

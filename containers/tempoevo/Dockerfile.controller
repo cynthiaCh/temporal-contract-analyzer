@@ -1,0 +1,11 @@
+# Trusted orchestration only; this image is never the model workspace.
+ARG DOCKER_CLI_IMAGE=docker:29.5.0-cli
+FROM ${DOCKER_CLI_IMAGE} AS dockercli
+FROM tempoevo-solver:public-rebuild-01
+COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
+COPY codex-linux-x64.tgz codex-metadata.json /opt/controller-build/
+RUN python3 -B -c 'import base64,hashlib,json,tarfile,pathlib; r=pathlib.Path("/opt/controller-build"); m=json.loads((r/"codex-metadata.json").read_text(encoding="utf-8-sig")); p=r/"codex-linux-x64.tgz"; assert "sha512-"+base64.b64encode(hashlib.sha512(p.read_bytes()).digest()).decode()==m["dist"]["integrity"]; t=tarfile.open(p); root=pathlib.Path("/opt/public-cli"); root.mkdir(); prefix="package/vendor/x86_64-unknown-linux-musl/"; names={"bin/codex":"codex","bin/codex-code-mode-host":"codex-code-mode-host","codex-path/rg":"rg","codex-resources/bwrap":"codex-resources/bwrap"}; [( (root/d).parent.mkdir(parents=True,exist_ok=True), (root/d).write_bytes(t.extractfile(prefix+s).read()), (root/d).chmod(0o755)) for s,d in names.items()]' \
+ && /opt/public-cli/codex --version \
+ && docker --version
+ENV PYTHONDONTWRITEBYTECODE=1
+ENTRYPOINT ["python3", "-B"]
