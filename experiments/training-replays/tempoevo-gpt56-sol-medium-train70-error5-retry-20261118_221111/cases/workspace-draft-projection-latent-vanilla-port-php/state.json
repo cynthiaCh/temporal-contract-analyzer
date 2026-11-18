@@ -1,0 +1,524 @@
+{
+  "attempts": [
+    {
+      "acceptance_passed": true,
+      "candidate_inventory": {
+        "README.md": "c7dc9051d02c83a98207b5f53ff4b6c8b84febc2b2d2c02246b673ea5d9f6aa1",
+        "VISIBLE_CHECKS.md": "e4761b79fed9a377bccf8d2a37fb8b73ae609eb86899bc8d3690f4ae11ad3307",
+        "dependencies.lock.json": "025b3c84bd17b27eba12f2c299aada316781fcb6ba66ab4beddcb44bb0281991",
+        "docs/host-api.md": "60a861fbdd51f1781d1f2fdd34f386df2a4a6c1b7f55ce66426e683a523cd038",
+        "package-lock.json": "2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59",
+        "package.json": "66db10140e649e83eadde7fe04cb4ccb1467c20f5a7db2117520ab1572467f1a",
+        "src/workflow.php": "627fe4891117458902c011fe15b0ea758677cc8231bb3d34af4c3fb0deb940d6"
+      },
+      "candidate_sources": {
+        "README.md": "Hotel coordination — Document body, per-document buffer and navigation outline are separate responsibilities. Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive.\n",
+        "VISIBLE_CHECKS.md": "# Public syntax/build checks\nThe external public evaluator parses Python/JavaScript/Vue/TypeScript source or checks Go/PHP/Ruby syntax / compiles public Java sources. These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations. Independent training Oracle also applies; do not access its implementation or references. No hidden schedules or assertions are included.\n",
+        "dependencies.lock.json": "{\n  \"runtime\": \"PHP 7.4.3\",\n  \"package_lock_sha256\": \"2c97d9cb5a20bf562827046c5678cf98b4fccced4c7f0dd120688db9c811dc59\",\n  \"native_standard_library\": true,\n  \"cache\": \"results/student-case-expansion-runtime\"\n}\n",
+        "docs/host-api.md": "Store reads values and synchronously notifies saved integrations. Workspace exposes select(id), edit(text), close(), selection(), dispose(). Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail. Injected scheduler offers cancellable timer handles. Search preview is an adjacent transient consumer.\n",
+        "package-lock.json": "{\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {}\n  }\n}\n",
+        "package.json": "{\n  \"private\": true,\n  \"dependencies\": {},\n  \"type\": \"module\"\n}\n",
+        "src/workflow.php": "<?php\nclass Store {\n    private $records, $listeners = [], $serial = 0, $revision = 0;\n    function __construct($records) { $this->records = $records; }\n    function read($id) { return $this->records[$id] ?? ''; }\n    function subscribe($fn) { $token = ++$this->serial; $this->listeners[$token] = $fn; return $token; }\n    function stop($token) { unset($this->listeners[$token]); }\n    function write($id, $text) {\n        $this->records[$id] = $text;\n        $event = ['id'=>$id, 'text'=>$text, 'revision'=>++$this->revision];\n        foreach ($this->listeners as $token=>$fn) if (isset($this->listeners[$token])) $fn($event);\n        return $event;\n    }\n}\nclass Trailing {\n    private $env, $delay, $work, $handle = null, $pending = null;\n    function __construct($env, $delay, $work) { $this->env=$env; $this->delay=$delay; $this->work=$work; }\n    function push($value) {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=$value;\n        $this->handle=$this->env->schedule(function() { $this->flush(); }, $this->delay);\n    }\n    function flush() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $value=$this->pending; $this->pending=null; $this->handle=null;\n        if ($value !== null) ($this->work)($value);\n    }\n    function cancel() {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=null; $this->handle=null;\n    }\n}\n\nclass Badge {public $id,$buffer,$visit;private $env,$token;function __construct($env,$id,$buffer){$this->env=$env;$this->id=$id;$this->buffer=$buffer;$this->token=$env->store->subscribe(function($e)use($env,$id){if($e['id']===$id)$env->output('status',$e);});}function detach(){$this->env->store->stop($this->token);}}\nclass BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}\nclass Editor {private $env;public $current=null,$generation=0;private $bank;function __construct($env){$this->env=$env;$this->bank=new BufferBank();}\n private function retire(){$old=$this->current;$this->current=null;if($old)$old->detach();$this->env->output('document',null);if($old)$old->buffer->flush();}\n function open($id,$visit){$request=++$this->generation;$this->retire();if($request!==$this->generation)return;$buffer=$this->bank->get($this->env,$id);$this->current=new Badge($this->env,$id,$buffer);$this->current->visit=$visit;$this->env->output('document',['id'=>$id,'visit'=>$visit,'text'=>$this->env->store->read($id)]);}\n function edit($text){$view=$this->current;if($view){$view->buffer->push($text);}}function close(){++$this->generation;$this->retire();}function dispose(){$this->close();}\n}\nclass Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}\n\nclass Projection {private $env,$selected=null,$trail=[];function __construct($env){$this->env=$env;}function publish(){$this->env->output('projection',['selected'=>$this->selected,'trail'=>$this->trail]);}function commit($v){$this->selected=$v;$this->trail[]=$v;$this->publish();}function clear(){$this->selected=null;$this->publish();}}\nclass Workspace {private $editor,$projection,$epoch=0,$visit=0;function __construct($env){$this->editor=new Editor($env);$this->projection=new Projection($env);}function selection(){$c=$this->editor->current;return $c?['id'=>$c->id,'visit'=>$c->visit]:null;}function select($id){$mine=++$this->epoch;$v=++$this->visit;$this->editor->open($id,$v);if($mine===$this->epoch)$this->projection->commit(['id'=>$id,'visit'=>$v]);}function edit($t){$this->editor->edit($t);}function close(){$mine=++$this->epoch;$this->editor->close();if($mine===$this->epoch)$this->projection->clear();}function dispose(){$this->close();}}\n"
+      },
+      "delivered_sha256s": [
+        "2835752e4b6c1eaf8c6a1161c94a3ab57363a3bf4dd4f02741daa7deacab28bb",
+        "0ea9f43b81fb85f8cf3a595e10e414b2aab5dd33ef3d6b3ca161f18433bf5388",
+        "608ccdab70e6b385434803bdea4a3500713795a42e8b9650e7e79b6c3398dd88",
+        "81628bcb9a025f7b94947e61093b3a16b10b58aa6b043c14fac4e8a53f5cf1b0",
+        "2b46ebef0210d193cf3c224d408cd690d5870460673f7bc67205090a7ff7b310"
+      ],
+      "feedback": {
+        "observations": [
+          {
+            "check": "syntax:src/workflow.php",
+            "error": null,
+            "passed": true
+          }
+        ],
+        "regressions": [],
+        "training_acceptance": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "unknowns": [
+          "Syntax/build checks only; business correctness is evaluated independently by training Oracle."
+        ]
+      },
+      "number": 1,
+      "oracle_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "training_result": {
+        "feedback": {
+          "observations": [],
+          "passed": true,
+          "regressions": [],
+          "unknowns": [
+            "Only the acceptance verdict is available for feedback; no failure cause inferred."
+          ]
+        },
+        "passed": true,
+        "valid": true,
+        "verdict": "PASS"
+      },
+      "visible_passed": true
+    }
+  ],
+  "cancelled": false,
+  "contract": {
+    "checkpoints": [
+      "After an edit, no store write occurs until 120 ms elapse without a later edit for that document.",
+      "Each later edit in the same burst resets the 120 ms interval; the eventual write contains only the latest text, including an empty string.",
+      "After one burst saves, later bursts for the same document can save independently.",
+      "Pending edits remain associated with the document active when each edit was accepted, including across document switches.",
+      "Switching, reopening the same document, closing, or disposing does not lose an accepted pending edit; destination reads observe persistence consistent with the prior immediate-write navigation behavior.",
+      "A save that synchronously causes nested select or close leaves the nested navigation authoritative for editor state, document output, projection selection, visit identity, and breadcrumb commitment.",
+      "Retiring a visit removes its store subscription while retaining its reusable per-document buffer and pending durable edit.",
+      "Status output remains filtered to the matching document, and store event id, text, and revision semantics remain unchanged.",
+      "Projection clearing retains the breadcrumb trail, and committed breadcrumb entries are not later changed through shared mutable references.",
+      "Search preview still uses its existing 40 ms trailing task, and hide still cancels its pending preview.",
+      "Run the public PHP syntax check after any Action; it is required but does not establish business correctness."
+    ],
+    "forbidden_effects": [
+      "Do not write every accepted editor edit directly to the store.",
+      "Do not save an earlier value from a burst after a later value has been accepted.",
+      "Do not redirect pending text to whichever document happens to be current when the timer fires.",
+      "Do not cancel or discard an accepted document edit merely because its Badge subscription is detached or its visit ends.",
+      "Do not let an outer select or close overwrite navigation, projection, or document output installed by synchronous nested navigation during a save.",
+      "Do not duplicate a pending save when save callbacks reenter flushing or navigation.",
+      "Do not destroy per-document buffer identity during visit retirement.",
+      "Do not alter search preview delay, coalescing, payload, or hide-cancellation behavior.",
+      "Do not change document/status/projection payload identities, visit numbering, revision behavior, or breadcrumb retention beyond what autosave integration requires."
+    ],
+    "lifecycle_identity": [
+      "A Badge represents one live document visit and owns that visit's store subscription, id, visit number, and reference to its document buffer.",
+      "A BufferBank entry is keyed by document id and outlives individual Badge visits, so reopening a document reuses its trailing save task.",
+      "An accepted edit belongs to the current Badge's captured document buffer at acceptance time, not to a later current Badge.",
+      "Editor generation identifies whether an open request remains authoritative after retirement performs callback-capable work.",
+      "Workspace epoch identifies whether a select or close remains authoritative after editor operations perform callback-capable work.",
+      "Projection trail lifetime is independent of current selection; clear removes selection but retains committed breadcrumbs."
+    ],
+    "obligations": [
+      {
+        "id": "O1",
+        "text": "Editor edits with no current view remain a no-op; otherwise capture the current view and enqueue the text into that view's per-document trailing buffer."
+      },
+      {
+        "id": "O2",
+        "text": "Use a 120 ms trailing quiet interval for document autosave: reset the timer for each edit in a burst and write only that burst's latest text when the interval completes."
+      },
+      {
+        "id": "O3",
+        "text": "Retain separate, reusable BufferBank entries per document so pending work preserves its original document id across switches and later visits."
+      },
+      {
+        "id": "O4",
+        "text": "When consuming pending text, retire its timer handle and pending slot before invoking the store write, preserving empty-string saves and allowing reentrant edits to form a later burst without duplicate consumption."
+      },
+      {
+        "id": "O5",
+        "text": "On open, close, or dispose, revoke the departing Badge's current authority, detach its captured subscription, clear its document presentation, and preserve its accepted pending edit. Flush pending document work where necessary to retain the existing synchronous persistence and fresh-read behavior across navigation."
+      },
+      {
+        "id": "O6",
+        "text": "Because a store write synchronously notifies integrations that may navigate, revalidate editor generation after retirement before installing a requested destination Badge or document output."
+      },
+      {
+        "id": "O7",
+        "text": "Revalidate workspace epoch after callback-capable editor open or close before committing or clearing projection state, so nested navigation remains authoritative and superseded visits do not enter the breadcrumb trail."
+      },
+      {
+        "id": "O8",
+        "text": "Preserve status filtering, document and visit identities, store write/event/revision behavior, subscription cleanup, projection publication, and copied breadcrumb history."
+      },
+      {
+        "id": "O9",
+        "text": "Leave Preview unchanged: it remains a separate 40 ms trailing consumer whose hide operation cancels pending preview work."
+      }
+    ],
+    "ordering_barriers": [
+      "On edit: capture current Badge, then push text to that Badge's buffer; do not resolve the document at timer-consumption time.",
+      "On repeated push: cancel the prior timer, replace pending text, then schedule a new 120 ms timer.",
+      "On flush: cancel any live handle, snapshot pending text, clear pending state and handle, then invoke the document-bound write consumer.",
+      "On retirement: capture the departing Badge, clear Editor.current before any pending save can synchronously navigate, detach the captured Badge subscription, and clear the departing document presentation before callback-capable persistence can install successor navigation.",
+      "On open: increment and capture generation before retirement; after retirement, install and render the destination only if the captured generation is still current.",
+      "On workspace select or close: increment and capture epoch before invoking the editor; commit or clear projection only if that epoch remains current afterward.",
+      "Advance or otherwise establish authority state before callback-capable output/write operations so reentrant navigation cannot be overwritten by the outer operation."
+    ],
+    "preservation": [
+      "Preserve workspace navigation and persistence behavior despite changing active editing from immediate writes to trailing writes.",
+      "Preserve document id association for every accepted edit and independent pending state for different documents.",
+      "Preserve store ordering of record update before synchronous listener notification and preserve event fields id, text, and revision.",
+      "Preserve current-document-only status output and removal of the departing Badge's subscription.",
+      "Preserve document sink payloads with id, visit, and stored text, including fresh reads when a destination is opened.",
+      "Preserve monotonically allocated visit identifiers and agreement among editor selection, document output, and projection selection.",
+      "Preserve projection clear semantics: current selection becomes null while prior breadcrumb trail remains.",
+      "Preserve breadcrumb entries as committed snapshots rather than exposing mutable internal entries.",
+      "Preserve Preview's 40 ms delay, query payload, and hide cancellation."
+    ],
+    "scope": [
+      "Change only editor document autosave behavior and the navigation/persistence coordination needed to preserve existing observable behavior.",
+      "Use the existing Trailing utility and existing per-document BufferBank where appropriate.",
+      "Include edit, timer flush, document switch, same-document reopen, close, dispose, Badge subscription retirement, and projection coordination where saves can synchronously navigate.",
+      "Exclude changes to the adjacent search preview policy and timing.",
+      "Public syntax/build checks are verification support only and do not add business requirements."
+    ],
+    "supporting_evidence": [
+      {
+        "file": "TASK",
+        "quote": "The editor currently writes to the workspace store on every edit. Change editor\nautosave to coalesce a burst of input: after 120 ms without another edit, save\nonly its latest text."
+      },
+      {
+        "file": "TASK",
+        "quote": "Reuse the existing trailing-task utility where appropriate."
+      },
+      {
+        "file": "TASK",
+        "quote": "Preserve the workspace's existing navigation and persistence behavior."
+      },
+      {
+        "file": "TASK",
+        "quote": "Keep\nsearch preview behavior unchanged; its timing is outside this maintenance task."
+      },
+      {
+        "file": "README.md",
+        "quote": "Hotel coordination — Document body, per-document buffer and navigation outline are separate responsibilities. Workspace coordinates visits; saved integrations may synchronously navigate and outline retains a breadcrumb archive."
+      },
+      {
+        "file": "docs/host-api.md",
+        "quote": "Store reads values and synchronously notifies saved integrations. Workspace exposes select(id), edit(text), close(), selection(), dispose(). Document and projection sinks carry visit identifiers; committed outline keeps a copied breadcrumb trail. Injected scheduler offers cancellable timer handles. Search preview is an adjacent transient consumer."
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function push($value) {\n        if ($this->handle !== null) $this->env->cancel($this->handle);\n        $this->pending=$value;\n        $this->handle=$this->env->schedule(function() { $this->flush(); }, $this->delay);\n    }"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "$value=$this->pending; $this->pending=null; $this->handle=null;\n        if ($value !== null) ($this->work)($value);"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "class BufferBank {public $entries=[];function get($env,$id){if(!isset($this->entries[$id]))$this->entries[$id]=new Trailing($env,120,function($text)use($env,$id){$env->write($id,$text);});return $this->entries[$id];}}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function write($id, $text) {\n        $this->records[$id] = $text;\n        $event = ['id'=>$id, 'text'=>$text, 'revision'=>++$this->revision];\n        foreach ($this->listeners as $token=>$fn) if (isset($this->listeners[$token])) $fn($event);\n        return $event;\n    }"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "class Badge {public $id,$buffer,$visit;private $env,$token;function __construct($env,$id,$buffer){$this->env=$env;$this->id=$id;$this->buffer=$buffer;$this->token=$env->store->subscribe(function($e)use($env,$id){if($e['id']===$id)$env->output('status',$e);});}function detach(){$this->env->store->stop($this->token);}}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function open($id,$visit){$request=++$this->generation;$this->retire();if(true&&$request!==$this->generation)return;$buffer=$this->bank->get($this->env,$id);$this->current=new Badge($this->env,$id,$buffer);$this->current->visit=$visit;$this->env->output('document',['id'=>$id,'visit'=>$visit,'text'=>$this->env->store->read($id)]);}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function edit($text){$view=$this->current;if($view){$this->env->write($view->id,$text);}}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "class Preview {private $task;function __construct($env){$this->task=new Trailing($env,40,function($q)use($env){$env->output('preview',['query'=>$q]);});}function query($text){$this->task->push($text);}function hide(){$this->task->cancel();}}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function clear(){$this->selected=null;$this->publish();}"
+      },
+      {
+        "file": "src/workflow.php",
+        "quote": "function select($id){$mine=++$this->epoch;$v=++$this->visit;$this->editor->open($id,$v);if(true)$this->projection->commit(['id'=>$id,'visit'=>$v]);}function edit($t){$this->editor->edit($t);}function close(){$mine=++$this->epoch;$this->editor->close();if(true)$this->projection->clear();}"
+      },
+      {
+        "file": "VISIBLE_CHECKS.md",
+        "quote": "These checks are required after an Action but do not test business behavior. Preserve original TASK and public README/source obligations."
+      }
+    ],
+    "triggers": [
+      "Workspace.edit(text) while an Editor Badge is current.",
+      "A second or later edit before the current 120 ms timer expires.",
+      "Expiration or explicit flush of a document buffer's trailing task.",
+      "Workspace.select(id), including switching documents and reopening the same id.",
+      "Workspace.close() and Workspace.dispose().",
+      "A store write synchronously invoking a saved integration that calls select or close.",
+      "Preview.query(text) and Preview.hide(), solely as unchanged behavior to preserve."
+    ],
+    "unknowns": [
+      "The public sources do not specify exception-handling behavior if scheduling, cancellation, store listeners, or output sinks throw.",
+      "The public sources do not require cancellation of an already-running save callback; only cancellable timer handles are established.",
+      "The task does not state a universal persistence deadline for all reusable buffers. Flushing on departure is justified here only to preserve this editor's existing immediate persistence and destination-read behavior.",
+      "The public sources establish synchronous navigation from saved integrations, but do not establish arbitrary reentry from document, status, preview, or projection output sinks.",
+      "The precise external representation required to guarantee copied breadcrumb entries in PHP is not specified beyond the documented copied-trail behavior.",
+      "Public syntax checks do not reveal behavioral coverage or define additional timing assertions."
+    ]
+  },
+  "contract_preparation_complete": true,
+  "current_attempt": 1,
+  "diagnoses": [],
+  "final_acceptance": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "finalized": true,
+  "first_pass_attempt": 1,
+  "gold_result": {
+    "feedback": {
+      "observations": [],
+      "passed": true,
+      "regressions": [],
+      "unknowns": [
+        "Only the acceptance verdict is available for feedback; no failure cause inferred."
+      ]
+    },
+    "passed": true,
+    "valid": true,
+    "verdict": "PASS"
+  },
+  "repair_stop_reason": "oracle_accepted",
+  "stages": [
+    {
+      "budget_group": "routing",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "f4cf256c1e7dac8cc0a4f15219d20c727760f18ca88de0bc29e9ee868368c14c",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9987536689987
+          },
+          "number": 1,
+          "requests": 2,
+          "restart_reason": "initial",
+          "result_sha256": "ce5615d3709950866f2820b6bc5b4937f41c5b8182247edf5a5e2ec7b08ef813",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "routing",
+      "kind": "routing",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 14080,
+        "input_tokens": 28869,
+        "output_tokens": 2371,
+        "reasoning_output_tokens": 988,
+        "total_tokens": 31240
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "10c64f1d18cf0d4f2a4ecbbdfb22b3da8fb5d0be6420ff0bf954067501a9c35c",
+      "seconds": 66.5769659769976,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 14080,
+        "input_tokens": 28869,
+        "output_tokens": 2371,
+        "reasoning_output_tokens": 988,
+        "total_tokens": 31240
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "contract",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "a5641dc848e8495bc7b3c60a17a3fe484b8c38d7d0103c2fcbdc133c8d69b0ab",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9998022360014
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "a73ea54f2eab593ec006314df290173e6b0463aaec98eb0bcfcda0180b73dc89",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "contract",
+      "kind": "contract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 0,
+        "input_tokens": 18127,
+        "output_tokens": 2811,
+        "reasoning_output_tokens": 149,
+        "total_tokens": 20938
+      },
+      "requests": 1,
+      "reserved_requests": 12,
+      "result_sha256": "b286cf87bffab0616afe3f8704bb318fd9e143916533b60ffa436311ed4c3669",
+      "seconds": 69.17596012699869,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 0,
+        "input_tokens": 18127,
+        "output_tokens": 2811,
+        "reasoning_output_tokens": 149,
+        "total_tokens": 20938
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "action-1",
+      "executions": [
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "da812499d7227dc8329b12a42ae439d58e70dc319bc6229eac809dbde8d751f5",
+          "limits": {
+            "requests": 24,
+            "seconds": 599.9993428300004
+          },
+          "number": 1,
+          "requests": 5,
+          "restart_reason": "initial",
+          "result_sha256": "d8fd5f94814e3dcc0de1400d18748eca9689ce963c5f3de46e668bda4e08064c",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "action-1",
+      "kind": "action",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 103296,
+        "input_tokens": 122564,
+        "output_tokens": 3113,
+        "reasoning_output_tokens": 762,
+        "total_tokens": 125677
+      },
+      "requests": 5,
+      "reserved_requests": 24,
+      "result_sha256": "db7c4f54352004a9685f69faf1a485a2cec7cf95d1618d4b3a2a69fb14021d5f",
+      "seconds": 115.7454471150013,
+      "status": "complete",
+      "tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 103296,
+        "input_tokens": 122564,
+        "output_tokens": 3113,
+        "reasoning_output_tokens": 762,
+        "total_tokens": 125677
+      },
+      "tool_policy_recoveries": 0,
+      "transport_retries": 0,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "visible-1",
+      "key": "visible-1",
+      "kind": "visible",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "5bba7cb3dba180fe89970abaf3ef7f8a27ca318d9bc8e6f0c8fcdcea0e1e72dd",
+      "seconds": 0.4964469340011419,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "acceptance-1",
+      "key": "acceptance-1",
+      "kind": "gold",
+      "observed_tokens": null,
+      "requests": 0,
+      "reserved_requests": 0,
+      "result_sha256": "49e71906c897ef4245dccee945fc93de212080e8c9758243e3630983e0095e60",
+      "seconds": 1.8177112560006208,
+      "status": "complete",
+      "tokens": null,
+      "unknown_usage_requests": 0,
+      "usage_incomplete": false
+    },
+    {
+      "budget_group": "extract",
+      "executions": [
+        {
+          "failure_type": "transient_transport_error",
+          "input_sha256": "af9fc8f9abd461eed3cade08588d6a1eacde5bf1c8ca97b5b8afddf82bbb2663",
+          "limits": {
+            "requests": 12,
+            "seconds": 599.9960678290008
+          },
+          "number": 1,
+          "requests": 1,
+          "restart_reason": "initial",
+          "result_sha256": "028a52aeb24fd73663378850fa84bc297912ca9760fe54c05be4eebc47b851a7",
+          "status": "complete",
+          "valid": false
+        },
+        {
+          "failure_type": "invalid_output",
+          "input_sha256": "af9fc8f9abd461eed3cade08588d6a1eacde5bf1c8ca97b5b8afddf82bbb2663",
+          "limits": {
+            "requests": 11,
+            "seconds": 333.901009600002
+          },
+          "number": 2,
+          "requests": 1,
+          "restart_reason": "transient_transport",
+          "result_sha256": "58ec96d0a5a2a56c82cb1b08c88b0d7f11100c0399558603ac2b5a79b6f4a83e",
+          "status": "complete",
+          "valid": true
+        }
+      ],
+      "key": "extract",
+      "kind": "extract",
+      "observed_tokens": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 8832,
+        "input_tokens": 70966,
+        "output_tokens": 1447,
+        "reasoning_output_tokens": 147,
+        "total_tokens": 72413
+      },
+      "requests": 2,
+      "reserved_requests": 12,
+      "result_sha256": "aec7086878f6d2f078fccfcd28af9a1e6c4cff7130623553ac00a6c39f2e30e1",
+      "seconds": 330.0453230810017,
+      "status": "complete",
+      "tokens": null,
+      "tool_policy_recoveries": 0,
+      "transport_retries": 1,
+      "unknown_usage_requests": 1,
+      "usage_incomplete": true
+    }
+  ],
+  "status": "passed",
+  "stop_reason": "oracle_accepted",
+  "training_accepted": true
+}
