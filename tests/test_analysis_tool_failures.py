@@ -12,6 +12,32 @@ from temporal_contract_analyzer.stage_retry import transient_transport
 
 
 class AnalysisToolFailureTests(unittest.TestCase):
+    def test_recorded_sort_and_multiline_numbered_reads_are_allowed(self):
+        commands=[
+            "pwd && rg --files -g 'src/**' | sort && sed -n '1,120p' README.md",
+            "nl -ba src/workflow.rb | sed -n '1,140p'\nnl -ba README.md | sed -n '1,80p'",
+            "pwd;\n\nrg --files |\nsort -u",
+            "pwd # inspect public files\nnl -ba README.md",
+            "rg --fi\\\nles | sort",
+            "printf '# literal comment marker\\n'",
+        ]
+        for command in commands:
+            with self.subTest(command=command):self.assertTrue(allowed(command))
+
+    def test_sort_output_and_newline_writes_remain_rejected(self):
+        commands=[
+            'sort -o src/output.txt README.md', 'sort -oout README.md',
+            'sort --output=src/output.txt README.md', 'sort --output out README.md',
+            'sort --compress-program=sh README.md', 'sort -T /tmp README.md',
+            'sort --files0-from=/etc/passwd', 'sort /etc/passwd',
+            'rg --files | sort > out', 'echo ok\nrm README.md',
+            'echo ok # read-only comment\nrm README.md',
+            'echo ok;\nrm README.md', 'echo ok\\\\\nrm README.md',
+            'pwd\npython3 -c pass',
+        ]
+        for command in commands:
+            with self.subTest(command=command):self.assertFalse(allowed(command))
+
     def test_recorded_workspace_status_and_source_reads_are_allowed(self):
         command="git status --short && sed -n '1,140p' src/workflow.py && sed -n '1,120p' README.md"
         self.assertTrue(allowed(command))

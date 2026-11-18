@@ -8,14 +8,48 @@ import re
 import shlex
 from pathlib import Path
 
-READERS={'pwd','ls','rg','cat','nl','sed','head','tail','wc','echo','printf','true','git'}
+READERS={'pwd','ls','rg','cat','nl','sed','head','tail','wc','echo','printf','true','git','sort'}
 CONTROL={';','&&','|','||'}
+
+def _without_comments(command):
+ """Preserve shell statement boundaries, quoted hashes and continuations."""
+ out=[];quote=None;escaped=False;word_start=True;i=0
+ while i<len(command):
+  char=command[i]
+  if escaped:
+   out.append(char);escaped=False;word_start=False;i+=1;continue
+  if quote!="'" and char=='\\' and i+1<len(command) and command[i+1]=='\n':
+   i+=2;continue
+  if quote=="'":
+   out.append(char)
+   if char==quote:quote=None
+   i+=1;continue
+  if char=='\\':
+   out.append(char);escaped=True;word_start=False;i+=1;continue
+  if quote=='"':
+   out.append(char)
+   if char==quote:quote=None
+   i+=1;continue
+  if char in ("'",'"'):
+   out.append(char);quote=char;word_start=False;i+=1;continue
+  if char=='#' and word_start:
+   newline=command.find('\n',i)
+   if newline<0:break
+   out.append('\n');word_start=True;i=newline+1;continue
+  out.append(char);word_start=char.isspace() or char in ';&|<>';i+=1
+ return ''.join(out)
 
 def allowed(command, workspace='/workspace'):
  if not isinstance(command,str) or any(x in command for x in ['`','$(','${!','<(','>(']):return False
- lexer=shlex.shlex(command,posix=True,punctuation_chars=';&|<>')
- lexer.whitespace_split=True;lexer.commenters='#'
- try:tokens=list(lexer)
+ lexer=shlex.shlex(_without_comments(command),posix=True,punctuation_chars=';&|<>\n')
+ lexer.whitespace=' \t\r';lexer.whitespace_split=True;lexer.commenters=''
+ try:
+  tokens=[]
+  for token in lexer:
+   if '\n' in token:
+    if all(c in ';\n' for c in token):token=';'
+    elif token.rstrip('\n') in ('&&','|','||'):token=token.rstrip('\n')
+   tokens.append(token)
  except ValueError:return False
  # Discarding stderr to the null device is not a candidate write.
  cleaned=[];j=0
@@ -54,6 +88,15 @@ def allowed(command, workspace='/workspace'):
   if name=='git':return words in (['git','status','--short'],['git','--no-optional-locks','status','--short'])
   if name=='true':return len(words)==1
   if name=='rg' and any(t.startswith(('--pre','--hostname-bin','--files-from','--ignore-file')) for t in words[1:]):return False
+  if name=='sort':
+   # Accept display sorting only, not output files, temporary-directory
+   # overrides, external compressors, or auxiliary input-file switches.
+   options=True
+   for arg in words[1:]:
+    if options and arg=='--':options=False;continue
+    if options and arg.startswith('-') and not (re.fullmatch(r'-[bnrfusVh]+',arg) or arg in {
+     '--numeric-sort','--reverse','--unique','--ignore-case','--ignore-leading-blanks',
+     '--stable','--version-sort','--human-numeric-sort'}):return False
   if name=='sed':
    args=words[1:]
    if not args or args[0]!='-n' or len(args)<2:return False
