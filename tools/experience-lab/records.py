@@ -109,6 +109,10 @@ def case_detail(controller, ident, case_id):
         diffs[str(attempt['number'])] = edits
     proposal = read(root/'candidate-pool/success.json') if (root/'candidate-pool/success.json').exists() else None
     execution_log = root.parent/'execution.log'
+    try:
+        source = str(root.relative_to(REPO))
+    except ValueError:
+        source = str(root)
     return dict(case=case_status(job), mode=protocol['mode'], recorded=ident.startswith('archive-'), artifact_scope='Retained trajectory artifacts',
                 stages=state['stages'], attempts=[{k: a.get(k) for k in ['number', 'visible_passed', 'acceptance_passed', 'feedback']} for a in state['attempts']],
                 contract=state.get('contract'), experience=experiences, delivered_text=delivery.get('experience_text'),
@@ -116,7 +120,7 @@ def case_detail(controller, ident, case_id):
                 originals=original, ast=read(root/'ast-evidence.json') if (root/'ast-evidence.json').exists() else None,
                 execution_log=execution_log.read_text(errors='replace')[-20000:] if execution_log.exists() else '',
                 diffs=diffs, evaluation=state.get('final_acceptance') or state.get('gold_result'),
-                source=str(root.relative_to(REPO)) if root.is_relative_to(REPO) else str(root),
+                source=source,
                 protocol=dict(task=protocol['task'], model=protocol['model'], mode=protocol['mode'], condition=protocol['condition'],
                               max_attempts=protocol['max_attempts'], retrieval_profile=protocol.get('retrieval_profile'),
                               approved_entries=len(protocol['memory_snapshot']['entries']), limits=protocol['limits'],

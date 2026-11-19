@@ -1,5 +1,6 @@
 """Offline controller checks. Fixtures are synthetic; no models or scorers run."""
 import json
+import os
 from pathlib import Path
 import tempfile
 import threading
@@ -9,6 +10,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import runner
+import records
 from serve import Server
 
 
@@ -32,6 +34,34 @@ class Commands(unittest.TestCase):
         self.assertNotIn('--public-checks-docs', command)
         self.assertNotIn('--execute', command)
         self.assertEqual(env['TCA_BENCH_ROOT'], str((self.root/'bench').resolve()))
+
+    def test_case_details_load_on_the_launcher_python(self):
+        trajectory = self.root/'trajectory'
+        trajectory.mkdir()
+        protocol = dict(mode='testing', max_attempts=1, model={}, condition='structured', task='Public task',
+                        original_inventory={}, memory_snapshot={'entries':[]}, limits={},
+                        learning_policy='frozen', memory_snapshot_sha256='fixture')
+        (trajectory/'protocol.json').write_text(json.dumps(protocol))
+        (trajectory/'state.json').write_text(json.dumps(dict(status='prepared', attempts=[], stages=[])))
+        with patch.object(records, 'job_list', return_value=[dict(case_id='fixture', trajectory=trajectory)]):
+            detail = records.case_detail(None, 'run-fixture', 'fixture')
+        self.assertEqual(detail['source'], str(trajectory))
+        self.assertEqual(detail['case']['status'], 'prepared')
+
+    def test_default_benchmark_uses_existing_checkout_and_respects_override(self):
+        repository = self.root/'analyzer'
+        fallback = self.root/'temporal-contract-bench-git'
+        index = fallback/'experiments/temporal-diagnostics-v1/corpus.json'
+        index.parent.mkdir(parents=True)
+        index.write_text('{}')
+        with patch.object(runner, 'REPO', repository), patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(runner.default_benchmark(), str(fallback))
+            with patch.dict(os.environ, {'TCA_BENCH_ROOT': str(self.root/'explicit')}):
+                self.assertEqual(runner.default_benchmark(), str(self.root/'explicit'))
+            preferred = self.root/'temporal-contract-bench'
+            (preferred/'experiments/temporal-diagnostics-v1').mkdir(parents=True)
+            (preferred/'experiments/temporal-diagnostics-v1/corpus.json').write_text('{}')
+            self.assertEqual(runner.default_benchmark(), str(preferred))
 
     def test_training_requires_actual_check_descriptions(self):
         self.config['mode'] = 'learning'
