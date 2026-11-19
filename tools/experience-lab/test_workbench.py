@@ -1,5 +1,6 @@
 """Offline controller checks. Fixtures are synthetic; no models or scorers run."""
 import json
+import os
 from pathlib import Path
 import tempfile
 import threading
@@ -54,6 +55,35 @@ class Commands(unittest.TestCase):
         c = runner.Controller(self.root/'runs')
         with patch.object(runner, 'environment', return_value={'docker':{'ok':False, 'detail':'fixture unavailable'}, 'codex':{'ok':True}}):
             with self.assertRaisesRegex(ValueError, 'not ready'):
+                c.prepare(self.config)
+        self.assertFalse(list(c.root.iterdir()))
+
+    def test_finder_path_discovers_codex_and_passes_it_to_preparation(self):
+        binary = self.root/'.vscode/extensions/openai.chatgpt-fixture/bin/macos-x86_64/codex'
+        binary.parent.mkdir(parents=True)
+        binary.write_text('#!/bin/sh\nexit 0\n')
+        binary.chmod(0o755)
+        with patch.dict(os.environ, {'PATH': '/usr/bin:/bin'}), \
+             patch.object(runner.sys, 'platform', 'darwin'), \
+             patch.object(runner.platform, 'machine', return_value='x86_64'), \
+             patch.object(runner.Path, 'home', return_value=self.root):
+            self.assertEqual(runner.configure_codex_path(), str(binary))
+            _, env, _ = runner.prepare_command(self.config, self.root/'new')
+            self.assertEqual(env['PATH'].split(os.pathsep)[0], str(binary.parent))
+            self.assertEqual(runner.shutil.which('codex', path=env['PATH']), str(binary))
+
+    def test_existing_codex_path_is_preserved(self):
+        before = os.environ.get('PATH')
+        with patch.object(runner.shutil, 'which', return_value='/configured/codex'):
+            self.assertEqual(runner.configure_codex_path(), '/configured/codex')
+        self.assertEqual(os.environ.get('PATH'), before)
+
+    def test_codex_failure_does_not_report_docker_as_broken(self):
+        c = runner.Controller(self.root/'runs')
+        with patch.object(runner, 'environment', return_value={
+                'docker': {'ok': True, 'detail': '29.9.3'},
+                'codex': {'ok': False, 'detail': 'Codex executable was not found'}}):
+            with self.assertRaisesRegex(ValueError, 'not ready: Codex executable was not found'):
                 c.prepare(self.config)
         self.assertFalse(list(c.root.iterdir()))
 

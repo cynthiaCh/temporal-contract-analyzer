@@ -26,6 +26,8 @@ ssh -L 8765:127.0.0.1:8765 YOUR_EXPERIMENT_HOST
 
 Open the forwarded address using `127.0.0.1`, rather than `localhost`. All paths,
 Docker images, credentials and outputs belong to the machine running the server.
+On macOS, the workbench also detects Codex bundled with the local VS Code OpenAI
+extension when Finder's PATH does not include it, and passes that path to preparation.
 The workbench does not deploy files, configure credentials or install images.
 
 ## Launch a run

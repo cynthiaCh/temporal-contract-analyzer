@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import sys
@@ -53,13 +54,32 @@ def command_output(command, timeout=6):
 
 
 def environment():
+    codex = configure_codex_path()
     docker = shutil.which('docker')
     probe = command_output([docker, 'info', '--format', '{{.ServerVersion}}']) if docker else dict(ok=False, detail='Docker is not installed')
-    return dict(docker=probe, codex=dict(ok=bool(shutil.which('codex')), detail=shutil.which('codex') or 'Codex executable was not found'),
+    return dict(docker=probe, codex=dict(ok=bool(codex), detail=codex or 'Codex executable was not found. Add Codex to the workbench PATH.'),
                 python=sys.version.split()[0], host=sys.platform)
 
 
+def configure_codex_path():
+    """Finder launches may lack the Codex executable bundled with VS Code."""
+    existing = shutil.which('codex')
+    if existing or sys.platform != 'darwin':
+        return existing
+    architectures = {'x86_64': ('x86_64',), 'arm64': ('arm64', 'aarch64')}.get(platform.machine(), ())
+    candidates = []
+    for architecture in architectures:
+        candidates.extend(p for p in (Path.home()/'.vscode/extensions').glob(
+            'openai.chatgpt-*/bin/macos-'+architecture+'/codex') if p.is_file() and os.access(p, os.X_OK))
+    if not candidates:
+        return None
+    binary = max(candidates, key=lambda p: (p.stat().st_mtime_ns, str(p)))
+    os.environ['PATH'] = str(binary.parent)+os.pathsep+os.environ.get('PATH', '')
+    return str(binary)
+
+
 def prepare_command(config, batch):
+    configure_codex_path()
     mode = config.get('mode')
     if mode not in ('learning', 'testing'):
         raise ValueError('Select training or testing')
@@ -138,8 +158,10 @@ class Controller:
             path = self.root / ident
             command, env, model = prepare_command(config, path/'batch')
             check = environment()
-            if not check['docker']['ok'] or not check['codex']['ok']:
-                raise ValueError('Execution host is not ready. Start Docker and ensure Codex is installed. ' + check['docker']['detail'])
+            if not check['docker']['ok']:
+                raise ValueError('Execution host is not ready: Docker is unavailable. '+check['docker']['detail'])
+            if not check['codex']['ok']:
+                raise ValueError('Execution host is not ready: '+check['codex']['detail'])
             for image in (config['solver_image'], config['grader_image']):
                 probe = command_output(['docker', 'image', 'inspect', '--format', '{{.Id}}', image])
                 if not probe['ok']:
