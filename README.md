@@ -56,6 +56,7 @@ The retired `experience-evolution` command and old orchestration modules are rem
 Shared native/Docker/scoring infrastructure remains separate from trajectory policy.
 
 - The report UI can be opened with `python3 -B -m temporal_contract_analyzer reports open`.
+- The local [training/testing workspace](tools/experience-lab/README.md) can be opened with `python3 -B tools/experience-lab/serve.py --open`, or `launch-tempoevo-workspace.command` on macOS. Prepare freezes a new batch without model requests; explicit Start invokes the public execution CLI.
 - On macOS, double-click `launch-ast-review.command` to open AST evidence review. It restarts the configured report service in the foreground; keep the terminal open and press Ctrl+C to stop it. Report annotations, analysis review and experience activation use separate records.
 - Benchmark execution requires the separately provisioned benchmark, matching scoring runtime and calibration. Set `TCA_BENCH_ROOT` explicitly for reproducible use; checkout-based sibling discovery remains a compatibility convenience.
 - The shared native runner requires explicit executables, isolation tools and frozen runtime/evaluator bindings; importing it cannot start a historical scheduler.
