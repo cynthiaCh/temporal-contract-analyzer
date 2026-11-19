@@ -164,7 +164,7 @@ class TemporalSyntaxTests(unittest.TestCase):
         self.assertEqual(self.event(file, 'callback_argument')['loop_bindings'], calls[0]['loop_bindings'])
 
     def test_javascript_unicode_coordinates_and_nested_callback_scopes(self):
-        source = '''const marker = "😀"; bus.subscribe("事件", event => {
+        source = '''const marker = "😀"; bus.subscribe("\u4e8b\u4ef6", event => {
   later(() => navigation.close(event));
 });'''
         file = self.javascript(source)
@@ -177,7 +177,7 @@ class TemporalSyntaxTests(unittest.TestCase):
         self.assert_exact_events(source, file)
 
     def test_python_unicode_and_multiline_lambda_headers_are_source_exact(self):
-        source = '''marker = "😀"; bus.subscribe("事件", lambda event:
+        source = '''marker = "😀"; bus.subscribe("\u4e8b\u4ef6", lambda event:
     later(lambda: navigation.close(event)))
 '''
         file = self.python(source)

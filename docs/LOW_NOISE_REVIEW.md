@@ -1,62 +1,56 @@
-# 低噪声展示（0.6.2）
+# Low-noise presentation (0.6.2)
 
-实现假设：先保留原始分析接口和证据，再收紧面向人的默认输出。筛选证据完整性，不依据已知修复结果选择提示，也不声称已验证用户或 LLM 的收益。
+Implementation hypothesis: preserve the raw analysis interface and evidence, then narrow the default human-facing output. Filtering checks evidence completeness, does not select hints using known repair outcomes, and does not claim demonstrated benefits for users or LLMs.
 
-- Markdown、HTML 默认使用 focused 视图；新归档报告的 Markdown/HTML 也采用此视图，MCP 读取新归档的 full 材料时得到该 Markdown。历史归档和冻结的 A–G 实验材料不修改。
-- CLI `scan` / `compare` 使用 `--view exploratory` 恢复全部提示与语法事件。
-- CLI JSON、`analyze_sources`、归档 JSON 保持完整原始证据，不受 `--view` 影响。需要紧凑结构化输入时，使用 `temporal_contract_analyzer.review.focused_review(report)`。
-- 默认只展示 `reentrant-state-publication` 的 `write_after_call`：文件解析成功，guard/callback/write 和展开路径引用均存在于该文件，存在对应的 `external_call_before_state_write` 关系，且无已记录的不确定性。
-- 同一文件、入口、状态绑定、guard 和 write 合并为一张卡，保留原提示 ID 和各条调用证据。不同状态和不同入口不合并。
-- `write_before_call` 只列顺序事实；`not_established` 和其他规则计入隐藏原因，不转成报警。未展示候选不等于安全。当前默认筛选尚未覆盖其他时序问题类别。
-- 单条源码摘录上限 240 字符，截短显式标注并保留文件/行号；原始源码和原始报告不截短。
-- 解析失败、跳过范围和分析限制始终可见。对照两侧分别筛选，卡片消失不等于已修复。
+- Markdown and HTML default to the focused view, including new archived reports. MCP reads of their full material return this Markdown. Historical archives and frozen A–G experimental material are unchanged.
+- Use `--view exploratory` with CLI `scan` / `compare` to restore all hints and syntax events.
+- CLI JSON, `analyze_sources` and archived JSON retain all original evidence regardless of `--view`. For compact structured input, use `temporal_contract_analyzer.review.focused_review(report)`.
+- By default, only `write_after_call` candidates of `reentrant-state-publication` are shown: the file parses successfully; guard/callback/write and expanded-path references exist in that file; an `external_call_before_state_write` relation exists; no uncertainty is recorded.
+- Candidates sharing a file, entry, state binding, guard and write merge into one card, retaining original hint IDs and each call's evidence. Different states or entries are not merged.
+- `write_before_call` appears only as an ordering fact. `not_established` and other rules are counted under hiding reasons rather than converted into alerts. Omitted candidates do not establish safety; the current default filter does not cover other temporal issue classes.
+- Each source excerpt is limited to 240 characters, with explicit truncation and file/line references. Original source and reports are not truncated.
+- Parse failures, skipped scope and analysis limitations remain visible. Comparison sides are filtered independently; a disappearing card does not establish a repair.
 
-示例：
+Examples:
 
 ```sh
 python3 -m temporal_contract_analyzer scan /path/to/project --format md
 python3 -m temporal_contract_analyzer scan /path/to/project --format html --view exploratory
 ```
 
-这次修改不重建 VSIX，不改变旧实验筛选条件，不计算缺陷概率。输出更少只是报告长度和展示数量变化；准确率及实际辅助效果需要独立项目评估。
+This change does not rebuild the VSIX, change old experiment filters or compute defect probabilities. Reduced output indicates changes in report length and display counts only; precision and practical assistance require independent project evaluation.
 
-## 已有真实修复的展示检查
+## Presentation check using an existing real repair
 
-在仓库内 `external-tests/reentry-publication-v1/fixtures/p-debounce/snapshots/{before,after}/index.js` 上重新运行 0.6.2 分析，分别渲染同一份原始结果的两种 Markdown 视图：
+Analysis version 0.6.2 was rerun on `external-tests/reentry-publication-v1/fixtures/p-debounce/snapshots/{before,after}/index.js`, rendering two Markdown views from the same raw results:
 
-| 版本 | 原始提示 | 默认问题卡 | 探索视图字符数 | 低噪声视图字符数 |
+| Version | Raw hints | Default issue cards | Exploratory characters | Low-noise characters |
 |---|---:|---:|---:|---:|
-| 修复前 | 4 | 1 | 11,090 | 1,855 |
-| 修复后 | 4 | 0 | 10,337 | 848 |
+| Before repair | 4 | 1 | 11,090 | 1,855 |
+| After repair | 4 | 0 | 10,337 | 848 |
 
-修复后另保留一条顺序事实：`currentPromise` 在 L121 写入，外部调用位于 L129。上述是报告字符数，不是 token、费用、准确率或 LLM 成功率；该案例已参与规则开发，不是独立验证集。
+The repaired version additionally retains an ordering fact: `currentPromise` is written at L121; the external call is at L129. These are report character counts, not tokens, cost, precision or LLM success rates. This case participated in rule development and is not an independent validation set.
 
+## 0.6.3 addition
 
-## 0.6.3 增补
+The same filter now displays one-shot callback clearing candidates in restricted positive branches, without relaxing the complete-evidence/no-recorded-uncertainty threshold. Fixed onetime source changes from zero cards to one, citing L17 guard, L18 call and L19 clear. See the 0.6.3 section of `STATE_PUBLICATION_REVIEW.md`. Original development checks and historical reports are not overwritten.
 
-同一筛选策略现在也能展示受限正分支中的一次性回调清空候选；不用放宽“证据完整且无已记录不确定性”的门槛。onetime 固定源码由 0 张卡变为 1 张，证据指向 L17 guard、L18 调用、L19 清空；详细边界见 `STATE_PUBLICATION_REVIEW.md` 的 0.6.3 小节。原始开发检查和历史报告不覆盖。
+## 0.6.4 addition
 
+The threshold is unchanged. New bounded nested paths can establish complete guard/call/flag-write relations. Original component/once source is recognized as writing first and retains ordering facts only; an artificial delayed-flag variant writes afterward and displays one card with the outer receiver condition. Different branches are not merged; `this[key]` state remains unsupported. See `STATE_PUBLICATION_REVIEW.md` for boundaries.
 
-## 0.6.4 增补
+## 0.6.5 addition
 
-默认门槛保持不变；新的有界嵌套路径可提供完整 guard/调用/标志写入关系。component/once 原版识别为写入在前，仅保留顺序事实；人工延迟写标志变体识别为写入在后，展示 1 张卡并带外层接收者条件。不同分支不合并；this[key] 状态仍未覆盖。见 `STATE_PUBLICATION_REVIEW.md` 的边界说明。
+The filter threshold is unchanged. Simple one-hop parameter-copy calls after a strict null early return are supported. Default cards retain the copy location and distinguish original-binding clearing from copy overwriting. Original Async.once source lists a clear-before-call fact only; an artificial delayed-clear variant displays one card. Full limitations appear in `STATE_PUBLICATION_REVIEW.md`.
 
+## 0.6.6 addition
 
-## 0.6.5 增补
+The threshold is unchanged. Reflect.apply/construct candidates for a captured receiver function are stored separately per call; selected conditional arms are not combined as simultaneous execution. The default view merges candidates for the same flag while retaining both call locations and provenance. Original @ungap/once source lists two write-before-call facts; an artificial variant merges into one issue card. See `STATE_PUBLICATION_REVIEW.md`.
 
-默认筛选门槛不变；现在支持严格 null 早退后的简单一跳参数副本调用。默认卡保留副本复制位置，区分“原绑定清空”与“副本覆盖”。Async.once 原版仅列清空在前的事实，人工延迟清空变体展示 1 张卡；完整限制见 `STATE_PUBLICATION_REVIEW.md`。
+## 0.6.7 addition
 
+The default filter can use new post-call clearing evidence without weakening source/relation completeness requirements. Reports separate entry-state write ordering from subsequent callback-binding clearing. The latter receives a neutral note rather than automatically becoming an issue. Original just-once retains cleanup without an alert; an artificial delayed-flag variant displays one card. Candidates lacking the new relation fields are conservatively hidden.
 
-## 0.6.6 增补
+## 0.6.8 addition
 
-默认门槛保持不变。接收者函数的 Reflect.apply/construct 两条候选按调用分别保存，选定条件臂不混合执行；同一标志的候选在默认视图合并，保留两种调用位置和来源。@ungap/once 原版仅列两条调用前写入事实，人工变体合并为 1 张问题卡。限制见 `STATE_PUBLICATION_REVIEW.md`。
-
-
-## 0.6.7 增补
-
-默认筛选可使用新的调用后清空证据，不降低源码/关系完整性门槛。报告把“入口状态写入顺序”和“回调绑定随后清空”分开：后者附中性说明，不自动作为问题。just-once 原版保留清理且不报警，人工延迟标志变体展示 1 张卡。新的关系字段缺失时保守隐藏。
-
-
-## 0.6.8 增补
-
-默认门槛保持不变。新增受限数字预算检查：原版先递减再调用只列顺序事实，调用后递减可形成 1 张核查卡。若关联到条件清理，报告单独展示其条件，不能将清空当成所有路径必然执行的动作。结论依赖有限安全整数预算及实际用途，详见 STATE_PUBLICATION_REVIEW.md。
+The threshold is unchanged. Restricted numeric-budget checks list decrement-before-call as an ordering fact; decrement-after-call can produce one review card. Associated conditional cleanup is shown with its own condition, without treating clearing as inevitable on every path. Interpretation depends on a finite safe-integer budget and its actual purpose. See `STATE_PUBLICATION_REVIEW.md`.

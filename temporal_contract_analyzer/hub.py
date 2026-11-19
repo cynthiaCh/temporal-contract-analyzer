@@ -68,7 +68,7 @@ class Handler(LocalHandler):
                 self.send(data, content_type=kind+'; charset=utf-8', report=name.endswith('.html'))
             else:
                 self.send({'error': 'Not found'}, 404)
-        elif url.path in {'/', '/app.js', '/style.css'}:
+        elif url.path in {'/', '/app.js', '/report-text.js', '/style.css'}:
             name = 'index.html' if url.path == '/' else url.path[1:]
             content_type = 'text/html' if name.endswith('.html') else ('text/javascript' if name.endswith('.js') else 'text/css')
             self.send((WEB/name).read_bytes(), content_type=content_type+'; charset=utf-8')
@@ -84,7 +84,7 @@ class Handler(LocalHandler):
             if any(not isinstance(v, str) or len(v) > 1000 for v in labels.values()):
                 raise EvidenceError('Invalid scan label')
             if not isinstance(data.get('candidate'), str) or not Path(data['candidate']).is_absolute():
-                raise EvidenceError('请输入候选工程或源码文件的绝对路径')
+                raise EvidenceError('Enter the absolute path of a candidate project or source file.')
             result = archive.scan_path(data['candidate'], store, self.server.node, 'web', **labels)
             self.send(result['archive'], 201)
         elif len(parts) == 4 and parts[:2] == ['api', 'reports']:
@@ -156,7 +156,7 @@ def ensure_server(store=None, node=None):
             if current:
                 return current
             if time.monotonic() > deadline:
-                raise EvidenceError('报告中心启动锁未释放；请稍后重试或检查 .server-start-lock')
+                raise EvidenceError('Report center startup lock is held; retry later or inspect .server-start-lock')
             try:
                 stale = time.time() - lock.stat().st_mtime > 30
             except FileNotFoundError:
@@ -186,10 +186,10 @@ def ensure_server(store=None, node=None):
             if current:
                 return current
             if child.poll() is not None:
-                raise EvidenceError('报告中心启动失败，请查看 ' + str(root/'server.log'))
+                raise EvidenceError('Report center failed to start; see ' + str(root/'server.log'))
             time.sleep(0.1)
         child.terminate()
-        raise EvidenceError('报告中心启动超时')
+        raise EvidenceError('Report center startup timed out')
     finally:
         lock.rmdir()
 

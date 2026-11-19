@@ -1,6 +1,6 @@
 export const columns = [
-  { title: '订单编号', key: 'orderCode' },
-  { title: '订单名称', key: 'orderName' },
+  { title: 'Order code', key: 'orderCode' },
+  { title: 'Order name', key: 'orderName' },
 ];
 
 export function publish(response: Response, selectedColumns: unknown[]) {

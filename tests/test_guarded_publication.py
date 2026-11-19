@@ -41,7 +41,7 @@ class GuardedPublicationTests(unittest.TestCase):
         self.assertEqual(events[publication['guard']]['line'], 3)
         self.assertEqual(events[publication['callback']]['line'], 4)
         self.assertEqual(events[publication['write']]['line'], 5)
-        self.assertIn('重试', finding['review_question'])
+        self.assertIn('retry', finding['review_question'])
 
     def test_identifiers_formatting_and_null_are_generic(self):
         for name in ['callback', 'deliver', '$fn']:

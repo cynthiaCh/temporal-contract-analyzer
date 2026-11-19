@@ -129,10 +129,10 @@ def reflective_patterns(file, functions, grouped, owner, visible_writes, prefix,
             findings.append(dict(rule=rule, path=file['path'], scope=entry,
                 evidence=list(dict.fromkeys([guard['id'], *anchors, call['id'], write['id']])),
                 classification='review_hint_not_bug_verdict',
-                message=('反射调用捕获的接收者函数之前，已写入阻止重复执行的标志。' if before else
-                         '先反射调用捕获的接收者函数，随后才写入阻止重复执行的标志；同步重入可能再次调用。'),
+                message=('The repetition guard is written before reflectively invoking the captured receiver function.' if before else
+                         'Reflective invocation of the captured receiver function precedes the repetition-guard write; synchronous reentry may invoke it again.'),
                 condition=condition,
-                review_question='普通调用或构造调用若同步重入同一包装入口，是否会重复执行？请分别核查分支、异常和缓存结果；调用前写入不等于所有路径安全。',
+                review_question='Can ordinary or constructor calls repeat execution on synchronous reentry? Check branches, exceptions and cached results separately. An earlier write does not establish safety on every path.',
                 state_publication=dict(state=flag, binding_scope=binding, status=status,
                     guard=guard['id'], callback=call['id'], write=write['id'], execution_path=anchors,
                     uncertainties=[], write_value='false', path_conditions=selected_conditions,

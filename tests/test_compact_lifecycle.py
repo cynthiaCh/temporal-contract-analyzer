@@ -33,7 +33,7 @@ class CompactLifecycleTests(unittest.TestCase):
         self.assertEqual(self.ids(),{'v2'})
         self.assertEqual({r['bundle']['id'] for r in approval.active(self.path)},{'v2'})
         self.assertEqual(len(memory.records(self.path)),2)
-        self.assertIn('已被替代，不参与新检索',compact.page(self.path).decode())
+        self.assertIn('Superseded; excluded from new retrievals',compact.page(self.path).decode())
         self.assertEqual(approval.validate_snapshot(self.path,snapshot),snapshot)
         original=json.loads(before)['experiences'][0]
         self.assertEqual(compact.load(self.path)['experiences'][0],original)

@@ -49,7 +49,7 @@ function presentation(result, root) {
     const events = new Map(file.events.map(e => [e.id, e]));
     const row = new vscode.TreeItem(file.path, vscode.TreeItemCollapsibleState.Expanded);
     row.resourceUri = uri;
-    row.description = file.status === 'parsed' ? `${findings.length} 条待核查 · ${file.events.length} 个事件` : '解析不完整';
+    row.description = file.status === 'parsed' ? `${findings.length} review hints · ${file.events.length} events` : 'Incomplete parsing';
     row.tooltip = file.analysis_scope || file.path;
     row.children = [];
     const items = [];
@@ -57,18 +57,18 @@ function presentation(result, root) {
       const adapter = report.adapters.javascript_typescript;
       const message = file.error?.message || adapter?.reason || file.status;
       const errorRange = new vscode.Range(Math.max(0, (file.error?.line || 1) - 1), 0, Math.max(0, (file.error?.line || 1) - 1), 1);
-      const diagnostic = new vscode.Diagnostic(errorRange, `分析未完成：${message}`, vscode.DiagnosticSeverity.Warning);
+      const diagnostic = new vscode.Diagnostic(errorRange, `Analysis incomplete: ${message}`, vscode.DiagnosticSeverity.Warning);
       diagnostic.source = 'TempoEvo';
       diagnostic.code = 'incomplete-analysis';
       items.push(diagnostic);
-      row.children.push(notice('分析未完成', message));
+      row.children.push(notice('Analysis incomplete', message));
     }
     for (const finding of findings) {
       const evidence = finding.evidence.map(id => events.get(id)).filter(Boolean);
       if (!evidence.length) continue;
       const first = evidence[0];
       const selected = range(result.ranges[first.id]);
-      const message = `待核查：${finding.message}\n条件：${finding.condition}\n核查：${finding.review_question}`;
+      const message = `Review needed: ${finding.message}\nCondition: ${finding.condition}\nReview: ${finding.review_question}`;
       const diagnostic = new vscode.Diagnostic(selected, message, vscode.DiagnosticSeverity.Information);
       diagnostic.source = 'TempoEvo';
       diagnostic.code = finding.rule;
@@ -79,22 +79,22 @@ function presentation(result, root) {
       hint.description = `L${first.line} · ${finding.rule}`;
       hint.tooltip = message;
       hint.iconPath = new vscode.ThemeIcon('comment-discussion');
-      hint.command = {command: 'vscode.open', title: '定位证据', arguments: [uri, {selection: selected, preview: true}]};
+      hint.command = {command: 'vscode.open', title: 'Go to evidence', arguments: [uri, {selection: selected, preview: true}]};
       hint.children = evidence.map(e => {
         const anchor = new vscode.TreeItem(`L${e.line} · ${e.kind}`);
         anchor.description = e.text.replace(/\s+/g, ' ').slice(0, 110);
         anchor.tooltip = e.text;
-        anchor.command = {command: 'vscode.open', title: '定位证据', arguments: [uri, {selection: range(result.ranges[e.id]), preview: true}]};
+        anchor.command = {command: 'vscode.open', title: 'Go to evidence', arguments: [uri, {selection: range(result.ranges[e.id]), preview: true}]};
         return anchor;
       });
       row.children.push(hint);
     }
-    if (!row.children.length) row.children.push(notice('没有规则命中', '不代表安全；可查看完整报告中的范围与限制'));
+    if (!row.children.length) row.children.push(notice('No rule matched', 'Safety is not established; see scope and limitations in the full report'));
     diagnostics.push([uri, items]);
     rows.push(row);
   }
-  if (report.skipped.length) rows.push(notice(`跳过 ${report.skipped.length} 个文件或目录`, '详见完整报告'));
-  if (!report.files.length) rows.push(notice('目录中没有可分析的源码'));
+  if (report.skipped.length) rows.push(notice(`Skipped ${report.skipped.length} files or directories`, 'See the full report'));
+  if (!report.files.length) rows.push(notice('No analyzable source in this directory'));
   return {rows, diagnostics};
 }
 
@@ -107,13 +107,13 @@ function activate(context) {
   status.name = 'TempoEvo';
   status.command = 'temporalContracts.scanFile';
   status.text = '$(inspect) TempoEvo';
-  status.tooltip = '扫描当前文件的时序线索';
+  status.tooltip = 'Scan temporal clues in the current file';
   status.show();
   const reports = new Map();
   const reportChanged = new vscode.EventEmitter();
   const provider = {onDidChange: reportChanged.event, provideTextDocumentContent: uri => {
     const snapshot = reports.get(uri.toString());
-    return snapshot ? (snapshot.stale ? '> 这是源码修改前的历史报告，定位已失效。请重新扫描。\n\n' : '') + snapshot.text : '此报告已过期，请重新扫描。';
+    return snapshot ? (snapshot.stale ? '> This is a historical report from before the source edit. Locations are stale; scan again.\n\n' : '') + snapshot.text : 'This report is stale; scan again.';
   }};
   let active, latest, lastArchive, sequence = 0, timer, disposed = false;
   const config = uri => vscode.workspace.getConfiguration('temporalContracts', uri);
@@ -134,7 +134,7 @@ function activate(context) {
     tree.set([]);
     view.message = undefined;
     status.text = '$(inspect) TempoEvo';
-    status.tooltip = '扫描当前文件的时序线索';
+    status.tooltip = 'Scan temporal clues in the current file';
   }
   function invalidate(uri) {
     if (!supported(uri)) return;
@@ -146,17 +146,17 @@ function activate(context) {
     if (affected) {
       if (latest) latest.stale = true;
       diagnostics.clear();
-      tree.set([notice('源码已修改，请重新扫描', '保存可自动扫描当前文件')]);
-      view.message = '旧结果已失效，避免跳转到错误位置。';
+      tree.set([notice('Source changed; scan again', 'Saving can automatically scan the current file')]);
+      view.message = 'Previous results are stale; navigation is disabled to avoid incorrect locations.';
       status.text = '$(history) TempoEvo';
-      status.tooltip = '源码已修改；点击重新扫描当前文件';
+      status.tooltip = 'Source changed; click to rescan the current file';
     } else if (!active) {
       status.text = '$(inspect) TempoEvo';
     }
   }
 
   async function run(request, root, filePath, quiet) {
-    if (!vscode.workspace.isTrusted) throw new Error('请先信任工作区，再运行 TempoEvo。');
+    if (!vscode.workspace.isTrusted) throw new Error('Trust the workspace before running TempoEvo.');
     clearTimeout(timer);
     cancel();
     const id = sequence;
@@ -166,9 +166,9 @@ function activate(context) {
     // A new scope replaces the previous scan. Never present old results as new.
     latest = undefined;
     diagnostics.clear();
-    tree.set([notice('正在分析…')]);
+    tree.set([notice('Analyzing…')]);
     status.text = '$(sync~spin) TempoEvo';
-    view.message = request.mode === 'file' ? '当前文件扫描 · 使用编辑器中的内容' : '目录扫描 · 包含已打开文件的未保存内容';
+    view.message = request.mode === 'file' ? 'Current file scan · Uses editor contents' : 'Directory scan · Includes unsaved contents of open files';
     const started = Date.now();
     try {
       const settings = config(filePath ? vscode.Uri.file(filePath) : vscode.Uri.file(root));
@@ -186,11 +186,11 @@ function activate(context) {
       tree.set(shown.rows);
       const summary = result.report.summary;
       const incomplete = result.report.status !== 'parsed';
-      status.text = `$(inspect) TempoEvo: ${summary.review_hints}${incomplete ? ' · 未完整' : ''}`;
-      status.tooltip = `${summary.parsed_files}/${summary.files} 个文件解析完成，${summary.review_hints} 条待核查。点击扫描当前文件。`;
-      view.message = `${request.mode === 'file' ? '当前文件' : '目录'} · ${summary.parsed_files}/${summary.files} 个文件 · ${summary.review_hints} 条待核查${incomplete ? ' · 分析未完整' : ''}。提示不是缺陷判决。`;
+      status.text = `$(inspect) TempoEvo: ${summary.review_hints}${incomplete ? ' · Incomplete' : ''}`;
+      status.tooltip = `${summary.parsed_files}/${summary.files} files parsed, ${summary.review_hints} review hints. Click to scan the current file.`;
+      view.message = `${request.mode === 'file' ? 'Current file' : 'Directory'} · ${summary.parsed_files}/${summary.files} files · ${summary.review_hints} review hints${incomplete ? ' · Analysis incomplete' : ''}. Hints are not defect verdicts.`;
       output.appendLine(`${new Date().toISOString()} ${request.mode}: ${filePath || root} — ${result.report.status}, ${summary.review_hints} hints, ${Date.now() - started} ms`);
-      if (lastArchive) output.appendLine(`  已归档 ${lastArchive.report_id} → ${lastArchive.archive_path}`);
+      if (lastArchive) output.appendLine(`  Archived ${lastArchive.report_id} → ${lastArchive.archive_path}`);
       for (const file of result.report.files.filter(f => f.status !== 'parsed')) output.appendLine(`  ${file.path}: ${file.error?.message || file.status}`);
       if (!quiet && shown.rows.length) await view.reveal(shown.rows[0], {focus: false, select: false, expand: true});
       return result;
@@ -198,15 +198,15 @@ function activate(context) {
       if (error instanceof Cancelled || disposed || id !== sequence) return;
       lastArchive = error.archive;
       diagnostics.clear();
-      tree.set([notice('分析未完成', error.message)]);
+      tree.set([notice('Analysis incomplete', error.message)]);
       status.text = '$(warning) TempoEvo';
       status.tooltip = error.message;
-      view.message = '分析未完成；运行日志中可查看原因。';
+      view.message = 'Analysis incomplete; see the runtime log for details.';
       output.appendLine(`ERROR: ${error.message}`);
       if (!quiet) {
-        vscode.window.showErrorMessage(`TempoEvo：${error.message}`, '打开设置', '查看日志').then(choice => {
-          if (choice === '打开设置') vscode.commands.executeCommand('workbench.action.openSettings', 'temporalContracts');
-          if (choice === '查看日志') output.show(true);
+        vscode.window.showErrorMessage(`TempoEvo: ${error.message}`, 'Open settings', 'View log').then(choice => {
+          if (choice === 'Open settings') vscode.commands.executeCommand('workbench.action.openSettings', 'temporalContracts');
+          if (choice === 'View log') output.show(true);
         });
       }
     } finally {
@@ -217,14 +217,14 @@ function activate(context) {
   async function scanFile(uri, quiet = false) {
     const target = uri?.scheme ? uri : vscode.window.activeTextEditor?.document.uri;
     if (!supported(target)) {
-      if (!quiet) vscode.window.showInformationMessage('请打开 Vue、JavaScript、TypeScript 或 Python 源码文件。');
+      if (!quiet) vscode.window.showInformationMessage('Open a Vue, JavaScript, TypeScript or Python source file.');
       return;
     }
     const workspace = vscode.workspace.getWorkspaceFolder(target);
     const root = workspace?.uri.fsPath || path.dirname(target.fsPath);
     const relative = sourceName(root, target.fsPath);
     if (relative.split('/').some(part => EXCLUDED.has(part) || part.startsWith('.'))) {
-      if (!quiet) vscode.window.showInformationMessage('此文件位于分析器排除的目录中。请扫描项目源码。');
+      if (!quiet) vscode.window.showInformationMessage('This file is in an excluded directory. Scan project source instead.');
       return;
     }
     cancel();
@@ -233,7 +233,7 @@ function activate(context) {
     if (ticket !== sequence || disposed) return;
     const text = document.getText();
     if (Buffer.byteLength(text, 'utf8') > 1024 * 1024) {
-      if (!quiet) vscode.window.showInformationMessage('当前文件超过 1 MiB，请缩小文件后再扫描。');
+      if (!quiet) vscode.window.showInformationMessage('The current file exceeds 1 MiB; reduce its size before scanning.');
       return;
     }
     return run({mode: 'file', path: relative, text}, root, target.fsPath, quiet);
@@ -243,11 +243,11 @@ function activate(context) {
     let target = uri?.scheme === 'file' ? uri : undefined;
     if (!target) {
       const chosen = await vscode.window.showOpenDialog({canSelectFiles: false, canSelectFolders: true, canSelectMany: false,
-        defaultUri: vscode.workspace.workspaceFolders?.[0]?.uri, openLabel: '扫描此目录'});
+        defaultUri: vscode.workspace.workspaceFolders?.[0]?.uri, openLabel: 'Scan this folder'});
       target = chosen?.[0];
     }
     if (!target) return;
-    if (target.scheme !== 'file') throw new Error('当前只支持扩展宿主文件系统中的目录。');
+    if (target.scheme !== 'file') throw new Error('Only directories in the extension host filesystem are supported.');
     const root = target.fsPath, overlays = {};
     for (const document of vscode.workspace.textDocuments) {
       if (supported(document.uri) && inside(root, document.uri.fsPath) && document.isDirty) overlays[sourceName(root, document.uri.fsPath)] = document.getText();
@@ -256,10 +256,10 @@ function activate(context) {
   }
 
   async function showReport() {
-    if (!latest) { vscode.window.showInformationMessage('请先扫描当前文件或目录。'); return; }
+    if (!latest) { vscode.window.showInformationMessage('Scan the current file or a directory first.'); return; }
     const uri = vscode.Uri.parse(`temporal-contract-report:/scan-${sequence}-${Date.now()}.md`);
-    const scope = latest.request.mode === 'file' ? '当前文件的编辑器快照；其他文件未纳入分析。' : '目录源码快照，包含扫描开始时已打开文件的未保存内容。';
-    const archived = latest.result.archive ? '> 已归档：' + latest.result.archive.report_id + '\n> 路径：' + latest.result.archive.archive_path + '\n\n' : '';
+    const scope = latest.request.mode === 'file' ? 'Editor snapshot of the current file; other files are outside the analysis scope.' : 'Directory source snapshot including unsaved contents of files open when scanning started.';
+    const archived = latest.result.archive ? '> Archived: ' + latest.result.archive.report_id + '\n> Path: ' + latest.result.archive.archive_path + '\n\n' : '';
     reports.set(uri.toString(), {text: '> ' + scope + '\n\n' + archived + latest.result.markdown, stale: latest.stale,
       root: latest.root, filePath: latest.filePath, request: {mode: latest.request.mode}});
     while (reports.size > 10) reports.delete(reports.keys().next().value);
@@ -269,7 +269,7 @@ function activate(context) {
   }
 
   async function openArchive() {
-    if (!vscode.workspace.isTrusted) throw new Error('请先信任工作区。');
+    if (!vscode.workspace.isTrusted) throw new Error('Trust the workspace first.');
     const settings = config(vscode.window.activeTextEditor?.document.uri);
     const value = await invoke(context.extensionPath, {operation: 'open_hub', store: settings.get('reportStore', '') || undefined},
       {pythonPath: settings.get('pythonPath', ''), timeout: 20000});
@@ -279,14 +279,14 @@ function activate(context) {
   }
 
   async function copyReportId() {
-    if (!lastArchive) { vscode.window.showInformationMessage('当前还没有归档报告，请先扫描。'); return; }
+    if (!lastArchive) { vscode.window.showInformationMessage('No archived report yet; run a scan first.'); return; }
     await vscode.env.clipboard.writeText(lastArchive.report_id);
     return lastArchive.report_id;
   }
 
   const command = (name, callback) => vscode.commands.registerCommand(name, async (...args) => {
     try { return await callback(...args); }
-    catch (error) { output.appendLine(`ERROR: ${error.message}`); vscode.window.showErrorMessage(`TempoEvo：${error.message}`); }
+    catch (error) { output.appendLine(`ERROR: ${error.message}`); vscode.window.showErrorMessage(`TempoEvo: ${error.message}`); }
   });
   const watcher = vscode.workspace.createFileSystemWatcher(SOURCE_GLOB);
   context.subscriptions.push(output, diagnostics, tree, view, status, watcher, reportChanged,

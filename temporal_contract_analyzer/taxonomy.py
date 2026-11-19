@@ -57,9 +57,9 @@ def analysis_schema():
 
 def markdown():
     data = definition()
-    lines = ['# 统一时序义务分类（七类）', '', '| 标签 | 名称 | 定义 |', '|---|---|---|']
+    lines = ['# Unified temporal obligation taxonomy (seven classes)', '', '| Label | Name | Definition |', '|---|---|---|']
     lines += ['| ' + row['code'] + ' | ' + row['name_zh'] + ' | ' + row['inclusion_rule'] + ' |'
               for row in data['codebook']]
-    lines += ['', '允许多标签；机制与适用条件另记。未知不等于安全。',
-              'T1–T4只保留为历史路由分组；五组提示模板和五条题库问题不是另一个当前分类。']
+    lines += ['', 'Multiple labels are allowed; record mechanisms and applicability separately. Unknown does not mean safe.',
+              'T1–T4 remain historical routing groups only; the five prompt groups and five case-bank questions are not a separate current taxonomy.']
     return '\n'.join(lines) + '\n'

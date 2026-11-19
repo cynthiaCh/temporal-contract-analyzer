@@ -1,44 +1,44 @@
 # TempoEvo: Temporal Contract Analyzer
 
-在 VS Code 中审查 Vue、JavaScript、TypeScript 和 Python 的时序源码线索。
+Review temporal source clues in Vue, JavaScript, TypeScript and Python from VS Code.
 
-## 安装与日常使用
+## Installation and daily use
 
-1. VS Code 扩展面板右上角 `…` → **Install from VSIX… / 从 VSIX 安装…**，选择 `temporal-contract-analyzer-0.2.0.vsix`。
-2. 本机需要 **Python 3.9+**。插件自动查找，也可以在设置中搜索 `TempoEvo` 并填写 **Python Path**。分析器、Babel 和 Vue 解析器已内置，无需 pip、npm 或单独安装 Node。
-3. 打开并信任你的项目，编辑 Vue 文件后保存，即可自动扫描。也可在命令面板执行 **TempoEvo: 扫描当前文件**，分析未保存的编辑内容。
-4. 在 **Problems / 问题** 或资源管理器的 **TempoEvo** 侧栏查看提示。展开提示查看相关证据，点击跳转到源码。悬停提示可查看成立条件和核查问题。
-5. 需要包含其他文件时，右键项目目录 → **TempoEvo: 扫描目录…**。目录扫描纳入已打开文件的未保存内容；单文件扫描只分析当前文件。
+1. In the Extensions panel, choose `…` → **Install from VSIX…** and select `temporal-contract-analyzer-0.2.0.vsix`.
+2. **Python 3.9+** is required on the host. The extension discovers it automatically, or search settings for **TempoEvo** and set **Python Path**. The analyzer, Babel and Vue parsers are bundled; no pip, npm or separate Node installation is needed.
+3. Open and trust your project. Saving an edited Vue file scans it automatically. **TempoEvo: Scan current file** in the command palette also analyzes unsaved editor contents.
+4. View hints in **Problems** or the Explorer's **TempoEvo** sidebar. Expand hints for evidence, click to navigate to source, and hover for conditions and review questions.
+5. To include other files, right-click a project directory and select **TempoEvo: Scan folder…**. Directory scans include unsaved contents of open files; single-file scans analyze only the current file.
 
-每次扫描会替换编辑器中的上一次提示，并默认将报告和实际源码快照归档。源码修改后，旧定位立即清除；重新保存或手动扫描以更新。侧栏的报告按钮可打开最近一次完整 Markdown 报告，它是只读快照，不会向项目写入文件。历史报告会明确标记为过期。
+Each scan replaces the previous editor hints and archives the report and actual source snapshot by default. Editing immediately clears stale locations; save or scan manually to refresh. The sidebar report button opens the latest complete Markdown report as a read-only snapshot, without writing project files. Historical reports are explicitly marked stale.
 
-命令面板中的 **TempoEvo: 打开统一报告库** 可查看历史证据、源码快照、人工核查和前后对比；**复制最近报告 ID** 可将同一份报告交给 Codex。CLI、插件和 Codex MCP 使用同一全局配置，完整说明见源码仓库的 `docs/REPORT_CENTER.md`。清除编辑器结果不会删除归档。
+**TempoEvo: Open shared report archive** opens historical evidence, source snapshots, human reviews and before/after comparisons. **Copy latest report ID** hands the same report to Codex. The CLI, extension and Codex MCP share global configuration; see `docs/REPORT_CENTER.md` in the source repository. Clearing editor results does not delete archives.
 
-支持多根工作区中的单文件和选定目录；远程开发时，Python 需要安装在运行此插件的远程主机。网页版 VS Code 和虚拟文件系统不支持。
+Single files and selected directories in multi-root workspaces are supported. Remote development requires Python on the remote extension host. Browser-based VS Code and virtual filesystems are unsupported.
 
-## 设置
+## Settings
 
-| 设置 | 默认值 | 说明 |
+| Setting | Default | Description |
 |---|---|---|
-| `temporalContracts.scanOnSave` | `true` | 保存后扫描当前文件；关闭后仅手动扫描 |
-| `temporalContracts.pythonPath` | 自动发现 | Python 可执行文件路径，不是 shell 命令 |
-| `temporalContracts.archiveEnabled` | `true` | 每次扫描保存报告与源码快照 |
-| `temporalContracts.reportStore` | 全局配置 | 统一归档目录；应位于被扫描工程之外 |
-| `temporalContracts.timeoutSeconds` | `90` | 分析超时时间 |
+| `temporalContracts.scanOnSave` | `true` | Scan the current file on save; disable for manual scans only |
+| `temporalContracts.pythonPath` | Auto-detect | Python executable path, not a shell command |
+| `temporalContracts.archiveEnabled` | `true` | Save each report and source snapshot |
+| `temporalContracts.reportStore` | Global configuration | Shared archive directory, outside the scanned project |
+| `temporalContracts.timeoutSeconds` | `90` | Analysis timeout |
 
-`TempoEvo: 查看运行日志` 可查看状态和错误；没有弹窗的自动扫描失败也会显示在侧栏和状态栏。
+**TempoEvo: View runtime log** shows status and errors. Automatic scan failures also appear in the sidebar and status bar even without a popup.
 
-## 结果意味着什么
+## Interpreting results
 
-提示是**需要人工核查的语法线索**，以信息级别显示，不宣称已经发现 bug。无提示不代表安全。解析失败以“分析未完成”显示，不能被误认为零风险。
+Hints are **syntax clues requiring human review**, displayed at information level rather than claiming discovered bugs. No hints does not establish safety. Parsing failures display **Analysis incomplete**, rather than implying zero risk.
 
-Vue 2 / Vue 3 的内联 `<script>`、`<script setup>` 支持 JS / TS / JSX / TSX。保持原始 `.vue` 行列定位。模板表达式、响应式依赖、watcher 调度、跨脚本块绑定和组件实例派发仍未建模。外部脚本、自定义块等不支持情况会明确说明。
+Vue 2 / Vue 3 inline `<script>` and `<script setup>` support JS / TS / JSX / TSX with original `.vue` line/column locations. Template expressions, reactive dependencies, watcher scheduling, cross-script bindings and component-instance dispatch remain unmodeled. Unsupported external scripts and custom blocks are explicitly reported.
 
-分析完全在扩展宿主本地进行，不调用模型、不上传源码、不执行项目代码、不安装项目依赖、不提供自动修改。目录扫描沿用分析器的排除规则和大小限制；在 `temporal-contract-bench` 中请选择具体候选工程的 `base/`，不要扫描整个研究仓库。
+Analysis runs locally on the extension host. It does not call models, upload source, execute project code, install project dependencies or automatically edit code. Directory scans use the analyzer's exclusions and size limits. In `temporal-contract-bench`, select a specific candidate project's `base/` rather than the entire research repository.
 
-## 开发与打包
+## Development and packaging
 
-在仓库根目录安装锁定的解析器依赖，再准备插件：
+Install locked parser dependencies from the repository root, then prepare the extension:
 
 ```sh
 npm ci --prefix temporal_contract_analyzer/javascript --ignore-scripts --no-audit --no-fund
@@ -51,10 +51,10 @@ npm run test:browser
 npm run package
 ```
 
-构建建议使用 Node 22+；最终用户不需要 Node。`runtime/` 是构建时从本仓库复制的分析器与解析依赖，不应手工修改。Python 分析器仍是规则的唯一实现；VS Code 只负责调用、展示和跳转。
+Node 22+ is recommended for building; end users do not need Node. `runtime/` is copied from this repository's analyzer/parser dependencies during staging and should not be edited manually. The Python analyzer remains the sole rule implementation; VS Code handles invocation, presentation and navigation.
 
-`test:host` 默认使用本机 VS Code（macOS），或通过 `VSCODE_EXECUTABLE_PATH` 指定可执行文件；其他环境由测试工具下载测试宿主。测试使用临时用户数据目录，避免修改你的编辑器设置。
+`test:host` defaults to local VS Code on macOS, or uses `VSCODE_EXECUTABLE_PATH`. Elsewhere the testing utility downloads a host. Tests use temporary user-data directories to avoid changing editor settings.
 
-浏览器测试使用本机 Chrome，也可设置 `CHROME_PATH`；测试报告写入临时目录。
+Browser tests use local Chrome, configurable with `CHROME_PATH`, and write reports to temporary directories.
 
-输出：`../dist/temporal-contract-analyzer-0.2.0.vsix`。这是供本地使用的私有扩展，目前没有发布到 Marketplace，也没有为项目选择开源许可证。第三方解析器的许可证随依赖保留。
+Output: `../dist/temporal-contract-analyzer-0.2.0.vsix`. This is a private extension for local use, not published to Marketplace. No open-source license has been selected for the project. Third-party parser licenses remain with their dependencies.

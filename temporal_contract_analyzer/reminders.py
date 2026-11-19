@@ -23,11 +23,11 @@ def material(obligation_labels):
     data = definition()
     selected = [dict(code=code, text=data['by_label'][code]) for code in codes]
     names = {row['code']: row['name_zh'] for row in taxonomy.definition()['codebook']}
-    text = '\n\n七类通用核查提醒（检查问题，不是该案例的标准答案）：\n'
+    text = '\n\nGeneral review reminders for seven classes (review questions, not reference answers for this case):\n'
     if selected:
         text += '\n'.join(f"[{row['code']} · {names[row['code']]}] {row['text']}" for row in selected)
     else:
-        text += '当前分类未知，不追加任何类别提醒；继续依据任务与源码核查，不据此推断安全。'
+        text += 'Current class is unknown; no class reminders appended. Continue reviewing the task and source; do not infer safety.'
     return dict(schema_version=data['schema_version'], taxonomy_version=taxonomy.VERSION,
                 reminders_sha256=sha(canonical(data).encode()), selected_labels=codes,
                 selected=selected, text=text)

@@ -24,7 +24,7 @@ class ClassReminderTests(unittest.TestCase):
     def test_unknown_does_not_deliver_seven_reminders_and_legacy_labels_are_rejected(self):
         material = reminders.material([])
         self.assertEqual(material['selected'], [])
-        self.assertIn('当前分类未知', material['text'])
+        self.assertIn('Current class is unknown', material['text'])
         for text in reminders.definition()['by_label'].values():
             self.assertNotIn(text, material['text'])
         for codes in (['T4'], ['L', 'L']):
@@ -43,7 +43,7 @@ class ClassReminderTests(unittest.TestCase):
         expected = ('Task\n\nCandidate automatic Contract: verify its basis against the current source; do not blindly follow unsupported policies.\nContract'
                     '\n\nComplete the maintenance task while preserving existing behavior supported by evidence. Check startup, admission, completion, cancellation, and ownership of side effects separately.')
         self.assertEqual(maintenance_prompt('Task', 'Contract'), expected)
-        self.assertNotIn('七类通用核查提醒', expected)
+        self.assertNotIn('General review reminders for seven classes', expected)
 
     def test_wrong_taxonomy_or_missing_class_cannot_silently_change_delivery(self):
         for change in ('version', 'labels'):
@@ -70,7 +70,7 @@ class ClassReminderTests(unittest.TestCase):
             result = target.read_text(encoding='utf-8')
             self.assertIn('[L · Lifecycle-scoped admission and effects]', result)
             self.assertNotIn('[R ·', result)
-            self.assertNotIn('冻结经验正文', result)
+            self.assertNotIn('Frozen experience body', result)
 
 
 if __name__ == '__main__':

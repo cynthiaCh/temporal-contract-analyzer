@@ -1,73 +1,73 @@
-# 七类时序义务与经验路由
+# Seven temporal obligation classes and experience routing
 
-当前开发／冻结测试入口为 `tempoevo` CLI，见 [进化流程](WORKFLOW.md)。统一经验库通过 `experience-memory review` 打开审核页面；离线材料命令不调用模型。旧 Web v2、A/D 路由与单题失败学习入口已移除。
+The current development/frozen-testing entry point is the `tempoevo` CLI; see [the workflow](WORKFLOW.md). Open the shared experience library with `experience-memory review`. Offline material commands do not call models. Old Web v2, A/D routing and single-case failure-learning entry points have been removed.
 
-自 2026-11-09 起，当前工具接口统一采用 `temporal-obligation-taxonomy-7-v1`。它沿用 bench 论文覆盖审计的七类义务，作为分类、经验检索和展示的共同词汇。这里选择的是有既有定义与覆盖记录的工程口径，尚未比较不同分类方案的准确率或修复收益。
+Since 2026-11-09, current tool interfaces use `temporal-obligation-taxonomy-7-v1`. It adopts the seven obligation classes from the bench paper's coverage audit as a common vocabulary for classification, retrieval and presentation. This engineering choice uses existing definitions and coverage records; the accuracy or repair benefits of alternative taxonomies have not been compared.
 
-## 七类分别问什么
+## Questions asked by each class
 
-| 标签 | 名称 | 通俗问题 |
+| Label | Name | Plain-language question |
 |---|---|---|
-| R | 就绪条件协调 | 数据、服务或准备条件满足后，才能继续哪一步？ |
-| O | 前置顺序与重入一致性 | 哪一步必须先做？同步回调返回时，原状态还有效吗？ |
-| B | 提交与完成屏障 | 返回、交接或后续动作之前，哪些工作必须结算完成？ |
-| L | 生命周期约束下的接纳与副作用 | 关闭、取消或换主人后，哪些工作还能进入或产生效果？ |
-| I | 操作身份与快照绑定 | 这个结果属于入口时的哪次请求、访问或数据快照？ |
-| F | 结果新鲜度与版本一致性 | 同一逻辑主人内，较旧的结果能否覆盖较新的结果？ |
-| A | 已接纳工作保留与效果次数约束 | 已接纳工作是否必须保留？效果能发生零次、一次还是多次？ |
+| R | Readiness coordination | Which step must wait until data, services or prerequisites are ready? |
+| O | Prerequisite ordering and reentrant consistency | Which step must happen first? Is the original state still valid when a synchronous callback returns? |
+| B | Commit and completion barriers | What must settle before return, handoff or a subsequent action? |
+| L | Lifecycle-constrained admission and side effects | After close, cancellation or ownership changes, which work may still enter or produce effects? |
+| I | Operation identity and snapshot binding | Which entry-time request, visit or data snapshot owns this result? |
+| F | Result freshness and version consistency | Can an older result overwrite a newer one within the same logical owner? |
+| A | Accepted-work preservation and effect cardinality | Must accepted work be preserved? May an effect occur zero, one or multiple times? |
 
-严格纳入与排除条件以包内 [contract-taxonomy.json](../temporal_contract_analyzer/contract-taxonomy.json) 的 `codebook` 为准，CLI、HTTP 和页面都读取这一份定义。来源文件及 SHA256 记录在 `provenance`，运行时不依赖旁边另一个仓库。
+Strict inclusion/exclusion conditions are defined by `codebook` in [contract-taxonomy.json](../temporal_contract_analyzer/contract-taxonomy.json). CLI, HTTP and browser read this same definition. Source files and SHA-256 digests are recorded in `provenance`; runtime does not depend on a neighboring repository.
 
-一个案例可有多个标签。比如某工作先等待服务可用、关闭后停止接纳新输入、保留已接纳结果，可分别核查 R、L、A；不能只凭这个描述就给某个真实案例贴标签，仍须当前任务或源码的引用。
+A case may have multiple labels. Work that waits for service availability, stops admitting new inputs after close and preserves accepted results can involve R, L and A respectively. A real case still requires current task/source citations rather than classification from that description alone.
 
-三个容易重复计数的边界：
+Three boundaries prevent double counting:
 
-- 监听先注册再启动属于 O，不额外算 R；真正的就绪条件属于 R。
-- 返回前必须结算属于 B，普通异步解码本身不算 B。
-- 旧 visit 失效属于 L/I；同一保留 owner 内的结果版本竞争才算 F。普通回归测试结果相等不自动算 A。
+- Register-before-start is O, without additionally counting R. Actual readiness conditions belong to R.
+- Settlement before return is B; ordinary async decoding alone is not B.
+- Invalidating an old visit is L/I; competing result versions within the same retained owner are F. Equal regression-test results do not automatically constitute A.
 
-## 以前的四类和五类放在哪里
+## Historical four- and five-group schemes
 
-| 记录 | 现在的含义 | 处理方式 |
+| Record | Current interpretation | Treatment |
 |---|---|---|
-| `refine-logs/experience-toolflow-v1-20261108` 的 T1–T4 | 旧版四组机制路由 | 历史保留，不再作为当前分类定义 |
-| 旧版 `repair.py:FAMILIES` 的五组 | 开发侧失败假设提示模板 | 实现已移除；历史含义不能作为当前分类定义 |
-| 原题库五条问题 | 五条可检索材料 | 条目数与类别数无须相同，原文不改 |
-| D1/D2、Test-1/Test-2 | 开发／测试案例别名 | 不是义务标签，也不是独立来源定义 |
+| T1–T4 in `refine-logs/experience-toolflow-v1-20261108` | Historical four-group mechanism routing | Retained as history, not current class definitions |
+| Five groups in old `repair.py:FAMILIES` | Development failure-hypothesis prompt templates | Implementation removed; historical meaning is not a current class definition |
+| Five original case-bank questions | Five retrievable materials | Entry count need not equal class count; original text is unchanged |
+| D1/D2, Test-1/Test-2 | Development/test case aliases | Neither obligation labels nor independent source definitions |
 
-T4 不能直接改名为 L，T3 也不能直接改名为 B。旧分组可能同时涉及多类。重新使用某条旧经验时，另建带引用的七类元数据；不改原正文、冻结摘要、分母或历史分类。旧记录仍保留历史分类，不假装原实验已用七类执行。
+T4 cannot simply be renamed L, nor T3 renamed B: historical groups can span multiple classes. Reusing an old experience requires separate cited seven-class metadata, without modifying its body, frozen digest, denominator or historical classification. Historical records retain their classifications rather than pretending old experiments used seven classes.
 
-语言、框架、来源 cluster 和义务分类分开记录。训练／测试的来源隔离不能靠标签不同来证明；同一 cluster 的变体仍须说明历史暴露。
+Language, framework, source cluster and obligation class are recorded separately. Different labels do not prove train/test source isolation; variants from the same cluster still require disclosure of historical exposure.
 
-## 新接口怎样走完整流程
+## End-to-end interface flow
 
-1. **开发**：Agent 读取任务、候选源码及可选 AST，提取候选 Contract、七类多标签和机制前提。标准 Contract 留在开发评价侧。
-2. **比较与反思**：运行器整理任务／源码证据、实际结果、改善、退步及未知原因，按有界协议调用反思器产生候选经验；维护 Agent 不读取隐藏评分器。
-3. **冻结**：经验正文与七类标签、适用／排除条件一起绑定摘要。摘要一致只说明内容未变，不说明规则正确或已获接纳。
-4. **测试**：只用当前可见输入提取多标签。先按标签取候选，再核对机制前提、排除条件和语义审查。选零至一条冻结经验；未知、空库或候选冲突回退 AUTO。
-5. **交付与评分**：A 为原任务＋同一候选自动 Contract；B 仅追加命中经验正文。工具、模型、effort、预算及评分版本另行冻结。测试期间不改经验，不把标准答案交给维护 Agent。
+1. **Development**: the agent reads the task, candidate source and optional AST, extracting candidate Contract, multiple obligation labels and mechanism premises. Reference Contracts remain on the development evaluation side.
+2. **Comparison and reflection**: the runner organizes task/source evidence, actual outcomes, improvements, regressions and unknown causes, then calls the reflector under a bounded protocol to generate candidate experience. The maintenance agent does not read hidden scorers.
+3. **Freezing**: bind the body, labels and applicability/exclusion conditions to a digest. Digest agreement establishes unchanged content, not correctness or acceptance.
+4. **Testing**: extract labels from currently visible inputs only. Retrieve by label, then check mechanism premises, exclusions and semantic review. Select zero or one frozen experience; unknowns, an empty library or unresolved conflicts fall back to AUTO.
+5. **Delivery and scoring**: A contains the original task and the same candidate automatic Contract; B additionally receives only the selected experience body. Tools, model, effort, budgets and scorer versions are frozen separately. Experience is not updated during testing, and reference answers are not delivered to the maintenance agent.
 
-七类用于组织义务，不代表每类都有有效经验。机制前提词典并不覆盖七类的全部实现。实际经验与激活状态从指定统一库读取；未投放经验时 A/B 相同，差异不能归因于经验。
+The seven classes organize obligations; they do not imply effective experience exists for each class. The mechanism-premise dictionary does not cover every implementation. Actual experience and activation state come from the designated shared library. When no experience is delivered, A/B are identical and differences cannot be attributed to experience.
 
-实现位于 [taxonomy.py](../temporal_contract_analyzer/taxonomy.py) 与 [experience_routing.py](../temporal_contract_analyzer/experience_routing.py)。这些模块提供离线材料和路由校验；`tempoevo_v4.py` 调度新的学习与冻结测试。历史 V1–V3 批次仅通过 `history status/report` 只读查看，不再提供旧引擎复现入口。
+Implementation is in [taxonomy.py](../temporal_contract_analyzer/taxonomy.py) and [experience_routing.py](../temporal_contract_analyzer/experience_routing.py). These modules provide offline material and routing validation; `tempoevo_v4.py` schedules the new learning/frozen-testing flow. Historical V1–V3 batches are read-only through `history status/report`, without the old engine's reproduction entry points.
 
-## 根据分类追加通用提醒
+## Appending class-specific general reminders
 
-[contract-reminders.json](../temporal_contract_analyzer/contract-reminders.json) 保存一段共同提醒及 `by_label` 下的 R/O/B/L/I/F/A 七段核查问题。名称与类别边界仍从唯一 codebook 读取，不在提醒文件重复定义分类。这是预先编写的初始检查表，不是反思得到的经验，也不含具体案例的标准 Contract。
+[contract-reminders.json](../temporal_contract_analyzer/contract-reminders.json) contains a common reminder and seven R/O/B/L/I/F/A review-question sections under `by_label`. Names and class boundaries still come from the single codebook rather than duplicate definitions. This is a prewritten initial checklist, not reflected experience or case-specific reference Contracts.
 
-分类结果为多标签时，按 codebook 顺序追加所有对应提醒，每类一次。未知分类只保留共同提醒与未知说明，不默认追加全部七类。分类应依据当前任务和源码，不能读取测试标准后再选提醒。
+For multiple labels, append each corresponding reminder once in codebook order. Unknown classification retains only the common reminder and an unknown-status explanation, rather than appending all seven. Classify using current task/source, without reading test reference answers first.
 
-`maintenance-prompt` 从已绑定可见引用的分析对象生成“原任务＋候选 Contract＋共同提醒＋命中类别提醒”，不启动维护模型：
+`maintenance-prompt` builds the original task, candidate Contract, common reminder and matching class reminders from an analysis bound to visible citations, without starting a maintenance model:
 
 ```sh
 python3 -B -m temporal_contract_analyzer maintenance-prompt analyzed-input.json --output maintenance-prompt.txt
 ```
 
-比较经验增量时，A/B 必须使用同一自动 Contract、同一组标签与同一版提醒；B 仅追加冻结经验正文。Python 调用为 `maintenance_prompt(task, contract, obligation_labels=codes)` 和 `maintenance_prompt(task, contract, experience_text, obligation_labels=codes)`。提醒版本和摘要可通过 `reminders.material(codes)` 归档。只比较类别提醒本身的效果时，应另立对照，不与经验增量混算。
+When comparing incremental experience effects, A/B must share the automatic Contract, labels and reminder version; B adds only frozen experience text. Python calls are `maintenance_prompt(task, contract, obligation_labels=codes)` and `maintenance_prompt(task, contract, experience_text, obligation_labels=codes)`. Archive reminder version/digest using `reminders.material(codes)`. Evaluating class reminders alone requires a separate control rather than combining their effects with experience gains.
 
-原有调用若不传 `obligation_labels`，保持此前共同提示正文；旧归档、冻结脚本与历史 E/F 固定提醒不改。新命令及参数是显式接入点，有界进化控制器目前使用自己的 `common()` 提示，不会隐式追加这些静态提醒，也不会改写旧实验。
+Calls without `obligation_labels` retain the prior shared prompt. Old archives, frozen scripts and historical E/F fixed reminders remain unchanged. New commands/parameters are explicit integration points. The bounded evolutionary controller currently uses its own `common()` prompt, without implicitly adding these static reminders or rewriting old experiments.
 
-## 离线命令
+## Offline commands
 
 ```sh
 python3 -B -m temporal_contract_analyzer taxonomy
@@ -78,25 +78,18 @@ python3 -B -m temporal_contract_analyzer experience-review-template analyzed-inp
 python3 -B -m temporal_contract_analyzer route-experience route-input.json --output route.json
 ```
 
-这些命令只生成材料或计算路由，不调用模型、不读取隐藏评分、不启动实验；输出路径已有文件时拒绝覆盖。
+These commands generate material or compute routing only. They do not call models, read hidden scores or start experiments; existing output files cannot be overwritten.
 
-`public-input.json` 仅含 `task`、`sources`（候选内相对路径到源码正文的对象）及可选 `AST`。`experience-prompt` 的输出须与 `taxonomy --format schema` 配套提供给既有结构化输出后端；本接口不替调用者发请求。
+`public-input.json` contains only `task`, `sources` (candidate-relative paths mapped to source text), and optional `AST`. Supply `experience-prompt` output with `taxonomy --format schema` to the existing structured-output backend; this interface does not send requests on the caller's behalf.
 
-The integrated alternative is `tempoevo prepare` with `visible`
-omitted: it builds AST evidence automatically, and the first `run --execute`
-performs the analysis model call and an automatic budgeted AI semantic evidence
-check before repairs. Supplied analyses receive the same check. No manual
-review-analysis step is needed in v3; that command remains a v2 compatibility
-entry point. The actual checker is recorded as model_evidence_check with current
-source citations, reasons, unknowns and blockers, not as human approval. See
-[the execution flow](WORKFLOW.md).
+The integrated alternative is `tempoevo prepare` with `visible` omitted: it builds AST evidence automatically, and the first `run --execute` performs the analysis model call and an automatic budgeted AI semantic evidence check before repairs. Supplied analyses receive the same check. No manual review-analysis step is needed in v3; that command remains a v2 compatibility entry point. The actual checker is recorded as model_evidence_check with current source citations, reasons, unknowns and blockers, not as human approval. See [the execution flow](WORKFLOW.md).
 
-模型分析对象必须包含 `taxonomy_version`、`contract`、`obligation_labels`、`facts`、`unknowns`。标签逐条包含 `code`、义务 `statement` 和 `evidence`；机制事实包含 `predicate`、`state` 和 `evidence`。状态为 `known`／`unknown`／`contradicted`。引用为 `{file, line, quote}`，行号从 1 开始，`TASK` 表示原任务；文本必须出现在该行。源码中的现象不自动成为应保留的政策，AST 也不证明完整可达性。
+Model analysis objects must include `taxonomy_version`, `contract`, `obligation_labels`, `facts` and `unknowns`. Each label contains `code`, an obligation `statement` and `evidence`; mechanism facts contain `predicate`, `state` and `evidence`. States are `known` / `unknown` / `contradicted`. Citations use `{file, line, quote}`, with one-based lines and `TASK` for the original task. Quoted text must appear on that line. Source behavior does not automatically define policy to preserve; AST evidence does not establish complete reachability.
 
-`analyzed-input.json` 仅含 `task`、`sources`、`analysis`。生成的审查模板默认 `approved: null`，审查当前义务方向、前提和未知范围后才填写。`reviewer` 须如实选 `execution_agent_visible_input_only` 或 `human_visible_input_only`，并给 `reason`、当前 `evidence`；AI 自查不算独立人工复核。路由绑定整个输入及 codebook 摘要，任意内容变化后旧审查失效。存在引用不等于语义正确，这一步仍依赖实际审查。
+`analyzed-input.json` contains only `task`, `sources` and `analysis`. Generated review templates default to `approved: null`, to be filled after reviewing obligation direction, premises and unknown scope. Set `reviewer` truthfully to `execution_agent_visible_input_only` or `human_visible_input_only`, with `reason` and current `evidence`; AI self-review is not independent human review. Routing binds the complete input and codebook digest; any content change invalidates the old review. Citation existence is not semantic correctness, so actual review remains necessary.
 
-`route-input.json` 仅含 `task`、`sources`、`analysis`、`library` 和可选 `review`。标签未知、审查缺失、适用前提未知、排除条件未被反证、摘要不一致或多个候选未消歧时返回 AUTO 并写明原因；格式不合格的 CLI 输入报错。`primary_class` 等旧字段禁止无声混入新接口。
+`route-input.json` contains only `task`, `sources`, `analysis`, `library` and optional `review`. Unknown labels, missing review, unknown applicability premises, exclusions not refuted, digest mismatches or unresolved multiple candidates return AUTO with a reason. Malformed CLI input produces an error. Legacy fields such as `primary_class` cannot silently enter the new interface.
 
-Python 调用者可用 `freeze_entry(text, obligation_labels, requires, excludes, version)` 生成完整性绑定对象，交给 `route(...)`；它不会批准或写入经验。使用 `maintenance_prompt(task, contract)` 构造 A，使用同一函数仅增加选中条目的 `text` 构造 B。该公共提示模板属于新版本，不能冒充旧实验 prompt 的逐字复现。
+Python callers can use `freeze_entry(text, obligation_labels, requires, excludes, version)` to create an integrity-bound object for `route(...)`; it neither approves nor writes experience. Build A with `maintenance_prompt(task, contract)` and B with the same function plus only the selected entry's `text`. This public prompt is a new version, not a verbatim reproduction of old experiment prompts.
 
-当前流程入口为 [WORKFLOW.md](WORKFLOW.md)。旧方法说明位于 [研究归档](ARCHIVE.md)。经验重新标注、语义核查与行为接纳必须分别记录，不能靠修改类别名称跳过。
+The current entry point is [WORKFLOW.md](WORKFLOW.md); old method descriptions are in the [research archive](ARCHIVE.md). Relabeling, semantic review and behavioral acceptance must be recorded separately; changing class names cannot bypass them.

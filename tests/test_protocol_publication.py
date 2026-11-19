@@ -84,7 +84,7 @@ class ProtocolPublicationTests(unittest.TestCase):
                                            'saved.apply(this, args);\n    fn = null;'))
         self.assertEqual(focused_review(early)['cards'], [])
         card = focused_review(delayed)['cards'][0]
-        self.assertIn('拒绝', card['review_question'])
+        self.assertIn('reject', card['review_question'])
         self.assertEqual(delayed['findings'][0]['state_publication']['guard_exit'], 'throw')
         self.assertEqual(len(compare(early, delayed)['added_hints']), 1)
 
@@ -162,7 +162,7 @@ class ProtocolPublicationTests(unittest.TestCase):
         finding = self.hints(CACHE, 'argument-cache-publication')[0]
         self.assertEqual(len(focused_review(report)['cards']), 1)
         self.assertEqual(finding['cache_publication']['status'], 'key_before_result')
-        self.assertIn('抛错', markdown(report))
+        self.assertIn('throw', markdown(report))
         kinds = [r['kind'] for r in report['relations']]
         self.assertEqual(kinds.count('cache_key_before_compute'), 2)
         self.assertIn('compute_before_cache_result', kinds)
@@ -239,7 +239,7 @@ class ProtocolPublicationTests(unittest.TestCase):
                 self.assertEqual(verify_bundle(folder), manifest)
                 if source != STRICT:
                     self.assertIn('publication' if source == CACHE else 'listener_detach', (folder/'review.md').read_text())
-            self.assertIn('时序', html_report(report))
+            self.assertIn('Temporal', html_report(report))
 
 
 if __name__ == '__main__':

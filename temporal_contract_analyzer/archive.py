@@ -87,7 +87,7 @@ def check_sources(sources):
         size = len(text.encode('utf-8'))
         total += size
         if size > MAX_FILE or total > MAX_TOTAL:
-            raise EvidenceError('源码超过扫描范围（单文件 1 MiB / 合计 25 MiB / 1000 文件）')
+            raise EvidenceError('Source exceeds scan limits (1 MiB per file / 25 MiB total / 1000 files)')
 
 
 def capture(request):
@@ -113,10 +113,10 @@ def capture(request):
 def request_for_path(candidate):
     candidate = Path(candidate).expanduser()
     if candidate.is_symlink():
-        raise EvidenceError('不能扫描符号链接')
+        raise EvidenceError('Cannot scan symbolic links')
     if candidate.is_file():
         if candidate.stat().st_size > MAX_FILE:
-            raise EvidenceError('源码超过扫描范围（单文件 1 MiB）')
+            raise EvidenceError('Source exceeds the per-file scan limit (1 MiB)')
         # Preserve exclusion checks even for a directly supplied file path.
         if any(part in EXCLUDED or part.startswith('.') for part in candidate.absolute().parts[1:]):
             raise EvidenceError('Excluded source path')
@@ -207,7 +207,7 @@ def persist(sources, skipped, report, request, store=None, origin='cli', error=N
     archive = store_path(store)
     candidate = Path(request['root']).expanduser().resolve()
     if candidate == archive or candidate in archive.parents or archive in candidate.parents:
-        raise EvidenceError('报告库与候选工程必须分开放置，不能互相包含')
+        raise EvidenceError('The report store and candidate project must be separate; neither may contain the other')
     check_sources(sources)
     scope = dict(mode=request.get('mode', 'folder'), path=request.get('path') if request.get('mode') == 'file' else None)
     project_id = sha(str(candidate).encode('utf-8'))[:16]
@@ -215,7 +215,7 @@ def persist(sources, skipped, report, request, store=None, origin='cli', error=N
     if parent:
         previous = metadata(parent, archive)
         if previous['project_id'] != project_id or previous['scope'] != scope:
-            raise EvidenceError('前后报告必须属于同一项目和扫描范围')
+            raise EvidenceError('Before and after reports must share the same project and scan scope')
     report_id = 'r-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '-' + uuid.uuid4().hex[:12]
     runs = archive/'runs'
     runs.mkdir(parents=True, exist_ok=True)
@@ -264,7 +264,7 @@ def scan_and_archive(request, store=None, node=None, origin='cli'):
         report = analyze_sources(sources, node=node or configuration().get('node'), skipped=skipped)
     except (EvidenceError, OSError, UnicodeError) as error:
         meta = persist(sources, skipped, None, request, store, origin, str(error))
-        return dict(archive=meta, report=None, ranges={}, markdown='分析失败：' + str(error))
+        return dict(archive=meta, report=None, ranges={}, markdown='Analysis failed: ' + str(error))
     meta = persist(sources, skipped, report, request, store, origin)
     return dict(archive=meta, report=report, ranges=editor_ranges(report, sources), markdown=markdown(report))
 
@@ -277,7 +277,7 @@ def scan_path(candidate, store=None, node=None, origin='cli', **labels):
         root = path.parent if path.suffix else path
         request = dict(mode='file' if path.suffix else 'folder', root=str(root), path=path.name, **labels)
         meta = persist({}, [], None, request, store, origin, str(error))
-        return dict(archive=meta, report=None, ranges={}, markdown='分析失败：' + str(error))
+        return dict(archive=meta, report=None, ranges={}, markdown='Analysis failed: ' + str(error))
     request.update(labels)
     return scan_and_archive(request, store, node, origin)
 
@@ -341,7 +341,7 @@ def layer_text(report_id, layer='full', store=None):
     meta = metadata(report_id, store)
     if layer == 'full':
         if meta['status'] == 'failed':
-            return '分析失败：' + meta['error']
+            return 'Analysis failed: ' + meta['error']
         return (root/'report.md').read_text(encoding='utf-8')
     if layer not in meta['layers']:
         raise EvidenceError('This report has no complete frozen layer: ' + layer)
@@ -395,9 +395,9 @@ def compare_reports(before_id, after_id, store=None):
     before, after = read_report(before_id, store), read_report(after_id, store)
     a, b = before['metadata'], after['metadata']
     if a['project_id'] != b['project_id'] or a['scope'] != b['scope']:
-        raise EvidenceError('只能比较同一项目、同一扫描范围的报告')
+        raise EvidenceError('Only reports from the same project and scan scope can be compared')
     if not before['report'] or not after['report']:
-        raise EvidenceError('扫描失败的记录无法计算规则变化')
+        raise EvidenceError('Cannot compute rule changes for failed scans')
     delta = compare(before['report'], after['report'])
     delta.pop('before')
     delta.pop('after')

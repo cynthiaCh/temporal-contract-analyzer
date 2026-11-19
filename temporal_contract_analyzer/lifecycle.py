@@ -45,8 +45,7 @@ def lifecycle_patterns(files):
             scheduled = [e for e in calls if 'scheduling' in e['tags'] or
                          (words(e['callee'].rsplit('.', 1)[-1]) & RETRY_WORDS and not
                           words(e['callee'].rsplit('.', 1)[-1]) & {'clear', 'cancel', 'stop', 'remove'})]
-            qualification = ('仅表示同一词法函数/类命名空间中的语法共现；名称不保证 API 类型，'
-                             '未证明属于同一请求、实例或生命周期，也未证明回调可达、重试循环或保护充分。')
+            qualification = ('This is syntax co-occurrence within a lexical function/class namespace. Names do not establish API types, shared request/instance/lifetime, callback reachability, retry loops or sufficient protection.')
 
             def add(rule, evidence, message, question):
                 ordered = sorted({e['id']: e for e in evidence}.values(),
@@ -58,13 +57,13 @@ def lifecycle_patterns(files):
 
             if scheduled:
                 add('continuation-retry-scheduling', continuations + scheduled,
-                    '完成回调/等待点与调度、retry 或 poll 名称调用出现在同一词法单元。',
-                    '这些调度是否继续同一工作？结束、取消或切换后，仍可能登记或触发下一次吗？')
+                    'Completion callbacks or waits co-occur with scheduling, retry or poll-related calls in one lexical unit.',
+                    'Do these schedules continue the same work? Can another attempt be registered or triggered after completion, cancellation or switching?')
             if not boundaries:
                 continue
             add('continuation-lifecycle-boundaries', continuations + boundaries,
-                '完成回调/等待点与关闭、重新打开或清理边界名称线索出现在同一词法单元。',
-                '关闭、卸载和切换是否是不同边界？哪些边界应使旧结果失效，哪些工作应继续？需从仓库证据确认。')
+                'Completion callbacks or waits co-occur with close, reopen or cleanup-related names in one lexical unit.',
+                'Are close, unmount and switch distinct boundaries? Use repository evidence to establish which results expire and which work must continue.')
             guards = [e for e in events if e['kind'] == 'guard']
             # Select writes inside named lifecycle methods or syntactically
             # returned cleanup callbacks. Do not guess arbitrary variable names.
@@ -74,6 +73,6 @@ def lifecycle_patterns(files):
                       any(e['scope'] == s or e['scope'].startswith(s + '/') for s in cleanup_scopes)]
             if guards or writes:
                 add('continuation-guard-state-review', continuations + boundaries + guards + writes,
-                    '列出相关词法单元中的条件判断，以及关闭/返回清理函数内的状态写入；存在判断不等于有效性保护。',
-                    '回调检查了什么状态？关闭、卸载、重开分别更新了什么？只取消计时器能否约束已发请求？相同标识重新使用时判断是否仍适用？')
+                    'The evidence lists lexical guards and state writes in close or returned cleanup functions. A guard alone does not establish validity protection.',
+                    'What state does the callback check? What changes on close, unmount and reopen? Can timer cancellation constrain requests already sent? Does the check remain valid when an identifier is reused?')
     return findings

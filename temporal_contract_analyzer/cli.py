@@ -58,32 +58,32 @@ def main(argv=None):
                 sources,skipped=collect(args.candidate)
                 inputs=[dict(path=x,sha256=sha(t.encode())) for x,t in sorted(sources.items())]
                 report=json.loads((args.bundle/'report.json').read_text(encoding='utf-8'))
-                if inputs!=report['inputs'] or skipped!=report['skipped']:raise EvidenceError('候选源码/排除范围已变化')
+                if inputs!=report['inputs'] or skipped!=report['skipped']:raise EvidenceError('Candidate source or exclusion scope has changed')
                 verify_bundle(args.bundle,sha(canonical(inputs).encode()))
             print(json.dumps(dict(verified=True,input_sha256=manifest['input_sha256'],conditions=list(manifest['layers']),analysis_validity='not_checked'),ensure_ascii=False));return 0
         if args.command=='freeze':
             from .layers import freeze_bundle
             from .core import sha
             target=args.output.resolve();source=args.candidate.resolve()
-            if target==source or source in target.parents:raise EvidenceError('实验报告必须写在候选工程外')
+            if target==source or source in target.parents:raise EvidenceError('Experiment reports must be written outside the candidate project')
             report=scan(args.candidate,args.node)
             sources,skipped=collect(args.candidate)
             inputs=[dict(path=x,sha256=sha(t.encode())) for x,t in sorted(sources.items())]
-            if inputs!=report['inputs'] or skipped!=report['skipped']:raise EvidenceError('扫描过程中候选源码变化，请重新冻结')
+            if inputs!=report['inputs'] or skipped!=report['skipped']:raise EvidenceError('Candidate source changed during scanning; freeze it again')
             manifest=freeze_bundle(report,args.output,args.max_chars)
             print(json.dumps(dict(output=str(args.output),input_sha256=manifest['input_sha256'],selection_sha256=manifest['selection_sha256'],layers=manifest['layers']),ensure_ascii=False));return 0
         if args.command=='verify':
             from .core import sha
             report=json.loads(args.report.read_text(encoding='utf-8'))
-            if report.get('schema_version')!='temporal-contract-analysis-1':raise EvidenceError('verify 需要单侧 scan JSON 报告')
+            if report.get('schema_version')!='temporal-contract-analysis-1':raise EvidenceError('verify requires a single-side scan JSON report')
             sources,skipped=collect(args.candidate)
             inputs=[dict(path=x,sha256=sha(t.encode())) for x,t in sorted(sources.items())]
-            if inputs!=report['inputs'] or skipped!=report['skipped']:raise EvidenceError('输入文件/排除范围已变化，旧报告不能作为当前源码证据')
-            if sha(canonical(inputs).encode())!=report['input_sha256']:raise EvidenceError('报告输入摘要不一致')
-            print(json.dumps(dict(input_hashes_match=True,analysis_validity='not_checked',note='只校验输入绑定，不证明分析结果或契约正确。'),ensure_ascii=False));return 0
-        if args.output and args.output.exists():raise EvidenceError('输出已存在，请使用新路径，保留旧报告')
+            if inputs!=report['inputs'] or skipped!=report['skipped']:raise EvidenceError('Inputs or exclusion scope changed; the old report cannot serve as evidence for current source')
+            if sha(canonical(inputs).encode())!=report['input_sha256']:raise EvidenceError('Report input digest does not match')
+            print(json.dumps(dict(input_hashes_match=True,analysis_validity='not_checked',note='Checks input binding only; does not establish analysis or contract correctness.'),ensure_ascii=False));return 0
+        if args.output and args.output.exists():raise EvidenceError('Output already exists; use a new path to preserve the previous report')
         roots=[args.candidate] if args.command=='scan' else [args.before,args.after]
-        if args.output and any(root.resolve()==args.output.resolve() or root.resolve() in args.output.resolve().parents for root in roots):raise EvidenceError('报告必须写在候选工程外，避免改变或污染候选输入')
+        if args.output and any(root.resolve()==args.output.resolve() or root.resolve() in args.output.resolve().parents for root in roots):raise EvidenceError('Write reports outside the candidate project to avoid changing or contaminating candidate inputs')
         report=scan(args.candidate,args.node) if args.command=='scan' else compare(scan(args.before,args.node),scan(args.after,args.node))
         content=json.dumps(report,ensure_ascii=False,indent=2)+'\n' if args.format=='json' else markdown(report,view=args.view) if args.format=='md' else html_report(report,view=args.view)
         if args.output:

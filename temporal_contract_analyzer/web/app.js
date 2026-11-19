@@ -290,7 +290,7 @@ function renderFindings(content) {
     if(ownNotes.length)review.open=true;
     for(const note of ownNotes){
       const structured=note.boundary_review;
-      review.append(element('div','annotation',`${decisions[note.decision]} · ${date(note.created_at)}\n${note.note}`+(structured ? `\n保护：${protections[structured.protection]}\nRequirement and protection basis：${structured.requirement_basis || 'To be supplied'}\nMissing evidence: ${structured.missing_evidence || 'Not recorded'}` : '')));
+      review.append(element('div','annotation',`${decisions[note.decision]} · ${date(note.created_at)}\n${note.note}`+(structured ? `\nProtection: ${protections[structured.protection]}\nRequirement and protection basis: ${structured.requirement_basis || 'To be supplied'}\nMissing evidence: ${structured.missing_evidence || 'Not recorded'}` : '')));
     }
     const form=element('form','note-form');
     function field(label,node){const wrapper=element('label','review-field');wrapper.append(element('span','',label),node);form.append(wrapper);return node;}
@@ -342,7 +342,7 @@ async function loadSource(name,start,end) {
 function renderProvenance(content) {
   const {metadata:meta,report}=current;
   const list=element('dl','provenance');
-  const values={'Report ID':meta.report_id,'Project':meta.project,'Task ID':meta.task_id || 'Not specified','Baseline report':meta.parent_report_id || 'Not linked','Scan scope':meta.scope.mode==='file'?meta.scope.path:'Whole directory','Input kind':meta.input_kind,'Unsaved overlays':meta.overlays.join(', ') || '无','Input hash':meta.input_sha256 || 'Not available','Tool hash':meta.tool_sha256 || 'Not available','Tool version':meta.tool_version,'Available frozen layers':meta.layers.join(', ') || 'None (incomplete parsing)'};
+  const values={'Report ID':meta.report_id,'Project':meta.project,'Task ID':meta.task_id || 'Not specified','Baseline report':meta.parent_report_id || 'Not linked','Scan scope':meta.scope.mode==='file'?meta.scope.path:'Whole directory','Input kind':meta.input_kind,'Unsaved overlays':meta.overlays.join(', ') || 'None','Input hash':meta.input_sha256 || 'Not available','Tool hash':meta.tool_sha256 || 'Not available','Tool version':meta.tool_version,'Available frozen layers':meta.layers.join(', ') || 'None (incomplete parsing)'};
   for(const [label,value] of Object.entries(values)){list.append(element('dt','',label),element('dd','',value));}
   content.append(list,element('p','integrity','Archive bytes and input binding were verified on read. This does not establish semantic correctness or provide a tamper-proof signature.'));
   content.append(button('Verify archive again',async()=>{await api(reportURL(meta.report_id)+'/verify',{});showError(new Error('Archive verified. Analysis semantics were not verified.'));}));

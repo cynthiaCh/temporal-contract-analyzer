@@ -87,9 +87,9 @@ def protocol_patterns(file, functions, grouped, owner, visible_writes, prefix, p
                                      'No runtime receiver-type, overridden method, array-intrinsic or callback-reentry proof.')
                         findings.append(dict(rule='reentrant-listener-detach', path=file['path'], scope=entry,
                             evidence=evidence, classification='review_hint_not_bug_verdict', condition=condition,
-                            message=('已在用户回调前退订本次监听。' if prior else
-                                     '用户回调执行后才退订同一个已注册监听；同步重入派发可能再次调用它。'),
-                            review_question='这个包装是否要求只交付一次？请沿注册与移除实现检查：回调立即再次派发同一事件或抛错时，监听是否仍然有效？',
+                            message=('This listener is removed before invoking the user callback.' if prior else
+                                     'The registered listener is removed after the user callback; synchronous redispatch may invoke it again.'),
+                            review_question='Does this wrapper require a single delivery? Trace registration and removal: is the listener still active if the callback immediately redispatches the event or throws?',
                             listener_detach=dict(state=listener, status='detach_before_call' if prior else 'detach_after_call',
                                 registration=registration['id'], receiver_capture=captures[0]['id'], wrapper=headers[entry]['id'],
                                 register_definition=register_header['id'], remove_definition=remove_headers[0]['id'],
@@ -172,8 +172,8 @@ def protocol_patterns(file, functions, grouped, owner, visible_writes, prefix, p
                      'and indirect mutation are not proven. No automatic rollback or repair is prescribed.')
         findings.append(dict(rule='argument-cache-publication', path=file['path'], scope=entry, evidence=evidence,
             classification='review_hint_not_bug_verdict', condition=condition,
-            message='缓存参数与接收者先更新，随后才执行用户函数并写入结果；若求值抛错，同参重试可能命中旧结果，同步重入也可能读到尚未完成的结果。',
-            review_question='计算抛错后应重试、重复抛错还是返回旧值？请用不同参数的成功调用、失败调用和同参重试核查，另检查同步重入；不能只提前设置键就认定缓存有效。',
+            message='Cached arguments and receiver are updated before evaluating the user function and storing its result. A throw may let a same-argument retry use an old result; synchronous reentry may also read an unfinished result.',
+            review_question='After evaluation throws, should the wrapper retry, throw again or return an old value? Check a successful call with other arguments, a failed call, a same-argument retry and synchronous reentry. Setting a key early does not establish cache validity.',
             cache_publication=dict(state=result_name, status='key_before_result', guard=guard['id'],
                 initializers=[e['id'] for e in initializers], key_writes=[e['id'] for e in key_writes],
                 callback=callback['id'], result_write=result_write['id'], result_return=returns[0]['id'], uncertainties=[])))

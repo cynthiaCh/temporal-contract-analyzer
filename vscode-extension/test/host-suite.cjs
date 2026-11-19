@@ -62,7 +62,7 @@ exports.run = async () => {
   assert.match(reportDocument.getText(), /effect-after-await/);
   await replace(document, '<script setup>const value = 2;</script>');
   await waitFor(() => !hints(uri).length && api.isStale(), 'Edit removes old diagnostics');
-  await waitFor(() => reportDocument.getText().includes('历史报告'), 'Open report is marked stale');
+  await waitFor(() => reportDocument.getText().includes('Historical report'), 'Open report is marked stale');
   console.log('PASS: changes invalidate diagnostics and visible report snapshots');
 
   await vscode.window.showTextDocument(document);

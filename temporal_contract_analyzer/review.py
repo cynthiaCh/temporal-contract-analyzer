@@ -2,10 +2,10 @@
 from collections import Counter
 
 
-NOTICE = ('仅展示证据链完整的状态发布候选；当前筛选只支持 reentrant-state-publication。'
-          '其他规则默认隐藏，未展示不表示安全，也不证明提示能改善修改结果。')
-PROTOCOL_NOTICE = ('仅展示证据链完整的状态发布、监听退订顺序及参数缓存候选。'
-                   '其他规则默认隐藏；提示需结合接口约定与运行验证，未展示不表示安全，也不证明修改收益。')
+NOTICE = ('Only state-publication candidates with complete evidence chains are shown; this filter supports reentrant-state-publication only. '
+          'Other rules are hidden by default. Omission does not establish safety or a repair benefit from hints.')
+PROTOCOL_NOTICE = ('Only state publication, listener removal ordering and argument-cache candidates with complete evidence chains are shown. '
+                   'Other rules are hidden by default. Review hints against API contracts and runtime validation; omission does not establish safety or repair benefit.')
 
 
 def _protocol_projection(finding, events, parsed, relations):
@@ -105,12 +105,12 @@ def focused_review(report):
         card = grouped[key]
         card['finding_ids'].append(finding['id'])
         if publication.get('callback_cleanup'):
-            note = '调用后的清空绑定仅作来源与顺序证据；本卡核查入口状态写入与调用的先后，不判定清理语句本身有错。'
+            note = 'The post-call binding clear provides provenance and ordering evidence only; this card reviews entry-state writes relative to the call and does not classify the cleanup statement itself as defective.'
             if note not in card.setdefault('notes', []):
                 card['notes'].append(note)
             condition = publication['callback_cleanup'].get('condition')
             if condition:
-                conditional_note = '清空仅在条件 ' + condition + ' 成立时发生，不能当作每条路径都会执行的动作。'
+                conditional_note = 'Clearing occurs only when condition ' + condition + ' holds; it cannot be treated as an action on every path.'
                 if conditional_note not in card['notes']:
                     card['notes'].append(conditional_note)
         known = {e['id'] for e in card['evidence']}
@@ -121,8 +121,8 @@ def focused_review(report):
                     text=e['text'][:240], truncated=len(e['text']) > 240))
                 if (publication.get('callback_cleanup', {}).get('write') == eid and
                         publication.get('write') != eid):
-                    card['evidence'][-1]['role'] = ('条件成立时在调用后清空绑定（顺序事实）'
-                        if publication['callback_cleanup'].get('condition') else '调用后清空绑定（顺序事实）')
+                    card['evidence'][-1]['role'] = ('Binding cleared after call when condition holds (ordering fact)'
+                        if publication['callback_cleanup'].get('condition') else 'Binding cleared after call (ordering fact)')
                 known.add(eid)
     cards = list(grouped.values())
     return dict(schema_version='temporal-contract-focused-review-1',
@@ -140,40 +140,40 @@ def focused_review(report):
 
 def focused_markdown(report):
     if report['schema_version'] == 'temporal-contract-analysis-comparison-1':
-        return '\n'.join(['# TempoEvo · 时序关系对照（低噪声）', '', report['interpretation'],
-            '可比解析：' + str(report['comparable']), '变化文件：' + ', '.join(report['changed_files']),
-            '两侧分别筛选；卡片减少不等于已修复。', '', '## 修改前', focused_markdown(report['before']),
-            '', '## 修改后', focused_markdown(report['after'])])
+        return '\n'.join(['# TempoEvo · Temporal relation comparison (low noise)', '', report['interpretation'],
+            'Comparable parsing: ' + str(report['comparable']), 'Changed files: ' + ', '.join(report['changed_files']),
+            'Each side is filtered separately; fewer cards do not establish a repair.', '', '## Before', focused_markdown(report['before']),
+            '', '## After', focused_markdown(report['after'])])
     review = focused_review(report)
     summary = review['summary']
-    lines = ['# TempoEvo · 时序关系核查（低噪声）', '', review['notice'], '',
-        '解析状态：' + review['status'] + '；工具版本：' + review['tool_version'],
-        '输入 SHA-256：' + review['input_sha256'], '工具 SHA-256：' + review['tool_sha256'],
-        '原始提示 %d 条；展示 %d 张卡；隐藏 %d 条；合并 %d 条。' % (
+    lines = ['# TempoEvo · Temporal relation review (low noise)', '', review['notice'], '',
+        'Parsing status: ' + review['status'] + '; tool version: ' + review['tool_version'],
+        'Input SHA-256: ' + review['input_sha256'], 'Tool SHA-256: ' + review['tool_sha256'],
+        'Original hints: %d; cards shown: %d; hidden: %d; merged: %d.' % (
             summary['raw_findings'], summary['cards'], summary['suppressed_findings'], summary['merged_findings'])]
     for card in review['cards']:
-        lines += ['', '## ' + card['path'] + ' · 状态 ' + card['state'], card['message'],
-            '条件：' + card['condition'], '核查：' + card['review_question']]
-        lines += ['说明：' + note for note in card.get('notes', [])]
+        lines += ['', '## ' + card['path'] + ' · Status ' + card['state'], card['message'],
+            'Condition: ' + card['condition'], 'Review: ' + card['review_question']]
+        lines += ['Note: ' + note for note in card.get('notes', [])]
         for event in card['evidence']:
             lines += ['', event['path'] + ':' + str(event['line']) + ' · ' + event['kind'] + (' · ' + event['role'] if event.get('role') else ''),
-                '```text', event['text'].replace('```', '` ` `') + ('… [截短；请查看源码]' if event['truncated'] else ''), '```']
+                '```text', event['text'].replace('```', '` ` `') + ('… [truncated; see source]' if event['truncated'] else ''), '```']
     if not review['cards']:
-        lines += ['', '当前筛选未展示候选，不表示没有时序问题。']
+        lines += ['', 'No candidates shown by this filter; this does not establish the absence of temporal issues.']
     if review['context']:
-        lines += ['', '## 顺序事实（不作报警，也不证明保护充分）']
+        lines += ['', '## Ordering facts (neither alerts nor proof of sufficient protection)']
         for item in review['context']:
-            lines.append('- %s：状态 %s 在 L%d 写入，外部调用位于 L%d。' % (
+            lines.append('- %s: state %s is written at L%d; the external call is at L%d.' % (
                 item['path'], item['state'], item['write_line'], item['callback_line']))
-    lines += ['', '## 解析覆盖与限制']
+    lines += ['', '## Parsing coverage and limitations']
     for file in review['coverage']:
-        lines.append('- ' + file['path'] + '：' + file['status'])
+        lines.append('- ' + file['path'] + ': ' + file['status'])
         if file['analysis_scope']:
             lines.append('  ' + file['analysis_scope'])
         if file['error']:
             lines.append('  ' + str(file['error'].get('message', '')))
-    lines += ['- 排除/未读：' + s['path'] + ' · ' + s['reason'] for s in review['skipped']]
+    lines += ['- Excluded/unread: ' + s['path'] + ' · ' + s['reason'] for s in review['skipped']]
     lines += ['- ' + limit for limit in review['limitations']]
-    lines += ['', '隐藏原因：' + str(summary['suppressed_by_reason']),
-              '使用 --view exploratory 查看完整提示；原始 JSON 和冻结实验层保留完整证据。']
+    lines += ['', 'Reasons for hiding: ' + str(summary['suppressed_by_reason']),
+              'Use --view exploratory for all hints; raw JSON and frozen experiment layers retain the complete evidence.']
     return '\n'.join(lines)

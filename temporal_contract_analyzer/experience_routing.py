@@ -11,21 +11,21 @@ class CitationError(EvidenceError):
     def __init__(self, issues):
         self.issues = issues
         first = issues[0]
-        super().__init__(f"引用未匹配：{first['field']}，{first['file']} 第 {first['line']} 行（共 {len(issues)} 处）")
+        super().__init__(f"Unmatched citation: {first['field']}, {first['file']} line {first['line']} ({len(issues)} issues)")
 
 
 def evidence_issues(evidence, task, sources, field, *, text_grounding=False):
     if not isinstance(evidence, list) or not evidence:
-        raise EvidenceError('引用列表缺失：' + field)
+        raise EvidenceError('Missing citation list: ' + field)
     issues = []
     for index, anchor in enumerate(evidence):
         location = f'{field}[{index}]'
         if not isinstance(anchor, dict) or set(anchor) != {'file', 'line', 'quote'}:
-            raise EvidenceError('引用结构不合法：' + location)
+            raise EvidenceError('Invalid citation structure: ' + location)
         path, line, quote = anchor['file'], anchor['line'], anchor['quote']
         if not isinstance(path, str) or not path or type(line) is not int or line < 1 \
                 or not isinstance(quote, str) or not 1 <= len(quote) <= 160:
-            raise EvidenceError('引用字段不合法：' + location)
+            raise EvidenceError('Invalid citation field: ' + location)
         exists = path == 'TASK' or path in sources
         lines = (task if path == 'TASK' else sources.get(path, '')).splitlines()
         actual = lines[line - 1] if line <= len(lines) else ''
@@ -44,15 +44,15 @@ def validate_citation_correction(original, corrected, task, sources):
     def content(value):
         result = deepcopy(value)
         if not isinstance(result, dict):
-            raise EvidenceError('分析须为对象')
+            raise EvidenceError('Analysis must be an object')
         for group in ('obligation_labels', 'facts'):
             if not isinstance(result.get(group), list) or any(not isinstance(row, dict) for row in result[group]):
-                raise EvidenceError('分析结构不合法')
+                raise EvidenceError('Invalid analysis structure')
             for row in result[group]:
                 row.pop('evidence', None)
         return result
     if content(original) != content(corrected):
-        raise EvidenceError('引用纠错仅允许修改 evidence；Contract、分类、前提和未知不得改变')
+        raise EvidenceError('Citation correction may only modify evidence; Contract, categories, premises and unknowns must remain unchanged')
     return validate_analysis(corrected, task, sources)
 
 

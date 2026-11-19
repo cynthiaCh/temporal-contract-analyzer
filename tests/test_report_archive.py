@@ -39,7 +39,7 @@ class ReportArchiveTests(unittest.TestCase):
         self.assertEqual(archive.read_source(meta['report_id'], 'Demo.vue', self.store)['text'], SOURCE)
         self.assertEqual(archive.read_report(meta['report_id'], self.store)['report'], result['report'])
         self.assertTrue(archive.verify(meta['report_id'], self.store)['verified'])
-        self.assertIn('展示 0 张卡；隐藏 1 条', archive.layer_text(meta['report_id'], 'full', self.store))
+        self.assertIn('cards shown: 0; hidden: 1', archive.layer_text(meta['report_id'], 'full', self.store))
         raw = archive.read_report(meta['report_id'], self.store)['report']
         self.assertIn('effect-after-await', {f['rule'] for f in raw['findings']})
         self.assertIn('Heuristic interpretations', archive.layer_text(meta['report_id'], 'review', self.store))
@@ -102,8 +102,8 @@ class ReportArchiveTests(unittest.TestCase):
         meta, finding = result['archive'], result['report']['findings'][0]
         folder = Path(meta['archive_path'])
         original = {str(p): p.read_bytes() for p in folder.rglob('*') if p.is_file()}
-        first = archive.annotate(meta['report_id'], finding['id'], 'uncertain', '需要确认生命周期', self.store)
-        second = archive.annotate(meta['report_id'], finding['id'], 'dismissed', '已有上层有效性检查', self.store)
+        first = archive.annotate(meta['report_id'], finding['id'], 'uncertain', 'Need to confirm the lifetime', self.store)
+        second = archive.annotate(meta['report_id'], finding['id'], 'dismissed', 'An outer validity check already exists', self.store)
         self.assertNotEqual(first['record_id'], second['record_id'])
         self.assertEqual(len(archive.read_report(meta['report_id'], self.store)['notes']), 2)
         self.assertEqual(original, {str(p): p.read_bytes() for p in folder.rglob('*') if p.is_file()})
@@ -164,7 +164,7 @@ class ReportArchiveTests(unittest.TestCase):
         self.file.unlink()
         with redirect_stdout(io.StringIO()) as output:
             self.assertEqual(cli.main(['reports','show',meta['report_id']]), 0)
-        self.assertIn('展示 0 张卡；隐藏 1 条', output.getvalue())
+        self.assertIn('cards shown: 0; hidden: 1', output.getvalue())
         self.assertEqual(archive.configuration()['store'], str(self.store.resolve()))
 
 

@@ -41,7 +41,7 @@ def runtime(manifest, adapter, node):
             return dict(path=str(Path(binary).resolve()), version=version)
         except (OSError, ValueError, subprocess.SubprocessError):
             continue
-    raise EvidenceError('未找到满足该案例版本要求的 ' + ('Python' if adapter == 'python' else 'Node.js'))
+    raise EvidenceError('No executable meeting the version requirements of this case was found for ' + ('Python' if adapter == 'python' else 'Node.js'))
 
 
 def invoke(command, directory, stop, terminate, expected_id):
@@ -54,23 +54,23 @@ def invoke(command, directory, stop, terminate, expected_id):
         while process.poll() is None:
             if stop.is_set() or time.monotonic() >= deadline:
                 terminate(process)
-                raise EvidenceError('行为验证已取消' if stop.is_set() else '行为验证超时')
+                raise EvidenceError('Behavior validation cancelled' if stop.is_set() else 'Behavior validation timed out')
             stop.wait(.1)
     receipt = dict(command=command, exit_code=process.returncode)
     archive.atomic_json(directory/'execution.json', receipt)
     try:
         report = read(directory/'stdout.json')
     except (ValueError, OSError):
-        raise EvidenceError('验证程序未返回有效 JSON，请查看验证日志')
+        raise EvidenceError('Validator did not return valid JSON; see the validation log')
     if not isinstance(report, dict) or report.get('case_id') != expected_id or report.get('verdict') not in VERDICTS:
-        raise EvidenceError('验证程序的案例或结果协议不匹配')
+        raise EvidenceError('Validator case or result protocol does not match')
     if process.returncode not in (0, 1) or (process.returncode == 0) != (report['verdict'] == 'PASS'):
-        raise EvidenceError('验证程序异常退出或结果与退出码不一致')
+        raise EvidenceError('Validator exited abnormally or its result conflicts with the exit code')
     schedules = report.get('schedules', {})
     nested_error = isinstance(schedules, dict) and any(isinstance(row, dict) and row.get('runtimeError')
                                                       for row in schedules.values())
     if report.get('runtime_errors') or nested_error:
-        raise EvidenceError('验证环境报告运行错误，请查看验证日志')
+        raise EvidenceError('Validation environment reported a runtime error; see the validation log')
     return report
 
 
@@ -113,7 +113,7 @@ def relation_states(outcome):
         return dict(states)
     effects = outcome.get('observed_effects')
     if not isinstance(effects, dict) or not effects:
-        raise EvidenceError('评分器未提供完整 observed_effects，不能判定经验改善门槛')
+        raise EvidenceError('Scorer did not provide complete observed_effects; cannot assess the experience improvement gate')
     failed = set(outcome.get('missing_required_effects', [])) | set(outcome.get('observed_forbidden_effects', []))
     return {key: (key not in failed if type(value) is bool else None) for key, value in effects.items()}
 
@@ -121,7 +121,7 @@ def relation_states(outcome):
 def delta(before, after):
     left, right = relation_states(before), relation_states(after)
     if set(left) != set(right):
-        raise EvidenceError('行为向量不一致，拒绝比较')
+        raise EvidenceError('Behavior vectors differ; comparison rejected')
     return dict(gained=[k for k in left if left[k] is False and right[k] is True],
                 lost=[k for k in left if left[k] is True and right[k] is False],
                 retained=[k for k in left if left[k] is True and right[k] is True],

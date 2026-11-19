@@ -219,7 +219,7 @@ class ContextTests(unittest.TestCase):
                    '--store',str(self.store),'--format','md']
         result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
         self.assertEqual(result.returncode,0,result.stderr)
-        self.assertIn('未解析项',result.stdout)
+        self.assertIn('Unresolved items',result.stdout)
         self.assertIn('input_sha256',result.stdout)
         self.assertIn('implementation_sha256',result.stdout)
         for target in [self.project/'context.md', self.root/'existing.md',self.store/'runs'/rid/'context.md']:

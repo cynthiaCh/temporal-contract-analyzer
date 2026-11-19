@@ -108,9 +108,9 @@ def countdown_patterns(file, functions, grouped, owner, visible_writes, prefix, 
                 before=call['id'], after=cleanup['id'], qualification='Only if the later numeric cleanup guard is true; the callback clear is not judged erroneous.'))
         findings.append(dict(rule=rule, path=file['path'], scope=entry, evidence=evidence,
             classification='review_hint_not_bug_verdict', condition=condition,
-            message=('选定次数条件分支中，已先递减预算再调用用户函数。' if prior else
-                     '先调用用户函数，随后才递减本次次数预算；同步重入可能复用尚未消耗的旧预算。'),
-            review_question='按有限安全整数的调用预算解释时，若用户函数同步重入，是否会超出允许次数？请核对输入数值范围、异常后的预算与缓存；不据此判定后续清理有错。',
+            message=('In the selected count branch, the invocation budget is decremented before calling the user function.' if prior else
+                     'The user function is called before decrementing the invocation budget; synchronous reentry may reuse the unconsumed budget.'),
+            review_question='For a finite safe-integer invocation budget, can synchronous reentry exceed the allowed count? Check numeric input bounds, budget after exceptions and caching. This does not establish a later cleanup defect.',
             state_publication=publication))
         first, second = (decrement, call) if prior else (call, decrement)
         relations.extend([

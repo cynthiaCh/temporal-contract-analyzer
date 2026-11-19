@@ -45,7 +45,7 @@ def registered_cases():
             entries.extend((source, root, row) for row in rows
                 if index not in (ROOT/'experiments/training-cases.json',ROOT/'experiments/testing-cases.json') or (root/row['manifest']).is_file())
     if not entries:
-        raise EvidenceError('未找到可运行的案例列表')
+        raise EvidenceError('No runnable case list found')
     return entries
 
 
@@ -65,13 +65,13 @@ def catalog():
             raise EvidenceError('Bench case ID/manifest mismatch')
         reason = ''
         if source == 'bench' and case_id in excluded:
-            reason = 'bench 已排除的新实验案例'
+            reason = 'New experimental case excluded by bench'
         elif row['adapter'] not in ('legacy-js', 'python'):
-            reason = '需要独立运行环境，暂未接入'
+            reason = 'Requires a separate runtime that is not yet integrated'
         elif 'latent-maintenance' not in row['conditions']:
-            reason = '没有登记默认维护任务'
+            reason = 'No default maintenance task registered'
         elif not (manifest_path.parent/'base').is_dir():
-            reason = '缺少 base 代码'
+            reason = 'Missing base source'
         cases.append(dict(id=case_id, title=manifest.get('title',case_id), language=row.get('language',''),
                           mechanism=row.get('mechanism',''), source=source,
                           supported=not reason, unavailable_reason=reason))
@@ -82,7 +82,7 @@ def case_input(case_id):
     options = catalog()
     selected = next((c for c in options['cases'] if c['id']==case_id),None)
     if not selected or not selected['supported']:
-        raise EvidenceError('案例不可运行：' + (selected['unavailable_reason'] if selected else str(case_id)))
+        raise EvidenceError('Case is not runnable: ' + (selected['unavailable_reason'] if selected else str(case_id)))
     source, root, row = next(entry for entry in registered_cases() if entry[2]['id']==case_id)
     manifest_path = inside(root,row['manifest'])
     manifest = read(manifest_path)

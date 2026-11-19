@@ -89,7 +89,7 @@ class CompactExperienceTests(unittest.TestCase):
         self.save()
         self.assertEqual([r['bundle']['id'] for r in approval.freeze(self.path)['entries']], ['entry-binding'])
         self.assertEqual(len(approval.decisions(self.path)),1)
-        self.assertIn('待审核',compact.page(self.path).decode())
+        self.assertIn('Pending review',compact.page(self.path).decode())
         compact.save_review(self.path,self.request('pending-item'))
         self.assertEqual(len(approval.freeze(self.path)['entries']),2)
         self.assertEqual(list(self.path.parent.iterdir()),[self.path])
@@ -144,7 +144,7 @@ class CompactExperienceTests(unittest.TestCase):
         client=build_opener(ProxyHandler({}))
         try:
             html=client.open(server.url).read().decode()
-            self.assertIn('保存审核',html)
+            self.assertIn('Save review',html)
             self.assertIn('/compact-review.js',html)
             self.assertEqual(approval.freeze(self.path)['entries'],[])
             with client.open(server.url+'/compact-review.js') as response:
@@ -167,7 +167,7 @@ class CompactExperienceTests(unittest.TestCase):
         accepted=self.value['experiences'][0]
         pending=dict(accepted,id='pending-item',title='Pending category item')
         del pending['review']
-        for filename,category,item in [('accepted.json','已整理主题',accepted),('pending.json','另一主题',pending)]:
+        for filename,category,item in [('accepted.json','Organized topic',accepted),('pending.json','Another topic',pending)]:
             (directory/filename).write_text(json.dumps(dict(schema_version=compact.VERSION,
                 category=category,experiences=[item]),ensure_ascii=False))
         self.path=directory
@@ -181,7 +181,7 @@ class CompactExperienceTests(unittest.TestCase):
         approval.validate_snapshot(directory,snapshot)
         html=compact.page(directory).decode()
         self.assertIn('id="compact-category"',html)
-        self.assertIn('另一主题',html)
+        self.assertIn('Another topic',html)
         self.assertIn('pending.json',html)
         self.assertEqual(len(memory.search(directory,'entry')['results']),2)
 
@@ -209,7 +209,7 @@ class CompactExperienceTests(unittest.TestCase):
         client=build_opener(ProxyHandler({}))
         try:
             page=client.open(server.url).read().decode()
-            self.assertIn('全部分类',page)
+            self.assertIn('All categories',page)
             request=Request(server.url+'/api/compact-review',data=json.dumps(self.request('pending-item')).encode(),
                 headers={'Content-Type':'application/json','X-TCA-Request':'local'})
             result=json.loads(client.open(request).read())

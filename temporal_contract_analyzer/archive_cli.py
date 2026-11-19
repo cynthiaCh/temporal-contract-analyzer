@@ -93,11 +93,11 @@ def run(args):
             candidate = Path(archive.metadata(args.report_id, store)['candidate_root']).resolve()
             immutable = archive.store_path(store)/'runs'
             if target==immutable or immutable in target.parents:
-                raise EvidenceError('上下文输出不能写入不可变报告归档目录')
+                raise EvidenceError('Context output cannot be written inside an immutable report archive')
             if target==candidate or candidate in target.parents:
-                raise EvidenceError('上下文输出必须位于候选工程外')
+                raise EvidenceError('Context output must be outside the candidate project')
             if target.exists():
-                raise EvidenceError('输出已存在，请使用新路径，保留旧记录')
+                raise EvidenceError('Output already exists; use a new path to preserve the previous record')
             target.parent.mkdir(parents=True, exist_ok=True)
             with target.open('x', encoding='utf-8') as handle:
                 handle.write(content)

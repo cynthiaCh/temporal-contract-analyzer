@@ -153,7 +153,7 @@ class TaxonomyRoutingTests(unittest.TestCase):
         for key, value in [('contract','Different policy'), ('unknowns',[])]:
             edited = deepcopy(self.analysis)
             edited[key] = value if key == 'contract' else ['New uncertainty']
-            with self.assertRaisesRegex(EvidenceError, '仅允许修改'):
+            with self.assertRaisesRegex(EvidenceError, 'may only modify'):
                 routing.validate_citation_correction(raw, edited, self.task, self.sources)
         prompt = routing.analysis_prompt('Header\n\nKeep the condition.', self.sources)
         self.assertIn('3 | Keep the condition.', prompt)

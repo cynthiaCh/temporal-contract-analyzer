@@ -66,7 +66,7 @@ test('cancellation and timeout terminate analysis processes', async () => {
   const running = execute(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {signal: controller.signal});
   setTimeout(() => controller.abort(), 100);
   await assert.rejects(running, Cancelled);
-  await assert.rejects(execute(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {timeout: 100}), /超时/);
+  await assert.rejects(execute(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {timeout: 100}), /timed out/);
   await assert.rejects(execute(process.execPath, ['-e', 'process.exit(0)'], {signal: controller.signal}), Cancelled);
 });
 
@@ -92,5 +92,5 @@ test('editor archive is independently readable from the shared store', async t =
   assert.equal(snapshot.sources['Demo.vue'],source);
   const report=JSON.parse(await fs.readFile(path.join(result.archive.archive_path,'report.json'),'utf8'));
   assert.deepEqual(report,result.report);
-  assert.match(await fs.readFile(path.join(result.archive.archive_path,'report.html'),'utf8'),/时序源码/);
+  assert.match(await fs.readFile(path.join(result.archive.archive_path,'report.html'),'utf8'),/Temporal source/);
 });

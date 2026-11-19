@@ -7,22 +7,22 @@ from .lifecycle import BOUNDARIES, words
 
 
 CHANGE_QUESTIONS = {
-    'reentrant-state-publication': '用户函数可能在返回前同步重入入口；需核对共享状态的写入顺序与写入值。',
-    'effect-after-await': '等待期间，请求、对象生命周期或结果所属版本可能已经变化；需确认。',
-    'commit-after-yield': 'yield 期间事务状态或退出路径可能变化；需确认提交与通知的要求。',
-    'cleanup-handle-after-call': '右侧调用期间可能发生重入、关闭或切换；需确认句柄仍属于哪次工作。',
-    'continuation-and-listener-removal': '监听可能已移除，但已开始的工作是否仍在继续，需要追踪。',
-    'continuation-lifecycle-boundaries': '等待或回调期间可能关闭、卸载、重开或切换；是否属于同一生命周期待确认。',
-    'continuation-guard-state-review': '关闭或重开可能改变保护状态；状态与回调是否对应同一工作待确认。',
-    'continuation-retry-scheduling': '结束、取消或切换后，旧工作可能继续调度；可达性待确认。',
-    'state-write-inline-notification': '同步通知期间，用户回调可能改变状态或再次进入当前操作；需确认。',
-    'callback-reentrant-transition': '回调可能触发关闭、切换或重入；回调前后的状态是否仍适用待确认。',
-    'snapshot-output-lifetime-split': '捕获值和输出对象可能属于不同生命周期；历史记录与当前显示要求待确认。',
-    'listen-before-connect': '连接期间是否同步通知、监听是否已生效，需从 API 与调用处确认。',
-    'connect-before-listen': '连接期间是否同步通知、监听是否已生效，需从 API 与调用处确认。',
-    'early-return-from-async-iteration': '提前返回会改变资源使用生命周期；资源归属及关闭职责待确认。',
-    'cleanup-in-finally': '退出或取消期间，清理完成状态及异常路径可能变化；需确认。',
-    'asyncio-shield-call': '等待者可能被取消；共享任务是否应继续及其归属待确认。',
+    'reentrant-state-publication': 'A user function may synchronously reenter before returning. Check when shared state is written and what value it receives.',
+    'effect-after-await': 'The request, object lifetime or result version may change during a wait. Check which changes matter here.',
+    'commit-after-yield': 'Transaction state or exit paths may change across yield. Check commit and notification requirements.',
+    'cleanup-handle-after-call': 'Reentry, close or switching may occur during the right-hand-side call. Check which work owns the returned handle.',
+    'continuation-and-listener-removal': 'A listener may be removed while work already started continues. Trace the continuation.',
+    'continuation-lifecycle-boundaries': 'Close, unmount, reopen or switching may occur during a wait or callback. Check whether the same lifetime still applies.',
+    'continuation-guard-state-review': 'Close or reopen may change guard state. Check whether the guard and callback refer to the same work.',
+    'continuation-retry-scheduling': 'Old work may continue scheduling after completion, cancellation or switching. Check reachability.',
+    'state-write-inline-notification': 'A user callback may change state or reenter the operation during synchronous notification. Check the actual call path.',
+    'callback-reentrant-transition': 'A callback may close, switch or reenter. Check whether state remains applicable when the callback returns.',
+    'snapshot-output-lifetime-split': 'Captured values and output objects may have different lifetimes. Check historical-record and current-display requirements.',
+    'listen-before-connect': 'Check the API and callers to establish whether connection emits synchronously and whether the listener is already active.',
+    'connect-before-listen': 'Check the API and callers to establish whether connection emits synchronously and whether the listener is already active.',
+    'early-return-from-async-iteration': 'An early return changes the resource-use lifetime. Check ownership and closing responsibility.',
+    'cleanup-in-finally': 'Cleanup completion and exception paths may change during exit or cancellation. Check required behavior.',
+    'asyncio-shield-call': 'A waiter may be cancelled. Check whether the shared task should continue and who owns it.',
 }
 
 
@@ -53,12 +53,12 @@ def cards(report):
         result.append({
             'finding_id': finding['id'], 'rule': finding['rule'], 'title': finding['message'],
             'classification': 'candidate_boundary_review',
-            'boundary': {'summary': '候选等待、通知、调用或退出位置；实际跨越关系待核查。',
+            'boundary': {'summary': 'A candidate wait, notification, call or exit point. Review the actual execution boundary.',
                          'evidence_ids': boundaries or finding['evidence']},
             'possible_changes': {'summary': CHANGE_QUESTIONS.get(finding['rule'],
-                                 '跨越该位置时，状态、身份或资源归属可能变化；需从仓库确认。')},
-            'effects': {'summary': '候选写入或效果调用；业务含义与可达性待核查。' if effects else
-                        '当前线索未定位具体效果；需追踪延续或回调中的写入、通知、清理与调度。',
+                                 'State, identity or resource ownership may change across this point. Establish the requirement from repository evidence.')},
+            'effects': {'summary': 'Candidate writes or effect calls. Review their business meaning and reachability.' if effects else
+                        'This hint does not locate a concrete effect. Trace writes, notifications, cleanup and scheduling in continuations or callbacks.',
                         'evidence_ids': effects},
             'requirement_protection': {'summary': finding['review_question'], 'evidence_ids': guards},
             'condition': finding['condition'], 'evidence_ids': finding['evidence'],

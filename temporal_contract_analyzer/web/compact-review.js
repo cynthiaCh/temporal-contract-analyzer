@@ -3,7 +3,7 @@ const cards = [...document.querySelectorAll('article[data-state]')];
 const filter = document.querySelector('#compact-filter');
 const category = document.querySelector('#compact-category');
 const message = document.querySelector('#message');
-const states = {pending:'待审核', accept:'已接受', revise:'需修改', reject:'已拒绝'};
+const states = {pending:'Pending review', accept:'Accepted', revise:'Revision required', reject:'Rejected'};
 function refresh() {
   const counts = Object.fromEntries(Object.keys(states).map(state => [state, 0]));
   for (const card of cards) {
@@ -38,7 +38,7 @@ for (const form of document.querySelectorAll('form[data-id]')) {
       form.dataset.record = result.record_sha256;
       form.elements.decision.value = '';
       message.classList.toggle('error', false);
-      message.textContent = '审核已保存到 '+result.file+'。';
+      message.textContent = 'Review saved to '+result.file+'.';
       refresh();
     } catch (error) {
       message.classList.toggle('error', true);

@@ -84,14 +84,14 @@ class LowNoiseReviewTests(unittest.TestCase):
         result = compare(self.scan(), self.scan(LATE.replace('active = deliver();', 'active = true; deliver();')))
         text = markdown(result)
         self.assertIn('write_before_call', text)
-        self.assertIn('卡片减少不等于已修复', text)
-        self.assertIn('## 修改前', text)
-        self.assertIn('## 修改后', text)
+        self.assertIn('fewer cards do not establish a repair', text)
+        self.assertIn('## Before', text)
+        self.assertIn('## After', text)
 
     def test_parse_failure_stays_visible_when_no_cards(self):
         report = self.scan('function broken(')
         self.assertIn('partial', markdown(report))
-        self.assertIn('a.js：parse_error', markdown(report))
+        self.assertIn('a.js: parse_error', markdown(report))
 
     def test_html_escapes_focused_evidence(self):
         report = self.scan(LATE.replace('deliver()', 'deliver("<script>alert(1)</script>")'))
@@ -118,7 +118,7 @@ class LowNoiseReviewTests(unittest.TestCase):
         evidence = focused_review(report)['cards'][0]['evidence']
         self.assertTrue(any(e['truncated'] for e in evidence))
         self.assertTrue(all(len(e['text']) <= 240 for e in evidence))
-        self.assertIn('截短', markdown(report))
+        self.assertIn('truncated', markdown(report))
 
 
 if __name__ == '__main__':

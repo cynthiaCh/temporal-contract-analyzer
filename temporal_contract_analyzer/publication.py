@@ -228,11 +228,11 @@ def publication_patterns(files):
                     findings.append(dict(rule=RULE, path=file['path'], scope=entry,
                         evidence=[guard['id'], snapshot['id'], callback['id'], write['id']],
                         classification='review_hint_not_bug_verdict',
-                        message=('调用本地回调快照之前，已清空入口读取的原始绑定；快照仍保留清空前的候选函数值。' if prior else
-                                 '先调用本地回调快照，随后才清空入口读取的原始绑定；同步重入可能再次取得同一函数。'),
+                        message=('The original binding read at entry is cleared before invoking the local callback snapshot. The snapshot retains the previous candidate function value.' if prior else
+                                 'The local callback snapshot is invoked before clearing the original entry binding; synchronous reentry may obtain the same function again.'),
                         condition=qualification,
-                        review_question=('回调经局部副本调用时，原绑定是否已使重入入口拒绝再次调用？请核对同步重入和首次抛错后的行为；清空原变量不等于清空先前副本。' if throwing else
-                            '回调经局部副本调用时，原绑定是否已使重入入口返回？请核对同步重入和异常语义；清空原变量不等于清空先前副本。'),
+                        review_question=('When invoking a local callback copy, does the original binding reject another invocation on reentry? Check synchronous reentry and behavior after the first throw. Clearing the original variable does not clear an earlier copy.' if throwing else
+                            'When invoking a local callback copy, does the original binding make reentry return? Check synchronous reentry and exceptions. Clearing the original variable does not clear an earlier copy.'),
                         state_publication=dict(state=name, binding_scope=binding, status=status,
                             guard=guard['id'], callback=callback['id'], write=write['id'],
                             execution_path=[snapshot['id']], uncertainties=[], write_value=write.get('rhs_text'),
@@ -333,10 +333,10 @@ def publication_patterns(files):
                     findings.append(dict(rule=RULE, path=file['path'], scope=entry,
                         evidence=[*anchors, guard['id'], callback['id'], write['id']],
                         classification='review_hint_not_bug_verdict',
-                        message=('选定嵌套分支中，入口防重复标志在外部调用前写入。' if prior else
-                                 '选定嵌套分支中，外部调用发生后才写入入口防重复标志；同步重入可能再次通过检查。'),
+                        message=('In the selected nested branch, the entry repetition guard is written before the external call.' if prior else
+                                 'In the selected nested branch, the entry repetition guard is written after the external call; synchronous reentry may pass the check again.'),
                         condition=qualification,
-                        review_question='在相同接收者和分支条件下，用户函数同步重入是否会重复执行？请核对异常路径与标志含义；调用前写入不等于所有路径安全。',
+                        review_question='With the same receiver and branch conditions, can synchronous reentry repeat execution? Check exception paths and flag semantics. Writing before a call does not establish safety on every path.',
                         state_publication=dict(state=name, binding_scope=binding, status=status,
                             guard=guard['id'], callback=callback['id'], write=write['id'],
                             execution_path=anchors, uncertainties=[], write_value=write.get('rhs_text'),
@@ -423,9 +423,9 @@ def publication_patterns(files):
                     findings.append(dict(rule=RULE, path=file['path'], scope=entry,
                         evidence=[guard['id'], callback['id'], write['id']],
                         classification='review_hint_not_bug_verdict',
-                        message='入口条件仍持有用户函数时调用该函数，随后才清空同一闭包绑定；同步重入可能再次进入该分支。',
+                        message='The entry guard still holds the user function when it is called; the same closure binding is cleared later. Synchronous reentry may enter the branch again.',
                         condition=qualification,
-                        review_question='用户函数若立即重入包装入口，是否会再次执行？请检查同步重入、throw 选项与首次抛错后的重试语义；不能直接提前清空而忽略重试行为。',
+                        review_question='If the user function immediately reenters the wrapper, can it run again? Check synchronous reentry, the throw option and retry semantics after the first throw before moving a clear operation earlier.',
                         state_publication=dict(state=name, binding_scope=binding,
                             status='write_after_call', guard=guard['id'], callback=callback['id'],
                             write=write['id'], execution_path=[], uncertainties=[],
@@ -471,9 +471,9 @@ def publication_patterns(files):
                                   'write_after_call' if later else 'not_established')
                         write = None if uncertain else prior[-1][1] if prior else later[0][1] if later else None
                         observed = {
-                            'write_before_call': '在进入用户函数之前，已对入口读取的闭包状态写入。',
-                            'write_after_call': '进入用户函数时，入口读取的闭包状态尚未完成后续写入。',
-                            'not_established': '已定位入口状态读取和用户函数调用，当前同步前缀未建立对应写入关系。',
+                            'write_before_call': 'The closure state read at entry is written before the user function is entered.',
+                            'write_after_call': 'When the user function is entered, the later write to closure state read at entry has not completed.',
+                            'not_established': 'The entry state read and user call are located, but the current synchronous prefix does not establish the corresponding write relation.',
                         }[status]
                         evidence = [guard, callback, *anchors, *uncertain] + ([write] if write else [])
                         evidence = list({e['id']: e for e in evidence}.values())
@@ -481,9 +481,7 @@ def publication_patterns(files):
                             evidence=[e['id'] for e in evidence], classification='review_hint_not_bug_verdict',
                             message=observed, condition=QUALIFICATION +
                                 ' .call/.apply are invocation candidates; overridden methods remain unresolved.',
-                            review_question='若该用户函数同步重入当前入口，状态是否已表示工作正在执行？'
-                                '调用前写入不等于保护充分；需核对写入值、清理和异常路径。'
-                                '可用立即重入测试检查执行次数、排队及拒绝结果。',
+                            review_question='On synchronous reentry, does state already represent work in progress? Check the written value, cleanup and exception paths. An immediate-reentry test can check invocation count, queuing and rejection; an earlier write alone does not establish sufficient protection.',
                             state_publication=dict(state=name, binding_scope=binding,
                                 status=status, guard=guard['id'], callback=callback['id'],
                                 write=write['id'] if write else None,

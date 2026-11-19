@@ -12,10 +12,10 @@ from .core import EvidenceError, canonical, sha
 from . import archive
 
 VERSION = 'experience-library-single-file-v1'
-SECTIONS = [('applicability', '适用条件'), ('event_relation', '建议'),
-            ('preservation', '需要保留'), ('exclusion', '不适用情况'),
-            ('verification', '检查方法')]
-STATES = {'pending': '待审核', 'accept': '已接受', 'revise': '需修改', 'reject': '已拒绝'}
+SECTIONS = [('applicability', 'Applicability conditions'), ('event_relation', 'Recommendation'),
+            ('preservation', 'Preservation requirements'), ('exclusion', 'Exclusions'),
+            ('verification', 'Verification')]
+STATES = {'pending': 'Pending review', 'accept': 'Accepted', 'revise': 'Revision required', 'reject': 'Rejected'}
 
 
 def is_library(path):
@@ -28,11 +28,11 @@ def documents(path):
     path = Path(path)
     paths = [path] if path.is_file() else sorted(path.glob('*.json'))
     if not paths:
-        raise EvidenceError('分类经验库中没有 JSON 文件')
+        raise EvidenceError('No JSON files in the categorized experience library')
     values = [(p, load(p)) for p in paths]
     ids = [item['id'] for _, value in values for item in value['experiences']]
     if len(ids) != len(set(ids)):
-        raise EvidenceError('不同分类文件中存在重复的经验 ID')
+        raise EvidenceError('Duplicate experience IDs across category files')
     return values
 
 
@@ -108,7 +108,7 @@ def load(path):
     if value['schema_version'] != VERSION:
         raise EvidenceError('Unknown single-file experience format')
     if 'category' in value and not memory.text(value['category']):
-        raise EvidenceError('分类名称不能为空')
+        raise EvidenceError('Category name must not be empty')
     if 'review' in value:
         validate_review(value['review'])
     if not isinstance(value['experiences'], list) or not value['experiences']:
@@ -334,7 +334,7 @@ def save_review(path, request):
 def _save_review(path, request):
     memory.object_fields(request, {'id', 'expected_record', 'expected_review', 'reviewer', 'decision'}, 'review request')
     if not memory.text(request['reviewer']) or request['decision'] not in ('accept', 'revise', 'reject'):
-        raise EvidenceError('请填写审核人并选择审核结论')
+        raise EvidenceError('Enter a reviewer and select a review decision')
     values = documents(path)
     bundles = materialize(path)[0]
     match = next(((file,value,item) for file,value in values for item in value['experiences']
@@ -344,7 +344,7 @@ def _save_review(path, request):
         raise EvidenceError('Experience not found')
     file, value, item = match
     if bundle['sha256']!=request['expected_record'] or review_for(value, item)!=request['expected_review']:
-        raise EvidenceError('经验或审核状态已变化，请刷新后重新审核')
+        raise EvidenceError('Experience or review state changed; refresh before reviewing again')
     proposal=item.get('proposal',{})
     if request['decision']=='accept' and review_for(value,item)['decision']!='accept' and proposal.get('target_sha256s'):
         current={b['id']:b['sha256'] for b in bundles}
@@ -368,20 +368,20 @@ def page(path):
     bundles = {b['id']:b for b in materialize(path)[0]}
     cards = []
     lifecycle=active_view(path)
-    categories = list(dict.fromkeys(value.get('category', '未分类') for _,value in values))
+    categories = list(dict.fromkeys(value.get('category', 'Uncategorized') for _,value in values))
     entries = [(file,value,item) for file,value in values for item in value['experiences']]
     for file, value, item in entries:
-        category = value.get('category', '未分类')
+        category = value.get('category', 'Uncategorized')
         review = review_for(value, item)
         state = review['decision']
         status = STATES[state]
         saved = status if state=='pending' else f'{status} · {review["reviewer"]} · {review["at"]}'
-        if item['id'] in lifecycle['superseded_ids']:saved+=' · 已被替代，不参与新检索'
-        elif item['id'] in lifecycle['unresolved_ids']:saved+=' · 替代关系待核对，暂保留检索'
+        if item['id'] in lifecycle['superseded_ids']:saved+=' · Superseded; excluded from new retrievals'
+        elif item['id'] in lifecycle['unresolved_ids']:saved+=' · Supersession requires review; retained for retrieval for now'
         sections = ''.join(f'<dt>{label}</dt><dd>{escape(item[key])}</dd>'
                            for key, label in SECTIONS)
         proposal=item.get('proposal')
-        appendix=('<p class="meta">证据附件：'+escape(item['evidence_ref']['path'])+'</p>') if 'evidence_ref' in item else ''
+        appendix=('<p class="meta">Evidence attachment: '+escape(item['evidence_ref']['path'])+'</p>') if 'evidence_ref' in item else ''
         context=('<p class="meta">Proposal: '+escape(proposal['operation'])+' · Targets: '+escape(', '.join(proposal['target_ids']) or 'none')+'</p>') if proposal else ''
         cards.append(f'<article class="panel" data-state="{state}" data-category="{escape(category, quote=True)}"><h2>{escape(item["title"])}</h2>'
                      f'<p class="meta">{escape(category)} · {escape(file.name)}</p>'
@@ -389,24 +389,24 @@ def page(path):
                      f'<form data-id="{escape(item["id"], quote=True)}" '
                      f'data-record="{bundles[item["id"]]["sha256"]}" '
                      f'data-review="{escape(canonical(review), quote=True)}">'
-                     '<label>审核人<input name="reviewer" required '
+                     '<label>Reviewer<input name="reviewer" required '
                      f'value="{escape(review["reviewer"] or "", quote=True)}"></label>'
-                     '<label>审核结论<select name="decision" required><option value="">请选择</option>'
-                     '<option value="accept">接受</option><option value="revise">需修改</option>'
-                     '<option value="reject">拒绝</option></select></label>'
-                     '<button type="submit">保存审核</button></form></article>')
-    html = ('<!doctype html><html lang="zh-CN"><meta charset="utf-8">'
+                     '<label>Review decision<select name="decision" required><option value="">Select a decision</option>'
+                     '<option value="accept">Accept</option><option value="revise">Revision required</option>'
+                     '<option value="reject">Reject</option></select></label>'
+                     '<button type="submit">Save review</button></form></article>')
+    html = ('<!doctype html><html lang="en"><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            '<title>TempoEvo · 经验审核</title><link rel="stylesheet" href="/memory-review.css">'
+            '<title>TempoEvo · Experience review</title><link rel="stylesheet" href="/memory-review.css">'
             '<script src="/compact-review.js" defer></script><body class="compact-review"><main><section>'
-            f'<h1>TempoEvo · 经验库 · {len(cards)} 条</h1><p id="compact-counts"></p>'
-            f'<p>经验位置：<code>{escape(str(path))}</code></p>'
-            '<p>阅读经验及适用边界后填写审核结论。结果写回对应分类文件，不生成独立审核文件。</p>'
-            '<label>分类<select id="compact-category"><option value="">全部分类</option>'
+            f'<h1>TempoEvo · Experience library · {len(cards)} entries</h1><p id="compact-counts"></p>'
+            f'<p>Experience location: <code>{escape(str(path))}</code></p>'
+            '<p>Read the experience and its applicability boundaries before reviewing. Decisions are saved to the category file without creating a separate review file.</p>'
+            '<label>Category<select id="compact-category"><option value="">All categories</option>'
             + ''.join(f'<option>{escape(category)}</option>' for category in categories) + '</select></label>'
-            '<label>显示<select id="compact-filter"><option value="all">全部经验</option>'
-            '<option value="pending">待审核</option><option value="accept">已接受</option>'
-            '<option value="revise">需修改</option><option value="reject">已拒绝</option></select></label>'
-            '<p id="compact-empty" hidden>此分类下没有经验。</p>'
+            '<label>Show<select id="compact-filter"><option value="all">All experiences</option>'
+            '<option value="pending">Pending review</option><option value="accept">Accepted</option>'
+            '<option value="revise">Revision required</option><option value="reject">Rejected</option></select></label>'
+            '<p id="compact-empty" hidden>No experiences in this category.</p>'
             + ''.join(cards) + '</section></main><p id="message" role="status" aria-live="polite"></p></body></html>')
     return html.encode('utf-8')

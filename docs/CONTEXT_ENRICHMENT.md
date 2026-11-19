@@ -1,55 +1,55 @@
-# 分析线索驱动的源码上下文补全
+# Source context enrichment driven by analysis hints
 
-第一版已经接通：**归档分析线索 → 定义补全 → Agent 核查材料**。
+The first implementation connects **archived analysis hints → definition enrichment → agent review material**.
 
-它复用 `rag-context-helper` 的输入位置、依赖展开、深度/预算和来源记录思路，使用本仓库已安装的 Babel/Vue 解析器重新实现定义定位，不依赖外部工具的安装路径。上下文是独立材料，不改变扫描报告或冻结 B/C/D 等实验层。
+It adopts the input locations, dependency expansion, depth/budget limits and provenance ideas of `rag-context-helper`. Definition lookup is implemented using the Babel/Vue parsers already installed in this repository, without depending on an external tool installation. Context is separate material: it does not change scan reports or frozen experimental layers such as B/C/D.
 
-## 网页使用
+## Browser usage
 
-更新后重启本地报告中心：
+Restart the local report center after updating:
 
-以下命令从本仓库源码运行。现有 VSIX 尚未重建；扩展的 runtime 打包脚本已纳入新解析入口，后续重新构建安装包时会带上上下文功能。
+The following commands run from this source checkout. The existing VSIX has not been rebuilt; its runtime staging script includes the new parser entry point, so a subsequent package build will include context enrichment.
 
 ```sh
 /usr/bin/python3 -B -m temporal_contract_analyzer reports stop
 /usr/bin/python3 -B -m temporal_contract_analyzer reports open
 ```
 
-新建项目扫描，选择报告。在边界审查卡点击 **补充相关源码**，或打开 **源码上下文** 标签。选择单条/全部线索、展开深度、代码字符预算和可选路径别名。页面列出原始证据、补充定义、来源原因及未解析项，可跳转到归档源码或复制完整材料交给 Agent。
+Create a project scan and select the report. Click **Expand related source** on a boundary review card, or open the **Source context** tab. Select one or all hints, expansion depth, source-character budget and optional path aliases. The page lists original evidence, supplemental definitions, provenance reasons and unresolved items. You can navigate to archived source or copy the complete material for an agent.
 
-网页生成材料不会调用模型，不等于已经向 Agent 发送；MCP 交付另有交付记录。
+Generating browser material does not call a model or send it to an agent. MCP deliveries have separate delivery records.
 
 ## CLI
 
-先扫描并归档同一份源码：
+First scan and archive the same source:
 
 ```sh
 /usr/bin/python3 -B -m temporal_contract_analyzer reports scan \
   examples/context-enrichment --project context-demo
 ```
 
-将返回的报告 ID 替换下方 `REPORT_ID`：
+Replace `REPORT_ID` with the returned report ID:
 
 ```sh
 /usr/bin/python3 -B -m temporal_contract_analyzer reports context REPORT_ID \
   --depth 2 --max-chars 12000 --format md
 ```
 
-可选参数：
+Optional arguments:
 
-- `--finding-id FINDING_ID`：只使用指定线索的证据位置；默认全部。
-- `--aliases '{"@":"src","Constants":"src/constants"}'`：显式路径别名，以快照根为基准；最长前缀匹配。不加载 tsconfig、Webpack、Vite 等配置。
-- `--depth 0..5`：默认 1；0 保留原始证据，遇到未展开的可识别依赖会记录深度缺口。
-- `--max-chars 1..100000`：默认 12000；只计源码正文的 Unicode 字符，不是 token 预算，也不包含说明文字。
-- `--format json|md`：默认 JSON。
-- `--output /outside/project/context.md`：写入新文件，拒绝覆盖和写入原候选工程。
-- `--store PATH`、`--node PATH`：沿用现有配置机制。
+- `--finding-id FINDING_ID`: use only evidence locations from this hint; defaults to all hints.
+- `--aliases '{"@":"src","Constants":"src/constants"}'`: explicit path aliases relative to the snapshot root, using longest-prefix matching. No tsconfig, Webpack or Vite configuration is loaded.
+- `--depth 0..5`: defaults to 1. Zero retains original evidence and records depth gaps for identifiable dependencies that are not expanded.
+- `--max-chars 1..100000`: defaults to 12000. Counts Unicode characters in source text only, excluding explanatory text; this is not a token budget.
+- `--format json|md`: defaults to JSON.
+- `--output /outside/project/context.md`: write a new file; overwriting and writing inside the original candidate project are rejected.
+- `--store PATH`, `--node PATH`: use the existing configuration mechanism.
 
-种子代码超预算时会明确失败，可选单条线索或增加预算；补充定义超预算时整段省略，并在未解析项记录。相邻/重叠片段合并，代码不重复计费。没有 finding 时返回空上下文，不自动搜索全仓库。
+Seed code exceeding the budget causes an explicit failure; select one hint or increase the budget. Supplemental definitions that exceed the budget are omitted in full and recorded as unresolved. Adjacent or overlapping ranges are merged, without counting source twice. A report without findings returns empty context rather than triggering a repository-wide search.
 
 ## MCP
 
-正常 MCP 会话新增 `read_context`：
+Normal MCP sessions provide `read_context`:
 
 ```json
 {
@@ -63,31 +63,31 @@
 }
 ```
 
-仅 `report_id` 必填。`text` 是上下文 JSON 的一页，必须沿 `next_offset` 读完，再解析整份 JSON。后续页需保持报告、线索、深度、预算和别名参数相同。返回沿用报告/源码的交付记录与传输回执；记录不证明模型注意到或使用材料。当前会话缓存最近四组生成参数，避免每页重新解析源码。
+Only `report_id` is required. `text` contains one page of context JSON. Follow `next_offset` to read every page before parsing the complete JSON. Keep the report, hint, depth, budget and aliases identical across pages. Responses use the same delivery records and transport receipts as reports/source; records do not establish that a model noticed or used the material. A session caches the four most recent parameter sets to avoid reparsing on every page.
 
-给 Agent 的示例指令：
+Example agent instruction:
 
-> 扫描项目后，先 read_report 阅读报告，再用 read_context 获取相关线索的补充源码，沿 next_offset 读完。结合 reasons 与 unresolved 核查关系和保护，验证快照与工作区差异，再考虑修改和测试。
+> After scanning the project, read the report with read_report, then retrieve supplemental source for relevant hints with read_context, following next_offset to completion. Review relations and guards using reasons and unresolved items, check differences between snapshot and workspace, then consider edits and tests.
 
-受限实验会话 `reports mcp --report-id ... --layer ...` 仍只暴露指定层的 `read_report`，不提供上下文或额外源码。
+Restricted experimental sessions using `reports mcp --report-id ... --layer ...` still expose only `read_report` for the selected layer, without context or additional source.
 
-## 技术与支持范围
+## Implementation and scope
 
-- 从 finding 的 evidence ID 定位报告事件，取原始源码行作为种子；不会自动扩展到完整所在函数。
-- 单独的 `context.cjs` 用现有 `@babel/parser` 解析 JS/TS、用 `@vue/compiler-sfc` 提取内联脚本，输出词法绑定、引用位置和有限导出定义。原扫描器的 AST 输出保持原样。
-- 对可识别的函数/块/循环/catch 作用域处理参数与声明遮蔽，忽略普通属性名、注释、字符串及类型引用。它仍不是完整 JS/TS 语义解析器。
-- 支持同文件词法定义、静态本地命名/默认导入、函数/变量/类声明、有限导出列表；只在归档清单内解析模块。
-- 按确定性的广度优先顺序展开。扩展名省略时若多个候选同时存在，报告 `ambiguous-module`，不猜测工程的真实解析配置。
-- Python 等语言保留原始证据，并记录不支持定义补全；无法启动解析器时仍返回种子与解析器缺口。
-- namespace import、转导出、CommonJS/动态导入等关系不会展开；可识别到时记录缺口。Vue 模板、跨脚本块绑定和框架调度不建模。
-- 不推断对象成员派发、运行时重赋值、完整调用方、控制流、数据流或状态写入集合。不识别的全局名称不逐个报警；空 `unresolved` 不代表依赖完整。
+- Locate report events through each finding's evidence IDs; seed context with original source lines rather than automatically expanding to the entire enclosing function.
+- A separate `context.cjs` uses `@babel/parser` for JS/TS and `@vue/compiler-sfc` for inline scripts, emitting lexical bindings, reference locations and limited export definitions. The original scanner's AST output is unchanged.
+- Recognizable function/block/loop/catch scopes account for parameter and declaration shadowing, ignoring ordinary property names, comments, strings and type references. This is not a complete JS/TS semantic parser.
+- Supports same-file lexical definitions, static local named/default imports, function/variable/class declarations and limited export lists. Modules are resolved only within the archive manifest.
+- Expansion uses deterministic breadth-first order. Multiple candidates for an extensionless import produce `ambiguous-module`; the project's actual resolution configuration is not guessed.
+- Python and other unsupported languages retain original evidence and record unsupported definition enrichment. If the parser cannot start, seeds and parser gaps are still returned.
+- Namespace imports, re-exports, CommonJS and dynamic imports are not expanded; identifiable gaps are recorded. Vue templates, cross-script bindings and framework scheduling are not modeled.
+- Object-member dispatch, runtime reassignment, complete callers, control flow, data flow and state-write sets are not inferred. Unrecognized global names are not individually flagged; an empty `unresolved` list does not establish complete dependencies.
 
-## 输出与解释
+## Output and interpretation
 
-`temporal-context-1` 包含：`report_id`、`input_sha256`、`scan_status`、`finding_ids`、`aliases`、`parser`、`generator`、`limits`、`snippets`、`unresolved`、`usage`、`qualification` 和 `limitations`。
+`temporal-context-1` contains `report_id`, `input_sha256`, `scan_status`, `finding_ids`, `aliases`, `parser`, `generator`, `limits`, `snippets`, `unresolved`, `usage`, `qualification` and `limitations`.
 
-`snippets` 给出 `file/start_line/end_line/code/kind/reasons`。`kind=seed` 表示合并后的范围包含原始证据；同一片段也可以包含补充定义。`usage.seeds` 是含种子的合并片段数；`usage.definitions` 是有定义关系依据的片段数，包含已在种子内的定义，不是符号数或检索成功率。
+`snippets` provides `file/start_line/end_line/code/kind/reasons`. `kind=seed` means the merged range contains original evidence; the same snippet may also contain supplemental definitions. `usage.seeds` counts merged snippets containing seeds. `usage.definitions` counts snippets with definition-relation evidence, including definitions already inside seeds; it is neither a symbol count nor a retrieval success rate.
 
-上下文仅来自已校验的扫描快照（包括归档的编辑器 overlay），不读取当前项目文件。不在快照中的依赖保留缺口；单文件扫描不会自动读取邻接模块，需另建包含依赖目录的报告。上下文生成器版本与摘要独立记录；更换生成器或选项意味着新的上下文条件。
+Context comes only from verified scan snapshots, including archived editor overlays, without reading current project files. Dependencies outside the snapshot remain gaps. Single-file scans do not automatically read adjacent modules; create a report covering the dependency directory. The generator version and digest are recorded separately; changing the generator or options creates a new context condition.
 
-测试验证功能路径、快照隔离、词法遮蔽、预算和交付行为，尚未证明检索质量或 Agent 修复效果。
+Tests validate functional paths, snapshot isolation, lexical shadowing, budgets and delivery behavior. Retrieval quality and agent repair benefit have not been established.

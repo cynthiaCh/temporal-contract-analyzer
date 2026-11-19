@@ -68,7 +68,7 @@ class ReportMCPTests(unittest.TestCase):
         session = self.ready()
         meta = session.call('scan_project',{'path':str(self.root/'missing')})
         self.assertEqual(meta['status'],'failed')
-        self.assertIn('分析失败',session.call('read_report',{'report_id':meta['report_id']})['text'])
+        self.assertIn('Analysis failed',session.call('read_report',{'report_id':meta['report_id']})['text'])
 
     def test_none_condition_discloses_no_case_evidence(self):
         meta = archive.scan_path(self.project,self.store)['archive']

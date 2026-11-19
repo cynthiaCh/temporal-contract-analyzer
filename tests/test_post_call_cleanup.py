@@ -50,8 +50,8 @@ class PostCallCleanupTests(unittest.TestCase):
         self.assertEqual(publication['callback_cleanup']['value'], 'undefined')
         card = focused_review(report)['cards'][0]
         cleanup = next(e for e in card['evidence'] if e['id'] == publication['callback_cleanup']['write'])
-        self.assertEqual(cleanup['role'], '调用后清空绑定（顺序事实）')
-        self.assertIn('不判定清理语句本身有错', markdown(report))
+        self.assertEqual(cleanup['role'], 'Binding cleared after call (ordering fact)')
+        self.assertIn('does not classify the cleanup statement itself as defective', markdown(report))
         self.assertNotEqual(publication['write'], publication['callback_cleanup']['write'])
 
     def test_names_call_forms_and_null_clear_are_generic(self):

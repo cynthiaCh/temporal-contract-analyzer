@@ -100,10 +100,9 @@ def reentrancy_patterns(files):
                 evidence += [e for e in local if e['kind'] == 'guard' and
                              position(mutation) < position(e) < position(callback)]
                 add('state-write-inline-notification', scope, evidence,
-                    '成员写入或集合/持久化名称调用之后，同一非 async 函数直接调用参数回调或循环取出的可调用项。',
-                    '回调未位于另一个嵌套函数体，且此前未发现 await/yield；只是源码上的候选直接通知路径。'
-                    '名称、循环元素和路径可达性未作类型/控制流证明，未证明它与其他文件中的订阅者是同一实例。',
-                    '该调用是否通知外部消费者？消费者能否在返回前重新进入当前对象？调用后继续使用的状态是否仍有效，最新请求如何决定优先级？')
+                    'In one non-async function, a member write or collection/persistence-related call precedes a direct parameter callback or a callable taken from a loop.',
+                    'The callback is outside nested function bodies, with no preceding await/yield found. This is a candidate direct notification path. Names, loop elements and reachability are not type/control-flow proofs, and identity with subscribers in other files is unproven.',
+                    'Does the call notify external consumers? Can they reenter this object before return? Is subsequently used state still valid, and how is the latest request prioritized?')
                 relations.append(dict(kind='lexical_write_before_direct_call', before=mutation['id'],
                     after=callback['id'], qualification='Source order in one function; path execution, callback type and reentry remain unproven.'))
 
@@ -167,10 +166,9 @@ def reentrancy_patterns(files):
                 evidence = [registration] + anchors + transitions + forwarded + methods
                 evidence += [e for e in definitions if e['scope'] == scope]
                 add('callback-reentrant-transition', scope, evidence,
-                    '登记的回调体直接出现状态切换名称调用，或把具有状态切换方法的同作用域对象传给其他调用。',
-                    '只关联当前注册实参及其回调作用域；没有把嵌套定时/Promise 回调内的操作算成直接调用。'
-                    '登记 API 名称不证明通知是同步的，对象转交不证明下游调用其方法；与写入端是否连通需核查。',
-                    '通知是否可能同步到达？接收者能否重入打开、关闭或切换操作？若外层调用随后恢复，应保留哪一次请求的状态？')
+                    'A registered callback directly calls a transition-related name or passes a same-scope object with transition methods to another call.',
+                    'Only this registration argument and callback scope are linked. Operations in nested timer/Promise callbacks are not counted as direct calls. Registration names do not prove synchronous delivery, and passing an object does not prove downstream method calls. Check the connection to the writer.',
+                    'Can notification arrive synchronously? Can the receiver reenter open, close or switch operations? Which request state must survive when the outer call resumes?')
 
         # Local captured-value flow. Edges require AST references, lexical
         # statement order and no intervening assignment to the captured name.
@@ -215,11 +213,9 @@ def reentrancy_patterns(files):
                                     e['block'] == capture['block']]
                     add('snapshot-output-lifetime-split', scope,
                         [capture, record] + aliases + consumers + context + intermediate,
-                        '局部捕获值被归档/持久化名称调用消费；该值或调用返回值随后被界面/发布名称调用消费。',
-                        '基于同一函数内原始变量/成员引用与源码顺序，未见变量重新赋值；不证明深拷贝、不可变、'
-                        '对象别名稳定或跨分支数据流。归档与显示名称只是用途线索，不自动判定生命周期必须不同。',
-                        '数据应绑定操作入口的哪份值？中间调用能否触发回调、编辑或导航？持久效果与显示效果是否共享失效条件？'
-                        '当前标识相同是否足以代表同一次访问，现有身份判断在重开后仍成立吗？')
+                        'An archive/persistence-related call consumes a captured local value; a UI/publication-related call later consumes that value or the call result.',
+                        'This uses source ordering and original variable/member references within one function, with no reassignment found. Deep copying, immutability, stable aliases and cross-branch data flow are unproven. Archive/display names are usage clues, not proof of different lifetimes.',
+                        'Which entry-time value should the data bind to? Can intervening calls trigger callbacks, edits or navigation? Do persistent and display effects share invalidation conditions? Does an equal identifier establish the same visit after reopening?')
                     for consumer in consumers:
                         relations.append(dict(kind='lexical_capture_before_consumer', before=capture['id'],
                             after=consumer['id'], qualification='Local source references and lexical order; ownership, immutability and reachability remain unproven.'))

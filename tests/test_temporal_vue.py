@@ -72,7 +72,7 @@ onMounted(() => load('draft'));
         source = ('<!-- 😀 -->\r\n<template><div>😀</div></template><script lang="ts">'
                   'const label: string = "😀";\r\n'
                   'async function load() {\r\n  await fetch(\r\n    label\r\n  );\r\n  store.save(label);\r\n}\r\n'
-                  '</script>\r\n<script setup>bus.subscribe("事件😀", e => {\r\n'
+                  '</script>\r\n<script setup>bus.subscribe("\u4e8b\u4ef6😀", e => {\r\n'
                   '  later(() => bus.close(e));\r\n});</script>\r\n'
                   '<style>.example { content: "😀"; }</style>')
         file = self.vue(source)['files'][0]

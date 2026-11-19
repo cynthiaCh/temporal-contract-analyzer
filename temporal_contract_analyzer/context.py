@@ -52,10 +52,10 @@ def build_context(report_id, store=None, finding_id=None, depth=1, max_chars=120
                     path: sha((ROOT/path).read_bytes()) for path in (
                         'temporal_contract_analyzer/context.py', 'temporal_contract_analyzer/javascript/context.cjs')}).encode())),
                 qualification='Incomplete syntactic context; not proven behavior, complete dependencies or a defect verdict.',
-                limitations=['只补充可识别的词法引用与导入所指向的候选定义，未解析项不覆盖所有未知关系。',
-                             '未建模对象成员派发、运行时重赋值、完整调用方、数据流和控制流。',
-                             '仅使用归档扫描范围内的源码，不会从当前工作区读取缺失文件。',
-                             '完整行和声明片段可能含有无关代码；预算只计源码字符，不含说明文字，也不是 token 限制。'],
+                limitations=['Context includes candidate definitions reached through identifiable lexical references and imports. The unresolved list does not cover every unknown relation.',
+                             'Object-member dispatch, runtime reassignment, complete callers, data flow and control flow are not modeled.',
+                             'Only source within the archived scan scope is used. Missing files are not read from the current working tree.',
+                             'Whole lines and declarations may include unrelated code. The budget counts source characters only, excluding explanatory text, and is not a token limit.'],
                 limits=dict(max_depth=depth, max_code_chars=max_chars), snippets=snippets,
                 unresolved=unresolved,
                 usage=dict(code_chars=used, snippets=len(snippets),
@@ -170,19 +170,19 @@ def markdown(packet):
     def fenced(text, language=''):
         fence = '`'*max(3, max((len(part) for part in re.findall(r'`+', text)), default=0)+1)
         return [fence+language, text.rstrip('\r\n'), fence, '']
-    lines = ['# 分析线索与源码上下文', '',
-             '报告：'+packet['report_id'], '', packet['qualification'], '',
-             '仅使用归档源码快照；补充定义不证明实际调用、完整依赖或缺陷成立。', '',
-             '代码字符数：'+str(packet['usage']['code_chars'])+'；最大展开深度：'+str(packet['limits']['max_depth']), '',
-             '## 来源与生成参数', '', *fenced(json.dumps(metadata, ensure_ascii=False, indent=2), 'json')]
+    lines = ['# Analysis hints and source context', '',
+             'Report: '+packet['report_id'], '', packet['qualification'], '',
+             'Only archived source snapshots are used; supplemental definitions do not establish actual calls, complete dependencies or defects.', '',
+             'Source characters: '+str(packet['usage']['code_chars'])+'; maximum expansion depth: '+str(packet['limits']['max_depth']), '',
+             '## Provenance and generation parameters', '', *fenced(json.dumps(metadata, ensure_ascii=False, indent=2), 'json')]
     for item in packet['snippets']:
         lines += ['## '+item['file']+':'+str(item['start_line'])+'–'+str(item['end_line'])+' · '+item['kind'], '',
-                  '补充依据：'+json.dumps(item['reasons'], ensure_ascii=False), '']
+                  'Context basis: '+json.dumps(item['reasons'], ensure_ascii=False), '']
         lines += fenced(item['code'])
     if not packet['snippets']:
-        lines += ['没有选中的分析线索；不会自动进行全仓库检索，也不代表程序安全。', '']
-    lines += ['## 未解析项', '', *fenced(json.dumps(packet['unresolved'], ensure_ascii=False, indent=2), 'json'),
-              '## 范围限制', '', *['- '+s for s in packet['limitations']], '']
+        lines += ['No analysis hints selected; no automatic repository-wide search is performed, and safety is not established.', '']
+    lines += ['## Unresolved items', '', *fenced(json.dumps(packet['unresolved'], ensure_ascii=False, indent=2), 'json'),
+              '## Scope limitations', '', *['- '+s for s in packet['limitations']], '']
     return '\n'.join(lines)
 
 

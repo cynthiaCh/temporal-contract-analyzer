@@ -36,18 +36,18 @@ function execute(executable, args, {input = '', cwd, timeout = 90000, signal} = 
       error ? reject(error) : resolve(value);
     };
     const abort = () => { stop(child); done(new Cancelled()); };
-    const timer = setTimeout(() => { stop(child); done(new Error('分析超时；可缩小扫描目录或提高 timeoutSeconds。')); }, timeout);
+    const timer = setTimeout(() => { stop(child); done(new Error('Analysis timed out; reduce the scan directory or increase timeoutSeconds.')); }, timeout);
     signal?.addEventListener('abort', abort, {once: true});
     child.on('error', error => done(error));
     child.stdout.on('data', data => {
       bytes += data.length;
-      if (bytes > 96 * 1024 * 1024) { stop(child); done(new Error('报告超过 96 MiB，请缩小扫描范围。')); }
+      if (bytes > 96 * 1024 * 1024) { stop(child); done(new Error('Report exceeds 96 MiB; reduce the scan scope.')); }
       else stdout.push(data);
     });
     child.stderr.on('data', data => { stderr = (stderr + data.toString('utf8')).slice(-8000); });
     child.stdin.on('error', error => { if (error.code !== 'EPIPE') done(error); });
     child.on('close', code => {
-      if (code !== 0) done(new Error(stderr.trim() || `分析进程退出：${code}`));
+      if (code !== 0) done(new Error(stderr.trim() || `Analysis process exited: ${code}`));
       else done(null, Buffer.concat(stdout).toString('utf8'));
     });
     child.stdin.end(input, 'utf8');
@@ -67,7 +67,7 @@ async function findPython(configured, options = {}) {
       if (error instanceof Cancelled) throw error;
     }
   }
-  throw new Error('找不到 Python 3.9+。请在设置 TempoEvo: Python Path 中填写 Python 可执行文件路径。');
+  throw new Error('Python 3.9+ not found. Set an executable path in TempoEvo: Python Path.');
 }
 
 async function invoke(extensionPath, request, {pythonPath = '', timeout, signal, node = process.execPath} = {}) {
@@ -76,19 +76,19 @@ async function invoke(extensionPath, request, {pythonPath = '', timeout, signal,
     [...python.prefix, '-I', '-S', '-B', '-X', 'utf8', path.join(extensionPath, 'python/bridge.py')],
     {cwd: extensionPath, signal, timeout, input: JSON.stringify({...request, node})});
   let parsed;
-  try { parsed = JSON.parse(result); } catch { throw new Error('分析器未返回有效 JSON；请查看 TempoEvo 日志。'); }
+  try { parsed = JSON.parse(result); } catch { throw new Error('Analyzer did not return valid JSON; see the TempoEvo log.'); }
   return parsed;
 }
 
 async function analyze(extensionPath, request, options = {}) {
   const parsed = await invoke(extensionPath, request, options);
   if (parsed.archive?.status === 'failed') {
-    const error = new Error(`分析失败（已归档 ${parsed.archive.report_id}）：${parsed.archive.error}`);
+    const error = new Error(`Analysis failed (Archived ${parsed.archive.report_id}): ${parsed.archive.error}`);
     error.archive = parsed.archive;
     throw error;
   }
   if (parsed.report?.schema_version !== 'temporal-contract-analysis-1' || !parsed.ranges || typeof parsed.markdown !== 'string') {
-    throw new Error('分析器返回了不兼容的报告。');
+    throw new Error('Analyzer returned an incompatible report.');
   }
   return parsed;
 }

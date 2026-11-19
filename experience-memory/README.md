@@ -1,44 +1,29 @@
-# 分类经验库
+# Categorized experience library
 
-**现行经验都在 `library/`，每个主题一个 JSON 文件。**
+**Current experience lives in `library/`, with one JSON file per topic.**
 
-| 分类文件 | 内容 | 条数 |
+| Category file | Contents | Entries |
 | --- | --- | ---: |
-| [mechanisms.json](library/mechanisms.json) | 通用机制总结 | 12 |
-| [progress-subscriptions.json](library/progress-subscriptions.json) | 初始状态、接收窗口、审计、乱序、重试与资源清理 | 8 |
-| [deferred-persistence.json](library/deferred-persistence.json) | 延迟保存、文档归属、提交、确认、通知及组件清理 | 11 |
-| [shared-work-cancellation.json](library/shared-work-cancellation.json) | 离线恢复、真实消费、共享观察者、后台策略及尝试隔离 | 6 |
+| [mechanisms.json](library/mechanisms.json) | General mechanism summaries | 12 |
+| [progress-subscriptions.json](library/progress-subscriptions.json) | Initial state, admission windows, auditing, out-of-order results, retries and resource cleanup | 8 |
+| [deferred-persistence.json](library/deferred-persistence.json) | Deferred saves, document ownership, commits, confirmation, notification and component cleanup | 11 |
+| [shared-work-cancellation.json](library/shared-work-cancellation.json) | Offline recovery, actual consumption, shared observers, background policies and attempt isolation | 6 |
 
-本次统一梳理旧库 71 个版本、54 个经验身份中的 524 条规则，以及原有 12 条
-机制总结，归并为上述 37 条经验。版本数量不代表独立经验数量。跨语言的重复
-表述合并到同一主题；有条件差异的分支保留在适用条件、反例和检查方法中。
-特别保留离开前完成与继续调度、保存通知与移除订阅先后的不同约定，不统一
-改成某一种政策。原有 12 条总结仍完整保存在通用机制分类。
+This consolidation combined 524 rules across 71 versions and 54 experience identities in the old library, plus the existing 12 mechanism summaries, into the 37 entries above. Version counts are not independent experience counts. Repeated cross-language descriptions were merged by topic; conditional differences remain in applicability conditions, counterexamples and verification. Distinct requirements for finishing before exit versus continuing scheduling, and save notification versus subscription removal ordering, remain separate rather than being replaced by one policy. All 12 original summaries remain in the general mechanisms category.
 
-每条经验包含稳定 ID、英文标题、标签、适用条件、建议、保留事项、反例和检查
-方法。`review` 内联保存审核人、结论和时间，沿用本次会话中 Iris 接受经验的
-授权。新增条目没有 `review` 时显示待审核，不进入默认检索。
-内容接受不代表已通过新的迁移实验。
+Each entry includes a stable ID, English title, labels, applicability conditions, recommendation, preservation requirements, counterexamples and verification. Inline `review` records store reviewer, decision and time, under this session's authorization for Iris to accept experience. New entries without `review` appear as pending and are excluded from default retrieval. Content acceptance does not establish success in new transfer experiments.
 
-训练产生的新候选发布时，按需集中写入 `library/candidates.json`，审核页直接显示，
-状态明确为待审核，不进入默认检索，也不改变既有已审核经验的冻结快照。
-候选中的 `proposal` 只记录新增、修订或合并及对应经验 ID；发布不会自动覆盖或
-删除原条目。详细反思保留在原任务的 `candidate-pool/`，不再复制旧式来源、版本
-或 decision 文件。仅补充证据且经验内容不变时，保留原候选记录，不新增重复经验。
+New training candidates are published centrally to `library/candidates.json` as needed, appear directly in the review page as pending, and are excluded from default retrieval without changing existing approved snapshots. Their `proposal` records addition, revision or merging and the relevant experience IDs; publishing does not overwrite or delete original entries. Detailed reflections remain in the task's original `candidate-pool/`, without copying legacy source, version or decision files. Evidence-only additions with unchanged experience content retain the original candidate rather than creating duplicates.
 
-双击仓库根目录的 `launch-experience-review.command` 打开审核页面。页面可同时
-按分类和审核状态筛选；审核结果只写回该条目所在的分类文件，不生成独立
-decision 文件、案例副本或来源档案。直接编辑文件也可维护经验；不同文件不能
-使用重复 ID。新主题可增加同格式的分类文件，页面会自动读取。
+Double-click `launch-experience-review.command` at the repository root to open review. Filter by category and review state together. Decisions are written only to the entry's category file, without separate decision files, case copies or source archives. Direct file editing is also supported; IDs must be unique across files. New topics can use additional files in the same format, discovered automatically by the page.
 
 ```bash
 python3 -B -m temporal_contract_analyzer experience-memory review --store experience-memory/library
 python3 -B -m temporal_contract_analyzer experience-memory freeze --store experience-memory/library
 ```
 
-旧 `records/`、`sources/` 等仅为原有历史资料，不参与当前分类库读取。
-旧单文件 `experiences.json` 已移除，避免出现两个现行入口。
+Old `records/`, `sources/` and similar directories are historical material, excluded from current categorized-library reads. The old single-file `experiences.json` was removed to avoid competing current entry points.
 
-## 训练候选的 Git 保存
+## Preserving training candidates in Git
 
-未审核、被拒绝和仅补充证据的候选也应进入 Git。外部实验目录不受本仓库 Git 管理，不能作为唯一保存位置。每轮训练结束时，将临时经验、候选反思和证据提案按原始内容归档至 `training-runs/<run-id>/`，附文件哈希和来源清单，并提交 Git。内容修订另以 pending 状态发布到 `library/candidates.json` 供审核；归档目录不作为分类库或默认检索输入。Git 提交不代表审核通过，不得因此修改冻结快照或自动激活经验。
+Pending, rejected and evidence-only candidates must also be committed to Git. External experiment directories are outside this repository's Git management and cannot be the sole preservation location. At the end of each training round, archive temporary experience, candidate reflections and evidence proposals unchanged under `training-runs/<run-id>/`, with file hashes and provenance manifests, and commit them. Publish content revisions separately as pending entries in `library/candidates.json`. Archive directories are not category libraries or default retrieval inputs. A Git commit is not review approval and must not change frozen snapshots or automatically activate experience.

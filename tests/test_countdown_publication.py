@@ -73,8 +73,8 @@ class CountdownPublicationTests(unittest.TestCase):
     def test_conditional_cleanup_is_neutral_and_must_have_evidence(self):
         report = self.report(LATE)
         card = focused_review(report)['cards'][0]
-        self.assertIn('不能当作每条路径都会执行', ' '.join(card['notes']))
-        self.assertIn('不判定清理语句本身有错', markdown(report))
+        self.assertIn('cannot be treated as an action on every path', ' '.join(card['notes']))
+        self.assertIn('does not classify the cleanup statement itself as defective', markdown(report))
         publication = self.hints(LATE)[0]['state_publication']
         self.assertEqual(publication['callback_cleanup']['condition'], 'remaining <= 1')
         for action in ['relation', 'guard']:

@@ -52,7 +52,7 @@ class ReportHubTests(unittest.TestCase):
         self.assertEqual(data['metadata']['label'], 'Web run')
         with self.call('/api/reports/'+report_id+'/source?path=Demo.vue') as response:
             self.assertIn('store.save()', json.load(response)['text'])
-        with self.call('/api/reports/'+report_id+'/notes', dict(finding_id=data['report']['findings'][0]['id'],decision='uncertain',note='核查中')) as response:
+        with self.call('/api/reports/'+report_id+'/notes', dict(finding_id=data['report']['findings'][0]['id'],decision='uncertain',note='Under review')) as response:
             self.assertEqual(json.load(response)['actor'], 'human')
         with self.call('/api/reports/'+report_id+'/verify', {}) as response:
             self.assertTrue(json.load(response)['verified'])
@@ -89,14 +89,19 @@ class ReportHubTests(unittest.TestCase):
             self.assertEqual(json.load(response)['context_enrichment'],'snapshot-definitions-v1')
         with self.call('/') as response:
             self.assertIn("script-src 'self'", response.headers['Content-Security-Policy'])
-            self.assertIn('报告库', response.read().decode())
+            html = response.read().decode()
+            self.assertIn('Report archive', html)
+            self.assertLess(html.index('/report-text.js'), html.index('/app.js'))
+        with self.call('/report-text.js') as response:
+            self.assertIn('text/javascript', response.headers['Content-Type'])
+            self.assertIn('window.TCAReportText', response.read().decode())
         for path in ('/../../etc/passwd', '/api/reports/../../config', '/config.json'):
             with self.assertRaises(HTTPError):
                 self.call(path)
         meta = archive.scan_path(self.project, self.store)['archive']
         with self.call('/api/reports/'+meta['report_id']+'/artifact?name=report.html') as response:
             self.assertIn("default-src 'none'", response.headers['Content-Security-Policy'])
-            self.assertIn('时序源码', response.read().decode())
+            self.assertIn('Temporal source', response.read().decode())
         with self.assertRaises(HTTPError):
             self.call('/api/reports/'+meta['report_id']+'/artifact?name=../../config.json')
 

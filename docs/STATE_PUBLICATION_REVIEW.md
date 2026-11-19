@@ -1,32 +1,32 @@
-# 同步重入与状态写入顺序：0.6.1 开发检查
+# Synchronous reentry and state-write ordering: 0.6.1 development checks
 
-本次实现只增加一类有界检查：入口先读取闭包中的共享变量，随后可能进入调用者提供的函数；定位该变量的写入发生在调用之前、之后，还是当前路径无法建立关系。结果是待核查证据，不是 bug 判定或风险分。
+This implementation adds one bounded check: an entry reads a shared closure variable and may subsequently enter a caller-supplied function. The analyzer locates whether the variable is written before the call, afterward, or cannot be related on the current path. Results are review evidence, not bug verdicts or risk scores.
 
-工具代码与后续开发验证统一在 `temporal-contract-analyzer` 仓库维护。bench 中的材料只保留历史研究用途；本例运行所需的固定源码、测试、出处和许可证已归入本仓库，不再从 bench 读取。
+Tool code and subsequent development validation are maintained in `temporal-contract-analyzer`. Bench material is retained for historical research only. The fixed source, tests, provenance and licenses needed here are included in this repository, without reading from bench.
 
-## 输入与执行范围
+## Input and execution scope
 
-- 只读 JS/TS 与 Vue 内联脚本的语法事件，不执行候选程序，不读取测试、补丁、历史结论或模型输出来产生 finding。
-- 候选入口必须读取一个当前调用之外声明的闭包变量。单次调用的局部变量和入口参数不作为共享状态。
-- 识别直接参数函数调用及 `.call`、`.apply` 候选。参数重赋值、遮蔽或可见的直接方法赋值会阻止该关联，包含兄弟函数内、类初始化和解构成员赋值。命名函数表达式的内部名字单独处理；catch 参数和类声明也参与遮蔽检查。块级声明的精确可见范围尚未恢复时，保守排除同名关联。改写检查覆盖可见子作用域，即便无法证明该改写会执行，也可能使关联被排除，因此可能漏报。运行时替换、动态别名及实际函数类型仍未证明。
-- 展开直接立即执行函数，以及可唯一绑定且未见改写的本地函数，最多四层、每个入口最多访问 2,000 个事件；不建立全程序调用图。达到上限时不展开剩余调用，无命中不表示安全。重复调用可能复用源码事件 ID，不能视为已区分每次运行实例。
-- JS async 函数在首次 await 前的表达式求值仍可能调用外部代码。例如 `await cb()` 中先调用 cb，再暂停。Python coroutine 与 generator 不套用这条 JS 规则。
-- 不展开定时器/Promise 回调、未调用的函数体、generator 函数体、导入函数或动态成员目标。不做实参与被调用函数参数的传播。
-- 条件分支中的调用不作展开；潜在 await 会截断当前函数的同步前缀。条件写入、解构状态写入、绑定有歧义的写入及未展开的类作用域状态写入保留为未知，不算已建立保护。返回、抛错、catch/finally 与其他复杂控制流不作完整路径证明。
+- Reads syntax events from JS/TS and Vue inline scripts only. Candidate programs are not executed; tests, patches, historical conclusions and model outputs are not read to generate findings.
+- A candidate entry must read a closure variable declared outside the current invocation. Invocation-local variables and entry parameters are not shared state.
+- Recognizes direct parameter-function calls and `.call`/`.apply` candidates. Parameter reassignment, shadowing or visible direct method writes block the association, including writes in sibling functions, class initialization and destructured members. Named-function-expression internal names are handled separately; catch parameters and class declarations participate in shadowing checks. When precise block-declaration visibility is unavailable, same-name associations are conservatively excluded. Visible child scopes are checked for rewriting even when execution cannot be established, potentially causing false negatives. Runtime replacement, dynamic aliases and actual function types remain unproven.
+- Expands direct immediately invoked functions and uniquely bound local functions without visible rewriting, up to four levels and 2,000 events per entry. No whole-program call graph is built. Remaining calls are not expanded after the limit; no match does not establish safety. Repeated calls can reuse source event IDs rather than distinguish runtime instances.
+- Expressions before the first await in a JS async function may call external code. In `await cb()`, cb is called before suspension. This JS rule does not apply to Python coroutines or generators.
+- Does not expand timer/Promise callbacks, uncalled bodies, generator bodies, imported functions or dynamic member targets. Actual arguments are not propagated to callee parameters.
+- Calls in conditional branches are not expanded; potential await points truncate the current function's synchronous prefix. Conditional writes, destructured state writes, ambiguous bindings and unexpanded class-scope writes remain unknown rather than established guards. Return, throw, catch/finally and other complex control flow do not receive complete path proofs.
 
-## 输出状态
+## Output states
 
-| state_publication.status | 含义 | 不能推出 |
+| state_publication.status | Meaning | Does not establish |
 |---|---|---|
-| write_after_call | 在所选有界求值路径中，用户调用发生在后续状态写入前 | 运行时一定重入、一定有 bug |
-| write_before_call | 已定位到调用前对同一绑定的写入 | 写入值一定表示忙碌、保护一定充分 |
-| not_established | 未找到对应前缀写入，或写入带有未消解条件 | 程序缺失保护、或者程序安全 |
+| write_after_call | On the selected bounded evaluation path, the user call precedes a later state write | Runtime reentry or a definite bug |
+| write_before_call | A write to the same binding is located before the call | A busy-state value or sufficient protection |
+| not_established | No corresponding prefix write is found, or the write has unresolved conditions | Missing protection or program safety |
 
-结构化证据记录状态绑定、入口判断、用户调用、写入和立即执行调用链。复杂赋值值不重复摘录，保留在原始源码事件中。新关系同时进入 facts/review；解释性状态只进入 review。边界卡单独引用用户调用和入口判断。compare 会比较关系状态与可提取的简单写入值，不能只根据提示条数判断修复。
+Structured evidence records the state binding, entry guard, user call, write and immediately executed call chain. Complex assignment values remain in original source events rather than being quoted again. New relations enter both facts/review; interpretive states enter review only. Boundary cards cite user calls and entry guards separately. Comparison checks relation states and extractable simple write values; hint counts alone cannot establish a repair.
 
-## 为什么 p-debounce 旧实现会触发
+## Why the old p-debounce implementation matches
 
-真实修复父提交中的第 103 行读取 currentPromise，第 118 行写的是：
+In the real repair's parent commit, line 103 reads currentPromise and line 118 begins:
 
 ```js
 currentPromise = (async () => {
@@ -36,113 +36,107 @@ currentPromise = (async () => {
 })();
 ```
 
-第 124 行的用户调用会在右侧返回之前发生。虽然赋值文本从第 118 行开始，赋值完成却在该调用之后。这是求值关系，不是按行号排序的结果。维护者修复先在第 121 行设置 currentPromise，再在第 129 行调用用户函数。
+The user call at line 124 happens before the right-hand side returns. Although the assignment text starts at line 118, assignment completion follows that call. This is an evaluation relation rather than line-number sorting. The maintainer's repair sets currentPromise at line 121 before calling the user function at line 129.
 
-## 本轮开发验证
+## Development validation
 
-入口：`python3 -B external-tests/reentry-publication-v1/run.py --output external-tests/reentry-publication-v1/run-new`。
+Entry point: `python3 -B external-tests/reentry-publication-v1/run.py --output external-tests/reentry-publication-v1/run-new`.
 
-需要本仓库 `external-tests/reentry-publication-v1/fixtures/p-debounce/` 中的固定历史快照与测试，以及本机已有 Node >=22；不安装新依赖或调用模型。历史输入、旧扫描与旧报告不覆盖。新输出包含逐项源码、冻结包、HTML、对照报告和 TAP。
+Requires the fixed historical snapshots/tests in `external-tests/reentry-publication-v1/fixtures/p-debounce/` and an existing local Node >=22. No new dependencies are installed and no models called. Historical inputs, scans and reports are not overwritten. New output includes per-item source, frozen bundles, HTML, comparison reports and TAP.
 
-真实父提交与修复提交各一份；改名、格式、延后执行、变量遮蔽、条件写入及 undefined 写入均为已知开发对照。它们不是新增独立缺陷，匹配预期也不是准确率/召回率，更不是未见项目验证。
+There is one real parent commit and one repair commit. Renaming, formatting, deferred execution, variable shadowing, conditional writes and undefined writes are known development controls, not additional independent defects. Matching expectations is neither precision/recall nor unseen-project validation.
 
-旧提取器两版都是 3 条粗粒度提示，未明确定位该关系。新提取器两版都增加 1 条状态关系：错误版 write_after_call，修复版 write_before_call。原有 80 项测试两版通过；维护者新增三项重入回归在错误版全部失败，在修复版全部通过。运行日志以外部实验目录中的实际文件为准。
+The old extractor produced three coarse hints for both versions without explicitly locating this relation. The new extractor adds one state relation to each: write_after_call for the faulty version, write_before_call for the repaired version. The original 80 tests pass for both; the maintainer's three additional reentry regressions all fail before repair and pass afterward. Actual files in the external experiment directory are the authoritative logs.
 
-这证明本次开发检查能呈现这个已知问题的关键关系；尚未测量开发者审查收益或 LLM 修复收益。扩展规则后必须另选独立来源验证。
+This establishes that the development check can present the key relation in this known issue. Developer review benefits and LLM repair benefits have not been measured. Further rule extensions require validation from independent sources.
 
-## 交付边界
+## Delivery boundaries
 
-本次修改 Python 核心、JS 解析器、冻结报告与源码网页使用的卡片投影。没有重新打包 VS Code VSIX，也没有同步 bench 内嵌的旧分析器。旧冻结包继续保留原字节；旧报告不借用新工具身份。实际扫描版本与工具哈希应以生成的 report.json 为准。
+This change affects the Python core, JS parser and card projection used by frozen reports and source pages. The VS Code VSIX was not repackaged, nor the old embedded bench analyzer synchronized. Existing frozen bundles retain their original bytes; old reports do not adopt a new tool identity. Actual scan versions and tool hashes are recorded in generated report.json.
 
+## 0.6.3: One-shot callback clearing in conditional branches
 
-## 0.6.3：条件分支中的一次性回调清空
+Adds restricted recognition of `if (fn) { fn(...); fn = undefined/null; }`, independent of function/project names. The hypothesis is that `fn` serves as both entry state and an outer parameter binding; on the selected normal path, synchronous invocation precedes clearing, warranting an immediate-reentry check. This is not a general conditional-path reachability proof.
 
-增加对 `if (fn) { fn(...); fn = undefined/null; }` 的受限识别，不依赖函数名或项目名。假设是：`fn` 同时充当入口状态和外层函数参数绑定；在选定正常路径中，同步调用发生在清空之前，因而值得做立即重入检查。它不是一般条件路径可达性证明。
+- For simple identifier guards, the parser records actual branch-block identity and whether the branch consists of supported sequential statements. Equal condition text does not merge separate branches.
+- The entry guard must be a direct function-body statement. Call and clear must occur in its same positive branch within the bounded initial synchronous prefix. Clearing after a direct return/throw is excluded.
+- The binding must be an outer parameter rather than a current-invocation local/parameter. Its only visible write in the entire file must be this simple null/undefined clear after the call. The old callback-reassignment checks are not generally relaxed.
+- Shadowed undefined is not inferred as an empty value. Property writes, destructured writes and sibling-function writes still exclude associations. `.call`/`.apply` remain candidates; runtime replacement is unproven.
+- Nested if, loops, try/finally, additional blocks and local-helper expansion inside this branch are unsupported; suspension still truncates analysis. Negated guards, compound conditions and calls through saved aliases are not inferred. Strict limits leave false negatives; no match is not safety.
+- Uses existing `reentrant-state-publication` / `write_after_call` and ordering relations, without relaxing default low-noise filters. Additional structure records `path_conditions` and `callback_binding_basis`.
 
-- 解析器为简单标识符 guard 记录真正分支块身份和分支是否由支持的顺序语句组成；不按条件文本相同就合并两个分支。
-- 入口 guard 必须位于函数体直接语句层。调用、清空必须位于该 guard 的同一正分支块，且在有界初始同步前缀内。直接返回/抛出后的清空不计入。
-- 该绑定必须是外层参数，不是本次调用的局部或参数；它在整个文件中唯一可见的写入必须是这次调用之后的简单 null/undefined 清空。不会普遍放宽旧规则的回调重赋值检查。
-- undefined 被参数、声明或导入遮蔽时不推断为空值。属性改写、解构改写、兄弟函数改写仍排除关联；.call/.apply 只是候选，运行时覆盖仍未证明。
-- 不支持该分支内的嵌套 if、循环、try/finally、额外块或本地辅助函数展开；遇到暂停点仍截断。否定 guard、复合条件、别名转存后调用等形式暂不推理。严格限制会留下漏报，不应把未命中当安全。
-- 使用原 `reentrant-state-publication` / `write_after_call` 及原先后关系，默认低噪声视图无需放宽筛选门槛。额外结构记录 `path_conditions` 与 `callback_binding_basis`。
+The same-source onetime recheck is in `external-tests/onetime-v8-independent-v1/run-02/`: zero hints in 0.6.2 become one in 0.6.3, citing index.js L17/L18/L19. Upstream code is unchanged; five controls still pass and two reentry expectations still fail. This case participated in rule development and cannot estimate general precision or LLM benefit. New tests cover renaming, formatting, null, call/apply, TS/Vue, cross-branch cases, early clearing, reassignment, shadowing, suspension, deferred calls and unreachable writes.
 
-onetime 的同源码复查见 `external-tests/onetime-v8-independent-v1/run-02/`：0.6.2 的 0 条提示变为 0.6.3 的 1 条，证据为 index.js L17/L18/L19；上游程序不变，5 项控制仍通过，2 项重入期望仍失败。这个案例已经参与规则开发，不能据此估计总体准确率或 LLM 收益。新测试还覆盖改名、格式、null、call/apply、TS/Vue、跨分支、提前清空、重赋值、遮蔽、暂停、延迟调用及不可达写入等边界。
+## 0.6.4: Nested if paths and a separate reentry flag
 
+Adds a restricted path under the existing publication rule: a linear block inside an outer if/else executes `if (flag) return`, calls an outer-supplied function, and writes true to the same shared flag. Evaluation order distinguishes write-before-call from write-after-call. Flag and callback are independent variables; the callback need not itself be state.
 
-## 0.6.4：嵌套 if 路径与独立防重入标志
+Assumptions and boundaries:
 
-在既有状态发布规则下增加一种受限路径：外层 if/else 内的线性语句块先执行 `if (flag) return`，再调用外层传入的函数，并在该块内把同一个共享 flag 写为 true。根据求值顺序区分调用前和调用后写入。flag 与回调是独立变量，不要求回调自身充当状态。
+- Guard keys include scope and source offset, recording branch identities, then/else blocks and paths up to four levels. Identical condition text does not combine separate if statements or mutually exclusive branches.
+- Parent conditions support simple identifiers, this, restricted equality and negation, excluding calls, property accesses and compound logic. Pure constants and detected simple identifier truth-value contradictions are excluded. There is no complete reachability, SAT or type proof.
+- Target blocks allow sequential statements and one simple identifier early-return guard. Logical/conditional expressions, suspension, extra control and nested functions/classes are outside this check. Initial synchronous-prefix and 2,000-event limits remain. Events after return/throw do not establish subsequent writes.
+- Flags must be outer shared bindings rather than current-entry locals/parameters. Outer declarations may be uninitialized or false; the target block permits one simple `flag = true`. Other visible resets, class/sibling/destructured writes and uncertain bindings are conservatively excluded. Callbacks retain existing unreassigned-parameter checks.
+- Findings cite all parent guards, the flag guard, call and write, with `path_conditions`. Layer C retains new path syntax fields. Historical frozen reports lacking these fields keep their original rendering bytes; the old p-debounce bundle still verifies.
+- Direct receiver-property state such as `this[key]` remains unanalyzed. Write-before-call is a fact, not proof of receiver or all-path safety. Exceptions, indirect writes and runtime replacement need human review.
 
-实现假设与边界：
+Fixed component/once source and a clearly labeled artificial variant were rechecked in `external-tests/component-once-v001-v1/run-03/`: zero default cards for the original, one for the variant. Source digests and runtime observations match 0.6.3 run-01; execution checks remain seven passes for the original and six passes/one failure for the variant. Candidate code, expectations and probes were not changed to produce the difference. The variant is not a real upstream defect; this case is now development regression material.
 
-- 解析器以包含作用域和源码偏移的 guard key 记录每层分支身份、then/else 块和路径。最多四层；不会因条件文字相同而混合两个 if，也不会拼接互斥分支。
-- 父条件只支持标识符、this、受限等值比较和否定等简单形式；不支持父条件中的调用、属性访问或复合逻辑。排除纯常量条件和已发现的简单标识符真假矛盾；不做完整可达性、SAT 或类型证明。
-- 目标块只允许顺序语句及一个简单标识符提前返回 guard；逻辑/条件表达式、暂停点、额外控制、嵌套函数/类等不进入该检查。保留初始同步前缀和 2,000 事件上限；返回/抛出后的事件不作为后续写入。
-- 标志必须是外层共享绑定，不是本次入口局部或参数。允许外层无初值/false 声明，目标块只允许一次简单 `flag = true`。其他可见重置、类/兄弟函数/解构改写和不确定绑定仍保守排除。回调沿用原有的未改写参数候选检查。
-- 新 finding 引用所有父 guard、标志 guard、调用和写入，附 `path_conditions`；C 层保留新增路径语法字段。旧冻结报告缺少这些新字段时不改变其渲染字节，已验证旧 p-debounce bundle 可继续校验。
-- 直接接收者属性 `this[key]` 的状态身份仍未分析。调用前写入只列事实，不证明接收者或其他路径安全。异常、间接改写及调用时动态替换仍需人工核查。
+## 0.6.5: Local callback snapshots and clearing order
 
-component/once 固定源码与明确标注的人工变体在 `external-tests/component-once-v001-v1/run-03/` 复查：原版 0 张默认卡，变体 1 张。两者的源码摘要及运行观察分别与 0.6.3 的 run-01 一致，运行检查仍为原版 7 通过、变体 6 通过/1 失败。没有修改候选实现、预期或探针来获得差异。该变体不是上游真实缺陷，本例现已属于开发回归材料。
+Adds one-hop provenance for `if (fn === null) return; const copy = fn; fn = null; copy(...);` and forms moving clearing after invocation. JavaScript value-copy semantics mean clearing the original binding does not alter a previously saved local copy. Only clear-after-call produces default issue cards; clear-before-call remains an ordering fact without claiming all-path safety.
 
+Assumptions and boundaries:
 
-## 0.6.5：局部回调值快照与清空顺序
+- The direct entry body has one strict-null early-return guard, supporting `fn === null` and `null === fn`. The original binding must be an outer parameter, not a current-entry parameter or shadowed name.
+- The copy must be a simple var/let/const declaration in the same sequential block, initialized from that parameter after the guard and before the sole visible null clear. The copy may be called before or after clearing. Clearing the original before copying does not establish a function candidate.
+- Additional copy/source reassignment, method writes, destructured writes or ambiguous bindings remain excluded. Only direct calls and `.call`/`.apply` candidates are recognized, without multi-hop tracking, conditional assignments, property aliases, bind results or cross-function argument propagation.
+- Handles bounded initial synchronous prefixes and linear bodies, retaining the 2,000-event limit. Branches, suspension, deferred callbacks and unreachable clears are not linked. `== null`, other guard/clear values and aliases declared before later assignment are unsupported. Runtime types, indirect writes and dynamic method replacement need review.
+- Findings attach `callback_alias` (original name, copy name, copy event, scope) and provenance. Copy locations enter default card evidence. Layer C adds `local_alias_snapshot_before_call` and null-guard syntax fields, without establishing a complete dynamic call graph. Historical frozen reports lacking the fields retain their original bytes.
 
-增加一跳来源追踪，覆盖 `if (fn === null) return; const copy = fn; fn = null; copy(...);` 及把清空移到调用之后的形式。依据 JavaScript 值复制语义：清空原绑定不会改写此前保存的局部副本。默认只为调用后清空展示问题卡，调用前清空保留顺序事实，不声称全路径安全。
+`external-tests/async-once-v326-v1/run-02/` stores the same-source recheck: the original changes from zero raw hints to one clear-before-call fact, still with zero default issue cards; the artificial variant changes from zero to one issue card. Original inputs, runners, witnesses and outcomes remain unchanged: original 7/7, artificial variant 6/7. This case participated in rule development; its artificial variant is neither a real upstream defect nor generalization evidence.
 
-实现假设与边界：
+## 0.6.6: Receiver functions and Reflect call candidates
 
-- 入口函数体直接层只有一个严格空值比较的提前返回 guard；支持 `fn === null` 和 `null === fn`。该原绑定必须来自外层参数，不能是本次入口参数或被遮蔽的名字。
-- 副本必须是同一顺序块中的简单 var/let/const 声明，初始化器是该参数标识符；复制发生在 guard 之后、唯一可见的 null 清空之前。副本调用可位于清空前或后；原绑定先清空再复制时不关联为函数候选。
-- 副本或源参数存在额外重赋值、方法改写、解构写入或歧义绑定时仍保守排除。只识别直接调用及 .call/.apply 候选，不追踪多跳、条件赋值、对象属性别名、bind 结果或跨函数参数传递。
-- 仅处理有界初始同步前缀与线性函数体，保留 2,000 事件限制；分支、暂停、延迟回调和不可达清空不连接。`== null`、其他 guard/清空值、先声明再赋值的别名暂不支持。运行时类型、间接改写及方法动态替换仍需核查。
-- finding 附 `callback_alias`（原名、副本名、复制事件、作用域）与来源依据，复制位置进入默认卡片证据。C 层增加 `local_alias_snapshot_before_call` 关系及 null guard 的新语法字段；该关系也不证明完整动态调用图。旧冻结报告没有新增字段时仍维持原有字节。
+New `reflective.py` reuses lexical binding, visible-write and synchronous-prefix checks for a restricted pattern: a factory captures this as a function value; a closure limits execution with a positive boolean flag; Reflect.apply/construct performs the call. No project/variable names or Function.prototype.once text are required.
 
-`external-tests/async-once-v326-v1/run-02/` 保存同源码复查：原版由 0 条原始提示变为 1 条调用前清空事实，默认问题卡仍为 0；人工变体由 0 张变为 1 张问题卡。两侧原输入、运行脚本、见证与通过/失败数保持不变，仍是原版 7/7、人工变体 6/7。本例已参与规则开发，人工变体不作为真实上游缺陷或泛化证据。
+Assumptions and boundaries:
 
+- The function value must come from a unique direct factory-body declaration `let/const/var target = this`, without other visible writes. The flag belongs to the same factory, initialized true and uniquely written false in the selected positive branch. Only simple positive identifier guards directly in the entry are selected. The limit is 2,000 events; arbitrary nested flows are not expanded.
+- Supports direct Reflect.apply/construct or simple destructuring from unshadowed Reflect, with renaming. Apply takes three arguments, construct two, with the captured function binding first. Extraction declarations must be in the visible prefix; same-entry extraction must precede the call.
+- Visible Reflect parameters, function/variable/class/catch/import shadowing and direct/property/destructured writes block association. Additional local API-alias writes also exclude it. Known property-mutating APIs for Reflect/globalThis are conservatively excluded, potentially excluding harmless writes. Cross-file/indirect mutation and actual native identity remain unproven.
+- Supports sequential calls or separate conditional arms of `this instanceof currentNamedWrapper ? construct(...) : apply(...)`. The parser retains each arm's identity, test text and parent block, without claiming simultaneous execution. Other conditional expressions, suspension, extra branches, deferred execution and unreachable writes do not establish relations.
+- Each call emits its state ordering and `receiver_capture_before_reflective_call`, with capture, flag initialization and API-destructuring evidence. The default low-noise view merges two candidates sharing flag/guard/write into one card, retaining both locations; raw reports retain arm details. Write-before-call does not prove all-path safety, actual function type or correct caching semantics.
 
-## 0.6.6：接收者函数与 Reflect 调用候选
+The latest recheck is `external-tests/ungap-once-v012-v1/run-03/`: the original has two write-before-call facts and zero issue cards; an artificial delayed-flag variant has two write-after-call candidates merged into one card. Fixed source, original runner, seven checks and ten upstream assertions match run-01; outcomes remain original 7/7, variant 6/7. A separate constructor-reentry probe is stored in constructor_verification.json: the same variant increases constructions from one to two, not a second independent defect.
 
-新增 `reflective.py`，复用既有词法绑定、可见改写与同步前缀检查，分析“工厂把 this 保存为函数值，闭包以正向布尔标志限制执行，再通过 Reflect.apply/construct 调用”的受限模式。不需要匹配项目名、变量名或 Function.prototype.once 字样。
+This case was used for rule development and cannot subsequently count as an unseen validation project. It demonstrates distinction of a known artificial regression, not overall precision or LLM assistance. Historical run-01 and intermediate run-02 are preserved; old frozen bundles still verify.
 
-假设与边界：
+## 0.6.7: Simple post-call clearing preserves call-site provenance
 
-- 函数值必须是同一工厂直接语句层中唯一的 `let/const/var target = this` 声明，且未见其他改写；标志来自同一工厂，以 true 初始化，在选定正向分支中唯一写为 false。只选当前入口直接层的简单正向标识符 guard，最多读取 2,000 个事件，未展开任意嵌套流程。
-- 调用支持直接 Reflect.apply/construct，或从未被遮蔽的 Reflect 简单解构出的 apply/construct（允许重命名）。apply 必须有 3 个实参，construct 有 2 个，第一个实参必须是上述函数值绑定。提取声明在可见前缀内；同入口中的提取还必须发生在调用之前。
-- 可见的 Reflect 参数、函数声明、变量/类/catch/import 遮蔽，以及直接/属性/解构写入会阻止关联；局部 API 别名有额外改写也排除。对 Reflect/globalThis 等全局对象的已知属性修改 API 保守排除，因此也可能排除实际无害改写。跨文件、间接修改和实际原生身份仍未证明。
-- 支持顺序调用，或 `this instanceof 当前命名包装函数 ? construct(...) : apply(...)` 的两条独立条件臂。解析器保留各臂的身份、测试文本和父块，不声称两条臂同时执行。其他条件表达式、暂停、额外分支、延迟执行及不可达写入仍不建立关系。
-- 每个调用分别输出状态先后关系和 `receiver_capture_before_reflective_call`，附捕获、标志初始化、API 解构来源等证据。默认低噪声视图合并同一标志/guard/写入的两条候选为 1 张卡，保留两种调用位置；原始报告保留各臂详情。调用前写标志仅列事实，不证明全路径安全、实际函数类型或缓存语义正确。
+Parameter-call association no longer abandons every binding with a visible write. If the parameter's sole visible write is a simple null/undefined clear after the call in the same direct entry block's normal synchronous prefix, the call-site parameter provenance candidate is retained. This detects ordering between just-once's separate called flag and user call without requiring cleanup deletion.
 
-`external-tests/ungap-once-v012-v1/run-03/` 是最新复查批次：原版 2 条调用前写入事实、0 张问题卡；人工延迟标志变体 2 条调用后写入候选、合并为 1 张卡。固定源码、原运行脚本、原 7 项检查和上游 10 个断言与 run-01 一致，运行结果保持原版 7/7、变体 6/7。另保存独立的构造器重入探针：同一变体下构造次数从 1 变为 2，见 constructor_verification.json；不是第二个独立缺陷。
+Assumptions and boundaries:
 
-该案例已用于规则开发，后续不能再当未见验证项目。它证明当前实现能区别这一已知人工退化，不证明总体精度或对 LLM 的辅助收益。历史 run-01 和中间 run-02 保留，旧冻结包仍可验证。
+- Call and clear must share a direct linear block in the same function frame, without additional conditions or conditional expressions. Clearing must be within the bounded initial synchronous prefix. Existing expansion/event budgets remain; suspension, return/throw and uncertain branches are not crossed.
+- Only the binding's sole visible write is accepted: simple `callback = null`, or `callback = undefined` with unshadowed undefined. Pre-call writes, arbitrary replacements, method overwrites, destructuring, multiple writes and clears in class/sibling/helper frames remain conservative exclusions.
+- Decisions are per call site: calls before clearing may retain provenance; later calls cannot reuse the original parameter candidate. This is not complete reaching-definitions, alias or whole-program control-flow analysis.
+- Adds `external_call_before_callback_clear` and `callback_cleanup` provenance. Existing guard/state writes still determine write_before_call / write_after_call. The default view requires complete clearing relations and citations. Clearing is neutral ordering evidence; cards explicitly do not classify the cleanup statement itself as defective.
+- If the original callback binding is itself entry state, post-call clearing can still be a meaningful reentry candidate. Calling a statement cleanup does not generally make its ordering irrelevant.
 
+`external-tests/just-once-v220-v1/run-02/` stores the recheck: the original retains fn = undefined and identifies called as written first, with zero default cards. An artificial delayed-called variant has one card. Inputs, original runner and witnesses match run-01; outcomes remain original 7/7, variant 6/7. The run-01 false negative and static cleanup-deletion diagnosis are retained. This round changed the tool rather than candidates or cleanup. All old development cases/bundles were separately checked; this is not independent generalization or LLM-benefit evidence.
 
-## 0.6.7：调用后的简单清空不再抹去调用点来源
+## 0.6.8: Numeric invocation-budget decrement and conditional calls
 
-改进参数调用关联：可见写入不再一概导致放弃。若该参数唯一的可见改写是在当前入口同一直接语句块中、正常同步前缀里的调用之后发生的简单 null/undefined 清空，则保留调用点的参数来源候选。该能力用于识别 just-once 中独立 called 标志与用户调用的顺序，不要求删除原清理语句。
+New countdown.py analyzes a restricted shared parameter representing a numeric quota: a positive numeric condition gates a call to another factory parameter, and the entire file has one explicit -- update. It distinguishes pre-decrement in the condition from post-call budget updates rather than labeling every decrement a temporal risk.
 
-实现假设与边界：
+Assumptions and boundaries:
 
-- 调用、清空必须在同一函数帧的直接线性块中，无附加条件或条件表达式；清空必须处于有界初始同步前缀内。仍使用原来的函数展开/事件预算；不跨暂停、return/throw 或不确定分支连接两者。
-- 只接受该绑定唯一的可见改写，形式为简单 `callback = null` 或未被声明、参数、导入等遮蔽的 `callback = undefined`。调用前写入、任意替换值、方法覆写、解构、多次写入、类/兄弟函数及辅助帧中的清空仍保守处理。
-- 按调用点分别判断：清空之前的调用可保留来源；清空之后的调用不能复用原参数候选。不是完整 reaching-definitions、别名或全程序控制流分析。
-- 追加 `external_call_before_callback_clear` 顺序关系和 `callback_cleanup` 来源字段，原 guard/状态写入仍决定 write_before_call / write_after_call。默认视图要求该清空关系与源码引用完整；清空只作中性顺序证据，卡片注明不判定清理语句本身有错。
-- 若原回调绑定本身就是入口检查的状态，调用后清空仍可能构成有意义的重入候选；不会因为语句叫“清理”而普遍忽略其顺序。
+- Supports `if (--budget > k) { callback(...) }` or a standalone -- update after `if (budget > b) { ... }`. The latter update may occur inside the positive branch before/after the call, or after that branch; its prefix/postfix result is unused. Thresholds must be nonnegative safe-integer literals. Post-decrement condition values, increments, compound arithmetic, dynamic thresholds and other comparison operators are unsupported.
+- Budget and callback must be parameters of the same outer function. Current-invocation locals, resets/reassignments, extra visible writes and shadowing are excluded. The positive branch permits sequential statements and one direct parameter callback call, including call/apply candidates. Extra control, termination, suspension, deferred callbacks and multiple calls are conservatively excluded. Existing synchronous-prefix and 2,000-event budgets remain.
+- For subsequent `if (budget <= bound) callback = null`, validates the cleanup variable, block identity, thresholds and decrement/call ordering. The cleanup threshold is k+1 for the pre-decrement condition, b for ordinary comparison. Parameter candidates are retained only after checking this monotone-budget pattern; arbitrary conditional writes do not establish a known callback.
+- Cleanup may not execute. New `external_call_before_conditional_callback_clear` describes ordering only when its condition holds. Default reports show that condition and retain cleanup guard/write evidence, without declaring cleanup defective.
+- New syntax fields countdown_guard/countdown_cleanup/update_prefix/update_standalone distinguish tested values from update side effects. Layer C retains bounded relations such as numeric_budget_guard_before_call; layer D adds numeric_budget and write_operator. Existing default write_before_call / write_after_call filtering is reused.
+- Numeric-budget meaning, finite safe-integer inputs and runtime function type remain review premises. Numeric coercion, budget after exceptions, indirect alias writes and a complete upper bound are not proven. If the condition is not an invocation budget, the user should reject the candidate rather than treat it as a definite defect or basis for automatic reordering.
 
-`external-tests/just-once-v220-v1/run-02/` 保存复查：原版保留 fn = undefined，识别为 called 写入在前，默认 0 张卡；人工延迟 called 写入变体为 1 张卡。与 run-01 的输入、运行脚本和见证均一致，原有运行结果保持原版 7/7、变体 6/7。run-01 的漏报与静态删除清理诊断保留；本轮修改工具，没有修改候选或删除清理。全部旧开发案例及冻结包另行核对，本例不作为独立泛化或 LLM 收益证据。
-
-
-## 0.6.8：数值次数预算的递减与条件调用
-
-新增 countdown.py，分析具有数字配额含义的受限共享参数：在正向数值条件下调用另一个工厂参数，并且整个文件中只有一次明确的 -- 更新。区分条件中的前置递减与调用后才做的预算更新，不把所有自减当作时序风险。
-
-实现假设与边界：
-
-- 支持 `if (--budget > k) { callback(...) }`，或 `if (budget > b) { ... }` 后的独立 -- 更新。后一种更新可以位于正分支中（调用前或后），或该分支结束之后；独立更新的前置/后置值不被使用。比较阈值必须是非负安全整数字面量；不支持后置自减用作条件值、增量、复合算术、动态阈值和其他比较运算。
-- 预算与回调必须是同一外层函数的参数绑定；本次调用的局部计数器、重置/重赋值、额外可见写入或遮蔽不关联。目标正分支只接受顺序语句和一个直接参数回调调用（含 call/apply 候选）。额外控制、终止、暂停、延迟回调、多个调用等保守排除；保留 2,000 事件及既有同步前缀预算。
-- 若存在后续 `if (budget <= bound) callback = null`，校验清理变量、块身份、比较阈值、递减及调用的顺序。前置条件形式的清理阈值是 k+1；普通比较形式是 b。通过该单调预算模式后才保留参数候选，不能把任意条件改写当作已知回调。
-- 清理可能不执行。新增关系 external_call_before_conditional_callback_clear 只在其条件成立时描述先后；默认报告显示清理条件，保留清理 guard 与写入证据，不判定清理本身有错。
-- 通过新语法字段 countdown_guard/countdown_cleanup/update_prefix/update_standalone 区分测试值与更新副作用；C 层保留 numeric_budget_guard_before_call 等有限关系，D 层附 numeric_budget 和 write_operator。沿用 write_before_call / write_after_call 的默认筛选。
-- 数字预算含义、有限安全整数输入与运行时函数类型是待核查前提；不证明数值强制转换、异常后的预算、间接别名写入或完整上限。若条件数字并非次数预算，用户应否定这条候选，不能据此当作确定缺陷或自动重排依据。
-
-external-tests/underscore-before-v1/run-02 保存同源码复查：原版记录预算先递减，默认 0 张问题卡；人工延迟递减变体为 1 张卡。候选、原运行器与 7 项见证均未改，运行结果保持原版 7/7、变体 6/7，有限整数 0/1/2/3 的顺序行为控制通过。这个人工变体不是真实上游缺陷，本例已经属于开发回归材料。
+`external-tests/underscore-before-v1/run-02` stores the same-source recheck: the original records decrement-before-call with zero default issue cards; an artificial delayed-decrement variant has one card. Candidates, original runner and seven witnesses are unchanged. Outcomes remain original 7/7, variant 6/7; ordering controls for finite integers 0/1/2/3 pass. This artificial variant is not a real upstream defect, and the case is now development regression material.

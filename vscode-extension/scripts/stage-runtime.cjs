@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, '../..');
 const dest = path.resolve(__dirname, '../runtime');
 const parser = path.join(root, 'temporal_contract_analyzer/javascript');
 if (!fs.existsSync(path.join(parser, 'node_modules/@vue/compiler-sfc/package.json'))) {
-  throw new Error('先运行 npm ci --prefix temporal_contract_analyzer/javascript --ignore-scripts');
+  throw new Error('First run npm ci --prefix temporal_contract_analyzer/javascript --ignore-scripts');
 }
 execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['ls', '--omit=dev', '--all', '--json'], {cwd: parser, stdio: 'pipe'});
 fs.rmSync(dest, {recursive: true, force: true});
