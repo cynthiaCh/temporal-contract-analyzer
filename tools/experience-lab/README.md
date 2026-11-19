@@ -51,6 +51,27 @@ export may lack them; configure your own paths and model profiles. Environment
 checks cover Docker availability, Codex presence and image availability, but do
 not establish authentication, quota or completion of a real model run.
 
+### Model profiles
+
+The initial workspace provides GPT-5.6 Sol and GPT-6.1 Sol profiles at low,
+medium and high reasoning effort. `sol56-medium` matches the model name, effort,
+service tier and provider settings used in the retained GPT-5.6 experiments.
+Other presets are configuration choices; opening or saving does not check model
+availability or account access.
+
+Use **Edit profile** to change the selected model name, reasoning effort or service
+tier. Use **+ Add profile** to create a separate ID using the selected profile as
+its provider template. Empty effort/tier fields use the provider default.
+
+Edits persist in `.tempoevo/model-profiles.json` with the default run directory
+(or `model-profiles.json` beside a custom `--runs` directory). Prepared trajectories
+retain their frozen settings; prepare a new batch to use an edit. The main runtime
+configuration stays unchanged. Editing a profile loaded from an external file
+copies that selected profile into the workspace, preserves its provider settings,
+and uses the workspace retry policy. It does not overwrite the external file.
+Stale saves are rejected; reload profiles and reopen the editor before retrying.
+Saving makes no model requests. Credentials are not exposed in the editor.
+
 ## Execution and review boundaries
 
 - Training uses the current V8-compatible construction recipe, with at most three
@@ -103,7 +124,7 @@ and a real launch separately on a provisioned execution host.
 ## Offline checks
 
 ```sh
-python3 -B -m unittest discover -s tools/experience-lab -p test_workbench.py
+python3 -B -m unittest discover -s tools/experience-lab -p 'test_*.py'
 node --check tools/experience-lab/web/app.js
 ```
 

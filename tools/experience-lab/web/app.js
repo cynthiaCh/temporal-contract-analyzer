@@ -1,6 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let profileEditor=null;
 let token='', mode='learning', runId='', run=null, detail=null, tab='contract', replayTimer=null, replayIndex=0, busy=false;
 const labels={learning:'Training',testing:'Testing'};
 const artifactTabs=[['task','Task'],['source','Source'],['contract','Auto-Contract'],['patch','Patch'],['experience','Experience'],['candidate','Candidate'],['log','Run log']];
@@ -9,7 +10,7 @@ async function api(path,body){const response=await fetch(path,body===undefined?{
 function notice(text){$('notice').hidden=!text;$('notice').textContent=text||'';}
 function setMode(next){mode=next;$('training-nav').classList.toggle('active',mode==='learning');$('testing-nav').classList.toggle('active',mode==='testing');$('config-title').textContent=labels[mode]+' configuration';$('dataset').options[0].text=mode==='learning'?'Training · 70 tasks':'Test · 30 tasks';const max=mode==='learning'?70:30;for(const id of ['start','count']){$(id).max=max;if(Number($(id).value)>max)$(id).value=1;}$('public-checks-label').hidden=mode==='testing';$('repair-budget').textContent=mode==='learning'?'Up to 3 Actions':'One Action · final Gold';$('prepare').innerHTML='<span>↗</span> Prepare '+(mode==='learning'?'training':'testing');renderControls();}
 function formConfig(){return {mode,start:Number($('start').value),count:Number($('count').value),workers:Number($('workers').value),condition:$('condition').value,model_profile:$('profile').value,benchmark:$('benchmark').value,store:$('store').value,model_config:$('model-config').value,solver_image:$('solver-image').value,grader_image:$('grader-image').value,public_checks:$('public-checks').value};}
-function profiles(data,selected){$('profile').replaceChildren();for(const [id,p] of Object.entries(data)){const o=document.createElement('option');o.value=id;o.textContent=`${p.model} · ${p.reasoning_effort}`;$('profile').append(o);}if(selected&&data[selected])$('profile').value=selected;}
+function profiles(data,selected){$('profile').replaceChildren();for(const [id,p] of Object.entries(data)){const o=document.createElement('option');o.value=id;o.textContent=`${p.model} · ${p.reasoning_effort || 'default effort'} [${id}]`;$('profile').append(o);}if(selected&&data[selected])$('profile').value=selected;}
 async function checkHost(){ $('host-label').textContent='Checking execution host…';try{const e=await api('/api/environment');const ready=e.docker.ok&&e.codex.ok;$('host-dot').classList.toggle('warning',!ready);$('host-label').textContent=ready?'Execution host ready':'Execution host needs setup';$('host-detail').textContent=ready?`Docker ${e.docker.detail} · Python ${e.python}`:!e.docker.ok?'Docker is not running or is unavailable. Start Docker on this host, or run this workbench on your configured experiment server.':e.codex.detail;}catch(e){$('host-label').textContent='Host check failed';$('host-detail').textContent=e.message;}}
 async function refreshRuns(select){const rows=await api('/api/runs');const previous=select||runId;$('runs').replaceChildren();for(const r of rows){const o=document.createElement('option');o.value=r.id;o.textContent=(r.recorded?'Recorded · ':'')+r.title;$('runs').append(o);}if(rows.some(r=>r.id===previous))$('runs').value=previous;runId=$('runs').value;if(runId)await refreshRun();}
 async function refreshRun(){if(!runId)return;const selected=$('cases').value;run=await api('/api/run?id='+encodeURIComponent(runId));$('run-status').textContent=run.meta.recorded?'Recorded · read-only':run.meta.status.replaceAll('_',' ');$('run-status').className='status-tag'+(/fail|error/.test(run.meta.status)?' error':/prepar|stopp/.test(run.meta.status)?' warn':'');$('run-subtitle').textContent=run.meta.recorded?'Real archived evidence. Replay changes only the presentation.':run.meta.config.mode==='learning'?'Training: up to three Actions; candidate experience awaits separate review.':'Testing: one Action, frozen memory, and independent final Gold scoring.';
@@ -31,10 +32,63 @@ else if(tab==='candidate'){if(!detail.candidate)return empty(detail.case.status=
 else if(tab==='log'){const stages=detail.stages;const rows=stages.map(s=>'<tr><td>'+esc(s.key)+'</td><td class="kind">'+esc(s.kind)+'</td><td>'+esc(s.status)+'</td><td>'+esc(s.requests??'—')+' requests</td><td>'+esc(s.seconds===undefined?'—':Number(s.seconds).toFixed(1)+' s')+'</td></tr>').join('');const verdict=detail.case.passed===true?'PASS':detail.case.passed===false?'FAIL':detail.case.status.replaceAll('_',' ');a.innerHTML='<div class="verdict '+(detail.case.passed===false?'failure':'')+'">'+esc(verdict)+'</div><p class="intro">'+esc(detail.artifact_scope)+' · '+esc(detail.source)+'</p>'+(stages.length?'<table class="stage-log"><tbody>'+rows+'</tbody></table>':'<pre>'+esc(JSON.stringify(detail.evaluation,null,2))+'</pre>')+(detail.execution_log?'<h4>Execution log</h4><pre>'+esc(detail.execution_log)+'</pre>':'')+(run?.preparation_log?'<h4>Preparation log</h4><pre>'+esc(run.preparation_log)+'</pre>':'')+(run?.events.length?'<h4>Workbench events</h4><pre>'+esc(run.events.map(e=>e.at+' '+e.kind+' '+e.message).join('\n'))+'</pre>':'');}}
 function stopReplay(){if(replayTimer)clearInterval(replayTimer);replayTimer=null;$('replay').textContent='Replay recorded steps';}
 $('training-nav').onclick=()=>setMode('learning');$('testing-nav').onclick=()=>setMode('testing');$('guide-open').onclick=()=>$('guide').showModal();$('guide-close').onclick=()=>$('guide').close();$('presentation').onclick=()=>{const active=document.body.classList.toggle('presentation');$('presentation').textContent=active?'Show configuration':'Presentation view';};$('check-host').onclick=()=>checkHost();$('runs').onchange=()=>{stopReplay();runId=$('runs').value;refreshRun().catch(e=>notice(e.message));};$('cases').onchange=()=>{stopReplay();refreshCase().catch(e=>notice(e.message));};$('refresh').onclick=()=>refreshRuns(runId).catch(e=>notice(e.message));
-$('reload-profiles').onclick=()=>api('/api/profiles?path='+encodeURIComponent($('model-config').value)).then(d=>{profiles(d);notice('Model profiles loaded from the selected file.');}).catch(e=>notice(e.message));
+$('reload-profiles').onclick=()=>api('/api/profiles?path='+encodeURIComponent($('model-config').value)).then(d=>{applyProfiles(d);notice('Model profiles loaded from the selected file.');}).catch(e=>notice(e.message));
 $('config-form').onsubmit=async e=>{e.preventDefault();notice('');busy=true;renderControls();try{const r=await api('/api/prepare',formConfig());await refreshRuns(r.id);tab='log';renderArtifact();}catch(e){notice(e.message);}finally{busy=false;renderControls();}};
 $('execute').onclick=async()=>{if(!run||run.meta.recorded)return;notice('');busy=true;renderControls();try{await api('/api/start',{id:runId});await refreshRun();}catch(e){notice(e.message);}finally{busy=false;renderControls();}};
 $('stop').onclick=async()=>{busy=true;renderControls();try{await api('/api/stop',{id:runId});await refreshRun();}catch(e){notice(e.message);}finally{busy=false;renderControls();}};
 $('replay').onclick=()=>{if(replayTimer){stopReplay();return;}replayIndex=0;const order=[0,4,1,2,3,7,6,5];const next=()=>{const i=order[replayIndex];tab=stepDefs[i][0];renderWorkflow();renderArtifact();$('workflow-caption').textContent='Recorded evidence replay · step '+(replayIndex+1)+' / '+order.length+' · no model execution';$('replay').textContent='Stop replay';replayIndex++;if(replayIndex===order.length)stopReplay();};next();replayTimer=setInterval(next,3500);};
 $('export').onclick=()=>{if(!detail)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(detail,null,2)],{type:'application/json'}));a.download=detail.case.id+'-record.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);};
-(async()=>{try{const b=await api('/api/bootstrap');token=b.token;for(const [id,key] of [['benchmark','benchmark'],['store','store'],['model-config','model_config'],['solver-image','solver_image'],['grader-image','grader_image'],['public-checks','public_checks']])$(id).value=b.defaults[key];profiles(b.profiles,b.default_profile);$('footer-path').textContent=b.repository;setMode('learning');await refreshRuns();checkHost();setInterval(()=>{if(run&&!run.meta.recorded&&!replayTimer)refreshRun().catch(e=>notice(e.message));},2500);}catch(e){notice(e.message);}})();
+(async()=>{try{const b=await api('/api/bootstrap');token=b.token;for(const [id,key] of [['benchmark','benchmark'],['store','store'],['model-config','model_config'],['solver-image','solver_image'],['grader-image','grader_image'],['public-checks','public_checks']])$(id).value=b.defaults[key];applyProfiles(b.profile_config);$('footer-path').textContent=b.repository;setMode('learning');await refreshRuns();checkHost();setInterval(()=>{if(run&&!run.meta.recorded&&!replayTimer)refreshRun().catch(e=>notice(e.message));},2500);}catch(e){notice(e.message);}})();
+
+function applyProfiles(config) {
+    $('model-config').value = config.path;
+    profiles(config.profiles, config.selected || config.default_profile);
+}
+
+async function editProfile(create) {
+    const selected = $('profile').value;
+    const config = await api('/api/profiles?path=' + encodeURIComponent($('model-config').value));
+    const base = config.profiles[selected] ? selected : config.default_profile;
+    const row = config.profiles[base];
+    if (!row) throw Error('Load a valid model profile before editing.');
+    profileEditor = {...config, base_id: base, create};
+    $('profile-dialog-title').textContent = create ? 'Add model profile' : 'Edit model profile';
+    $('profile-id').value = create ? '' : base;
+    $('profile-id').readOnly = !create;
+    $('profile-model').value = row.model;
+    $('profile-effort').value = row.reasoning_effort || '';
+    $('profile-tier').value = row.service_tier || '';
+    $('profile-error').hidden = true;
+    $('profile-dialog').showModal();
+    $(create ? 'profile-id' : 'profile-model').focus();
+}
+
+$('profile-add').onclick = () => editProfile(true).catch(e => notice(e.message));
+$('profile-edit').onclick = () => editProfile(false).catch(e => notice(e.message));
+$('profile-close').onclick = () => $('profile-dialog').close();
+$('profile-form').onsubmit = async event => {
+    event.preventDefault();
+    $('profile-save').disabled = true;
+    $('profile-error').hidden = true;
+    try {
+        const result = await api('/api/profiles/save', {
+            path: profileEditor.path,
+            revision: profileEditor.revision,
+            workspace_revision: profileEditor.workspace_revision,
+            base_id: profileEditor.base_id,
+            create: profileEditor.create,
+            id: $('profile-id').value.trim(),
+            model: $('profile-model').value.trim(),
+            reasoning_effort: $('profile-effort').value.trim() || null,
+            service_tier: $('profile-tier').value.trim() || null
+        });
+        applyProfiles(result);
+        $('profile-dialog').close();
+        notice('Profile saved for future preparations. Prepared runs keep their frozen model settings.');
+    } catch (error) {
+        $('profile-error').textContent = error.message;
+        $('profile-error').hidden = false;
+    } finally {
+        $('profile-save').disabled = false;
+    }
+};

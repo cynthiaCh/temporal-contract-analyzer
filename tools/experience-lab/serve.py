@@ -9,8 +9,9 @@ import sys
 from urllib.parse import parse_qs, urlsplit
 import webbrowser
 
-from runner import Controller, REPO, DEFAULT_GRADER, DEFAULT_SOLVER, PUBLIC_DOCS, checked_path, environment, read, public_profiles
+from runner import Controller, REPO, DEFAULT_GRADER, DEFAULT_SOLVER, PUBLIC_DOCS, environment, read
 from records import archived_runs, run_detail, case_detail
+from model_profiles import Profiles
 
 WEB = Path(__file__).resolve().parent/'web'
 
@@ -20,6 +21,7 @@ class Server(ThreadingHTTPServer):
 
     def __init__(self, port, root):
         self.controller = Controller(root)
+        self.profiles = Profiles(self.controller.root.parent/'model-profiles.json')
         self.token = secrets.token_hex(24)
         super().__init__(('127.0.0.1', port), Handler)
         self.url = 'http://127.0.0.1:'+str(self.server_address[1])
@@ -51,14 +53,14 @@ class Handler(BaseHTTPRequestHandler):
                 file = WEB/('index.html' if url.path == '/' else url.path[1:])
                 self.send(file.read_bytes(), content_type={'.html':'text/html', '.css':'text/css', '.js':'text/javascript'}[file.suffix])
             elif url.path == '/api/bootstrap':
-                config = read(REPO/'temporal_contract_analyzer/_session_runtime/model-profiles.json')
-                self.send(dict(token=self.server.token, repository=str(REPO), profiles=public_profiles(REPO/'temporal_contract_analyzer/_session_runtime/model-profiles.json'), default_profile=config['default_profile'],
-                               defaults=dict(benchmark=str(REPO.parent/'temporal-contract-bench'), store='experience-memory/library', model_config='temporal_contract_analyzer/_session_runtime/model-profiles.json',
+                config = self.server.profiles.snapshot()
+                self.send(dict(token=self.server.token, repository=str(REPO), profiles=config['profiles'], default_profile=config['default_profile'], profile_config=config,
+                               defaults=dict(benchmark=str(REPO.parent/'temporal-contract-bench'), store='experience-memory/library', model_config=config['path'],
                                              solver_image=DEFAULT_SOLVER, grader_image=DEFAULT_GRADER, public_checks=PUBLIC_DOCS)))
             elif url.path == '/api/environment':
                 self.send(environment())
             elif url.path == '/api/profiles':
-                self.send(public_profiles(checked_path(query['path'][0], 'Model profile file')))
+                self.send(self.server.profiles.snapshot(query['path'][0]))
             elif url.path == '/api/runs':
                 rows = []
                 for file in sorted(self.server.controller.root.glob('run-*/lab.json'), reverse=True):
@@ -87,7 +89,9 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length))
             if not isinstance(body, dict):
                 raise ValueError('Expected an object')
-            if self.path == '/api/prepare':
+            if self.path == '/api/profiles/save':
+                self.send(self.server.profiles.save(body))
+            elif self.path == '/api/prepare':
                 ident = self.server.controller.prepare(body)
                 self.send(dict(id=ident), 202)
             elif self.path == '/api/start':
