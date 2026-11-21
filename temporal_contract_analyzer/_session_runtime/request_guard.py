@@ -36,6 +36,7 @@ def account(e,root,call,terminate=True):
     inp=e.get('tool_input',{});command=inp.get('command',inp.get('cmd','')) if isinstance(inp,dict) else ''
     # Shell newlines are command separators, not ordinary reader arguments.
     read_ok=read_ok and not any(ch in command for ch in ['\n','\r'])
+   if e.get('qoder_guard_denied') is True:read_ok=False
    if limit['mode']=='reflection' or not read_ok:deny=True;reason='role permits no tools or only closed-grammar workspace evidence reads';r['blocked_tools']+=1
   item=dict(at=time.time(),call_id=call,event=e,denied=deny,reason=reason);s['events'].append(item);p.write_text(json.dumps(s,ensure_ascii=False,indent=2)+'\n')
   with (root/'events.jsonl').open('a') as f:f.write(json.dumps(item,ensure_ascii=False)+'\n')

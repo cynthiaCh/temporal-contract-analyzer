@@ -117,6 +117,8 @@ def prepare_command(config, batch):
                '--evaluation-split', str(REPO/'experiments/evaluation-splits.json'), '--mode', mode,
                '--condition', condition, '--solver-image', config['solver_image'], '--grader-image', config['grader_image'],
                '--store', str(store), '--model-config', str(model_file), '--model-profile', config['model_profile']]
+    if mode == 'testing':
+        command += ['--swe-tempoc-root', str(bench)]
     container_codex = REPO / '.tempoevo/bin/linux-x64/codex'
     if profiles[config['model_profile']].get('provider',{}).get('wire_api')=='qoder_cli':
         binary = checked_path('.tempoevo/qoder/linux/qoder', 'Linux Qoder CLI')

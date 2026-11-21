@@ -33,6 +33,7 @@ class Commands(unittest.TestCase):
     def test_testing_preparation_has_no_training_inputs(self):
         command, env, model = runner.prepare_command(self.config, self.root/'new')
         self.assertEqual(command[command.index('--mode')+1], 'testing')
+        self.assertEqual(command[command.index('--swe-tempoc-root')+1], str((self.root/'bench').resolve()))
         self.assertNotIn('--training-recipe', command)
         self.assertNotIn('--public-checks-docs', command)
         self.assertNotIn('--execute', command)

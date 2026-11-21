@@ -17,6 +17,29 @@ from ._session_runtime.schema_validator import validate
 REPO = Path(__file__).resolve().parents[1]
 RUNTIME = Path(__file__).with_name('_session_runtime')
 MEASUREMENT = 'qoder_model_turns'
+ALLOWED_TOOLS = {'Bash', 'Read'}
+
+
+def tool_requests(events):
+    """A rejected request is not an executed tool; require CLI error evidence."""
+    requested, rejected = {}, set()
+    for event in events:
+        message = event.get('message') or {}
+        if event.get('type') == 'assistant':
+            for content in message.get('content', []):
+                if content.get('type') == 'tool_use':
+                    key = content['id']
+                    if key in requested and requested[key] != content.get('name'):
+                        raise ValueError('Conflicting Qoder tool request identity')
+                    requested[key] = content.get('name')
+        elif event.get('type') == 'user':
+            for content in message.get('content', []):
+                if content.get('type') == 'tool_result' and content.get('is_error') is True:
+                    rejected.add(content['tool_use_id'])
+    unsupported = {key:name for key,name in requested.items() if name not in ALLOWED_TOOLS}
+    if set(unsupported)-rejected:
+        raise ValueError('Qoder did not confirm rejection of unavailable tools: '+', '.join(sorted(set(unsupported.values()))))
+    return {key for key,name in requested.items() if name in ALLOWED_TOOLS}, unsupported
 
 
 def parse_events(events, model, cap):
@@ -75,6 +98,7 @@ class QoderBackend:
                   'No scorer, reference, hidden tests or Docker socket is available. '
                   'For evidence cite the original task as file TASK; use exact public source paths and copy the quoted wording. '
                   'For Action edit business code in /workspace, preserve tests/configuration, and compile only under /tmp. '
+                  'Use only Bash and Read. Read is limited to public files in /workspace; MCP, external discovery, subagents and other tools are unavailable. '
                   'For other stages do not modify files; Bash is restricted to workspace reads. '
                   'Bash starts in /workspace: do not prefix commands with cd. For analysis use only pwd, ls, rg, cat, nl, head, tail or sed -n N,Mp; never use find or write commands. '
                   'Return exactly one JSON object matching OUTPUT_SCHEMA, without markdown fences.\n'
@@ -85,7 +109,7 @@ class QoderBackend:
         (profile/'.auth').mkdir(parents=True, mode=0o700)
         (profile/'settings.json').write_text(json.dumps(configuration()))
         name = 'tca-qoder-'+uuid.uuid4().hex
-        events, problems, observed, tool_calls = [], [], set(), set()
+        events, problems, observed = [], [], set()
         process = None
         stopped = False
         started = time.monotonic()
@@ -122,7 +146,8 @@ class QoderBackend:
                     '--model', model['model'], '--max-turns', str(limits['requests']),
                     '--max-model-request-retries', '0', '--setting-sources', 'user', '--strict-mcp-config',
                     '--no-session-persistence', '--settings', '/home/agent/.qoder/settings.json',
-                    '--permission-mode', 'bypass_permissions', '--tools', 'Bash', '-p', '--output-format', 'stream-json']
+                    '--permission-mode', 'bypass_permissions', '--tools', 'Bash,Read',
+                    '--disallowed-tools', 'mcp_call,mcp_get,mcp_list', '-p', '--output-format', 'stream-json']
                 if model.get('reasoning_effort'):
                     command += ['--reasoning-effort', model['reasoning_effort']]
                 archive.atomic_json(directory/'command.json', command)
@@ -145,12 +170,6 @@ class QoderBackend:
                                         raise ValueError('Qoder event must be an object')
                                     events.append(event)
                                     message = event.get('message') or {}
-                                    if event.get('type') == 'assistant':
-                                        for content in message.get('content', []):
-                                            if content.get('type') == 'tool_use':
-                                                if content.get('name') != 'Bash':
-                                                    raise ValueError('Qoder attempted a tool outside the allowed Bash boundary')
-                                                tool_calls.add(content['id'])
                                     if event.get('type') == 'assistant' and not event.get('parent_tool_use_id') and message.get('stop_reason'):
                                         observed.add(message['id'])
                                     archive.atomic_json(directory/'qoder-progress.json', dict(
@@ -174,7 +193,12 @@ class QoderBackend:
                         collector.join(timeout=10)
                         if collector.is_alive():
                             problems.append('Qoder output collector did not finish')
+            if problems:
+                raise ValueError('; '.join(problems))
             completed = parse_events(events, model['model'], limits['requests'])
+            tool_calls, rejected_tools = tool_requests(events)
+            archive.atomic_json(directory/'tool-requests.json', dict(
+                allowed_request_ids=sorted(tool_calls), rejected_unavailable_requests=rejected_tools))
             if len(observed) > completed['num_turns']:
                 problems.append('Qoder final turn count is smaller than observed completions')
             if failure:
@@ -183,11 +207,12 @@ class QoderBackend:
                 failure = ('infrastructure_error', '; '.join(problems+guard.errors))
             elif process.returncode != 0 or completed.get('is_error') or completed.get('subtype') != 'success':
                 failure = ('model_or_cli_abnormal_exit', str(completed.get('result') or completed.get('errors')))
-            elif completed.get('permission_denials'):
-                failure = ('tool_policy_denied', 'Qoder reported denied tools')
+            elif any(not isinstance(d,dict) or rejected_tools.get(d.get('tool_use_id')) != d.get('tool_name')
+                     or d.get('tool_use_id') not in rejected_tools for d in completed.get('permission_denials', [])):
+                failure = ('tool_policy_denied', 'Qoder reported denied workspace tools')
             meter = directory/'tool-meter/ledger.json'
             ledger = json.loads(meter.read_text()) if meter.is_file() else {}
-            if tool_calls and ledger.get('tool_attempts', 0) < len(tool_calls):
+            if tool_calls and ledger.get('tool_attempts', 0) < len(tool_calls) and not failure:
                 failure = ('infrastructure_error', 'Qoder did not run the mandatory tool gate for every tool call')
             if any(e.get('denied') for e in ledger.get('events', [])):
                 failure = ('tool_policy_denied', 'A tool was denied by the training role policy')

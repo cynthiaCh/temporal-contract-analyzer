@@ -75,6 +75,8 @@ The selected-case CLI also accepts `--binary PATH` for other layouts.
 4. Click **Prepare training/testing**. This invokes
    `tools/tempoevo-docker/prepare_selected.py`, including its existing evaluator
    checks and snapshot preparation, without model requests.
+   Testing reads the selected `test30.csv` cases from the benchmark's frozen
+   `benchmark/swe-tempoc.json` roster, rather than the older partial case catalog.
 5. When the batch says **prepared**, click **Start training/testing**. This
    explicitly authorizes model execution for the selected cases. Each case runs
    `python3 -B -m temporal_contract_analyzer tempoevo run --root ... --execute`.
@@ -131,11 +133,18 @@ IDs; the final count comes from `num_turns`. Missing final counts or an
 unconfirmed model fail the stage rather than reporting success. Reported Credits
 are retained separately; unavailable token usage stays unknown.
 
-Analysis has a read-only workspace and a guarded Bash reader. Actions have a
+Analysis has a read-only workspace, a guarded Bash reader and a Read tool confined
+to public workspace paths (including checks against escaping symlinks). Actions have a
 writable public workspace; existing protected-file checks and independent
 evaluators still apply. CLI results must contain a JSON object matching the
 stage schema. Raw output, errors, commands and container receipts are retained.
 All owned containers stop before their candidate files are accepted or assessed.
+MCP tools are explicitly disabled. A model's request for an unavailable tool is
+not treated as proof of execution: collection continues, and recovery is accepted
+only if the CLI returns an explicit error for that request. Unexpected successful
+tools, missing tool-gate records and workspace policy violations still invalidate
+the stage. Collection errors retain their original cause instead of being hidden
+by a secondary missing-final-result message.
 
 Protocol references: [Qoder script execution](https://docs.qoder.com/cli/run-in-scripts),
 [model selection](https://docs.qoder.com/cli/model), and
