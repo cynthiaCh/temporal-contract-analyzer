@@ -22,6 +22,11 @@ DEFAULT_GRADER = 'sha256:00b97937eb4e3c9db1ef6f071dde20629034910bbbfdd9a8b4a34b1
 PUBLIC_DOCS = 'experiments/training-replays/tempoevo-gpt56-sol-medium-train70-twoarms-worker1-20261118_002327/public-checks-docs.json'
 
 
+def default_images():
+    path = REPO / '.tempoevo/docker-images.json'
+    return read(path) if path.is_file() else dict(solver_image=DEFAULT_SOLVER, grader_image=DEFAULT_GRADER)
+
+
 def read(path):
     return json.loads(Path(path).read_text())
 
@@ -108,6 +113,9 @@ def prepare_command(config, batch):
                '--evaluation-split', str(REPO/'experiments/evaluation-splits.json'), '--mode', mode,
                '--condition', condition, '--solver-image', config['solver_image'], '--grader-image', config['grader_image'],
                '--store', str(store), '--model-config', str(model_file), '--model-profile', config['model_profile']]
+    container_codex = REPO / '.tempoevo/bin/linux-x64/codex'
+    if sys.platform == 'darwin' and container_codex.is_file():
+        command += ['--binary', str(container_codex)]
     if mode == 'learning':
         docs = checked_path(config.get('public_checks'), 'Public check descriptions')
         with selection.open(encoding='utf-8-sig', newline='') as handle:

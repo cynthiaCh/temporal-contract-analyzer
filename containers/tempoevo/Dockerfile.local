@@ -1,0 +1,24 @@
+# Offline rebuild using the toolchains already provisioned on this host.
+ARG BASE=swe-tempoc:grading-fix-final3
+FROM ${BASE} AS public-runtime
+USER root
+WORKDIR /
+RUN mkdir -p /runtime/frontend /runtime/bin \
+ && mv /opt/swe-tempoc/.swe-tempoc/toolchains/node-v16.20.2-linux-x64 /runtime/node16 \
+ && mv /opt/swe-tempoc/.swe-tempoc/toolchains/node-v18.17.0-linux-x64 /runtime/node18 \
+ && mv /opt/swe-tempoc/.swe-tempoc/toolchains/node-v24.8.0-linux-x64 /runtime/node24 \
+ && mv /opt/swe-tempoc/.swe-tempoc/js/node_modules /runtime/frontend/node_modules \
+ && ln -s /runtime/node16/bin/node /runtime/node \
+ && rm -rf /opt/swe-tempoc /root/.cache /tmp/*
+
+# Flatten the sanitized filesystem so benchmark layers are absent from the solver.
+FROM scratch AS solver
+COPY --from=public-runtime / /
+ENV PATH="/runtime/node16/bin:/runtime/bin:/opt/go1.13.8/bin:/usr/local/bin:/usr/bin:/bin" \
+    NODE_PATH=/runtime/frontend/node_modules \
+    PYTHONDONTWRITEBYTECODE=1
+WORKDIR /workspace
+CMD ["/bin/bash"]
+
+FROM ${BASE} AS grader
+LABEL org.tempoevo.role="local-grader"

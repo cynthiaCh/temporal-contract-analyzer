@@ -107,11 +107,13 @@ def session(slot,prompt,*,case,candidate,task,config,run_dir,command_factory=Non
     a=Archive(run_dir).prepare(candidate,task,prompt,frozen)
     if 'candidate_files' in case and backend.hashes(a.original)!=case['candidate_files']:raise ValueError('candidate version mismatch before launch')
     if case.get('task_sha256') and sha(a.root/'input/task.md')!=case['task_sha256']:raise ValueError('task version mismatch before launch')
-    runtime=Path(tempfile.mkdtemp(prefix='research-archive-runtime-'));proc=None;launcher=None;transport_stopped=True
+    # macOS TMPDIR can exceed AF_UNIX limits once hook-control/hook.sock is added.
+    runtime=Path(tempfile.mkdtemp(prefix='tca-',dir='/tmp'));proc=None;launcher=None;transport_stopped=True
     outcome={**slot,'status':'LAUNCHED','started_at':time.time(),'failure_class':None,'stop_reason':None,'offline_fixture':fixture}
     events=[];answer=None
     try:
-        with GuardServer(runtime/'hook-control',a.root/'meter',slot['slot'],cap,mode) as guard:
+        with GuardServer(runtime/'hook-control',a.root/'meter',slot['slot'],cap,mode,
+                         docker_desktop=transport is not None and sys.platform=='darwin') as guard:
             try:
                 cmd=command_factory(a,runtime,guard) if fixture else command(slot['slot'],a.run_dir,phase,case,runtime=runtime,socket_dir=guard.directory)
                 if transport is not None:

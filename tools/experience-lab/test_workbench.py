@@ -34,6 +34,23 @@ class Commands(unittest.TestCase):
         self.assertNotIn('--execute', command)
         self.assertEqual(env['TCA_BENCH_ROOT'], str((self.root/'bench').resolve()))
 
+    def test_host_image_configuration_overrides_historical_defaults(self):
+        config = self.root/'.tempoevo/docker-images.json'
+        config.parent.mkdir()
+        images = {key: self.config[key] for key in ('solver_image', 'grader_image')}
+        with patch.object(runner, 'REPO', self.root):
+            self.assertEqual(runner.default_images()['solver_image'], runner.DEFAULT_SOLVER)
+            config.write_text(json.dumps(images))
+            self.assertEqual(runner.default_images(), images)
+
+    def test_macos_preparation_uses_provisioned_linux_binary(self):
+        binary = self.root/'.tempoevo/bin/linux-x64/codex'
+        binary.parent.mkdir(parents=True)
+        binary.touch()
+        with patch.object(runner, 'REPO', self.root), patch.object(runner.sys, 'platform', 'darwin'):
+            command, _, _ = runner.prepare_command(self.config, self.root/'new')
+        self.assertEqual(command[command.index('--binary')+1], str(binary))
+
     def test_training_requires_actual_check_descriptions(self):
         self.config['mode'] = 'learning'
         with self.assertRaisesRegex(ValueError, 'Public check descriptions'):

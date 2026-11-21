@@ -11,6 +11,7 @@ parser.add_argument('--evaluation-split',type=Path,help='Explicit frozen split r
 parser.add_argument('--training-feedback',type=Path,help='Explicit public feedback mapping JSON, frozen in every trajectory')
 parser.add_argument('--model-config',type=Path,help='Model profiles JSON file')
 parser.add_argument('--model-profile',help='Named model profile; defaults to the configuration default')
+parser.add_argument('--binary',type=Path,help='Linux Codex executable mounted into the solver container')
 parser.add_argument('--store',type=Path,help='Reviewed experience library; defaults to experience-memory/library')
 parser.add_argument('--condition',choices=['structured','contract','baseline'],default='structured',help='Contract uses Auto-Contract without memory; baseline runs Action only without memory or Contract')
 parser.add_argument('--training-feedback-by-family',type=Path,help='Frozen family-to-public-feedback mapping JSON')
@@ -114,7 +115,7 @@ for row in rows:
     if args.mode=='learning' and kind=='gold' and result['passed']!=(name=='reference'):raise ValueError((name,kind,'Unexpected control result',result))
    controls.append(record)
   entry['controls']=controls
-  config=dict(task_id=cid,task=c['task'],candidate=str(r/'public'),store=str(store),mode='learning',condition='structured',max_attempts=3,model=MODEL,binary=shutil.which('codex'),backend=dict(kind='docker',solver_image=solver,grader_image=grader,solver_node='/runtime/node16/bin/node'),memory_snapshot=bank,training_evaluator=gold,training_feedback=feedback,protected_paths=['README.md'])
+  config=dict(task_id=cid,task=c['task'],candidate=str(r/'public'),store=str(store),mode='learning',condition='structured',max_attempts=3,model=MODEL,binary=str(args.binary.resolve()) if args.binary else shutil.which('codex'),backend=dict(kind='docker',solver_image=solver,grader_image=grader,solver_node='/runtime/node16/bin/node'),memory_snapshot=bank,training_evaluator=gold,training_feedback=feedback,protected_paths=['README.md'])
   if visible:config['visible_evaluator']=visible
   config.update(model=identity(settings),model_profile=settings['profile'],condition=args.condition,training_feedback=family_feedback.get(family,feedback))
   if args.retrieval_profile:config['retrieval_profile']=args.retrieval_profile

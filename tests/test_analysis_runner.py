@@ -16,7 +16,8 @@ from pathlib import Path
 sys.path.insert(0,sys.argv[1])
 import runner
 payload=json.loads(sys.argv[2]);base=Path(payload['base'])
-runner.tempfile.tempdir='/tmp'
+runner.tempfile.tempdir=str(base/('long-platform-temp-directory-'*5))
+Path(runner.tempfile.tempdir).mkdir()
 def fake_command(archive,runtime,guard):
  return [sys.executable,'-B',str(base/'fake_cli.py'),str(guard.directory/'hook.sock'),
          str(archive.workspace),json.dumps(payload['analysis']),str(payload['mutate']),

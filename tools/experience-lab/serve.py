@@ -9,7 +9,7 @@ import sys
 from urllib.parse import parse_qs, urlsplit
 import webbrowser
 
-from runner import Controller, REPO, DEFAULT_GRADER, DEFAULT_SOLVER, PUBLIC_DOCS, environment, read
+from runner import Controller, REPO, PUBLIC_DOCS, default_images, environment, read
 from records import archived_runs, run_detail, case_detail
 from model_profiles import Profiles
 
@@ -49,14 +49,14 @@ class Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         query = parse_qs(url.query)
         try:
-            if url.path in ('/', '/style.css', '/app.js'):
+            if url.path in ('/', '/style.css', '/app.js', '/feedback.js'):
                 file = WEB/('index.html' if url.path == '/' else url.path[1:])
                 self.send(file.read_bytes(), content_type={'.html':'text/html', '.css':'text/css', '.js':'text/javascript'}[file.suffix])
             elif url.path == '/api/bootstrap':
                 config = self.server.profiles.snapshot()
                 self.send(dict(token=self.server.token, repository=str(REPO), profiles=config['profiles'], default_profile=config['default_profile'], profile_config=config,
                                defaults=dict(benchmark=str(REPO.parent/'temporal-contract-bench'), store='experience-memory/library', model_config=config['path'],
-                                             solver_image=DEFAULT_SOLVER, grader_image=DEFAULT_GRADER, public_checks=PUBLIC_DOCS)))
+                                             **default_images(), public_checks=PUBLIC_DOCS)))
             elif url.path == '/api/environment':
                 self.send(environment())
             elif url.path == '/api/profiles':

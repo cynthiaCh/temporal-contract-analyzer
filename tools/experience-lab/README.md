@@ -30,6 +30,29 @@ On macOS, the workbench also detects Codex bundled with the local VS Code OpenAI
 extension when Finder's PATH does not include it, and passes that path to preparation.
 The workbench does not deploy files, configure credentials or install images.
 
+### Local replacement images
+
+When the historical pinned images are absent, build replacements from this
+host's provisioned `swe-tempoc:grading-fix-final3` image without network access:
+
+```sh
+docker build --network none --pull=false --target solver -f containers/tempoevo/Dockerfile.local -t tempoevo-solver:local containers/tempoevo
+docker build --network none --pull=false --target grader -f containers/tempoevo/Dockerfile.local -t tempoevo-grader:local containers/tempoevo
+```
+
+The solver retains public language toolchains and JS dependencies, removes the
+benchmark directory, and copies the sanitized filesystem into a scratch image.
+The grader retains the existing benchmark. These are new images; historical run
+bindings remain unchanged. Preparation must pass the selected case's original,
+reference and negative controls before execution.
+
+Save their full immutable IDs as `solver_image` and `grader_image` in
+`.tempoevo/docker-images.json` to override the page's defaults. Refresh the page
+after changing that file. On macOS, provision a Linux x64 Codex executable and
+its `codex-code-mode-host` companion in `.tempoevo/bin/linux-x64/`; the workbench
+passes this binary explicitly to preparation instead of mounting the macOS CLI.
+The selected-case CLI also accepts `--binary PATH` for other layouts.
+
 ## Launch a run
 
 1. Select **Training** (70 development tasks) or **Testing** (30 test tasks).
@@ -47,6 +70,15 @@ The workbench does not deploy files, configure credentials or install images.
 6. Inspect a case's source/AST evidence, Auto-Contract, verified patch comparison,
    delivered experience, candidate proposal, and stage/execution logs as they
    become available. Run completion and behavioral success are separate states.
+
+The progress panel refreshes every 2.5 seconds and shows the current stage,
+finished cases, measured completed/pending model requests, and elapsed execution
+time. Its bar counts finished cases, so it can stay at zero while the first case
+is running. A repair pass still waits for experience extraction to finish.
+Completion leaves a result banner and updates the browser tab title. A run that
+ends with failed or unscored cases asks you to review results. If the selected
+run finishes while the page is open, an alert also appears at the top of the page;
+these are page notifications, not operating-system notifications.
 
 The defaults refer to this development checkout's research assets. A clean source
 export may lack them; configure your own paths and model profiles. Environment
@@ -128,6 +160,7 @@ and a real launch separately on a provisioned execution host.
 ```sh
 python3 -B -m unittest discover -s tools/experience-lab -p 'test_*.py'
 node --check tools/experience-lab/web/app.js
+node tools/experience-lab/test_feedback.js
 ```
 
 Controller tests replace model execution with explicit synthetic fixtures. They
