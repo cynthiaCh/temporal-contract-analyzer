@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from temporal_contract_analyzer.qoder_backend import QoderBackend, parse_events, tool_requests
+from temporal_contract_analyzer.qoder_backend import QoderBackend, confirmed_refusals, parse_events, parse_output, readable_candidate, tool_requests
 from temporal_contract_analyzer._session_runtime.request_guard import account
 from temporal_contract_analyzer._session_runtime.model_settings import resolve_profile, validate_settings
 from temporal_contract_analyzer._session_runtime.read_policy import read_command
@@ -25,6 +25,24 @@ def events(turns=1):
 
 
 class Parsing(unittest.TestCase):
+    def test_one_schema_valid_json_object_can_have_a_prose_or_fence_wrapper(self):
+        schema=dict(type='object',properties=dict(report=dict(type='string')),required=['report'],additionalProperties=False)
+        for text in ['{"report":"done"}', 'Implemented and verified.\n{"report":"done"}', '```json\n{"report":"done"}\n```']:
+            self.assertEqual(parse_output(text,schema),{'report':'done'})
+        for text in ['No JSON', '{"report":"one"}\n{"report":"two"}', '{"report":true}', '{"report":"one"} more prose']:
+            with self.subTest(text=text),self.assertRaises(ValueError):parse_output(text,schema)
+
+    def test_denial_recovery_requires_matching_host_and_cli_hook_proof(self):
+        request=dict(type='assistant',message=dict(content=[dict(type='tool_use',id='blocked',name='Bash')]))
+        result=dict(type='user',message=dict(content=[dict(type='tool_result',tool_use_id='blocked',is_error=True,
+                    content='Error: /qoder_hook.py hook blocking error: Tool denied by the training role policy')]))
+        ledger=dict(events=[dict(denied=True,event=dict(tool_use_id='blocked',tool_name='Bash'))])
+        notice=dict(type='system',subtype='notification',message='A background task completed')
+        self.assertEqual(confirmed_refusals([notice,request,result],ledger),{'blocked'})
+        with self.assertRaises(ValueError):confirmed_refusals([request],ledger)
+        result['message']['content'][0]['content']='Exit code 1: shell command failed'
+        with self.assertRaises(ValueError):confirmed_refusals([request,result],ledger)
+
     def test_unavailable_request_needs_explicit_cli_rejection(self):
         requested=dict(type='assistant',message=dict(content=[dict(type='tool_use',id='unavailable',name='mcp_list',input={})]))
         denied=dict(type='user',message=dict(content=[dict(type='tool_result',tool_use_id='unavailable',is_error=True,content='Tool is unavailable')]))
@@ -58,7 +76,7 @@ class Parsing(unittest.TestCase):
 
 
 class Execution(unittest.TestCase):
-    def run_stage(self, timeout=False, invalid_json=False, ungated_tool=False, action=False, stream=None):
+    def run_stage(self, timeout=False, invalid_json=False, ungated_tool=False, action=False, stream=None, ledger=None, locked_file=False):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root/'binary').touch()
@@ -78,6 +96,10 @@ class Execution(unittest.TestCase):
                     self.returncode = None if timeout else 0
                     if action:
                         (stage/'public-input/main.py').write_text('value = 43\n')
+                    if locked_file:
+                        (stage/'public-input/sedFixture').touch(mode=0)
+                    if ledger is not None:
+                        (stage/'tool-meter/ledger.json').write_text(json.dumps(ledger))
                 def wait(self, timeout=None):
                     if self.returncode is None:
                         raise subprocess.TimeoutExpired('synthetic CLI', timeout)
@@ -118,6 +140,44 @@ class Execution(unittest.TestCase):
         self.assertEqual(result['credits'], 0.125)
         self.assertIsNone(result['http_requests'])
         self.assertIsNone(result['tokens'])
+
+    def test_network_failure_uses_existing_bounded_stage_retry_policy(self):
+        data=events()
+        data[-1].update(subtype='error_during_execution',is_error=True,error_code='network_failure',errors=['other side closed'],result='')
+        result=self.run_stage(stream=data)
+        self.assertFalse(result['valid'])
+        self.assertEqual(result['failure_type'],'transient_transport_error')
+        self.assertEqual(result['requests'],1)
+        data[-1]['error_code']='authentication_error'
+        self.assertEqual(self.run_stage(stream=data)['failure_type'],'model_or_cli_abnormal_exit')
+
+    def test_blocked_tool_can_recover_without_weakening_the_gate(self):
+        data=events()
+        data.insert(1,dict(type='assistant',message=dict(content=[dict(type='tool_use',id='blocked',name='Bash',input=dict(command='find .'))])))
+        data.insert(2,dict(type='user',message=dict(content=[dict(type='tool_result',tool_use_id='blocked',is_error=True,
+                       content='/qoder_hook.py hook blocking error: Tool denied by the training role policy')])))
+        data[-1]['permission_denials']=[dict(tool_use_id='blocked',tool_name='Bash')]
+        ledger=dict(tool_attempts=1,events=[dict(denied=True,event=dict(tool_use_id='blocked',tool_name='Bash'))])
+        result=self.run_stage(stream=data,ledger=ledger)
+        self.assertTrue(result['valid'],result)
+        self.assertEqual(result['blocked_tool_requests'],1)
+        data[2]['message']['content'][0]['is_error']=False
+        self.assertFalse(self.run_stage(stream=data,ledger=ledger)['valid'])
+
+    def test_zero_permission_sed_temp_file_does_not_crash_candidate_capture(self):
+        result=self.run_stage(action=True,locked_file=True)
+        self.assertTrue(result['valid'],result)
+        self.assertEqual(result['candidate_sources'],{'main.py':'value = 43\n','sedFixture':''})
+
+    def test_permission_normalization_does_not_follow_external_symlinks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)/'workspace';root.mkdir()
+            outside=Path(temp)/'private';outside.write_text('private');outside.chmod(0)
+            (root/'escape').symlink_to(outside)
+            try:
+                with self.assertRaises(ValueError):readable_candidate(root)
+                self.assertEqual(outside.stat().st_mode & 0o777,0)
+            finally:outside.chmod(0o600)
 
     def test_timeout_stops_owned_container(self):
         result = self.run_stage(timeout=True)
@@ -168,6 +228,21 @@ class Execution(unittest.TestCase):
 
 
 class ToolHook(unittest.TestCase):
+    def test_action_can_read_scratch_files_but_analysis_and_escaping_links_cannot(self):
+        hook=Path(__file__).resolve().parents[1]/'temporal_contract_analyzer/_session_runtime/qoder_hook.py'
+        with patch.dict(sys.modules,{'guard_client':SimpleNamespace(forward=lambda value:dict(deny=False))}):
+            normalize=runpy.run_path(str(hook))['guard_event']
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);workspace=root/'workspace';workspace.mkdir();scratch=root/'scratch';scratch.mkdir()
+            generated=scratch/'check.py';generated.write_text('print(42)')
+            private=root/'private';private.write_text('private');(scratch/'escape').symlink_to(private)
+            event=dict(hook_event_name='PreToolUse',tool_name='Read',cwd='/workspace',tool_input=dict(file_path=str(generated)))
+            normalized=normalize(event,workspace,action=True,scratch=scratch)
+            self.assertIn(str(generated.resolve()),normalized['tool_input']['command'])
+            with self.assertRaises(ValueError):normalize(event,workspace,scratch=scratch)
+            event['tool_input']['file_path']=str(scratch/'escape')
+            with self.assertRaises(ValueError):normalize(event,workspace,action=True,scratch=scratch)
+
     def test_read_is_confined_to_public_regular_workspace_files(self):
         hook=Path(__file__).resolve().parents[1]/'temporal_contract_analyzer/_session_runtime/qoder_hook.py'
         with patch.dict(sys.modules,{'guard_client':SimpleNamespace(forward=lambda value:dict(deny=False))}):

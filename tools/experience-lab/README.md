@@ -138,6 +138,13 @@ to public workspace paths (including checks against escaping symlinks). Actions 
 writable public workspace; existing protected-file checks and independent
 evaluators still apply. CLI results must contain a JSON object matching the
 stage schema. Raw output, errors, commands and container receipts are retained.
+Actions may also use Read on their container-local `/tmp` scratch files, with
+symlink confinement; analysis stages remain limited to the public workspace.
+Prose or a Markdown fence around a single schema-valid JSON object is accepted,
+but malformed JSON, additional objects and trailing prose are rejected. The raw
+answer is always retained. After the container stops, owner read access is
+restored on candidate files (including mode-000 `sed` temporary files), with
+changes recorded in `candidate-permissions.json`; candidate files are not dropped.
 All owned containers stop before their candidate files are accepted or assessed.
 MCP tools are explicitly disabled. A model's request for an unavailable tool is
 not treated as proof of execution: collection continues, and recovery is accepted
@@ -145,6 +152,13 @@ only if the CLI returns an explicit error for that request. Unexpected successfu
 tools, missing tool-gate records and workspace policy violations still invalidate
 the stage. Collection errors retain their original cause instead of being hidden
 by a secondary missing-final-result message.
+For guarded Bash/Read requests, a refusal can also recover when both the host
+ledger and a matching CLI hook-blocking error prove the request never executed.
+The refusal remains archived and counted in `blocked_tool_requests`. Missing or
+mismatched proof and hook-server failures still invalidate the stage. A final
+CLI `network_failure` with complete turn accounting can use the existing bounded
+stage retry policy, sharing the original time/turn budget; no per-request retries
+are enabled. Previous test results are retained and are not relabeled after fixes.
 
 Protocol references: [Qoder script execution](https://docs.qoder.com/cli/run-in-scripts),
 [model selection](https://docs.qoder.com/cli/model), and

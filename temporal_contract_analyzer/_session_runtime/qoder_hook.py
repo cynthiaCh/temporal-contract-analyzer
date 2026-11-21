@@ -1,5 +1,6 @@
 """Qoder tool gate; model-turn counts come from CLI results, never synthetic hooks."""
 import json
+import os
 from pathlib import Path
 import shlex
 import sys
@@ -7,7 +8,7 @@ import sys
 from guard_client import forward
 
 
-def guard_event(value, workspace=Path('/workspace')):
+def guard_event(value, workspace=Path('/workspace'), *, action=False, scratch=Path('/tmp')):
     event = dict(value)
     if event.get('hook_event_name') != 'PreToolUse':
         raise ValueError('Unexpected Qoder hook event')
@@ -20,7 +21,10 @@ def guard_event(value, workspace=Path('/workspace')):
             raise ValueError('Read requires a public workspace file path')
         root = workspace.resolve()
         file = (root/filename).resolve()
-        relative = file.relative_to(root)
+        if action and scratch.resolve() in file.parents:
+            relative = None
+        else:
+            relative = file.relative_to(root)
         if file.exists() and not file.is_file():
             raise ValueError('Read requires a regular public workspace file')
         event['qoder_original_tool'] = name
@@ -28,7 +32,7 @@ def guard_event(value, workspace=Path('/workspace')):
         # Authorize the equivalent source read through the existing host ledger.
         # No updatedInput is returned: Qoder still executes its original Read.
         event['tool_name'] = 'Bash'
-        event['tool_input']['command'] = 'cat -- '+shlex.quote('./'+relative.as_posix())
+        event['tool_input']['command'] = 'cat -- '+shlex.quote(str(file) if relative is None else './'+relative.as_posix())
     elif name != 'Bash':
         raise ValueError('Tool is not enabled for this testing/training workspace')
     # A redundant absolute workspace prefix changes no read permissions.
@@ -43,7 +47,7 @@ if __name__ == '__main__':
     original_event = None
     try:
         original_event = json.load(sys.stdin)
-        event = guard_event(original_event)
+        event = guard_event(original_event, action=os.environ.get('TCA_QODER_STAGE') == 'action')
         decision = forward(event)
         if decision.get('deny'):
             print('Tool denied by the training role policy', file=sys.stderr)

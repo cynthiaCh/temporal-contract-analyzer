@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import tempfile
 import threading
@@ -10,7 +11,7 @@ import time
 import uuid
 
 from . import archive
-from .candidate_files import capture, write_files
+from .candidate_files import EXCLUDED, capture, write_files
 from .core import EvidenceError, canonical
 from ._session_runtime.schema_validator import validate
 
@@ -18,6 +19,75 @@ REPO = Path(__file__).resolve().parents[1]
 RUNTIME = Path(__file__).with_name('_session_runtime')
 MEASUREMENT = 'qoder_model_turns'
 ALLOWED_TOOLS = {'Bash', 'Read'}
+
+
+def confirmed_refusals(events, ledger):
+    """Recover only requests proven blocked by our hook, never executed tools."""
+    requests, blocked = {}, set()
+    for event in events:
+        if event.get('type') not in ('assistant', 'user'):
+            continue
+        for item in (event.get('message') or {}).get('content', []):
+            if event.get('type') == 'assistant' and item.get('type') == 'tool_use':
+                requests[item.get('id')] = item.get('name')
+            if event.get('type') == 'user' and item.get('type') == 'tool_result' and item.get('is_error') is True:
+                text = str(item.get('content', ''))
+                if 'hook blocking error' in text and '/qoder_hook.py' in text:
+                    blocked.add(item.get('tool_use_id'))
+    confirmed = set()
+    for row in ledger.get('events', []):
+        if not row.get('denied'):
+            continue
+        event = row.get('event') or {}
+        key = event.get('tool_use_id')
+        name = event.get('qoder_original_tool', event.get('tool_name'))
+        if key not in blocked or requests.get(key) != name or name not in ALLOWED_TOOLS:
+            raise ValueError('Tool denial lacks matching CLI proof that the hook blocked execution')
+        confirmed.add(key)
+    return confirmed
+
+
+def parse_output(text, schema):
+    """Allow prose/fences around one JSON object; never repair or invent fields."""
+    try:
+        output = json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find('{')
+        if start < 0:
+            raise ValueError('Qoder did not return a JSON object')
+        output, end = json.JSONDecoder().raw_decode(text, start)
+        if text[end:].strip() not in ('', '```'):
+            raise ValueError('Qoder returned ambiguous content after its JSON object')
+    return validate(output, schema)
+
+
+def readable_candidate(root):
+    """Restore owner access to stopped candidate files, including sed temp files."""
+    changed = []
+    def restore(path, directory=False):
+        mode = path.lstat()
+        if stat.S_ISLNK(mode.st_mode) or not (stat.S_ISDIR(mode.st_mode) if directory else stat.S_ISREG(mode.st_mode)):
+            raise EvidenceError('Candidate inputs must be regular files/directories: '+str(path))
+        required = 0o700 if directory else 0o400
+        if mode.st_mode & required != required:
+            if mode.st_uid != os.getuid():
+                raise EvidenceError('Candidate file is not owned by the workspace user: '+str(path))
+            new_mode = stat.S_IMODE(mode.st_mode) | required
+            path.chmod(new_mode)
+            changed.append(dict(path=path.relative_to(root).as_posix(), before=stat.S_IMODE(mode.st_mode), after=new_mode))
+    restore(root, True)
+    def onerror(error):
+        raise error
+    for current, dirs, names in os.walk(root, followlinks=False, onerror=onerror):
+        for name in list(dirs):
+            if name.startswith('.') or name in EXCLUDED:
+                dirs.remove(name)
+            else:
+                restore(Path(current)/name, True)
+        for name in names:
+            if not name.startswith('.'):
+                restore(Path(current)/name)
+    return changed
 
 
 def tool_requests(events):
@@ -115,6 +185,7 @@ class QoderBackend:
         started = time.monotonic()
         failure = None
         completed = None
+        refusals = set()
         guard = None
         try:
             with GuardServer(runtime/'hooks', directory/'tool-meter', name, limits['requests'],
@@ -126,6 +197,7 @@ class QoderBackend:
                     '--user', str(os.getuid())+':'+str(os.getgid()), '--workdir', '/workspace',
                     '--tmpfs', '/tmp:rw,exec,mode=1777,size=4g', '--env', 'HOME=/home/agent',
                     '--env', 'PYTHONDONTWRITEBYTECODE=1', '--env', 'NODE_PATH=/runtime/frontend/node_modules',
+                    '--env', 'TCA_QODER_STAGE='+kind,
                     '--env', 'GOCACHE=/tmp/go-cache', '--env', 'GO111MODULE=off']
                 def mount(host, target, readonly=True):
                     if ',' in str(host):
@@ -207,15 +279,24 @@ class QoderBackend:
                 failure = ('infrastructure_error', '; '.join(problems+guard.errors))
             elif process.returncode != 0 or completed.get('is_error') or completed.get('subtype') != 'success':
                 failure = ('model_or_cli_abnormal_exit', str(completed.get('result') or completed.get('errors')))
-            elif any(not isinstance(d,dict) or rejected_tools.get(d.get('tool_use_id')) != d.get('tool_name')
-                     or d.get('tool_use_id') not in rejected_tools for d in completed.get('permission_denials', [])):
-                failure = ('tool_policy_denied', 'Qoder reported denied workspace tools')
             meter = directory/'tool-meter/ledger.json'
             ledger = json.loads(meter.read_text()) if meter.is_file() else {}
+            refusals = confirmed_refusals(events, ledger)
+            accepted_denials = dict(rejected_tools)
+            for row in ledger.get('events', []):
+                event = row.get('event') or {}
+                if row.get('denied') and event.get('tool_use_id') in refusals:
+                    accepted_denials[event['tool_use_id']] = event.get('qoder_original_tool', event.get('tool_name'))
+            if any(not isinstance(d,dict) or d.get('tool_use_id') not in accepted_denials
+                   or accepted_denials[d['tool_use_id']] != d.get('tool_name')
+                   for d in completed.get('permission_denials', [])):
+                failure = ('tool_policy_denied', 'Qoder reported an unconfirmed tool denial')
             if tool_calls and ledger.get('tool_attempts', 0) < len(tool_calls) and not failure:
                 failure = ('infrastructure_error', 'Qoder did not run the mandatory tool gate for every tool call')
-            if any(e.get('denied') for e in ledger.get('events', [])):
-                failure = ('tool_policy_denied', 'A tool was denied by the training role policy')
+            if (failure and failure[0] == 'model_or_cli_abnormal_exit'
+                    and completed.get('error_code') == 'network_failure'
+                    and not guard.errors and not refusals):
+                failure = ('transient_transport_error', failure[1])
         except Exception as error:
             failure = failure or ('infrastructure_error', str(error))
         finally:
@@ -232,10 +313,17 @@ class QoderBackend:
         if not failure:
             try:
                 (directory/'raw-answer.txt').write_text(completed['result'])
-                output = validate(json.loads(completed['result']), schema)
+                output = parse_output(completed['result'], schema)
             except (ValueError, TypeError, KeyError) as error:
                 failure = ('invalid_output', str(error))
-        final_sources = {k:v.decode() for k,v in capture(workspace)[0].items()} if stopped else None
+        final_sources = None
+        if stopped:
+            try:
+                if kind == 'action':
+                    archive.atomic_json(directory/'candidate-permissions.json', readable_candidate(workspace))
+                final_sources = {k:v.decode() for k,v in capture(workspace)[0].items()}
+            except (OSError, ValueError, EvidenceError) as error:
+                failure = ('infrastructure_error', 'Candidate snapshot failed: '+str(error))
         if kind != 'action' and final_sources != sources:
             failure = ('infrastructure_error', 'Read-only Qoder stage modified public files')
         result = dict(valid=failure is None, model=model, requests=turns, request_measurement=MEASUREMENT,
@@ -246,6 +334,7 @@ class QoderBackend:
             seconds=time.monotonic()-started,
             native_receipt=dict(status='VALID' if not failure else 'INVALID',
                 stop_reason=failure[0] if failure else None, measurement=MEASUREMENT))
+        result['blocked_tool_requests'] = len(refusals)
         if kind == 'action' and not failure:
             result['candidate_sources'] = final_sources
         archive.atomic_json(directory/'qoder-progress.json', dict(measurement=MEASUREMENT,
