@@ -21,6 +21,27 @@ MEASUREMENT = 'qoder_model_turns'
 ALLOWED_TOOLS = {'Bash', 'Read'}
 
 
+def cleanup_runtime(runtime):
+    """Retry transient host permissions only after the owned container stops."""
+    errors = []
+    for attempt, delay in enumerate((0, 0.1, 0.5, 1), 1):
+        if delay:
+            time.sleep(delay)
+        try:
+            shutil.rmtree(runtime)
+        except FileNotFoundError:
+            if runtime.exists():
+                errors.append('A runtime child disappeared during cleanup')
+                continue
+        except OSError as error:
+            errors.append(str(error))
+            if isinstance(error, PermissionError):
+                continue
+            return dict(complete=False, attempts=attempt, errors=errors)
+        return dict(complete=True, attempts=attempt, errors=errors)
+    return dict(complete=False, attempts=4, errors=errors)
+
+
 def confirmed_refusals(events, ledger):
     """Recover only requests proven blocked by our hook, never executed tools."""
     requests, blocked = {}, set()
@@ -47,8 +68,8 @@ def confirmed_refusals(events, ledger):
     return confirmed
 
 
-def parse_output(text, schema):
-    """Allow prose/fences around one JSON object; never repair or invent fields."""
+def decode_output(text):
+    """Decode one JSON value, with the existing unambiguous wrapper support."""
     try:
         output = json.loads(text)
     except json.JSONDecodeError:
@@ -58,7 +79,69 @@ def parse_output(text, schema):
         output, end = json.JSONDecoder().raw_decode(text, start)
         if text[end:].strip() not in ('', '```'):
             raise ValueError('Qoder returned ambiguous content after its JSON object')
-    return validate(output, schema)
+    return output
+
+
+def parse_output(text, schema):
+    return validate(decode_output(text), schema)
+
+
+def escape_report_whitespace(text):
+    """Escape literal whitespace only in a top-level report string, losslessly."""
+    start = text.find('{')
+    if start < 0:
+        raise ValueError('Qoder did not return a JSON object')
+    chunks, counts = [text[:start]], {}
+    depth, key, previous, i = 0, None, None, start
+    escapes = {'\n': ('\\n', 'newline'), '\r': ('\\r', 'carriage_return'), '\t': ('\\t', 'tab')}
+    while i < len(text):
+        char = text[i]
+        if char == '"':
+            value, end = json.decoder.scanstring(text, i+1, False)
+            body = text[i+1:end-1]
+            controls = [c for c in body if ord(c) < 32]
+            is_key = depth == 1 and text[end:].lstrip().startswith(':')
+            if controls:
+                if depth != 1 or key != 'report' or previous != ':' or is_key or any(c not in escapes for c in controls):
+                    raise ValueError('Literal control characters are allowed only as report whitespace')
+                for control in controls:
+                    name = escapes[control][1]
+                    counts[name] = counts.get(name, 0)+1
+                body = ''.join(escapes[c][0] if c in escapes else c for c in body)
+            chunks.append('"'+body+'"')
+            key = value if is_key else None
+            previous, i = '"', end
+            continue
+        chunks.append(char)
+        if char in '{[':
+            depth += 1
+        elif char in '}]':
+            depth -= 1
+        if not char.isspace():
+            previous = char
+        i += 1
+    return ''.join(chunks), counts
+
+
+def parse_action_report(text, schema, *, format_warnings=None):
+    """Separate Action report metadata; all declared fields remain validated."""
+    report_schema = json.loads((RUNTIME/'maintenance.schema.json').read_text())
+    counts = {}
+    try:
+        output = decode_output(text)
+    except json.JSONDecodeError as error:
+        if schema != report_schema or not error.msg.startswith('Invalid control character'):
+            raise
+        normalized, counts = escape_report_whitespace(text)
+        output = decode_output(normalized)
+    if schema != report_schema or not isinstance(output, dict):
+        return validate(output, schema), {}
+    extras = {key:value for key,value in output.items() if key not in schema['properties']}
+    report = {key:value for key,value in output.items() if key in schema['properties']}
+    checked = validate(report, schema)
+    if counts and format_warnings is not None:
+        format_warnings.append(dict(code='action_report_literal_whitespace', characters=counts))
+    return checked, extras
 
 
 def readable_candidate(root):
@@ -186,6 +269,7 @@ class QoderBackend:
         failure = None
         completed = None
         refusals = set()
+        runtime_cleanup = None
         guard = None
         try:
             with GuardServer(runtime/'hooks', directory/'tool-meter', name, limits['requests'],
@@ -219,7 +303,9 @@ class QoderBackend:
                     '--max-model-request-retries', '0', '--setting-sources', 'user', '--strict-mcp-config',
                     '--no-session-persistence', '--settings', '/home/agent/.qoder/settings.json',
                     '--permission-mode', 'bypass_permissions', '--tools', 'Bash,Read',
-                    '--disallowed-tools', 'mcp_call,mcp_get,mcp_list', '-p', '--output-format', 'stream-json']
+                    '--disallowed-tools', 'mcp_call,mcp_get,mcp_list', '-p', '--output-format', 'stream-json',
+                    '--append-system-prompt', 'Return exactly one JSON object matching the OUTPUT_SCHEMA in the task. '
+                    'Do not add undeclared fields, including null-valued fields. Do not add prose or Markdown fences.']
                 if model.get('reasoning_effort'):
                     command += ['--reasoning-effort', model['reasoning_effort']]
                 archive.atomic_json(directory/'command.json', command)
@@ -307,13 +393,25 @@ class QoderBackend:
                 except Exception as error:
                     failure = ('infrastructure_error', 'Qoder container cleanup unconfirmed: '+str(error))
             if stopped:
-                shutil.rmtree(runtime)
+                runtime_cleanup = cleanup_runtime(runtime)
+                archive.atomic_json(directory/'runtime-cleanup.json', runtime_cleanup)
         turns = completed.get('num_turns') if completed else len(observed)
         output = None
+        report_extras = {}
+        format_warnings = []
+        if completed and isinstance(completed.get('result'), str):
+            (directory/'raw-answer.txt').write_text(completed['result'])
         if not failure:
             try:
-                (directory/'raw-answer.txt').write_text(completed['result'])
-                output = parse_output(completed['result'], schema)
+                if kind == 'action':
+                    output, report_extras = parse_action_report(completed['result'], schema, format_warnings=format_warnings)
+                    if report_extras:
+                        format_warnings.append(dict(code='action_report_extra_fields', fields=sorted(report_extras)))
+                    if format_warnings:
+                        archive.atomic_json(directory/'output-format.json', dict(
+                            policy='action-report-format-v2', warnings=format_warnings, extra_fields=report_extras))
+                else:
+                    output = parse_output(completed['result'], schema)
             except (ValueError, TypeError, KeyError) as error:
                 failure = ('invalid_output', str(error))
         final_sources = None
@@ -335,6 +433,11 @@ class QoderBackend:
             native_receipt=dict(status='VALID' if not failure else 'INVALID',
                 stop_reason=failure[0] if failure else None, measurement=MEASUREMENT))
         result['blocked_tool_requests'] = len(refusals)
+        result['runtime_cleanup'] = runtime_cleanup
+        result['format_warnings'] = format_warnings
+        result['action_report_extra_fields'] = report_extras
+        result['cleanup_warning'] = ('Qoder host runtime cleanup pending: '+runtime_cleanup['errors'][-1]
+            if runtime_cleanup and not runtime_cleanup['complete'] else None)
         if kind == 'action' and not failure:
             result['candidate_sources'] = final_sources
         archive.atomic_json(directory/'qoder-progress.json', dict(measurement=MEASUREMENT,

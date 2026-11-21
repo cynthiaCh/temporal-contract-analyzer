@@ -159,6 +159,28 @@ mismatched proof and hook-server failures still invalidate the stage. A final
 CLI `network_failure` with complete turn accounting can use the existing bounded
 stage retry policy, sharing the original time/turn budget; no per-request retries
 are enabled. Previous test results are retained and are not relabeled after fixes.
+After confirmed container shutdown, transient permission failures while removing
+the isolated host profile are retried at most four times. `runtime-cleanup.json`
+records the attempts and errors. Once container shutdown is confirmed, persistent
+host-profile cleanup failures are reported as `cleanup_warning` with the runtime
+retained for later cleanup; they do not discard an otherwise validated model
+answer or candidate. Unconfirmed container shutdown still fails the stage.
+An appended system instruction reinforces the exact output schema. For the
+standard Action repair report only, undeclared fields are preserved separately
+in `action_report_extra_fields` and `output-format.json`, with a `format_warnings`
+entry. The declared `report` is still validated for presence, type and length;
+only that validated report reaches the repair pipeline. The complete raw answer
+remains archived. Additional metadata does not block independent candidate
+scoring. Contract, experience and other schemas remain strict; malformed or
+ambiguous JSON and invalid required fields remain invalid. This parsing policy
+applies equally to memory-enabled and Auto-Contract-only Qoder runs; historical
+scores are not rewritten.
+The standard Action report also accepts literal newline, carriage-return and tab
+characters inside its top-level `report` string. They are losslessly escaped in
+memory for parsing, with `action_report_literal_whitespace` warnings recorded in
+`output-format.json`; the raw answer stays unchanged. Control characters in
+other fields/keys, other control characters, truncated JSON and multiple objects
+remain invalid. This tolerance does not apply to other stage schemas.
 
 Protocol references: [Qoder script execution](https://docs.qoder.com/cli/run-in-scripts),
 [model selection](https://docs.qoder.com/cli/model), and

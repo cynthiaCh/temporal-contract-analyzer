@@ -11,10 +11,12 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from temporal_contract_analyzer.qoder_backend import QoderBackend, confirmed_refusals, parse_events, parse_output, readable_candidate, tool_requests
+from temporal_contract_analyzer.qoder_backend import QoderBackend, cleanup_runtime, confirmed_refusals, parse_action_report, parse_events, parse_output, readable_candidate, tool_requests
 from temporal_contract_analyzer._session_runtime.request_guard import account
 from temporal_contract_analyzer._session_runtime.model_settings import resolve_profile, validate_settings
 from temporal_contract_analyzer._session_runtime.read_policy import read_command
+
+REPORT_SCHEMA = json.loads((Path(__file__).resolve().parents[1]/'temporal_contract_analyzer/_session_runtime/maintenance.schema.json').read_text())
 
 
 def events(turns=1):
@@ -25,6 +27,60 @@ def events(turns=1):
 
 
 class Parsing(unittest.TestCase):
+    def test_literal_action_report_whitespace_is_preserved_and_warned(self):
+        warnings=[]
+        text='{"report":"first\nsecond\tcolumn\rend","extra":true}'
+        report,extras=parse_action_report(text,REPORT_SCHEMA,format_warnings=warnings)
+        self.assertEqual(report,{'report':'first\nsecond\tcolumn\rend'})
+        self.assertEqual(extras,{'extra':True})
+        self.assertEqual(warnings,[dict(code='action_report_literal_whitespace',characters=dict(newline=1,tab=1,carriage_return=1))])
+        with self.assertRaises(ValueError):parse_output(text,REPORT_SCHEMA)
+        warnings=[]
+        parse_action_report(json.dumps(report),REPORT_SCHEMA,format_warnings=warnings)
+        self.assertEqual(warnings,[])
+
+    def test_report_whitespace_tolerance_rejects_other_corruption(self):
+        for text in ['{"report":"bad\x00value"}', '{"report":"ok","extra":"bad\nvalue"}',
+                     '{"rep\nort":"bad"}', '{"report":"unfinished\nvalue',
+                     '{"report":"first\nvalue"} {"report":"second"}',
+                     '{"report":"first\nvalue","extra":{"report":"bad\nvalue"}}']:
+            with self.subTest(text=repr(text)),self.assertRaises(ValueError):parse_action_report(text,REPORT_SCHEMA)
+        schema=dict(type='object',properties=dict(ready=dict(type='string')),required=['ready'],additionalProperties=False)
+        with self.assertRaises(ValueError):parse_action_report('{"ready":"bad\nvalue"}',schema)
+
+    def test_action_report_separates_extra_metadata_without_changing_report(self):
+        text='{"report":"Original report","report_length_ok":true,"report_note":null}'
+        output,extras=parse_action_report(text,REPORT_SCHEMA)
+        self.assertEqual(output,{'report':'Original report'})
+        self.assertEqual(extras,{'report_length_ok':True,'report_note':None})
+        with self.assertRaises(ValueError):parse_output(text,REPORT_SCHEMA)
+
+    def test_action_report_required_type_length_and_json_checks_remain_strict(self):
+        for text in ['{"report_length_ok":true}','{"report":false,"extra":null}',
+                     json.dumps({'report':'x'*6001,'extra':True}),'not JSON','["report"]',
+                     '{"report":"one"} {"report":"two"}']:
+            with self.subTest(text=text[:60]),self.assertRaises(ValueError):parse_action_report(text,REPORT_SCHEMA)
+
+    def test_other_action_schemas_do_not_gain_extra_field_tolerance(self):
+        schema=dict(type='object',properties=dict(ready=dict(type='boolean')),required=['ready'],additionalProperties=False)
+        with self.assertRaises(ValueError):parse_action_report('{"ready":true,"extra":null}',schema)
+
+    def test_transient_cleanup_permissions_are_retried_and_recorded(self):
+        with patch('temporal_contract_analyzer.qoder_backend.shutil.rmtree',side_effect=[PermissionError(13,'Permission denied'),None]) as remove, \
+                patch('temporal_contract_analyzer.qoder_backend.time.sleep'):
+            result=cleanup_runtime(Path('/synthetic-owned-runtime'))
+        self.assertTrue(result['complete'])
+        self.assertEqual(result['attempts'],2)
+        self.assertEqual(remove.call_count,2)
+        self.assertIn('Permission denied',result['errors'][0])
+
+    def test_persistent_cleanup_errors_are_bounded_and_not_hidden(self):
+        with patch('temporal_contract_analyzer.qoder_backend.shutil.rmtree',side_effect=PermissionError(13,'Permission denied')) as remove, \
+                patch('temporal_contract_analyzer.qoder_backend.time.sleep'):
+            result=cleanup_runtime(Path('/synthetic-owned-runtime'))
+        self.assertFalse(result['complete'])
+        self.assertEqual(remove.call_count,4)
+
     def test_one_schema_valid_json_object_can_have_a_prose_or_fence_wrapper(self):
         schema=dict(type='object',properties=dict(report=dict(type='string')),required=['report'],additionalProperties=False)
         for text in ['{"report":"done"}', 'Implemented and verified.\n{"report":"done"}', '```json\n{"report":"done"}\n```']:
@@ -76,7 +132,7 @@ class Parsing(unittest.TestCase):
 
 
 class Execution(unittest.TestCase):
-    def run_stage(self, timeout=False, invalid_json=False, ungated_tool=False, action=False, stream=None, ledger=None, locked_file=False):
+    def run_stage(self, timeout=False, invalid_json=False, ungated_tool=False, action=False, stream=None, ledger=None, locked_file=False, schema=None):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root/'binary').touch()
@@ -112,19 +168,23 @@ class Execution(unittest.TestCase):
             protocol = dict(binary=str(root/'binary'), qoder_auth_dir=str(root/'account'),
                             backend=dict(kind='docker', solver_image='sha256:'+'a'*64))
             payload = dict(task='Synthetic fixture', sources={'main.py':'value = 42\n'},
-                           schema=dict(type='object', properties=dict(ready=dict(type='boolean')), required=['ready']))
+                           schema=schema if schema is not None else dict(type='object', properties=dict(ready=dict(type='boolean')), required=['ready']))
             with patch('temporal_contract_analyzer.tempoevo_docker.image_identity', side_effect=lambda x:x), \
                     patch('temporal_contract_analyzer._session_runtime.docker_transport.stop') as stop, \
                     patch('temporal_contract_analyzer.qoder_backend.subprocess.Popen', Process):
                 result = QoderBackend(protocol).execute('action' if action else 'contract', payload,
                     dict(model='DeepSeek-Flash', reasoning_effort='low'), dict(requests=2, seconds=1), stage)
                 self.assertTrue(stop.called)
+                if result.get('format_warnings'):
+                    self.assertEqual((stage/'raw-answer.txt').read_text(),data[-1]['result'])
+                    self.assertEqual(json.loads((stage/'output-format.json').read_text())['extra_fields'],result['action_report_extra_fields'])
                 command = json.loads((stage/'command.json').read_text())
                 self.assertEqual(command[command.index('--max-turns')+1], '2')
                 self.assertEqual(command[command.index('--max-model-request-retries')+1], '0')
                 self.assertEqual(command[command.index('--setting-sources')+1], 'user')
                 self.assertEqual(command[command.index('--tools')+1],'Bash,Read')
                 self.assertEqual(command[command.index('--disallowed-tools')+1],'mcp_call,mcp_get,mcp_list')
+                self.assertIn('Do not add undeclared fields',command[command.index('--append-system-prompt')+1])
                 self.assertNotIn('DEEPSEEK_API_KEY', ' '.join(command))
                 self.assertNotIn('synthetic auth fixture', ' '.join(command))
                 mounts = [command[i+1] for i, x in enumerate(command) if x == '--mount']
@@ -140,6 +200,50 @@ class Execution(unittest.TestCase):
         self.assertEqual(result['credits'], 0.125)
         self.assertIsNone(result['http_requests'])
         self.assertIsNone(result['tokens'])
+
+    def test_stopped_container_profile_cleanup_failure_does_not_discard_valid_output(self):
+        def fail_after_cleanup(runtime):
+            receipt=cleanup_runtime(runtime)
+            receipt.update(complete=False,errors=['synthetic persistent cleanup permission failure'])
+            return receipt
+        with patch('temporal_contract_analyzer.qoder_backend.cleanup_runtime',side_effect=fail_after_cleanup):
+            result=self.run_stage()
+        self.assertTrue(result['valid'],result)
+        self.assertEqual(result['requests'],1)
+        self.assertTrue(result['turn_count_complete'])
+        self.assertIsNone(result['failure_type'])
+        self.assertEqual(result['output'],dict(ready=True))
+        self.assertIn('runtime cleanup pending',result['cleanup_warning'])
+        self.assertFalse(result['runtime_cleanup']['complete'])
+
+    def test_undeclared_null_fields_are_still_rejected(self):
+        schema=dict(type='object',properties=dict(report=dict(type='string')),required=['report'],additionalProperties=False)
+        with self.assertRaises(ValueError):parse_output('{"report":"done","report_note":null}',schema)
+
+    def test_action_report_metadata_does_not_block_candidate_delivery(self):
+        data=events();data[-1]['result']='{"report":"done","report_length_ok":true}'
+        result=self.run_stage(action=True,stream=data,schema=REPORT_SCHEMA)
+        self.assertTrue(result['valid'],result)
+        self.assertEqual(result['output'],{'report':'done'})
+        self.assertEqual(result['candidate_sources'],{'main.py':'value = 43\n'})
+        self.assertEqual(result['action_report_extra_fields'],{'report_length_ok':True})
+        self.assertEqual(result['format_warnings'],[dict(code='action_report_extra_fields',fields=['report_length_ok'])])
+
+    def test_literal_report_newline_does_not_block_action_candidate(self):
+        data=events();data[-1]['result']='{"report":"first\nsecond"}'
+        result=self.run_stage(action=True,stream=data,schema=REPORT_SCHEMA)
+        self.assertTrue(result['valid'],result)
+        self.assertEqual(result['output'],{'report':'first\nsecond'})
+        self.assertEqual(result['format_warnings'],[dict(code='action_report_literal_whitespace',characters={'newline':1})])
+        self.assertEqual(result['candidate_sources'],{'main.py':'value = 43\n'})
+
+    def test_contract_keeps_strict_schema_and_invalid_report_blocks_action(self):
+        for action,text in [(False,'{"report":"done","extra":true}'),(True,'{"report":false,"extra":true}')]:
+            data=events();data[-1]['result']=text
+            result=self.run_stage(action=action,stream=data,schema=REPORT_SCHEMA)
+            self.assertFalse(result['valid'],result)
+            self.assertEqual(result['failure_type'],'invalid_output')
+            self.assertNotIn('candidate_sources',result)
 
     def test_network_failure_uses_existing_bounded_stage_retry_policy(self):
         data=events()
