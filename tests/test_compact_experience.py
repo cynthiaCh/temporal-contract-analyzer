@@ -66,6 +66,9 @@ class CompactExperienceTests(unittest.TestCase):
         self.assertIn(str(self.path), html)
         self.assertIn('Entry binding &lt;example&gt;', html)
         self.assertNotIn('Entry binding <example>', html)
+        self.assertIn('data-lifecycle="active"', html)
+        self.assertIn('当前有效', html)
+        self.assertIn('含历史与待审核', html)
 
     def request(self, item_id='entry-binding', decision='accept'):
         value,item=next((value,item) for _,value in compact.documents(self.path)

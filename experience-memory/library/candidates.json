@@ -1154,6 +1154,48 @@
         "decision": "accept",
         "at": "2026-11-17T00:58:49.528276+00:00"
       }
+    },
+    {
+      "id": "candidate-1069abb72c977ecd86143eead98946a5",
+      "title": "Candidate: Apply when per-document delayed work outlives the current view/badge while the view owns only a live subscription, edits",
+      "labels": [
+        "O",
+        "L",
+        "I",
+        "A"
+      ],
+      "requires": [
+        "shared_lifetime",
+        "effect_lifetimes",
+        "deferred_batch",
+        "inline_reentry"
+      ],
+      "excludes": [],
+      "applicability": "Apply when per-document delayed work outlives the current view/badge while the view owns only a live subscription, edits are coalesced by a trailing task, and a save callback may synchronously navigate. README.md states: 'A workspace document buffer persists independently of the current view badge. Save callbacks can synchronously navigate. Preview is transient and owns a different quiet interval.' docs/host-api.md states: 'Document buffers are owned by the coordinator dictionary, while Badge owns only a live subscription.' and 'A store listener may call navigation synchronously.' The Go source defines `type Workspace struct{env Environment;current *Badge;generation uint64;buffers map[string]*Trailing}` and keeps a separate 40 ms preview via `NewTrailing(env,40,func(query string){env.Output(\"preview\",Value{\"query\":query})})`. The same mechanism recurs in PHP, JavaScript and Ruby variants; language or case identity alone is not a new mechanism.",
+      "event_relation": "Capture the view and its per-document buffer when the edit is accepted, enqueue an acceptance-time text, and never resolve the destination document when the timer fires. TASK states: 'Coalesce edits using the existing trailing-task utility: after a 120 ms quiet\\ninterval, write only the latest text in that editing burst. Subsequent bursts\\nmust continue to save. Preserve the editor's other behavior and public interfaces.' The buffer consumer captures the document id: src/workflow.go `if w.buffers[id]==nil{w.buffers[id]=NewTrailing(w.env,120,func(text string){w.env.Write(id,text)})}`. If the source's text is mutable, copy/freeze it at acceptance (Ruby variant). Do not redirect pending work to whichever document is current at flush time.\\n\\nOn every push cancel the prior handle and reschedule so one write is pending: src/workflow.go `if t.handle!=nil { t.env.Cancel(t.handle) };t.pending=&text;t.handle=t.env.Schedule(t.Flush,t.delay)`. An empty string is a valid pending value; use absence (pointer/None/nil), not truthiness.\\n\\nConsume before callback-capable work: snapshot pending, clear handle and pending, then invoke work only for a non-absent snapshot. src/workflow.go: `if t.handle!=nil { t.env.Cancel(t.handle) };text:=t.pending;t.handle=nil;t.pending=nil\\n    if text!=nil { t.work(*text) }`. This prevents nested flushing from re-saving and lets edits accepted during the callback start a new burst.\\n\\nOn departure capture the old badge, revoke current ownership, detach only its captured subscription, and clear the old document output before flushing its buffer. src/workflow.go retirement already does `old:=w.current;w.current=nil;if old!=nil&&!false{old.detach()};w.env.Output(\"document\",nil)`; flush the captured departing buffer after those outgoing effects. After retirement can synchronously save and navigate, an outer open must recheck its request: `if true&&request!=w.generation{return}`. Apply enclosing workspace/projection authority checks only where such a boundary exists.",
+      "preservation": "Preserve document ids and text, store event identity/text/revision semantics, current-document status filtering, captured subscription removal, independent per-document buffers, and document rendering payloads. src/workflow.go filters with `if e[\"id\"]==id{env.Output(\"status\",e)}` and renders `w.env.Output(\"document\",Value{\"id\":id,\"text\":w.env.Store().Read(id)})`. docs/host-api.md: 'All source identities/text and status payloads retain original semantics.' Removing a badge subscription must not discard accepted pending text or destroy the reusable buffer; retirement consumes pending text through flushing and the buffer remains available for later visits. Where a source exposes visit identifiers, projection selection, copied breadcrumb history, or framework teardown (PHP/JS/Ruby variants), preserve them as separate effects and keep committed history independent of current selection; the Go source exposes none, so do not add them.",
+      "exclusion": "Determine departure scheduling from the task and existing behavior, not persistent ownership alone. Flushing a departing buffer before return is a preservation strategy for this editor because the original `func(w *Workspace)Edit(text string){view:=w.current;if view!=nil{w.env.Write(view.id,text)}}` wrote synchronously and reopening reads the store; it is not a universal before-return deadline. Do not discard accepted pending text or destroy the buffer merely because a badge retires. Keep transient preview separate: TASK states 'The adjacent search preview is outside this maintenance change.' src/workflow.go uses `NewTrailing(env,40,...)` and `func(p *Preview)Hide(){p.task.Cancel()}`. Do not route preview through the document buffer or change its 40 ms delay/cancellation. Do not import submission, receipt, async acknowledgement, projection/breadcrumb, mutable-copy, Vue unmount, decoding, or audit obligations unless the current source exposes them. BufferBank is unused by Workspace here; Workspace.buffers carries per-document identity, so no single dictionary is mandated.\n\nCandidate limitations:\n- TASK does not explicitly require flushing before a visit returns; departure flushing is an inference from preserving the original synchronous Edit and fresh store reads, not a universal persistent-ownership deadline.\n- Only attempt 1 is supplied. Its syntax/build checks and acceptance verdict passed with no regressions, but no behavioral observations establish causality, exhaustive correctness, or cross-task effectiveness.\n- Public evidence establishes synchronous navigation from store listeners, not arbitrary reentry or exception behavior in Output, timer scheduling, store cleanup, or renderers.\n- The Go source exposes no visit identifiers, projection selection, breadcrumb archive, Vue unmount, packet decoding, or audit lifecycle; obligations from the related PHP/JS/Ruby variants for those mechanisms are inapplicable here.\n- BufferBank is defined but unused by Workspace, and Workspace.buffers independently implements per-document 120 ms buffering; the intended relationship is ambiguous and the contract should not mandate one dictionary.\n- Behavior when Schedule, Write, or Output errors/panics, and whether Close/Dispose must synchronously flush versus rely on a live scheduled timer, are unspecified; this guidance treats flush-before-return only as a preservation strategy.",
+      "verification": "Check latest-only saving after 120 ms of quiet, timer resetting, subsequent bursts, empty-string edits, and editing with no current badge. With pending edits exercise switch to another document, same-document reopen, Close and Dispose; verify original-document persistence before return, fresh reads, buffer reuse, and captured subscription cleanup. Trigger nested Open/Close from timer-driven and departure-driven saves; verify the outer Open's generation recheck, that a nested successor's badge/subscription/document output survive, and that no duplicate save occurs. Accept an edit inside a callback-capable save while a current badge exists and verify it forms a new burst. Verify status only for matching document ids and that revision advances once per actual write. Confirm preview's 40 ms delay, Hide cancellation and later reuse. These are source-derived checks, not claims of observed behavioral coverage.",
+      "proposal": {
+        "operation": "merge",
+        "target_ids": [
+          "candidate-831bd2d12be5c2f7f2f148098c94032b",
+          "candidate-6b5ca1d3db816ee90d5cd9157dbc7bc9",
+          "candidate-2ea33100197c29beacee691a11427379",
+          "candidate-1c3602a71b19d010c676456b63bc1d82"
+        ],
+        "target_sha256s": [
+          "2835752e4b6c1eaf8c6a1161c94a3ab57363a3bf4dd4f02741daa7deacab28bb",
+          "0ea9f43b81fb85f8cf3a595e10e414b2aab5dd33ef3d6b3ca161f18433bf5388",
+          "608ccdab70e6b385434803bdea4a3500713795a42e8b9650e7e79b6c3398dd88",
+          "81628bcb9a025f7b94947e61093b3a16b10b58aa6b043c14fac4e8a53f5cf1b0"
+        ]
+      },
+      "review": {
+        "reviewer": "Rhys",
+        "decision": "accept",
+        "at": "2026-11-21T08:16:11.222617Z"
+      }
     }
   ]
 }

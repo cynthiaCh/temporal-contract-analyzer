@@ -228,16 +228,21 @@ def active_view(path):
     # A reviewed exact-target consolidation may replace those sources even if
     # their older ancestry is incomplete. It does not choose between unrelated
     # branches or retire any target not explicitly covered by the reviewed merge.
-    explicit=set()
+    explicit=set();resolved_merges=set()
     for key,item in entries.items():
         proposal=item.get('proposal',{})
-        if proposal.get('operation')!='merge' or not proposal.get('target_sha256s') or 'evidence_ref' not in item:continue
+        # Exact target hashes and acceptance authorize replacement; an optional
+        # archival appendix must not decide whether a reviewed merge takes effect.
+        if proposal.get('operation')!='merge' or not proposal.get('target_sha256s'):continue
         targets=proposal['target_ids']
         if key in ancestry[key] or any(target not in entries or bundles[target]['sha256']!=code
                 for target,code in zip(targets,proposal['target_sha256s'])):continue
         if any(target in ancestry[target] for target in targets):continue
         explicit.update(targets)
+        if all(set(owners.get(target,[]))=={key} for target in targets):
+            resolved_merges.add(key)
     superseded.update(explicit)
+    blocked.difference_update(resolved_merges)
     return dict(policy='compact-current-guidance-v2',active_ids=sorted(set(entries)-superseded),
         superseded_ids=sorted(superseded),explicit_consolidation_source_ids=sorted(explicit),unresolved_ids=sorted(blocked),issues=issues,
         accepted_count=len(entries),active_count=len(entries)-len(superseded))
@@ -360,7 +365,7 @@ def _save_review(path, request):
     item['review'] = dict(reviewer=request['reviewer'].strip(), decision=request['decision'], at=archive.now())
     # Preserve JSON field order so a review update does not reformat every entry.
     _write(file,value)
-    return dict(review=item['review'], record_sha256=bundle['sha256'], file=file.name)
+    return dict(review=item['review'], record_sha256=bundle['sha256'], file=file.name, lifecycle=active_view(path))
 
 
 def page(path):
@@ -374,7 +379,8 @@ def page(path):
         category = value.get('category', 'Uncategorized')
         review = review_for(value, item)
         state = review['decision']
-        status = STATES[state]
+        view_state = ('superseded' if item['id'] in lifecycle['superseded_ids'] else 'active') if state=='accept' else state
+        status = {'active':'当前有效', 'superseded':'历史已替代', 'pending':'待审核'}.get(view_state, STATES[state])
         saved = status if state=='pending' else f'{status} · {review["reviewer"]} · {review["at"]}'
         if item['id'] in lifecycle['superseded_ids']:saved+=' · Superseded; excluded from new retrievals'
         elif item['id'] in lifecycle['unresolved_ids']:saved+=' · Supersession requires review; retained for retrieval for now'
@@ -383,7 +389,7 @@ def page(path):
         proposal=item.get('proposal')
         appendix=('<p class="meta">Evidence attachment: '+escape(item['evidence_ref']['path'])+'</p>') if 'evidence_ref' in item else ''
         context=('<p class="meta">Proposal: '+escape(proposal['operation'])+' · Targets: '+escape(', '.join(proposal['target_ids']) or 'none')+'</p>') if proposal else ''
-        cards.append(f'<article class="panel" data-state="{state}" data-category="{escape(category, quote=True)}"><h2>{escape(item["title"])}</h2>'
+        cards.append(f'<article class="panel" data-state="{state}" data-lifecycle="{view_state}" data-category="{escape(category, quote=True)}"><h2>{escape(item["title"])}</h2>'
                      f'<p class="meta">{escape(category)} · {escape(file.name)}</p>'
                      f'<p class="compact-status">{escape(saved)}</p>{context}{appendix}<dl>{sections}</dl>'
                      f'<form data-id="{escape(item["id"], quote=True)}" '
@@ -399,13 +405,13 @@ def page(path):
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             '<title>TempoEvo · Experience review</title><link rel="stylesheet" href="/memory-review.css">'
             '<script src="/compact-review.js" defer></script><body class="compact-review"><main><section>'
-            f'<h1>TempoEvo · Experience library · {len(cards)} entries</h1><p id="compact-counts"></p>'
+            f'<h1>TempoEvo · Experience library · {len(cards)} 条记录（含历史与待审核）</h1><p id="compact-counts"></p>'
             f'<p>Experience location: <code>{escape(str(path))}</code></p>'
             '<p>Read the experience and its applicability boundaries before reviewing. Decisions are saved to the category file without creating a separate review file.</p>'
             '<label>Category<select id="compact-category"><option value="">All categories</option>'
             + ''.join(f'<option>{escape(category)}</option>' for category in categories) + '</select></label>'
             '<label>Show<select id="compact-filter"><option value="all">All experiences</option>'
-            '<option value="pending">Pending review</option><option value="accept">Accepted</option>'
+            '<option value="active">当前有效</option><option value="superseded">历史已替代</option><option value="pending">待审核 / Pending review</option>'
             '<option value="revise">Revision required</option><option value="reject">Rejected</option></select></label>'
             '<p id="compact-empty" hidden>No experiences in this category.</p>'
             + ''.join(cards) + '</section></main><p id="message" role="status" aria-live="polite"></p></body></html>')
