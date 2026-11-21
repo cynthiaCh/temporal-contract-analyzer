@@ -1,6 +1,9 @@
 """Offline controller checks. Fixtures are synthetic; no models or scorers run."""
 import json
+import io
 import os
+import subprocess
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 import tempfile
 import threading
@@ -10,6 +13,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import runner
+import serve
 from serve import Server
 
 
@@ -50,6 +54,20 @@ class Commands(unittest.TestCase):
         with patch.object(runner, 'REPO', self.root), patch.object(runner.sys, 'platform', 'darwin'):
             command, _, _ = runner.prepare_command(self.config, self.root/'new')
         self.assertEqual(command[command.index('--binary')+1], str(binary))
+
+    def test_qoder_profile_selects_linux_cli_and_turn_measurement(self):
+        profiles = runner.read(self.root/'profiles.json')
+        profiles['profiles']['test']['provider'] = dict(name='Qoder Credits', wire_api='qoder_cli', requires_openai_auth=False)
+        (self.root/'profiles.json').write_text(json.dumps(profiles))
+        binary = self.root/'.tempoevo/qoder/linux/qoder'
+        login = self.root/'.tempoevo/qoder/account/.auth/user'
+        for file in (binary, login):
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.touch()
+        with patch.object(runner, 'REPO', self.root):
+            command, _, model = runner.prepare_command(self.config, self.root/'new')
+        self.assertEqual(command[command.index('--binary')+1], str(binary.resolve()))
+        self.assertEqual(model['request_unit'], 'model turns')
 
     def test_training_requires_actual_check_descriptions(self):
         self.config['mode'] = 'learning'
@@ -191,6 +209,63 @@ class HTTP(unittest.TestCase):
         self.assertEqual(error.exception.code, 403)
         self.assertIsNone(self.server.controller.active)
 
+    def test_shutdown_requires_local_token(self):
+        request = Request(self.server.url+'/api/shutdown', data=b'{}', headers={'Content-Type':'application/json'})
+        with self.assertRaises(HTTPError) as error:
+            urlopen(request)
+        self.assertEqual(error.exception.code, 403)
+        self.assertFalse(self.server.closing)
+
+    def test_shutdown_preserves_active_run(self):
+        self.server.controller.active = 'run-fixture'
+        request = Request(self.server.url+'/api/shutdown', data=b'{}', headers={
+            'Content-Type':'application/json', 'Origin':self.server.url, 'X-TempoEvo-Token':self.server.token})
+        with self.assertRaises(HTTPError) as error:
+            urlopen(request)
+        self.assertEqual(error.exception.code, 400)
+        self.assertIn('A run is active', json.loads(error.exception.read())['error'])
+        self.assertFalse(self.server.closing)
+        self.assertEqual(self.server.controller.active, 'run-fixture')
+
+    def test_relaunch_reuses_existing_workspace_and_preserves_active_run(self):
+        self.server.controller.active = 'run-fixture'
+        token = self.server.token
+        output = io.StringIO()
+        with patch.object(serve.sys, 'argv', ['serve.py', '--port', str(self.server.server_port),
+                         '--runs', str(self.server.controller.root), '--open']), \
+                patch.object(serve.webbrowser, 'open') as open_browser, redirect_stdout(output):
+            serve.main()
+        self.assertIn('already running', output.getvalue())
+        open_browser.assert_called_once_with(self.server.url)
+        self.assertEqual(self.server.token, token)
+        self.assertEqual(self.server.controller.active, 'run-fixture')
+        self.assertEqual(urlopen(self.server.url+'/api/identity').status, 200)
+
+    def test_other_workspace_conflict_is_clear_and_does_not_open_browser(self):
+        output = io.StringIO()
+        with patch.object(serve.sys, 'argv', ['serve.py', '--port', str(self.server.server_port),
+                         '--runs', str(Path(self.temp.name)/'other-runs'), '--open']), \
+                patch.object(serve.webbrowser, 'open') as open_browser, redirect_stderr(output):
+            with self.assertRaises(SystemExit) as error:
+                serve.main()
+        self.assertEqual(error.exception.code, 1)
+        self.assertIn('occupied by another service or workspace', output.getvalue())
+        self.assertNotIn('Traceback', output.getvalue())
+        open_browser.assert_not_called()
+
+    def test_unrelated_service_is_not_reused(self):
+        with patch.object(serve, 'build_opener') as opener:
+            response = opener.return_value.open.return_value.__enter__.return_value
+            response.geturl.return_value = self.server.url+'/api/identity'
+            response.read.return_value = b'{"application":"other-service"}'
+            self.assertFalse(serve.existing_workspace(self.server.url, self.server.controller.root))
+
+    def test_redirected_identity_is_not_reused(self):
+        with patch.object(serve, 'build_opener') as opener:
+            response = opener.return_value.open.return_value.__enter__.return_value
+            response.geturl.return_value = 'https://example.invalid/api/identity'
+            self.assertFalse(serve.existing_workspace(self.server.url, self.server.controller.root))
+
     def test_archives_are_readonly_and_path_traversal_is_rejected(self):
         for ident in ['archive-training', '../elsewhere', 'run-fixture/../../elsewhere']:
             request = Request(self.server.url+'/api/start', data=json.dumps(dict(id=ident)).encode(), headers={
@@ -210,6 +285,37 @@ class HTTP(unittest.TestCase):
         with self.assertRaises(HTTPError) as error:
             urlopen(request)
         self.assertEqual(error.exception.code, 403)
+
+
+class CloseLauncher(unittest.TestCase):
+    def test_stop_closes_only_matching_server_and_preserves_records(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)/'runs'
+            script = str(Path(serve.__file__).resolve())
+            process = subprocess.Popen([serve.sys.executable, '-B', script, '--port', '0', '--runs', str(root)],
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            try:
+                address = json.loads(process.stdout.readline())['url']
+                port = address.rsplit(':', 1)[1]
+                record = root/'retained-record.txt'
+                record.write_text('fixture')
+                mismatch = subprocess.run([serve.sys.executable, '-B', script, '--port', port,
+                                           '--runs', str(root/'other'), '--stop'], capture_output=True, text=True, timeout=10)
+                self.assertEqual(mismatch.returncode, 1)
+                self.assertIn('No process was stopped', mismatch.stderr)
+                self.assertIsNone(process.poll())
+                result = subprocess.run([serve.sys.executable, '-B', script, '--port', port,
+                                         '--runs', str(root), '--stop'], capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('Workspace closed', result.stdout)
+                self.assertEqual(process.wait(timeout=5), 0)
+                self.assertEqual(record.read_text(), 'fixture')
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    process.wait(timeout=5)
+                process.stdout.close()
+                process.stderr.close()
 
 
 if __name__ == '__main__':

@@ -1,7 +1,10 @@
 """Host-owned ledger using the unchanged request guard; no archive mount in CLI."""
 import json,secrets,socket,threading
 from pathlib import Path
-from request_guard import account
+if __package__:
+    from .request_guard import account
+else:
+    from request_guard import account
 
 class GuardServer:
     def __init__(self,socket_dir,meter,call,cap,mode,*,docker_desktop=False):

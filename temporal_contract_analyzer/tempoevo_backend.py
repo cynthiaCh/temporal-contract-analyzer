@@ -17,6 +17,9 @@ class NativeV4Backend:
         from ._session_runtime.model_settings import resolve_profile,validate_settings,identity
         settings=validate_settings(self.protocol.get('model_settings') or resolve_profile())
         if model!=identity(settings):raise EvidenceError('Native model drift')
+        if settings['provider']['wire_api']=='qoder_cli':
+            from .qoder_backend import QoderBackend
+            return QoderBackend(self.protocol).execute(kind,payload,model,limits,directory)
         role='repair' if kind=='action' else 'analysis'
         source=directory/'public-input';write_files(source,{k:v.encode() for k,v in payload.get('candidate_sources',payload['sources']).items()})
         protocol=dict(binary=self.protocol['binary'],node=self.protocol.get('node','/usr/bin/node'),case=dict(id=self.protocol.get('task_id','v4-task')),

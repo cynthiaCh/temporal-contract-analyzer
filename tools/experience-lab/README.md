@@ -14,8 +14,19 @@ Or, from this checkout:
 python3 -B tools/experience-lab/serve.py --open
 ```
 
-Open **http://127.0.0.1:8765**. Keep the terminal open. Use `--port 8766` if that
-port is occupied; this launcher never replaces another running service.
+Open **http://127.0.0.1:8765**. Keep the server terminal open. Launching again
+reopens the existing workspace when its checkout and run directory match.
+It preserves active training and does not start a second server. If another
+service or workspace occupies the port, the launcher explains the conflict
+without a traceback; use `--port 8766` to start a separate workspace.
+
+Closing the browser does not stop the server. Double-click
+`stop-tempoevo-workspace.command` to close the default workspace, or run
+`python3 -B tools/experience-lab/serve.py --stop`. For a custom port, add
+`--port PORT` (and the matching `--runs PATH` if customized). Closing verifies
+the workspace identity and preserves its records. It refuses while preparation
+or training/testing is active; wait for completion, or request stop in the page
+and wait before closing. The next launch uses port 8765 again.
 
 The server binds to the loopback interface. To execute on an already provisioned
 experiment server, run this same command there and forward its port:
@@ -86,6 +97,49 @@ checks cover Docker availability, Codex presence and image availability, but do
 not establish authentication, quota or completion of a real model run.
 
 ### Model profiles
+
+#### Qoder Credits / built-in DeepSeek
+
+Provision the pinned Qoder CLI (1.1.94), then sign in using its official browser
+flow. The installer verifies the release archive SHA-256 against the official
+version manifest; it adds no Python/Node dependencies:
+
+```sh
+python3 -B tools/experience-lab/setup_qoder.py --login
+```
+
+The workspace provides `qoder-deepseek-flash-low`,
+`qoder-deepseek-flash-high`, and `qoder-deepseek-pro-high`. These select the
+account's built-in `DeepSeek-Flash` / `DeepSeek-V4-Pro` models and spend Qoder
+Credits. They do not use a DeepSeek API key or a custom provider endpoint.
+Restart an idle workspace after provisioning, then prepare a fresh run.
+Re-running setup without `--login` keeps the existing dedicated CLI account.
+
+Each stage executes the Linux CLI in the pinned solver image, with only public
+candidate files and isolated configuration. Its dedicated account files live
+under `.tempoevo/qoder/account/.auth`; no IDE memory, user hooks, plugin settings,
+benchmark/scorer, experience archive or Docker socket is mounted. Qoder manages
+token refreshes in that dedicated account directory. Credentials are not written
+to run logs or source files.
+
+Qoder's budget counts **model turns**, as reported by its `stream-json` result,
+and enforces `--max-turns` (24 per Action, 12 per analysis stage) and a maximum
+600-second stage duration. Provider model-request retries are set to zero.
+The page explicitly labels these as model turns: the underlying HTTP request
+count is unknown. Live turn progress deduplicates completed assistant message
+IDs; the final count comes from `num_turns`. Missing final counts or an
+unconfirmed model fail the stage rather than reporting success. Reported Credits
+are retained separately; unavailable token usage stays unknown.
+
+Analysis has a read-only workspace and a guarded Bash reader. Actions have a
+writable public workspace; existing protected-file checks and independent
+evaluators still apply. CLI results must contain a JSON object matching the
+stage schema. Raw output, errors, commands and container receipts are retained.
+All owned containers stop before their candidate files are accepted or assessed.
+
+Protocol references: [Qoder script execution](https://docs.qoder.com/cli/run-in-scripts),
+[model selection](https://docs.qoder.com/cli/model), and
+[authentication](https://docs.qoder.com/cli/authentication).
 
 The initial workspace provides GPT-5.6 Sol and GPT-6.1 Sol profiles at low,
 medium and high reasoning effort. `sol56-medium` matches the model name, effort,

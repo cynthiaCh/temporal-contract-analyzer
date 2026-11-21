@@ -39,3 +39,17 @@ class Progress(unittest.TestCase):
             self.assertTrue(result['finished'])
             self.assertIsNone(result['passed'])
             self.assertEqual(result['error'], 'fixture error')
+
+    def test_qoder_turns_read_live_progress_without_synthetic_request_hooks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            progress = root/'stages/action-1/executions/1/qoder-progress.json'
+            progress.parent.mkdir(parents=True)
+            progress.write_text(json.dumps(dict(completed_turns=3, http_requests=None)))
+            state = dict(status='action_running', attempts=[], stages=[dict(key='contract', status='complete', requests=1),
+                         dict(key='action-1', status='started', requests=None)])
+            (root/'state.json').write_text(json.dumps(state))
+            result = case_status(dict(case_id='fixture', trajectory=root))
+            self.assertEqual(result['completed_requests'], 4)
+            self.assertEqual(result['pending_requests'], 0)
+            self.assertEqual(result['current_stage'], 'action-1')

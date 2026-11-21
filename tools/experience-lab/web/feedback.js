@@ -11,7 +11,9 @@ const RunFeedback = {
         const label = meta.config.mode === 'learning' ? 'Training' : 'Testing';
         const elapsed = meta.started_at ? Math.max(0, Math.floor(((meta.finished_at ? Date.parse(meta.finished_at) : now) - Date.parse(meta.started_at)) / 1000)) : null;
         const duration = elapsed === null ? '' : ` · ${Math.floor(elapsed / 60)}m ${elapsed % 60}s elapsed`;
-        const stats = `${completed} / ${total} cases finished · ${requests} model requests completed${duration}`;
+        const unit = meta.model?.request_unit || 'model requests';
+        const measurement = unit === 'model turns' ? ' · HTTP request count unknown' : '';
+        const stats = `${completed} / ${total} cases finished · ${requests} ${unit} completed${duration}${measurement}`;
         const errors = cases.filter(c => /invalid|error|failed/.test(c.status));
         if (meta.status === 'finished') {
             const success = cases.length === total && cases.every(c => c.finished && c.passed === true);

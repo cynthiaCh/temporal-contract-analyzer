@@ -25,9 +25,10 @@ class ProfileEditing(unittest.TestCase):
                     base_id='sol56-medium', create=True, id='custom-medium', model='fixture-model',
                     reasoning_effort='medium', service_tier='priority')
 
-    def test_seed_includes_experiment_model_and_six_presets(self):
+    def test_seed_includes_codex_and_qoder_credits_presets(self):
         profiles = self.store.snapshot()['profiles']
-        self.assertEqual(len(profiles), 6)
+        self.assertEqual(len(profiles), 9)
+        self.assertEqual(profiles['qoder-deepseek-flash-low']['request_unit'], 'model turns')
         self.assertEqual(profiles['sol56-medium']['model'], 'gpt-5.6-sol')
         self.assertEqual(profiles['sol56-medium']['reasoning_effort'], 'medium')
 

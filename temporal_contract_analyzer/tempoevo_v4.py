@@ -249,6 +249,8 @@ class Trajectory:
         except (ValueError,TypeError,OSError) as error:raise EvidenceError('Invalid model configuration: '+str(error)) from error
         if cfg.get('model',identity(settings))!=identity(settings):raise EvidenceError('Model must match the selected profile')
         cfg['model_settings']=settings
+        if settings['provider']['wire_api']=='qoder_cli':
+            cfg.setdefault('qoder_auth_dir',str(Path(__file__).resolve().parents[1]/'.tempoevo/qoder/account'))
         cfg['model_profile']=settings['profile']
         cfg.pop('model_config',None)  # Freeze resolved values, not a mutable external file.
         if cfg['mode']=='testing' and not cfg.get('gold_evaluator'):raise EvidenceError('Testing requires a separate gold evaluator')
@@ -339,6 +341,9 @@ class Trajectory:
             evaluation_budget=dict(visible=attempts if cfg.get('visible_evaluator') else 0,oracle=attempts if cfg['mode']=='learning' else 0,gold=1 if cfg['mode']=='testing' else 0),
             held_out_eligible=False,split_status='final_only_gold_testing' if cfg['mode']=='testing' else 'unverified_no_independent_split_evidence',
             memory_snapshot_sha256=bank['sha256'],source_sha256=sha(canonical(sources).encode()))
+        if settings['provider']['wire_api']=='qoder_cli':
+            adapter=Path(__file__).with_name('qoder_backend.py')
+            evaluator_hashes[str(adapter.resolve())]=sha(adapter.read_bytes())
         self.save('protocol.json',cfg);self.save('state.json',dict(status='prepared',attempts=[],stages=[],contract=None,diagnoses=[],cancelled=False))
         # Freeze executables and their static inputs; no evaluator output enters model context here.
         self.save('binding.json',dict(protocol=sha((self.root/'protocol.json').read_bytes()),
@@ -453,6 +458,8 @@ class Trajectory:
         requests=result.get('requests',0) if kind not in ('visible','gold') else 0
         row.update(tokens=result.get('tokens'),seconds=time.monotonic()-started,result_sha256=sha((directory/'result.json').read_bytes()))
         row.update(observed_tokens=result.get('observed_tokens'),usage_incomplete=result.get('usage_incomplete',False),unknown_usage_requests=result.get('unknown_usage_requests',0))
+        if result.get('request_measurement'):
+            row.update(request_measurement=result['request_measurement'],http_requests=result.get('http_requests'),credits=result.get('credits'))
         if type(requests) is int and requests>=0:row['requests']=requests
         self.save('state.json',state)
         if self.state()['cancelled']:raise EvidenceError('Cancelled during stage')

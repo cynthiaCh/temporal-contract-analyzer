@@ -12,7 +12,10 @@ def kill_cli():
   pid=parent
  os.killpg(os.getpgrp(),signal.SIGKILL)
 
-from read_policy import read_command
+if __package__:
+ from .read_policy import read_command
+else:
+ from read_policy import read_command
 
 def account(e,root,call,terminate=True):
  root=Path(root);cfg=json.loads((root/'config.json').read_text());p=root/'ledger.json';deny=False;reason=None;k=e.get('hook_event_name')

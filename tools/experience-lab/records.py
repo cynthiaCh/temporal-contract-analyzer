@@ -45,6 +45,10 @@ def case_status(job):
     requests = sum(s.get('requests') or 0 for s in stages if s is not current)
     completed, started = 0, 0
     if current:
+        for progress in (p.parent/'stages'/current['key']/'executions').glob('*/qoder-progress.json'):
+            counts = read(progress)
+            completed += counts['completed_turns']
+            started += counts['completed_turns']
         for ledger in (p.parent/'stages'/current['key']/'executions').glob('*/native-stage/native/archive/meter/ledger.json'):
             try:
                 counts = read(ledger)

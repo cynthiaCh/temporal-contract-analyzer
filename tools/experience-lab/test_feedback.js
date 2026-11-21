@@ -30,6 +30,15 @@ test('finished queue with execution errors never reports success', () => {
     assert.equal(feedback.summarize(run).kind, 'success');
 });
 
+test('Qoder feedback labels turns and keeps HTTP request counts unknown', () => {
+    const run = fixture();
+    run.meta.model = {request_unit: 'model turns'};
+    const result = feedback.summarize(run);
+    assert.match(result.text, /4 model turns completed/);
+    assert.match(result.text, /HTTP request count unknown/);
+    assert.doesNotMatch(result.text, /4 model requests completed/);
+});
+
 test('completion alert appears once and stays visible in the progress panel', () => {
     const elements = new Map();
     const element = () => ({hidden: false, value: '', textContent: '', classList: {toggle() {}},
