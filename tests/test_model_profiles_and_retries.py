@@ -54,6 +54,18 @@ class ModelRetryTests(unittest.TestCase):
         model=read(loop.root/'protocol.json')['model'];self.assertEqual(model,dict(model='synthetic-other-model',reasoning_effort=None))
         self.assertTrue(all(call[2]==model for call in backend.calls))
 
+    def test_minimax_credits_profile_reaches_stages_without_an_explicit_effort(self):
+        path=self.config_file(model='MiniMax-M3.1-Flash')
+        data=json.loads(path.read_text())
+        data['profiles']['custom']['provider']=dict(name='Qoder Credits',wire_api='qoder_cli',requires_openai_auth=False)
+        path.write_text(json.dumps(data))
+        loop=self.prepare(model_config=str(path));backend=RetryBackend(failures=0)
+        state=loop.run(backend,execute=True)
+        self.assertEqual(state['status'],'passed',state.get('error'))
+        self.assertTrue(all(call[2]==dict(model='MiniMax-M3.1-Flash',reasoning_effort=None) for call in backend.calls))
+        settings=resolve_profile('custom',path);settings['reasoning_effort']='low'
+        with self.assertRaisesRegex(ValueError,'reasoning effort'):validate_settings(settings)
+
     def test_retry_exhaustion_is_invalid_not_three_behavior_failures(self):
         loop=self.prepare(model_config=str(self.config_file()));b=RetryBackend(failures=9)
         state=loop.run(b,execute=True)

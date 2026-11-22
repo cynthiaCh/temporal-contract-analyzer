@@ -23,11 +23,13 @@ def validate_settings(value):
     if not isinstance(provider['name'], str) or not provider['name'].strip() or provider['wire_api'] not in ('responses', 'qoder_cli') or type(provider['requires_openai_auth']) is not bool:
         raise ValueError('Only Codex Responses or Qoder CLI providers are supported')
     if provider['wire_api'] == 'qoder_cli':
-        if set(provider) != required or provider['requires_openai_auth'] or value['model'] not in ('DeepSeek-Flash', 'DeepSeek-V4-Pro') or value['service_tier'] is not None:
-            raise ValueError('Qoder Credits requires a built-in DeepSeek model without an API endpoint/key or service tier')
-        supported = ('low', 'high', 'max') if value['model'] == 'DeepSeek-Flash' else ('high', 'max')
+        efforts = {'DeepSeek-Flash': ('low', 'high', 'max'),
+                   'DeepSeek-V4-Pro': ('high', 'max'), 'MiniMax-M3.1-Flash': ()}
+        if set(provider) != required or provider['requires_openai_auth'] or value['model'] not in efforts or value['service_tier'] is not None:
+            raise ValueError('Qoder Credits requires a supported built-in model without an API endpoint/key or service tier')
+        supported = efforts[value['model']]
         if value['reasoning_effort'] is not None and value['reasoning_effort'] not in supported:
-            raise ValueError('Unsupported Qoder DeepSeek reasoning effort')
+            raise ValueError('Unsupported Qoder model reasoning effort')
     if 'base_url' in provider:
         if not isinstance(provider['base_url'],str):raise ValueError('Provider base_url must be a URL string')
         u = urlsplit(provider['base_url'])
