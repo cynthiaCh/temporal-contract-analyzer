@@ -22,6 +22,16 @@ DEFAULT_GRADER = 'sha256:00b97937eb4e3c9db1ef6f071dde20629034910bbbfdd9a8b4a34b1
 PUBLIC_DOCS = 'experiments/training-replays/tempoevo-gpt56-sol-medium-train70-twoarms-worker1-20261118_002327/public-checks-docs.json'
 
 
+def default_benchmark():
+    configured = os.environ.get('TCA_BENCH_ROOT')
+    if configured:
+        return str(Path(configured).expanduser().resolve())
+    for name in ('temporal-contract-bench', 'temporal-contract-bench-git'):
+        candidate = REPO.parent/name
+        if (candidate/'experiments/temporal-diagnostics-v1/corpus.json').is_file():
+            return str(candidate)
+    return str(REPO.parent/'temporal-contract-bench')
+
 def default_images():
     path = REPO / '.tempoevo/docker-images.json'
     return read(path) if path.is_file() else dict(solver_image=DEFAULT_SOLVER, grader_image=DEFAULT_GRADER)

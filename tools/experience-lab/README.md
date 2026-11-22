@@ -28,6 +28,10 @@ the workspace identity and preserves its records. It refuses while preparation
 or training/testing is active; wait for completion, or request stop in the page
 and wait before closing. The next launch uses port 8765 again.
 
+The default benchmark uses `TCA_BENCH_ROOT` when set, otherwise an available
+`temporal-contract-bench` or `temporal-contract-bench-git` checkout beside this
+repository. Check or change this path under **Execution environment**.
+
 The server binds to the loopback interface. To execute on an already provisioned
 experiment server, run this same command there and forward its port:
 
@@ -83,6 +87,10 @@ The selected-case CLI also accepts `--binary PATH` for other layouts.
 6. Inspect a case's source/AST evidence, Auto-Contract, verified patch comparison,
    delivered experience, candidate proposal, and stage/execution logs as they
    become available. Run completion and behavioral success are separate states.
+
+Prepare immediately shows its pending state. Invalid fields expand their environment
+section, and preparation errors appear beside the button. The Run log shows
+preparation events even before the first case exists, followed by preparation output.
 
 The progress panel refreshes every 2.5 seconds and shows the current stage,
 finished cases, measured completed/pending model requests, and elapsed execution
@@ -259,6 +267,9 @@ and a real launch separately on a provisioned execution host.
 ```sh
 python3 -B -m unittest discover -s tools/experience-lab -p 'test_*.py'
 node --check tools/experience-lab/web/app.js
+# Requires the Playwright dependency installed under vscode-extension/:
+CHROME_PATH=/path/to/chrome node tools/experience-lab/test_prepare_browser.cjs
+
 node tools/experience-lab/test_feedback.js
 ```
 

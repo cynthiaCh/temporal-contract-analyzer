@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 import webbrowser
 
-from runner import Controller, REPO, PUBLIC_DOCS, default_images, environment, read
+from runner import Controller, REPO, PUBLIC_DOCS, default_benchmark, default_images, environment, read
 from records import archived_runs, run_detail, case_detail
 from model_profiles import Profiles
 
@@ -83,7 +83,7 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == '/api/bootstrap':
                 config = self.server.profiles.snapshot()
                 self.send(dict(token=self.server.token, repository=str(REPO), profiles=config['profiles'], default_profile=config['default_profile'], profile_config=config,
-                               defaults=dict(benchmark=str(REPO.parent/'temporal-contract-bench'), store='experience-memory/library', model_config=config['path'],
+                               defaults=dict(benchmark=default_benchmark(), store='experience-memory/library', model_config=config['path'],
                                              **default_images(), public_checks=PUBLIC_DOCS)))
             elif url.path == '/api/environment':
                 self.send(environment())
