@@ -240,3 +240,10 @@ GPT6.1LOWfixed30 READY:30freshbindings,full61bank/source/task/scorer/images/budg
 GPT6.1LOW serial queue started:real non-deniedmodelrequest andactualCLI lowflag verified;peakactive1,full61snapshot. First response completion pending atstartup checkpoint (not a behavioral outcome). Proof /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-low-same30-worker1-20261119_001852/launch-verification.json.
 
 GPT6.1LOWfixed30 launched:real non-deniedgpt6.1sol request ANDcompletedresponse,actualCLIflag model_reasoning_effort=low verified,peakactive1. Proof /home/sribd/Downloads/wangshu/tempoevo-gpt61-sol-low-same30-worker1-20261119_001852/launch-verification.json. Full61snapshot frozen,nolearning.
+
+
+## GPT5.6 Latent+experience fixed30 workers8 df6547ec
+Root /home/sribd/Downloads/wangshu/tempoevo-gpt56-sol-medium-latent-experience-test30-workers8-20261122_024039
+Warm reuse of original immutable solver/grader images and exact Codex c3dea068; no rebuild or local GPU allocation. Frozen61 bank,29 nonempty and1 empty historical GPT5.6 deliveries; no new selection or Contract. One Action24requests/600seconds, final-onlyGold, no learning. Current merged runtime/guard/scorer diagnostic deltas are disclosed in README.
+Zero-model preflight:90 fresh valid/expected calibration controls,1905 matching image files,all30 fixed test source/model/bank/delivery/budget bindings. Documented invocation: python3 -B /home/sribd/Downloads/wangshu/tempoevo-gpt56-sol-medium-latent-experience-test30-workers8-20261122_024039/validate.py (before launch only). Fresh independent agent report ready:true at independent-validation.json.
+Launched with8workers;8 real non-deniedgpt5.6 model request cases,mediumflag verified in actual CLI commands,at least1 completed response. Launch proof /home/sribd/Downloads/wangshu/tempoevo-gpt56-sol-medium-latent-experience-test30-workers8-20261122_024039/launch-verification.json. Background supervisor archives final results and does not retry valid behavioral failures.
