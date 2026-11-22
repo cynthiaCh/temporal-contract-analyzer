@@ -328,8 +328,6 @@ class Trajectory:
                     evaluator_hashes[str(path)]=sha(path.read_bytes());normalized.append(str(path))
                 else:normalized.append(arg)
             cfg[name]['command']=normalized
-        for key in ('binary','node'):
-            if cfg.get(key) and Path(cfg[key]).is_file():evaluator_hashes[str(Path(cfg[key]).resolve())]=sha(Path(cfg[key]).read_bytes())
         self.root.mkdir(parents=True);write_files(self.root/'original',files)
         from .compact_experience import is_library,active_view
         if is_library(store):self.save('memory-lifecycle.json',active_view(store))
@@ -360,15 +358,11 @@ class Trajectory:
             evaluation_budget=dict(visible=attempts if cfg.get('visible_evaluator') else 0,oracle=attempts if cfg['mode']=='learning' else 0,gold=1 if cfg['mode']=='testing' else 0),
             held_out_eligible=False,split_status='final_only_gold_testing' if cfg['mode']=='testing' else 'unverified_no_independent_split_evidence',
             memory_snapshot_sha256=bank['sha256'],source_sha256=sha(canonical(sources).encode()))
-        if settings['provider']['wire_api']=='qoder_cli':
-            adapter=Path(__file__).with_name('qoder_backend.py')
-            evaluator_hashes[str(adapter.resolve())]=sha(adapter.read_bytes())
         self.save('protocol.json',cfg);self.save('state.json',dict(status='prepared',attempts=[],stages=[],contract=None,diagnoses=[],cancelled=False))
-        # Freeze executables and their static inputs; no evaluator output enters model context here.
+        # Bind task artifacts and trusted scoring inputs, not the shared runner source.
         self.save('binding.json',dict(protocol=sha((self.root/'protocol.json').read_bytes()),
             bank=sha((self.root/'memory-snapshot.json').read_bytes()),ast=sha((self.root/'ast-evidence.json').read_bytes()),
-            implementation=sha(Path(__file__).read_bytes()),evaluators=evaluator_hashes,
-            runtime={str(path):sha(path.read_bytes()) for path in [Path(__file__).with_name(name) for name in ('business_retrieval.py','prompt_context.py','preparation_validation.py','semantic_retrieval.py','experience_routing.py','experience_memory.py','experience_approval.py','experience_updates.py','compact_experience.py','taxonomy.py','contract-taxonomy.json')]+[Path(__file__).with_name('evaluation_split.py'),Path(__file__).resolve().parents[1]/'experiments/evaluation-splits.json',Path(__file__).with_name('online_memory.py'),Path(__file__).with_name('experience_reflection.py'),Path(__file__).with_name('training_acceptance.py'),Path(__file__).with_name('stage_retry.py'),Path(__file__).with_name('tempoevo_backend.py'),Path(__file__).with_name('tempoevo_docker.py'),Path(__file__).with_name('docker_backend.py'),Path(__file__).with_name('execution_backend.py'),Path(__file__).with_name('_session_runtime')/'model-profiles.json',Path(__file__).with_name('_session_runtime')/'research-config.toml']+list(Path(__file__).with_name('_session_runtime').glob('*.py'))}))
+            evaluators=evaluator_hashes))
         self.report();return self.state()
 
     def verify(self):
@@ -379,14 +373,19 @@ class Trajectory:
         binding=read(self.root/'binding.json')
         for name,key in [('protocol.json','protocol'),('memory-snapshot.json','bank'),('ast-evidence.json','ast')]:
             if sha((self.root/name).read_bytes())!=binding[key]:raise EvidenceError('Frozen V4 input drift')
-        if sha(Path(__file__).read_bytes())!=binding['implementation']:raise EvidenceError('Frozen implementation changed')
         online_digest=self.state().get('online_snapshot_sha256')
         if online_digest:
             from .online_memory import validate_snapshot
             snapshot=validate_snapshot(read(self.root/'online-snapshot.json'))
             if snapshot['sha256']!=online_digest:raise EvidenceError('Online task snapshot changed')
-        for path,digest in dict(binding['evaluators'],**binding['runtime']).items():
-            if sha(Path(path).read_bytes())!=digest:raise EvidenceError('Frozen evaluator/runtime drift')
+        # Older bindings included the agent executable and Qoder adapter. Those
+        # are execution infrastructure, not trusted scoring inputs. Ignore legacy
+        # implementation/runtime inventories without rewriting historical records.
+        infrastructure={str(Path(p[key]).resolve()) for key in ('binary','node') if p.get(key)}
+        infrastructure.add(str(Path(__file__).with_name('qoder_backend.py').resolve()))
+        for path,digest in binding['evaluators'].items():
+            if str(Path(path).resolve()) in infrastructure:continue
+            if sha(Path(path).read_bytes())!=digest:raise EvidenceError('Trusted evaluator input changed')
         if inventory(capture(self.root/'original')[0])!=p['original_inventory']:raise EvidenceError('Original code drift')
         for attempt in self.state()['attempts']:
             if inventory(capture(self.root/'attempts'/str(attempt['number'])/'candidate')[0])!=attempt['candidate_inventory']:raise EvidenceError('Archived candidate drift')

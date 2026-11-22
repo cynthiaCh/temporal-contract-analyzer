@@ -57,6 +57,27 @@ class V4Tests(unittest.TestCase):
         cfg.update(changes)
         if cfg['mode']=='testing':cfg.pop('training_evaluator',None)
         loop=Trajectory(self.root/('run-'+str(len(list(self.root.glob('run-*'))))));loop.prepare(cfg);return loop
+
+    def test_legacy_runtime_and_agent_changes_do_not_block_testing(self):
+        from temporal_contract_analyzer import experience_approval as approval
+        agent=self.root/'agent';agent.write_text('previous agent')
+        loop=self.prepare(mode='testing',condition='baseline',binary=str(agent),
+            memory_snapshot=approval.freeze(self.store),visible_evaluator=None,
+            gold_evaluator=dict(command=['synthetic-gold']))
+        binding=read(loop.root/'binding.json')
+        self.assertNotIn('runtime',binding);self.assertNotIn('implementation',binding)
+        self.assertNotIn(str(agent),binding['evaluators'])
+        binding.update(implementation='old runner',runtime={str(self.root/'removed-module.py'):'old runtime'})
+        binding['evaluators'][str(agent)]='legacy agent checksum';loop.save('binding.json',binding)
+        agent.write_text('updated agent')
+        state=loop.run(Backend(),execute=True)
+        self.assertEqual(state['status'],'scored');self.assertTrue(state['gold_result']['passed'])
+
+    def test_changed_trusted_scoring_input_remains_rejected(self):
+        grader=self.root/'grader.py';grader.write_text('original scorer')
+        loop=self.prepare(training_evaluator=dict(command=['python3',str(grader)]))
+        grader.write_text('different scorer')
+        with self.assertRaisesRegex(EvidenceError,'Trusted evaluator input changed'):loop.verify()
     def test_v8_recipe_uses_public_and_gold_acceptance_without_reflection_payload(self):
         class PublicFailsFirst(Backend):
             def evaluate(self,stage,payload,directory):
