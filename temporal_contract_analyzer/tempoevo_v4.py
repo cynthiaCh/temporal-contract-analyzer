@@ -28,6 +28,16 @@ TERMINAL = ('passed', 'scored', 'repair_exhausted', 'execution_invalid', 'awaiti
 CONTRACT_FIELDS = ('scope', 'triggers', 'ordering_barriers', 'lifecycle_identity',
                    'preservation', 'forbidden_effects', 'checkpoints', 'unknowns')
 BEHAVIOR_FIELDS = tuple(k for k in CONTRACT_FIELDS if k != 'unknowns') + ('obligations',)
+CONTRACT_INSTRUCTION = (
+    'Infer a temporal Contract grounded in the original task and public sources. '
+    'Include only obligations supported by those inputs. Distinguish explicitly stated requirements '
+    'from inferred preservation obligations in the obligation text. '
+    'Support every obligation with exact original task or public-source quotations in supporting_evidence. '
+    'Check any proposed business obligations against the same original evidence. '
+    'When preservation is requested, inspect existing observable behavior and callback-capable boundaries; '
+    'absence of an explicit prose deadline does not authorize weakening existing behavior. '
+    'Record unresolved questions in unknowns rather than inventing requirements. '
+    'Do not infer requirements from experience alone.')
 DIAGNOSIS_INSTRUCTION = '''Classify implementation_gap/contract_gap/both/unknown. Preserve original obligations.
 Observations and a failed acceptance verdict are not new business requirements or proof of a failure cause.
 Compare behavioral fields (scope, triggers, ordering_barriers, lifecycle_identity, preservation,
@@ -628,7 +638,7 @@ class Trajectory:
                 def validate_draft(output):
                     check_contract(output,p['task'],sources)
                     return deepcopy(output)
-                draft=self._preparation_output(p,backend,'contract','contract',dict(public,experience=delivery['experience_text'],business_obligations=delivery.get('business_obligations',[]),instruction='Draft a fallible Contract from the original task and public sources. Check proposed business obligations against those originals. When preservation is requested, inspect existing observable behavior and callback-capable boundaries; absence of an explicit prose deadline does not authorize weakening existing behavior. Do not infer requirements from experience alone.',schema=CONTRACT_SCHEMA),validate_draft)
+                draft=self._preparation_output(p,backend,'contract','contract',dict(public,experience=delivery['experience_text'],business_obligations=delivery.get('business_obligations',[]),instruction=CONTRACT_INSTRUCTION,schema=CONTRACT_SCHEMA),validate_draft)
                 state=self.state();state.update(contract=draft,contract_preparation_complete=True)
                 self.save('initial-contract.json',draft);self.save('state.json',state)
             self.status('contract_ready');state=self.state()

@@ -96,6 +96,17 @@ The [final case bundle](cases/README.md) contains the complete 100 cases under
 `cases/train70/` and `cases/test30/`. The [final results](experiments/testing-runs/gpt56-library-size-ablation-20261118/README.md)
 record the frozen-library-size comparison.
 
+The [paired bootstrap index generator](tools/generate_bootstrap_indices.py)
+creates shared resampling indexes for model comparisons (1,000 replicates,
+seed `20260925` by default). Supply a CSV containing unique `case_id` values and
+an integer label column; replace `case-results.csv` below with your input file.
+The script generates indexes and provenance metadata, not pass-rate statistics.
+
+```sh
+python3 tools/generate_bootstrap_indices.py --reference case-results.csv \
+  --label-column passed --output-dir /tmp/tempoevo-bootstrap
+```
+
 New runs require fresh V12 roots. Historical results and decisions stay unchanged.
 The sole current split is [cases/split.json](cases/split.json): 70 development
 cases and 30 test cases, with no overlapping case IDs. Reserved test IDs cannot

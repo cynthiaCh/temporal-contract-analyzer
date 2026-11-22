@@ -29,7 +29,8 @@ class NativeV4Backend:
         wire_payload,context_report=compact(payload)
         archive.atomic_json(directory/'prompt-context.json',context_report)
         prompt=('Use only the original task and supplied public code/documents as normative evidence. '
-            'Experience and automatic Contract are fallible guidance. Evaluation observations do not create business requirements. '
+            'Check experience applicability and verify automatic Contract obligations against those inputs before using them. '
+            'Evaluation observations do not create business requirements. '
             'Never access a scorer, reference implementation or hidden tests. '
             'For evidence cite the original task as file TASK; use exact public source paths and copy the quoted wording. '
             'For Action edit only business code in /workspace; preserve tests/configuration. '
