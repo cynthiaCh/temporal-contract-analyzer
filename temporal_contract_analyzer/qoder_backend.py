@@ -252,7 +252,8 @@ class QoderBackend:
         wire, report = compact(payload)
         archive.atomic_json(directory/'prompt-context.json', report)
         schema = payload.get('schema') or json.loads((RUNTIME/'maintenance.schema.json').read_text())
-        prompt = ('Use only the original task and public sources as requirements. Experience and Auto-Contract are fallible guidance. '
+        prompt = ('Use only the original task and public sources as requirements. '
+                  'Check experience applicability and verify automatic Contract obligations against those inputs before using them. '
                   'No scorer, reference, hidden tests or Docker socket is available. '
                   'For evidence cite the original task as file TASK; use exact public source paths and copy the quoted wording. '
                   'For Action edit business code in /workspace, preserve tests/configuration, and compile only under /tmp. '
