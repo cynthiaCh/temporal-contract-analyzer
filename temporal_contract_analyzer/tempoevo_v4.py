@@ -254,7 +254,7 @@ class Trajectory:
         if cfg['mode']=='testing' and cfg.get('training_feedback_used'):raise EvidenceError('Training-exposed cases cannot be independent tests')
         validate_mapping(cfg.get('training_feedback',{}))
         if type(cfg.get('required_visible_checks',True)) is not bool:raise EvidenceError('required_visible_checks must be boolean')
-        if cfg['mode']=='testing':
+        if cfg['mode']=='testing' and cfg.get('evaluation_purpose')!='training_replay':
             registry=Path(__file__).resolve().parents[1]/'experiments/training-cases.json'
             if registry.exists() and cfg.get('task_id') in {r['id'] for r in read(registry)['cases']}:raise EvidenceError('Known exposed development case cannot be an independent test')
         attempts=cfg.get('max_attempts',1 if cfg['mode']=='testing' else 3)

@@ -22,6 +22,16 @@ class SplitTests(unittest.TestCase):
         self.assertEqual(assignment(TEST)['role'],'testing')
         self.assertTrue(assignment(TEST)['independence']['historical_outcome_selected'])
 
+    def test_exposed_training_replay_is_final_only_and_keeps_training_role(self):
+        loop=self.prepare(task_id=TRAIN,mode='testing',condition='baseline',evaluation_purpose='training_replay',gold_evaluator=dict(command=['synthetic-gold']))
+        backend=fixtures.Backend(passes=2);state=loop.run(backend,execute=True)
+        self.assertEqual(state['status'],'scored')
+        self.assertEqual([s['kind'] for s in state['stages']],['action','gold'])
+        protocol=read(loop.root/'protocol.json')
+        self.assertEqual(protocol['evaluation_split']['role'],'training')
+        self.assertFalse(protocol['held_out_eligible'])
+        self.assertFalse((loop.root/'candidate-pool').exists())
+
     def test_real_reserved_id_is_scored_only_after_submission_without_learning(self):
         loop=self.prepare(task_id=TEST,mode='testing',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
         class Backend(fixtures.Backend):
