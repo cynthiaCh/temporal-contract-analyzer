@@ -1,6 +1,7 @@
 """Qoder Credits stages in isolated solver containers, with explicit turn accounting."""
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import stat
@@ -127,6 +128,21 @@ def parse_action_report(text, schema, *, format_warnings=None):
     """Separate Action report metadata; all declared fields remain validated."""
     report_schema = json.loads((RUNTIME/'maintenance.schema.json').read_text())
     counts = {}
+    if schema == report_schema:
+        # A final JSON fence is explicit; earlier prose may contain code braces.
+        fences = list(re.finditer(r'^```json[^\S\n]*\n(.*?)^```[^\S\n]*$', text, re.M | re.S))
+        if fences:
+            if len(fences) != 1 or text[fences[0].end():].strip():
+                raise ValueError('Qoder returned ambiguous Action report JSON fences')
+            prefix = text[:fences[0].start()]
+            for match in re.finditer(r'\{', prefix):
+                try:
+                    earlier, _ = json.JSONDecoder().raw_decode(prefix, match.start())
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(earlier, dict) and 'report' in earlier:
+                    raise ValueError('Qoder returned multiple Action reports')
+            text = fences[0].group(1).strip()
     try:
         output = decode_output(text)
     except json.JSONDecodeError as error:
@@ -138,6 +154,12 @@ def parse_action_report(text, schema, *, format_warnings=None):
         return validate(output, schema), {}
     extras = {key:value for key,value in output.items() if key not in schema['properties']}
     report = {key:value for key,value in output.items() if key in schema['properties']}
+    limit = schema['properties']['report']['maxLength']
+    if isinstance(report.get('report'), str) and len(report['report']) > limit:
+        original_length = len(report['report'])
+        report['report'] = report['report'][:limit]
+        if format_warnings is not None:
+            format_warnings.append(dict(code='action_report_truncated', original_length=original_length, retained_length=limit))
     checked = validate(report, schema)
     if counts and format_warnings is not None:
         format_warnings.append(dict(code='action_report_literal_whitespace', characters=counts))

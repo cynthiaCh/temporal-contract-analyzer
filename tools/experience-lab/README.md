@@ -176,8 +176,10 @@ answer or candidate. Unconfirmed container shutdown still fails the stage.
 An appended system instruction reinforces the exact output schema. For the
 standard Action repair report only, undeclared fields are preserved separately
 in `action_report_extra_fields` and `output-format.json`, with a `format_warnings`
-entry. The declared `report` is still validated for presence, type and length;
-only that validated report reaches the repair pipeline. The complete raw answer
+entry. The declared `report` is still validated for presence and type;
+overlong reports are bounded to 6000 characters with an `action_report_truncated`
+warning recording the original and retained lengths. Only that bounded report
+reaches the repair pipeline. The complete raw answer
 remains archived. Additional metadata does not block independent candidate
 scoring. Contract, experience and other schemas remain strict; malformed or
 ambiguous JSON and invalid required fields remain invalid. This parsing policy
@@ -189,6 +191,9 @@ memory for parsing, with `action_report_literal_whitespace` warnings recorded in
 `output-format.json`; the raw answer stays unchanged. Control characters in
 other fields/keys, other control characters, truncated JSON and multiple objects
 remain invalid. This tolerance does not apply to other stage schemas.
+For standard Action reports, one final explicitly labelled JSON fence can follow
+prose and code examples containing braces. Multiple JSON fences, an earlier JSON
+report, or trailing content are rejected as ambiguous.
 
 Protocol references: [Qoder script execution](https://docs.qoder.com/cli/run-in-scripts),
 [model selection](https://docs.qoder.com/cli/model), and

@@ -55,11 +55,27 @@ class Parsing(unittest.TestCase):
         self.assertEqual(extras,{'report_length_ok':True,'report_note':None})
         with self.assertRaises(ValueError):parse_output(text,REPORT_SCHEMA)
 
-    def test_action_report_required_type_length_and_json_checks_remain_strict(self):
+    def test_action_report_required_type_and_json_checks_remain_strict(self):
         for text in ['{"report_length_ok":true}','{"report":false,"extra":null}',
-                     json.dumps({'report':'x'*6001,'extra':True}),'not JSON','["report"]',
+                     'not JSON','["report"]',
                      '{"report":"one"} {"report":"two"}']:
             with self.subTest(text=text[:60]),self.assertRaises(ValueError):parse_action_report(text,REPORT_SCHEMA)
+
+    def test_final_json_fence_ignores_code_braces_in_prose(self):
+        text='Fixed `if(x){work();}`.\n```js\nconst x={ready:true};\n```\n\n```json\n{"report":"done"}\n```'
+        self.assertEqual(parse_action_report(text,REPORT_SCHEMA),({'report':'done'},{}))
+        for prefix,suffix in [('```json\n{"report":"earlier"}\n```\n',''),
+                              ('{"report":"earlier"}\n',''),('', '\n{"report":"later"}')]:
+            with self.subTest(prefix=prefix,suffix=suffix),self.assertRaises(ValueError):
+                parse_action_report(prefix+text+suffix,REPORT_SCHEMA)
+
+    def test_overlong_action_report_is_bounded_with_a_warning(self):
+        warnings=[]
+        report,extras=parse_action_report(json.dumps({'report':'x'*6014,'extra':True}),REPORT_SCHEMA,format_warnings=warnings)
+        self.assertEqual(report,{'report':'x'*6000})
+        self.assertEqual(extras,{'extra':True})
+        self.assertEqual(warnings,[dict(code='action_report_truncated',original_length=6014,retained_length=6000)])
+        with self.assertRaises(ValueError):parse_output(json.dumps({'report':'x'*6014}),REPORT_SCHEMA)
 
     def test_other_action_schemas_do_not_gain_extra_field_tolerance(self):
         schema=dict(type='object',properties=dict(ready=dict(type='boolean')),required=['ready'],additionalProperties=False)
