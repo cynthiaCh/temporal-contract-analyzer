@@ -100,6 +100,34 @@ class AdvisoryTests(unittest.TestCase):
             loop=self.prepare();state=loop.run(BadReceipt(),execute=True)
             self.assertEqual(state['status'],'execution_invalid');self.assertEqual(state['attempts'],[])
 
+    def test_qoder_reserves_correction_budget_and_retains_malformed_answer(self):
+        loop=self.prepare();p=loop.verify();p['model_settings']['provider']['wire_api']='qoder_cli'
+        calls=[]
+        class Malformed:
+            def execute(inner,kind,payload,model,limits,directory):
+                calls.append((deepcopy(payload),dict(limits)))
+                if len(calls)==1:
+                    (directory/'raw-answer.txt').write_text('{"ready": tru}')
+                    return dict(valid=False,requests=9,model=model,failure_type='invalid_output',error='Malformed JSON')
+                return dict(valid=True,requests=1,model=model,output={'ready':True})
+        result=loop._preparation_output(p,Malformed(),'contract','contract',dict(task=p['task'],sources={'main.py':'value = 0\n'}),lambda x:x)
+        self.assertEqual(result,{'ready':True})
+        self.assertEqual(calls[0][1]['requests'],9)
+        self.assertLessEqual(calls[0][1]['seconds'],480)
+        self.assertEqual(calls[1][1]['requests'],3)
+        self.assertEqual(calls[1][0]['validation_feedback']['previous_response'],'{"ready": tru}')
+        self.assertIn('Do not restart analysis',calls[1][0]['validation_feedback']['instruction'])
+
+    def test_qoder_preparation_output_limit_uses_only_remaining_budget(self):
+        loop=self.prepare();p=loop.verify();p['model_settings']['provider']['wire_api']='qoder_cli';calls=[]
+        class Limited:
+            def execute(inner,kind,payload,model,limits,directory):
+                calls.append(dict(limits))
+                if len(calls)==1:return dict(valid=False,requests=9,model=model,failure_type='preparation_output_limit',error='Output limit')
+                return dict(valid=True,requests=1,model=model,output={'ready':True})
+        self.assertEqual(loop._preparation_output(p,Limited(),'contract','contract',dict(task=p['task'],sources={}),lambda x:x),{'ready':True})
+        self.assertEqual([x['requests'] for x in calls],[9,3])
+
     def test_unusable_routing_output_falls_back_without_matching_experience(self):
         class NoRouting(Backend):
             def execute(inner,kind,payload,*args):

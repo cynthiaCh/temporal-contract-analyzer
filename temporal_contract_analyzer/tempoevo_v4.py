@@ -445,7 +445,7 @@ class Trajectory:
         if result['provisional_sha256s']:result['experience_text']='TRAINING ONLY: includes unreviewed provisional guidance with unknown effectiveness. Check against public task/source evidence.\n'+result['experience_text']
         self.save('delivery.json',result);return result
 
-    def _step(self,p,backend,key,kind,payload,budget_group=None):
+    def _step(self,p,backend,key,kind,payload,budget_group=None,limit_cap=None):
         directory=self.root/'stages'/key;state=self.state()
         existing=next((s for s in state['stages'] if s['key']==key),None)
         if existing:
@@ -455,6 +455,8 @@ class Trajectory:
             raise EvidenceError('Partially started stage cannot be replayed')
         if state['cancelled']:raise EvidenceError('Cancelled')
         limit=self._remaining_limit(p,kind,budget_group or key)
+        if limit_cap:
+            limit={k:min(v,limit_cap[k]) for k,v in limit.items()}
         if kind in p['limits']:
             if limit['requests']<1 or limit['seconds']<=0:raise EvidenceError('Stage budget exhausted')
             used=sum(s.get('requests',0) for s in state['stages'])
@@ -488,7 +490,8 @@ class Trajectory:
         if result.get('valid') is not True:
             failure=result.get('failure_type') or 'unclassified_execution_error'
             row.update(status='invalid',failure_type=failure);self.save('state.json',state)
-            error=preparation.OutputError if kind in preparation.ROLES and failure=='invalid_output' else EvidenceError
+            recoverable=failure in ('invalid_output','preparation_output_limit')
+            error=preparation.OutputError if kind in preparation.ROLES and recoverable else EvidenceError
             raise error('Invalid '+kind+' execution: '+str(result.get('error')))
         row['status']='complete';self.save('state.json',state)
         return result
@@ -517,11 +520,14 @@ class Trajectory:
     def _preparation_output(self,p,backend,key,kind,payload,validator):
         """One correction in the original stage budget, then discard invalid guidance.
 
-        Only output/semantic validation is recoverable. Execution, authorization,
+        Output/semantic validation and Qoder preparation output limits are recoverable.
+        Other execution, authorization,
         measured usage, model identity, protected inputs and evaluator failures
         propagate unchanged through _step.
         """
         error=None;output=None
+        raw_output=None
+        qoder=p['model_settings']['provider'].get('wire_api')=='qoder_cli' and kind in ('selection','contract')
         for number in (1,2):
             current=key if number==1 else key+'-validation-correction'
             prior=next((s for s in self.state()['stages'] if s['key']==current),None)
@@ -530,17 +536,24 @@ class Trajectory:
                 self._preparation_warning(key,'preparation_budget_exhausted',error=error)
                 break
             candidate=deepcopy(payload)
+            cap=None
+            if qoder and number==1:
+                # Reserve correction capacity without increasing the group budget.
+                cap=dict(requests=max(1,limit['requests']-3),seconds=max(1,limit['seconds']-120))
             if number==2:
                 candidate['validation_feedback']=dict(error=error,previous_output=output,
-                    instruction='This is the single validation correction within the original stage budget. Correct the reported output using only original public task/source evidence. Do not edit code, invent citations, consult a scorer, or add requirements from feedback. Mark unsupported premises unknown. Return the original requested schema.')
+                    instruction='This is the single validation correction within the original stage budget. Correct the reported output using only original public task/source evidence already supplied. Do not restart analysis or reread files; repair the JSON or the reported evidence issue directly. Do not edit code, invent citations, consult a scorer, or add requirements from feedback. Mark unsupported premises unknown. Return only one JSON object in the original requested schema, without prose or fences.')
+                if raw_output is not None:candidate['validation_feedback']['previous_response']=raw_output
             try:
-                if prior and prior['status']=='invalid' and prior.get('failure_type')=='invalid_output':
+                if prior and prior['status']=='invalid' and prior.get('failure_type') in ('invalid_output','preparation_output_limit'):
                     path=self.root/'stages'/current/'result.json'
                     if sha(path.read_bytes())!=prior['result_sha256']:raise EvidenceError('Archived preparation result drift')
                     raise preparation.OutputError(str(read(path).get('error')))
-                result=self._step(p,backend,current,kind,candidate,budget_group=key)
+                result=self._step(p,backend,current,kind,candidate,budget_group=key,limit_cap=cap)
             except preparation.OutputError as exception:
                 error=str(exception);output=None
+                answers=sorted((self.root/'stages'/current/'executions').glob('*/raw-answer.txt'))
+                if answers:raw_output=answers[-1].read_text()
             else:
                 output=result.get('output')
                 try:

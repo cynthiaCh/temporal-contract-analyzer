@@ -206,6 +206,24 @@ top 10 candidates, each with its summary and full rule text, reach the model for
 source-based applicability checks. Final delivery remains limited to 5 entries
 and 16000 characters. Summary omissions are not evidence of inapplicability.
 Previously frozen full-bank deliveries retain their original replay semantics.
+Selection output now uses brief `sha256`/`relevance`/`reason` rows for weak,
+inapplicable or unknown candidates. Detailed assessments retain the original
+source-evidence checks. Explanations and exact quotes are bounded to 240
+characters, evidence lists to two excerpts, premises to five, and business
+obligations to eight; the prompt asks for at most five detailed assessments.
+No quote is truncated or rewritten by the validator.
+
+Qoder selection and Contract calls have a 12000-token output ceiling per call.
+The first attempt reserves three model turns and 120 seconds for one correction
+within the existing total stage budget. A correction receives the prior parsed
+output or archived raw answer and the validation error. When all source context
+is inline, correction calls have tools disabled so they repair the answer rather
+than rereading the workspace. Explicit CLI output/turn limits in these two
+preparation stages may use that correction; timeouts and infrastructure, tool
+policy, source mutation or usage/identity errors still stop execution.
+One unambiguous final JSON fence can be unwrapped for any stage; schema and
+exact source-evidence checks remain required. Missing commas, broken quotes and
+truncated JSON are not silently repaired by the host.
 
 The initial workspace provides GPT-5.6 Sol and GPT-6.1 Sol profiles at low,
 medium and high reasoning effort. `sol56-medium` matches the model name, effort,

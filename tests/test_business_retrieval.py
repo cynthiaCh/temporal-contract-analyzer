@@ -128,6 +128,28 @@ class BusinessRetrievalTests(unittest.TestCase):
         self.assertIn('Exclusion:',preview)
         self.assertLessEqual(len(preview),900)
 
+    def test_concise_negative_rows_do_not_admit_experience(self):
+        from temporal_contract_analyzer._session_runtime.schema_validator import validate
+        output=self.response()
+        output['assessments'][2]={k:output['assessments'][2][k] for k in ('sha256','relevance','reason')}
+        validate(output,retrieval.schema(self.recalled['candidates'],concise=True))
+        selected=self.select(output)
+        self.assertEqual(len(selected['selected_sha256s']),2)
+        output['assessments'][2]['relevance']='direct'
+        with self.assertRaises(ValueError):validate(output,retrieval.schema(self.recalled['candidates'],concise=True))
+        self.assertEqual(len(self.select(output)['selected_sha256s']),2)
+
+    def test_concise_schema_rejects_long_prose_and_repeated_quotes(self):
+        from temporal_contract_analyzer._session_runtime.schema_validator import validate
+        output=self.response();output['assessments']=output['assessments'][:2]
+        schema=retrieval.schema(self.recalled['candidates'],concise=True)
+        validate(output,schema)
+        for field in ('reason','object_mapping','contribution'):
+            bad=deepcopy(output);bad['assessments'][0][field]='x'*241
+            with self.subTest(field=field),self.assertRaises(ValueError):validate(bad,schema)
+        bad=deepcopy(output);bad['assessments'][0]['supporting_evidence']=[ANCHOR]*3
+        with self.assertRaises(ValueError):validate(bad,schema)
+
     def test_old_full_bank_frozen_delivery_still_replays_exactly(self):
         from temporal_contract_analyzer.core import canonical,sha
         bundles=[]

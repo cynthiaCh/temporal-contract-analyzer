@@ -39,25 +39,31 @@ def recall(task,sources,bundles,*,legacy=False):
         candidate_policy='approved_bank_text_order_without_label_or_unknown_fact_prefilter' if legacy else 'local_extractive_summary_top10_full_text_verification')
 
 
-def schema(candidates):
+def schema(candidates,*,concise=False):
     def obj(props):return dict(type='object',properties=props,required=list(props),additionalProperties=False)
-    text=dict(type='string',minLength=1)
-    evidence=dict(type='array',items=obj(dict(file=text,quote=text)))
+    text=dict(type='string',minLength=1,**({'maxLength':240} if concise else {}))
+    quote=dict(type='string',minLength=1,**({'maxLength':240} if concise else {}))
+    evidence=dict(type='array',items=obj(dict(file=text,quote=quote)),**({'maxItems':2} if concise else {}))
     codes=[x['sha256'] for x in candidates]
     obligation=obj(dict(id=text,text=text,evidence=dict(evidence,minItems=1)))
     premise=obj(dict(condition=text,status=dict(type='string',enum=['supported','contradicted','unknown']),evidence=evidence))
     predicate=obj(dict(kind=dict(type='string',enum=['requires','excludes']),predicate=dict(type='string',enum=list(taxonomy.definition()['mechanism_predicates'])),
                        state=dict(type='string',enum=['known','contradicted','unknown']),evidence=evidence))
-    row=obj(dict(sha256=dict(type='string',enum=codes),relevance=dict(type='string',enum=['direct','transferable','weak','not_applicable','unknown']),
-        premises=dict(type='array',items=premise),predicate_findings=dict(type='array',items=predicate),object_mapping=text,contribution=text,
-        covered_obligations=dict(type='array',items=text),supporting_evidence=evidence,redundant_with=dict(type='array',items=dict(type='string',enum=codes)),reason=text))
-    return obj(dict(business_obligations=dict(type='array',minItems=1,maxItems=20,items=obligation),
-                    assessments=dict(type='array',minItems=0,maxItems=2*len(codes),items=row)))
+    row=obj(dict(sha256=dict(type='string',enum=codes),relevance=dict(type='string',enum=['direct','transferable'] if concise else ['direct','transferable','weak','not_applicable','unknown']),
+        premises=dict(type='array',items=premise,**({'maxItems':5} if concise else {})),
+        predicate_findings=dict(type='array',items=predicate,**({'maxItems':len(taxonomy.definition()['mechanism_predicates'])} if concise else {})),object_mapping=text,contribution=text,
+        covered_obligations=dict(type='array',items=text,**({'maxItems':8} if concise else {})),supporting_evidence=evidence,
+        redundant_with=dict(type='array',items=dict(type='string',enum=codes),**({'maxItems':len(codes)} if concise else {})),reason=text))
+    if concise:
+        brief=obj(dict(sha256=dict(type='string',enum=codes),relevance=dict(type='string',enum=['weak','not_applicable','unknown']),reason=text))
+        row=dict(anyOf=[row,brief])
+    return obj(dict(business_obligations=dict(type='array',minItems=1,maxItems=8 if concise else 20,items=obligation),
+                    assessments=dict(type='array',minItems=0,maxItems=len(codes) if concise else 2*len(codes),items=row)))
 
 
 def payload(task,sources,ast,recalled):
     return dict(task=task,sources=sources,ast=ast,candidates=recalled['candidates'],
-        predicate_definitions=taxonomy.definition()['mechanism_predicates'],schema=schema(recalled['candidates']),
+        predicate_definitions=taxonomy.definition()['mechanism_predicates'],schema=schema(recalled['candidates'],concise=True),
         instruction='Use ONLY the current original TASK and public source as normative evidence. '
         'Identify concrete business obligations and preservation checkpoints, not one obligation per generic taxonomy label. '
         'When the task requests preserving existing behavior, inspect the original operations and observable outcomes at callback-capable boundaries. '
@@ -71,7 +77,11 @@ def payload(task,sources,ast,recalled):
         'Experience citations from its original training task do not establish requirements in this task. Cite only current TASK or exact current source paths/quotes. '
         'Use unique business obligation IDs and reference only those IDs in covered_obligations. Explain a concrete contribution; identify redundancy. '
         'Return each candidate exactly once. Invalid or conflicting candidate rows are rejected individually; missing or unsupported assessments are never filled in or admitted. '
-        'For weak/not_applicable/unknown entries use concise reasons and empty unsupported evidence/findings/coverage as appropriate; never invent support or fill a quota. '
+        'For weak/not_applicable/unknown return ONLY sha256, relevance and one short reason; no evidence, mappings or predicate analysis. '
+        'Write detailed assessments for at most 5 direct/transferable candidates; use brief rows for the rest. '
+        'Use at most 8 distinct business obligations. Every explanation and exact quote must be at most 240 characters; choose short exact excerpts, never rewrite quotations. '
+        'Use at most 2 evidence excerpts per evidence list and at most 5 premises per detailed assessment. Do not repeat the same explanation across fields. '
+        'Keep the entire JSON concise (target under 20000 characters); do not fill unused capacity or invent support. '
         'Return structured output only; do not edit code or access scores, references, historical case/cluster identifiers or Gold. '
         'All applicability judgments and proposed obligations remain fallible hypotheses for source-based repair, not correctness or effectiveness certificates.')
 
@@ -152,6 +162,11 @@ def select(result,recalled,task,sources,bundles):
             issue('conflicting_assessments',index,'Conflicting duplicate candidate assessments',code);continue
         if len(group)>1:issue('identical_assessment_deduplicated',index,'Repeated identical candidate assessment',code)
         try:
+            if set(row)=={'sha256','relevance','reason'}:
+                brief=schema(recalled['candidates'],concise=True)['properties']['assessments']['items']['anyOf'][1]
+                validate(row,brief)
+                row=dict(row,premises=[],predicate_findings=[],object_mapping='Not admitted.',contribution='None.',
+                    covered_obligations=[],supporting_evidence=[],redundant_with=[])
             validate(row,requested['properties']['assessments']['items'])
             if not set(row['covered_obligations'])<=ids:raise EvidenceError('Coverage references an unknown or rejected business obligation')
             if code in row['redundant_with']:raise EvidenceError('Experience cannot duplicate itself')

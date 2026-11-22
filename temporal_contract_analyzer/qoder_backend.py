@@ -71,6 +71,16 @@ def confirmed_refusals(events, ledger):
 
 def decode_output(text):
     """Decode one JSON value, with the existing unambiguous wrapper support."""
+    fences=list(re.finditer(r'^```json[^\S\n]*\n(.*?)^```[^\S\n]*$',text,re.M|re.S))
+    if fences:
+        if len(fences)!=1 or text[fences[0].end():].strip():
+            raise ValueError('Qoder returned ambiguous JSON fences')
+        prefix=text[:fences[0].start()]
+        for match in re.finditer(r'^\s*\{',prefix,re.M):
+            try:json.JSONDecoder().raw_decode(prefix, prefix.index('{',match.start()))
+            except json.JSONDecodeError:continue
+            raise ValueError('Qoder returned multiple JSON objects')
+        text=fences[0].group(1).strip()
     try:
         output = json.loads(text)
     except json.JSONDecodeError:
@@ -326,14 +336,17 @@ class QoderBackend:
                 for key in ('HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy'):
                     if key in os.environ:
                         command.extend(['--env', key])
+                correction=kind in ('selection','contract') and 'validation_feedback' in payload and not report['compacted']
                 command += ['--entrypoint', '/public-cli/qoder', image,
                     '--model', model['model'], '--max-turns', str(limits['requests']),
                     '--max-model-request-retries', '0', '--setting-sources', 'user', '--strict-mcp-config',
                     '--no-session-persistence', '--settings', '/home/agent/.qoder/settings.json',
-                    '--permission-mode', 'bypass_permissions', '--tools', 'Bash,Read',
+                    '--permission-mode', 'bypass_permissions', '--tools', '' if correction else 'Bash,Read',
                     '--disallowed-tools', 'mcp_call,mcp_get,mcp_list', '-p', '--output-format', 'stream-json',
                     '--append-system-prompt', 'Return exactly one JSON object matching the OUTPUT_SCHEMA in the task. '
                     'Do not add undeclared fields, including null-valued fields. Do not add prose or Markdown fences.']
+                if kind in ('selection','contract'):
+                    command += ['--max-output-tokens','12000']
                 if model.get('reasoning_effort'):
                     command += ['--reasoning-effort', model['reasoning_effort']]
                 archive.atomic_json(directory/'command.json', command)
@@ -452,6 +465,9 @@ class QoderBackend:
                 failure = ('infrastructure_error', 'Candidate snapshot failed: '+str(error))
         if kind != 'action' and final_sources != sources:
             failure = ('infrastructure_error', 'Read-only Qoder stage modified public files')
+        if (kind in ('selection','contract') and failure and failure[0]=='model_or_cli_abnormal_exit'
+                and completed and (completed.get('subtype')=='error_max_turns' or completed.get('stop_reason')=='max_tokens')):
+            failure=('preparation_output_limit',failure[1])
         result = dict(valid=failure is None, model=model, requests=turns, request_measurement=MEASUREMENT,
             turn_count_complete=completed is not None,
             http_requests=None, credits=completed.get('total_credits') if completed else None,

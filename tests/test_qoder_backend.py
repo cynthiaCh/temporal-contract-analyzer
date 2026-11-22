@@ -104,6 +104,13 @@ class Parsing(unittest.TestCase):
         for text in ['No JSON', '{"report":"one"}\n{"report":"two"}', '{"report":true}', '{"report":"one"} more prose']:
             with self.subTest(text=text),self.assertRaises(ValueError):parse_output(text,schema)
 
+    def test_analysis_json_fence_can_follow_code_braces_but_not_another_object(self):
+        schema=dict(type='object',properties=dict(ready=dict(type='boolean')),required=['ready'],additionalProperties=False)
+        text='The source uses `if(x){work();}`.\n```json\n{"ready":true}\n```'
+        self.assertEqual(parse_output(text,schema),{'ready':True})
+        for wrapped in ['{"ready":false}\n'+text,text+'\nmore prose',text+'\n'+text]:
+            with self.subTest(text=wrapped),self.assertRaises(ValueError):parse_output(wrapped,schema)
+
     def test_denial_recovery_requires_matching_host_and_cli_hook_proof(self):
         request=dict(type='assistant',message=dict(content=[dict(type='tool_use',id='blocked',name='Bash')]))
         result=dict(type='user',message=dict(content=[dict(type='tool_result',tool_use_id='blocked',is_error=True,
@@ -156,7 +163,7 @@ class Parsing(unittest.TestCase):
 
 
 class Execution(unittest.TestCase):
-    def run_stage(self, timeout=False, invalid_json=False, ungated_tool=False, action=False, stream=None, ledger=None, locked_file=False, schema=None):
+    def run_stage(self, timeout=False, invalid_json=False, ungated_tool=False, action=False, stream=None, ledger=None, locked_file=False, schema=None, correction=False):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root/'binary').touch()
@@ -193,6 +200,7 @@ class Execution(unittest.TestCase):
                             backend=dict(kind='docker', solver_image='sha256:'+'a'*64))
             payload = dict(task='Synthetic fixture', sources={'main.py':'value = 42\n'},
                            schema=schema if schema is not None else dict(type='object', properties=dict(ready=dict(type='boolean')), required=['ready']))
+            if correction:payload['validation_feedback']=dict(error='synthetic format error')
             with patch('temporal_contract_analyzer.tempoevo_docker.image_identity', side_effect=lambda x:x), \
                     patch('temporal_contract_analyzer._session_runtime.docker_transport.stop') as stop, \
                     patch('temporal_contract_analyzer.qoder_backend.subprocess.Popen', Process):
@@ -206,7 +214,8 @@ class Execution(unittest.TestCase):
                 self.assertEqual(command[command.index('--max-turns')+1], '2')
                 self.assertEqual(command[command.index('--max-model-request-retries')+1], '0')
                 self.assertEqual(command[command.index('--setting-sources')+1], 'user')
-                self.assertEqual(command[command.index('--tools')+1],'Bash,Read')
+                self.assertEqual(command[command.index('--tools')+1],'' if correction else 'Bash,Read')
+                if not action:self.assertEqual(command[command.index('--max-output-tokens')+1],'12000')
                 self.assertEqual(command[command.index('--disallowed-tools')+1],'mcp_call,mcp_get,mcp_list')
                 self.assertIn('Do not add undeclared fields',command[command.index('--append-system-prompt')+1])
                 self.assertNotIn('DEEPSEEK_API_KEY', ' '.join(command))
@@ -224,6 +233,12 @@ class Execution(unittest.TestCase):
         self.assertEqual(result['credits'], 0.125)
         self.assertIsNone(result['http_requests'])
         self.assertIsNone(result['tokens'])
+
+    def test_correction_has_no_tools_and_output_limit_is_recoverable(self):
+        self.assertTrue(self.run_stage(correction=True)['valid'])
+        for subtype,reason in [('error_max_turns','tool_use'),('error_during_execution','max_tokens')]:
+            data=events();data[-1].update(subtype=subtype,stop_reason=reason,is_error=True)
+            self.assertEqual(self.run_stage(stream=data)['failure_type'],'preparation_output_limit')
 
     def test_stopped_container_profile_cleanup_failure_does_not_discard_valid_output(self):
         def fail_after_cleanup(runtime):
