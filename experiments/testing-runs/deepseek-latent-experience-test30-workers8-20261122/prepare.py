@@ -30,7 +30,7 @@ for row in rows:
     sources={f.relative_to(t/'original').as_posix():f.read_text() for f in (t/'original').rglob('*') if f.is_file()}
     assert retrieval.replay(selection,p['task'],sources,[e['bundle'] for e in bank['entries']])==delivery
     selections[cid]=selection
-    provenance.append(dict(rank=int(row['rank']),case_id=cid,parent_run=rid,parent_protocol_sha256=sha((t/'protocol.json').read_bytes()),parent_delivery_sha256=sha((t/'delivery.json').read_bytes()),delivery_sha256=selection['delivery_sha256'],selected_sha256s=delivery['selected_sha256s'],experience_present=bool(delivery['experience_text']),historical_selection_stages=[r['key'] for r in selection_stages],historical_selection_model_turns=sum(r.get('requests',0) for r in selection_stages),historical_selection_credits=sum(r.get('credits') or 0 for r in selection_stages)))
+    provenance.append(dict(rank=int(row['rank']),case_id=cid,parent_run=rid,experience_count=len(delivery['selected_sha256s']),experience_present=bool(delivery['experience_text']),historical_selection_stages=[r['key'] for r in selection_stages],historical_selection_model_turns=sum(r.get('requests',0) for r in selection_stages),historical_selection_credits=sum(r.get('credits') or 0 for r in selection_stages)))
 write(ROOT/'frozen-selections.json',selections);write(ROOT/'retrieval-provenance.json',provenance)
 ident='run-'+datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d-%H%M%S')+'-latent-experience'
 target=REPO/'.tempoevo/runs'/ident;target.mkdir()
@@ -40,7 +40,7 @@ command+=['--memory-snapshot',str(ROOT/'memory-snapshot.json'),'--frozen-selecti
 config=copy.deepcopy(old['config']);config.update(condition='latent_experience',workers=8)
 meta=dict(id=ident,title='DeepSeek Flash low · latent + frozen58 experience · fixed30 · workers8',status='preparing',created_at=now(),config=config,model=old['model'],prepare_command=command,ablation=dict(parent=str(PARENT),memory_size=58,paired_selection_replay=True,contract_stage=False,plan=str(ROOT/'plan.json')))
 write(target/'lab.json',meta)
-plan=dict(id=ident,root=str(target),created_at=now(),workers=8,condition='latent_experience',model='DeepSeek-Flash',reasoning_effort='low',bank_sha256=bank['sha256'],bank_size=58,case_count=30,action_limits=dict(requests=24,seconds=600),current_run_model_stages=['action'],historical_selection_usage='Reused, not newly executed. Historical model-turn and credit records retained in retrieval-provenance.json.',same_nonempty_experience_cases=sum(r['experience_present'] for r in provenance),no_experience_cases=sum(not r['experience_present'] for r in provenance),test_policy='One Action, final Gold only, no learning, no Contract, retain all valid outcomes; infrastructure failures recorded separately.',runtime_delta='New testing-only condition and source-validated selector replay; same Action instruction, source, experience text and limits as parent, contract field null. No Qoder adapter or grader changes.',prepare_command=command)
+plan=dict(id=ident,root=str(target),created_at=now(),workers=8,condition='latent_experience',model='DeepSeek-Flash',reasoning_effort='low',bank_size=58,case_count=30,action_limits=dict(requests=24,seconds=600),current_run_model_stages=['action'],historical_selection_usage='Reused, not newly executed. Historical model-turn and credit records retained in retrieval-provenance.json.',same_nonempty_experience_cases=sum(r['experience_present'] for r in provenance),no_experience_cases=sum(not r['experience_present'] for r in provenance),test_policy='One Action, final Gold only, no learning, no Contract, retain all valid outcomes; infrastructure failures recorded separately.',runtime_delta='New testing-only condition and source-validated selector replay; same Action instruction, source, experience text and limits as parent, contract field null. No Qoder adapter or grader changes.',prepare_command=command)
 write(ROOT/'plan.json',plan)
 with (target/'prepare.log').open('w') as log:result=subprocess.run(command,cwd=REPO,stdout=log,stderr=subprocess.STDOUT,env=dict(os.environ,TCA_BENCH_ROOT=config['benchmark']))
 assert result.returncode==0,'Inspect prepare.log'
@@ -55,7 +55,7 @@ for row,record in zip(prepared,provenance):
     assert p['gold_evaluator']['image']==previous['gold_evaluator']['image'] and p['gold_evaluator']['command']==previous['gold_evaluator']['command']
     assert p['evaluation_split']['role']=='testing'
     state=read(t/'state.json');assert not state['stages'] and not state['attempts'] and state['contract'] is None
-    checks.append(dict(case_id=row['case_id'],protocol_sha256=sha((t/'protocol.json').read_bytes()),exact_delivery_replay=True))
+    checks.append(dict(case_id=row['case_id'],exact_delivery_replay=True))
 write(ROOT/'paired-input-validation.json',dict(valid=True,cases=30,model_calls=0,checks=checks))
 meta.update(status='prepared',prepared_cases=30,updated_at=now());write(target/'lab.json',meta)
 with (target/'events.jsonl').open('a') as log:log.write(json.dumps(dict(at=now(),kind='READY',message='30 paired latent+experience cases validated; exact historical deliveries, no Contract; Action24turns/600s; model calls0.'))+'\n')
