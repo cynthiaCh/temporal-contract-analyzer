@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import sys
@@ -31,6 +32,10 @@ def default_benchmark():
             return str(candidate)
     return str(REPO.parent/'temporal-contract-bench')
 
+def default_images():
+    path = REPO / '.tempoevo/docker-images.json'
+    return read(path) if path.is_file() else dict(solver_image=DEFAULT_SOLVER, grader_image=DEFAULT_GRADER)
+
 
 def read(path):
     return json.loads(Path(path).read_text())
@@ -41,7 +46,8 @@ def now():
 
 
 def public_profiles(path):
-    return {name: {key: profile.get(key) for key in ('model', 'reasoning_effort', 'service_tier')}
+    return {name: dict({key: profile.get(key) for key in ('model', 'reasoning_effort', 'service_tier')},
+                       **({'request_unit':'model turns'} if profile.get('provider',{}).get('wire_api')=='qoder_cli' else {}))
             for name, profile in read(path)['profiles'].items()}
 
 
@@ -64,13 +70,35 @@ def command_output(command, timeout=6):
 
 
 def environment():
+    codex = configure_codex_path()
     docker = shutil.which('docker')
     probe = command_output([docker, 'info', '--format', '{{.ServerVersion}}']) if docker else dict(ok=False, detail='Docker is not installed')
-    return dict(docker=probe, codex=dict(ok=bool(shutil.which('codex')), detail=shutil.which('codex') or 'Codex executable was not found'),
+    qoder = REPO/'.tempoevo/qoder/linux/qoder'
+    login = REPO/'.tempoevo/qoder/account/.auth/user'
+    return dict(docker=probe, qoder=dict(ok=qoder.is_file() and login.is_file(), detail='Qoder CLI and account files are provisioned' if qoder.is_file() and login.is_file() else 'Provision the Linux Qoder CLI and sign in'),
+                codex=dict(ok=bool(codex), detail=codex or 'Codex executable was not found. Add Codex to the workbench PATH.'),
                 python=sys.version.split()[0], host=sys.platform)
 
 
+def configure_codex_path():
+    """Finder launches may lack the Codex executable bundled with VS Code."""
+    existing = shutil.which('codex')
+    if existing or sys.platform != 'darwin':
+        return existing
+    architectures = {'x86_64': ('x86_64',), 'arm64': ('arm64', 'aarch64')}.get(platform.machine(), ())
+    candidates = []
+    for architecture in architectures:
+        candidates.extend(p for p in (Path.home()/'.vscode/extensions').glob(
+            'openai.chatgpt-*/bin/macos-'+architecture+'/codex') if p.is_file() and os.access(p, os.X_OK))
+    if not candidates:
+        return None
+    binary = max(candidates, key=lambda p: (p.stat().st_mtime_ns, str(p)))
+    os.environ['PATH'] = str(binary.parent)+os.pathsep+os.environ.get('PATH', '')
+    return str(binary)
+
+
 def prepare_command(config, batch):
+    configure_codex_path()
     mode = config.get('mode')
     if mode not in ('learning', 'testing'):
         raise ValueError('Select training or testing')
@@ -99,6 +127,15 @@ def prepare_command(config, batch):
                '--evaluation-split', str(REPO/'experiments/evaluation-splits.json'), '--mode', mode,
                '--condition', condition, '--solver-image', config['solver_image'], '--grader-image', config['grader_image'],
                '--store', str(store), '--model-config', str(model_file), '--model-profile', config['model_profile']]
+    if mode == 'testing':
+        command += ['--swe-tempoc-root', str(bench)]
+    container_codex = REPO / '.tempoevo/bin/linux-x64/codex'
+    if profiles[config['model_profile']].get('provider',{}).get('wire_api')=='qoder_cli':
+        binary = checked_path('.tempoevo/qoder/linux/qoder', 'Linux Qoder CLI')
+        checked_path('.tempoevo/qoder/account/.auth/user', 'Qoder CLI login')
+        command += ['--binary', str(binary)]
+    elif sys.platform == 'darwin' and container_codex.is_file():
+        command += ['--binary', str(container_codex)]
     if mode == 'learning':
         docs = checked_path(config.get('public_checks'), 'Public check descriptions')
         with selection.open(encoding='utf-8-sig', newline='') as handle:
@@ -149,8 +186,10 @@ class Controller:
             path = self.root / ident
             command, env, model = prepare_command(config, path/'batch')
             check = environment()
-            if not check['docker']['ok'] or not check['codex']['ok']:
-                raise ValueError('Execution host is not ready. Start Docker and ensure Codex is installed. ' + check['docker']['detail'])
+            if not check['docker']['ok']:
+                raise ValueError('Execution host is not ready: Docker is unavailable. '+check['docker']['detail'])
+            if model.get('request_unit')!='model turns' and not check['codex']['ok']:
+                raise ValueError('Execution host is not ready: '+check['codex']['detail'])
             for image in (config['solver_image'], config['grader_image']):
                 probe = command_output(['docker', 'image', 'inspect', '--format', '{{.Id}}', image])
                 if not probe['ok']:

@@ -42,8 +42,12 @@ class CompactLifecycleTests(unittest.TestCase):
         self.add('v2',['entry-binding']);self.add('other')
         self.add('merged',['v2','other'])
         self.assertEqual(self.ids(),{'merged'})
-        compact.save_review(self.path,self.request('merged','reject'))
+        result=compact.save_review(self.path,self.request('merged','reject'))
         self.assertEqual(self.ids(),{'v2','other'})
+        self.assertEqual(set(result['lifecycle']['active_ids']),{'v2','other'})
+        html=compact.page(self.path).decode()
+        self.assertIn('data-lifecycle="superseded"',html)
+        self.assertIn('data-lifecycle="reject"',html)
 
     def test_conflicting_missing_and_cyclic_lineages_are_visible_and_reported(self):
         self.add('a',['entry-binding']);self.add('b',['entry-binding'])
@@ -85,6 +89,38 @@ class CompactLifecycleTests(unittest.TestCase):
         with self.assertRaises(EvidenceError):compact.save_review(self.path,self.request('stale-branch'))
         self.assertEqual(self.path.read_bytes(),before)
         self.assertEqual(compact.publish_candidate(self.path,record),result)
+
+    def test_reviewed_exact_merge_retires_sources_with_incomplete_old_ancestry(self):
+        self.per_item_reviews()
+        self.add('old-a',['missing-old-parent-a'])
+        self.add('old-b',['missing-old-parent-b'])
+        self.add('unrelated')
+        snapshot=approval.freeze(self.path)
+        originals={i['id']:deepcopy(i) for i in compact.load(self.path)['experiences']}
+        records={b['id']:b for b in memory.records(self.path)}
+        self.add('merged',['old-a','old-b'],decision='pending',
+                 hashes=[records[k]['sha256'] for k in ('old-a','old-b')])
+        self.assertEqual(self.ids(),{'entry-binding','old-a','old-b','unrelated'})
+        result=compact.save_review(self.path,self.request('merged'))
+        self.assertEqual(self.ids(),{'entry-binding','unrelated','merged'})
+        self.assertEqual(set(result['lifecycle']['superseded_ids']),{'old-a','old-b'})
+        self.assertNotIn('merged',result['lifecycle']['unresolved_ids'])
+        saved={i['id']:i for i in compact.load(self.path)['experiences']}
+        for key,original in originals.items():self.assertEqual(saved[key],original)
+        self.assertEqual(approval.validate_snapshot(self.path,snapshot),snapshot)
+        compact.save_review(self.path,self.request('merged','reject'))
+        self.assertEqual(self.ids(),{'entry-binding','old-a','old-b','unrelated'})
+
+    def test_exact_merge_with_changed_or_missing_source_cannot_retire_other_sources(self):
+        self.add('old-a',['missing-old-parent'])
+        self.add('old-b')
+        records={b['id']:b for b in memory.records(self.path)}
+        self.add('stale-merge',['old-a','old-b'],hashes=['f'*64,records['old-b']['sha256']])
+        self.add('missing-merge',['old-b','not-present'],hashes=[records['old-b']['sha256'],'e'*64])
+        view=compact.active_view(self.path)
+        self.assertNotIn('old-a',view['superseded_ids'])
+        self.assertNotIn('old-b',view['superseded_ids'])
+        self.assertIn('stale_target',{i['code'] for i in view['issues']})
 
 
 if __name__=='__main__':unittest.main()

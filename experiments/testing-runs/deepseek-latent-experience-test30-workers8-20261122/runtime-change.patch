@@ -1,0 +1,219 @@
+diff --git a/README.md b/README.md
+index 43c2949b..f1a84f85 100644
+--- a/README.md
++++ b/README.md
+@@ -87,6 +87,11 @@ Testing defaults to business applicability selection from the full frozen approv
+ library, an Auto-Contract draft, one bounded repair Action and one independent
+ final Gold score. There is no Contract Review, Gold-driven testing retry or
+ automatic A/B run. Existing project tests may be run inside the Action budget.
++The testing-only `latent_experience` ablation skips Auto-Contract and replays a
++frozen business selection through `prepare_selected.py --frozen-selections`.
++Public-source evidence and the exact delivery digest are revalidated before
++execution; only the Action and final Gold run, with a 24-turn Action cap.
++Historical retrieval usage is reused, not counted as new model calls.
+ The [final case bundle](cases/README.md) contains the complete 100 cases under
+ `cases/train70/` and `cases/test30/`. The [final results](experiments/testing-runs/gpt56-library-size-ablation-20261118/README.md)
+ record the frozen-library-size comparison.
+diff --git a/temporal_contract_analyzer/business_retrieval.py b/temporal_contract_analyzer/business_retrieval.py
+index 847eb93d..eed10a04 100644
+--- a/temporal_contract_analyzer/business_retrieval.py
++++ b/temporal_contract_analyzer/business_retrieval.py
+@@ -57,6 +57,21 @@ def payload(task,sources,ast,recalled):
+         'All applicability judgments and proposed obligations remain fallible hypotheses for source-based repair, not correctness or effectiveness certificates.')
+ 
+ 
++def replay(selection,task,sources,bundles):
++    """Revalidate a frozen selector result without another model call."""
++    from .core import canonical,sha
++    if not isinstance(selection,dict) or set(selection)!={'output','delivery_sha256'}:
++        raise EvidenceError('Frozen selection requires output and delivery digest')
++    if selection['output'] is None:
++        result=dict(selected_sha256s=[],experience_text=None,reason='invalid_business_selection_discarded')
++    else:
++        result=select(selection['output'],recall(task,sources,bundles),task,sources,bundles)
++    result['provisional_sha256s']=[]
++    if sha(canonical(result).encode())!=selection['delivery_sha256']:
++        raise EvidenceError('Frozen experience delivery mismatch')
++    return result
++
++
+ def select(result,recalled,task,sources,bundles):
+     from collections import defaultdict
+     from ._session_runtime.schema_validator import validate
+diff --git a/temporal_contract_analyzer/tempoevo_v4.py b/temporal_contract_analyzer/tempoevo_v4.py
+index da4d697c..bd3db9cd 100644
+--- a/temporal_contract_analyzer/tempoevo_v4.py
++++ b/temporal_contract_analyzer/tempoevo_v4.py
+@@ -21,7 +21,7 @@ ACCEPTANCE_POLICIES = dict(learning='oracle_pass_or_action_budget_exhausted',
+                            testing='single_submission_then_independent_gold')
+ MODEL = identity(resolve_profile())
+ V8_TRAINING_RECIPE = 'v8-compatible-v1'
+-CONDITIONS = ('baseline', 'contract', 'bm25', 'structured', 'fixed_contract')
++CONDITIONS = ('baseline', 'contract', 'bm25', 'structured', 'fixed_contract', 'latent_experience')
+ LIMITS = dict(selection=dict(requests=12, seconds=600), routing=dict(requests=12, seconds=600), contract=dict(requests=12, seconds=600), action=dict(requests=24, seconds=600),
+               diagnosis=dict(requests=12, seconds=600), extract=dict(requests=12, seconds=600))
+ TERMINAL = ('passed', 'scored', 'repair_exhausted', 'execution_invalid', 'awaiting_expert_summary', 'awaiting_content_review', 'cancelled')
+@@ -210,19 +210,25 @@ class Trajectory:
+         for key in ('task','candidate','store','mode','condition'):
+             if key not in cfg:raise EvidenceError('Missing '+key)
+         if cfg['mode'] not in ('learning','testing') or cfg['condition'] not in CONDITIONS:raise EvidenceError('Invalid mode/condition')
++        if 'frozen_experience_delivery' in cfg:raise EvidenceError('Frozen delivery is derived from validated selection')
++        if cfg['condition']=='latent_experience':
++            if cfg['mode']!='testing' or policy!='frozen' or 'frozen_selection' not in cfg:
++                raise EvidenceError('Latent experience requires frozen testing and an explicit frozen selection')
++        elif 'frozen_selection' in cfg:raise EvidenceError('Frozen selection is only supported by latent experience testing')
+         if any(key in cfg for key in ('public_checks','repair_policy','testing_policy')):
+             raise EvidenceError('Repair strategy switches were removed; testing submits once before independent Gold scoring')
+         recipe=cfg.get('training_recipe')
+         if recipe not in (None,V8_TRAINING_RECIPE):raise EvidenceError('Unknown training recipe')
+         if recipe and (cfg['mode']!='learning' or not cfg.get('visible_evaluator')):raise EvidenceError('V8 training requires learning mode and a public evaluator')
+-        default_retrieval='business-source-v1' if cfg['mode']=='testing' and cfg['condition']=='structured' else 'source-bound-v8' if recipe else 'semantic-v11'
++        default_retrieval='business-source-v1' if cfg['mode']=='testing' and cfg['condition'] in ('structured','latent_experience') else 'source-bound-v8' if recipe else 'semantic-v11'
+         retrieval_profile=cfg.get('retrieval_profile',default_retrieval)
+         if retrieval_profile not in ('semantic-v11','source-bound-v8','business-source-v1'):raise EvidenceError('Unknown retrieval profile')
+         if recipe and retrieval_profile!='source-bound-v8':raise EvidenceError('V8 training requires source-bound retrieval')
+         if retrieval_profile=='source-bound-v8' and cfg['condition'] not in ('structured','fixed_contract') and not recipe:raise EvidenceError('Source-bound retrieval requires structured memory')
+         if cfg.get('preparation_validation_policy',preparation.POLICY)!=preparation.POLICY:raise EvidenceError('Historical validation policy is read-only; prepare a new trajectory')
+         cfg['preparation_validation_policy']=preparation.POLICY
+-        if retrieval_profile=='business-source-v1' and (cfg['mode']!='testing' or cfg['condition']!='structured' or policy!='frozen'):raise EvidenceError('Business retrieval requires frozen structured testing')
++        if retrieval_profile=='business-source-v1' and (cfg['mode']!='testing' or cfg['condition'] not in ('structured','latent_experience') or policy!='frozen'):raise EvidenceError('Business retrieval requires frozen structured testing')
++        if cfg['condition']=='latent_experience' and retrieval_profile!='business-source-v1':raise EvidenceError('Latent experience replays business-source selection')
+         cfg['retrieval_profile']=retrieval_profile
+         acceptance='training_gold_and_required_visible' if recipe else ACCEPTANCE_POLICIES[cfg['mode']]
+         if cfg.get('acceptance_policy',acceptance)!=acceptance:
+@@ -277,6 +283,9 @@ class Trajectory:
+                     if entry['bundle']['sha256'] in seen:raise EvidenceError('Duplicate approved supplemental experience')
+                     seen.add(entry['bundle']['sha256']);bank['entries'].append(deepcopy(entry))
+             bank['sha256']=sha(canonical({k:v for k,v in bank.items() if k!='sha256'}).encode())
++        if cfg['condition']=='latent_experience':
++            from .business_retrieval import replay
++            cfg['frozen_experience_delivery']=replay(cfg['frozen_selection'],cfg['task'],sources,[e['bundle'] for e in bank['entries']])
+         from .preanalysis import analyze_candidate
+         if cfg.get('backend',{}).get('kind')=='docker':
+             from .tempoevo_docker import analyze,image_identity
+@@ -320,7 +329,7 @@ class Trajectory:
+         for role,limit in limits.items():
+             if set(limit)!= {'requests','seconds'} or type(limit['requests']) is not int or not 1<=limit['requests']<=LIMITS[role]['requests'] or not 0<limit['seconds']<=600:
+                 raise EvidenceError('Invalid stage limits')
+-        uses_contract=cfg['condition']!='baseline'
++        uses_contract=cfg['condition'] not in ('baseline','latent_experience')
+         total=attempts*limits['action']['requests']+((attempts-1)*limits['diagnosis']['requests']+limits['contract']['requests'] if uses_contract else 0)+(limits['extract']['requests'] if cfg['mode']=='learning' else 0)
+         if cfg['condition'] in ('structured','fixed_contract') and not cfg.get('routing_analysis') and retrieval_profile!='business-source-v1':total+=limits['routing']['requests']
+         if cfg['condition'] in ('structured','fixed_contract') and retrieval_profile!='source-bound-v8':
+@@ -380,7 +389,9 @@ class Trajectory:
+     def retrieve(self,p,backend=None,selection_key='selection-1'):
+         bank=p['memory_snapshot'];bundles=[e['bundle'] for e in bank['entries']]
+         condition=p['condition'];result=dict(selected_sha256s=[],experience_text=None,reason='condition_has_no_memory')
+-        if condition=='bm25':
++        if condition=='latent_experience':
++            result=deepcopy(p['frozen_experience_delivery'])
++        elif condition=='bm25':
+             hits=memory.search_records(bundles,p['task'],limit=5,include_all=True)['results']
+             selected=[next(b for b in bundles if b['sha256']==h['sha256']) for h in hits]
+             result=dict(selected_sha256s=[b['sha256'] for b in selected],experience_text=memory.delivery_text(selected),reason='bm25_frozen_bank')
+@@ -613,7 +624,7 @@ class Trajectory:
+                 p=deepcopy(p);p['routing_analysis']=proposal if proposal is not None else preparation.unavailable_analysis(p['task'])
+                 self.save('routing-analysis.json',p['routing_analysis'])
+             delivery=read(self.root/'delivery.json') if (self.root/'delivery.json').exists() else self.retrieve(p,backend)
+-            if p['condition']!='baseline' and state['contract'] is None and not state.get('contract_preparation_complete'):
++            if p['condition'] not in ('baseline','latent_experience') and state['contract'] is None and not state.get('contract_preparation_complete'):
+                 def validate_draft(output):
+                     check_contract(output,p['task'],sources)
+                     return deepcopy(output)
+diff --git a/tests/test_business_retrieval.py b/tests/test_business_retrieval.py
+index 0b5cee6a..4f1aab4c 100644
+--- a/tests/test_business_retrieval.py
++++ b/tests/test_business_retrieval.py
+@@ -47,6 +47,52 @@ class BusinessRetrievalTests(unittest.TestCase):
+ 
+     def select(self,value):return retrieval.select(value,self.recalled,TASK,{'main.py':'value = 0\n'},self.bundles)
+ 
++    def latent_loop(self,selection,**changes):
++        source=self.root/'source';source.mkdir(exist_ok=True);(source/'main.py').write_text('value = 0\n')
++        config=dict(task=TASK,candidate=str(source),store=str(self.library),mode='testing',
++                    condition='latent_experience',memory_snapshot=self.snapshot,frozen_selection=selection,
++                    gold_evaluator=dict(command=['synthetic-gold']))
++        config.update(changes)
++        loop=Trajectory(self.root/'latent');loop.prepare(config);return loop
++
++    def test_latent_experience_reuses_exact_guidance_with_action_only_and_final_gold(self):
++        from temporal_contract_analyzer.core import canonical,sha
++        output=self.response();delivery=self.select(output);delivery['provisional_sha256s']=[]
++        frozen=dict(output=output,delivery_sha256=sha(canonical(delivery).encode()))
++        loop=self.latent_loop(frozen);protocol=loop.verify()
++        self.assertEqual(protocol['total_request_cap'],24)
++        backend=Backend();state=loop.run(backend,execute=True)
++        self.assertEqual(state['status'],'scored',state.get('error'))
++        self.assertEqual([role for role,*_ in backend.calls],['action'])
++        payload=backend.calls[0][1]
++        self.assertIsNone(payload['contract']);self.assertEqual(payload['experience'],delivery['experience_text'])
++        self.assertNotIn('business_obligations',payload);self.assertNotIn('frozen_selection',payload)
++        self.assertEqual([s['kind'] for s in state['stages']],['action','gold'])
++        self.assertEqual(json.loads((loop.root/'delivery.json').read_text()),delivery)
++
++    def test_frozen_experience_rejects_drift_and_unbound_delivery(self):
++        from temporal_contract_analyzer.core import canonical,sha
++        output=self.response();delivery=self.select(output);delivery['provisional_sha256s']=[]
++        frozen=dict(output=output,delivery_sha256=sha(canonical(delivery).encode()))
++        with self.assertRaisesRegex(EvidenceError,'mismatch'):
++            self.latent_loop(dict(frozen,delivery_sha256='0'*64))
++        with self.assertRaisesRegex(EvidenceError,'derived'):
++            self.latent_loop(frozen,frozen_experience_delivery=delivery)
++        with self.assertRaisesRegex(EvidenceError,'frozen testing'):
++            self.latent_loop(frozen,mode='learning')
++        altered=deepcopy(frozen);altered['output']['assessments'][0]['supporting_evidence'][0]['quote']='Fabricated evidence'
++        with self.assertRaises(EvidenceError):
++            self.latent_loop(altered)
++
++    def test_frozen_invalid_selection_remains_empty_without_contract_fallback(self):
++        from temporal_contract_analyzer.core import canonical,sha
++        delivery=dict(selected_sha256s=[],experience_text=None,reason='invalid_business_selection_discarded',provisional_sha256s=[])
++        loop=self.latent_loop(dict(output=None,delivery_sha256=sha(canonical(delivery).encode())))
++        backend=Backend();state=loop.run(backend,execute=True)
++        self.assertEqual(state['status'],'scored',state.get('error'))
++        self.assertEqual([role for role,*_ in backend.calls],['action'])
++        self.assertIsNone(backend.calls[0][1]['experience']);self.assertIsNone(backend.calls[0][1]['contract'])
++
+     def test_all_approved_candidates_are_assessed_without_a_label_or_unknown_prefilter(self):
+         self.assertEqual(len(self.recalled['candidates']),3)
+         out=self.select(self.response());ids={b['sha256']:b['id'] for b in self.bundles}
+diff --git a/tools/tempoevo-docker/prepare_selected.py b/tools/tempoevo-docker/prepare_selected.py
+index 295df70f..62e75424 100644
+--- a/tools/tempoevo-docker/prepare_selected.py
++++ b/tools/tempoevo-docker/prepare_selected.py
+@@ -13,7 +13,8 @@ parser.add_argument('--model-config',type=Path,help='Model profiles JSON file')
+ parser.add_argument('--model-profile',help='Named model profile; defaults to the configuration default')
+ parser.add_argument('--binary',type=Path,help='Linux agent executable (Codex or Qoder) mounted into the solver container')
+ parser.add_argument('--store',type=Path,help='Reviewed experience library; defaults to experience-memory/library')
+-parser.add_argument('--condition',choices=['structured','contract','baseline'],default='structured',help='Contract uses Auto-Contract without memory; baseline runs Action only without memory or Contract')
++parser.add_argument('--condition',choices=['structured','contract','baseline','latent_experience'],default='structured',help='Latent experience reuses frozen retrieval and skips Contract; baseline runs Action only without memory or Contract')
++parser.add_argument('--frozen-selections',type=Path,help='Testing-only case-to-frozen-selection mapping for latent experience')
+ parser.add_argument('--training-feedback-by-family',type=Path,help='Frozen family-to-public-feedback mapping JSON')
+ parser.add_argument('--learning-policy',choices=['frozen','online'],default='frozen')
+ parser.add_argument('--online-memory',type=Path,help='Training-only shared provisional memory directory')
+@@ -26,6 +27,9 @@ parser.add_argument('--approved-supplement-snapshot',type=Path,help='Exact audit
+ parser.add_argument('--memory-snapshot',type=Path,help='Exact audited approved snapshot; validated against --store')
+ parser.add_argument('--public-checks-docs',type=Path,help='Training-only case-to-public-check-description mapping')
+ args=parser.parse_args()
++if bool(args.frozen_selections)!=(args.condition=='latent_experience'):parser.error('Latent experience requires --frozen-selections; other conditions cannot use it')
++if args.condition=='latent_experience' and (args.mode!='testing' or args.learning_policy!='frozen'):parser.error('Latent experience requires frozen testing')
++frozen_selections=json.loads(args.frozen_selections.read_text()) if args.frozen_selections else {}
+ if bool(args.approved_supplement_store)!=bool(args.approved_supplement_snapshot):parser.error('Supplement store and snapshot must be provided together')
+ if args.approved_supplement_store and args.mode!='testing':parser.error('Approved supplements are testing-only')
+ if args.start_rank<1 or args.limit<1:parser.error('--start-rank and --limit must be positive')
+@@ -59,6 +63,7 @@ with selection_path.open(encoding='utf-8-sig') as selection_file:
+ if len({row['case_id'] for row in all_rows})!=len(all_rows) or len({int(row['rank']) for row in all_rows})!=len(all_rows):parser.error('Selection case IDs and ranks must be unique')
+ rows=[row for row in all_rows if args.start_rank<=int(row['rank'])<args.start_rank+args.limit]
+ if len(rows)!=args.limit:parser.error('Requested rank range is not fully present in the selection CSV')
++if args.frozen_selections and (not isinstance(frozen_selections,dict) or any(row['case_id'] not in frozen_selections for row in rows)):parser.error('Frozen selections must cover every selected case')
+ expected_split='training' if args.mode=='learning' else 'testing'
+ if any(row.get('split',expected_split)!=expected_split for row in rows):parser.error('Selection CSV split does not match the requested mode')
+ feedback=json.loads(args.training_feedback.read_text()) if args.training_feedback else {}
+@@ -120,6 +125,7 @@ for row in rows:
+   if visible:config['visible_evaluator']=visible
+   config.update(model=identity(settings),model_profile=settings['profile'],condition=args.condition,training_feedback=family_feedback.get(family,feedback))
+   if args.retrieval_profile:config['retrieval_profile']=args.retrieval_profile
++  if args.frozen_selections:config['frozen_selection']=frozen_selections[cid]
+   if args.approved_supplement_store:config['approved_memory_supplements']=[dict(store=str(args.approved_supplement_store.resolve()),snapshot=json.loads(args.approved_supplement_snapshot.read_text()))]
+   if args.training_recipe:config.update(training_recipe=args.training_recipe,required_visible_checks=True,protected_paths=['README.md','VISIBLE_CHECKS.md'])
+   if args.evaluation_split:config['evaluation_split_file']=str(args.evaluation_split.resolve())

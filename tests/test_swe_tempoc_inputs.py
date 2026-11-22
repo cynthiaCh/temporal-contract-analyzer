@@ -24,7 +24,7 @@ class SweTempocInputTests(unittest.TestCase):
     def test_only_public_latent_task_and_base(self):
         result = case_input('demo',self.root)
         self.assertEqual(result['task'],'Public maintenance task')
-        self.assertEqual(result['candidate'],str(self.case/'base'))
+        self.assertEqual(result['candidate'],str((self.case/'base').resolve()))
         self.assertEqual(result['case_record']['authorization'],'ungranted')
         self.assertNotIn('DO NOT LEAK',json.dumps(result))
 

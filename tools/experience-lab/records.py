@@ -39,7 +39,28 @@ def case_status(job):
         return dict(id=job['case_id'], status=job.get('preflight_status', 'unavailable'), passed=None, attempts=0)
     state = read(p)
     result = state.get('final_acceptance') or state.get('gold_result') or {}
-    return dict(id=job['case_id'], status=state['status'], passed=result.get('passed'), attempts=len(state['attempts']))
+    stages = state.get('stages', [])
+    finished = state.get('finalized', False) or state['status'] in {'cancelled', 'execution_invalid', 'preflight_failed'}
+    current = next((s for s in reversed(stages) if s['status'] == 'started'), None)
+    requests = sum(s.get('requests') or 0 for s in stages if s is not current)
+    completed, started = 0, 0
+    if current:
+        for progress in (p.parent/'stages'/current['key']/'executions').glob('*/qoder-progress.json'):
+            counts = read(progress)
+            completed += counts['completed_turns']
+            started += counts['completed_turns']
+        for ledger in (p.parent/'stages'/current['key']/'executions').glob('*/native-stage/native/archive/meter/ledger.json'):
+            try:
+                counts = read(ledger)
+            except (OSError, ValueError):
+                continue  # The live collector may be writing this file.
+            started += counts.get('started', 0)
+            completed += counts.get('completed', 0)
+        requests += completed
+    return dict(id=job['case_id'], status=state['status'], passed=result.get('passed'), attempts=len(state['attempts']),
+                finished=finished, error=state.get('error'),
+                current_stage=current['key'] if current and not finished else None,
+                completed_requests=requests, pending_requests=max(0, started-completed))
 
 
 def run_detail(controller, ident):
@@ -52,6 +73,7 @@ def run_detail(controller, ident):
         root = controller.directory(ident)
         raw = read(root/'lab.json')
         meta = dict(id=ident, title=ident, recorded=False, **{k: raw[k] for k in ['status', 'created_at', 'config', 'model']}, error=raw.get('error'))
+        meta.update({k: raw.get(k) for k in ('started_at', 'finished_at')})
         if meta['status'] in ('preparing', 'running', 'stopping') and controller.active != ident:
             meta.update(status='not_monitored', error='This batch belongs to an earlier workbench process. Check its processes and artifacts on the execution host; this workspace does not automatically resume it.')
         events = [__import__('json').loads(line) for line in (root/'events.jsonl').read_text().splitlines()] if (root/'events.jsonl').exists() else []

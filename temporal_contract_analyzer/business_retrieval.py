@@ -57,6 +57,21 @@ def payload(task,sources,ast,recalled):
         'All applicability judgments and proposed obligations remain fallible hypotheses for source-based repair, not correctness or effectiveness certificates.')
 
 
+def replay(selection,task,sources,bundles):
+    """Revalidate a frozen selector result without another model call."""
+    from .core import canonical,sha
+    if not isinstance(selection,dict) or set(selection)!={'output','delivery_sha256'}:
+        raise EvidenceError('Frozen selection requires output and delivery digest')
+    if selection['output'] is None:
+        result=dict(selected_sha256s=[],experience_text=None,reason='invalid_business_selection_discarded')
+    else:
+        result=select(selection['output'],recall(task,sources,bundles),task,sources,bundles)
+    result['provisional_sha256s']=[]
+    if sha(canonical(result).encode())!=selection['delivery_sha256']:
+        raise EvidenceError('Frozen experience delivery mismatch')
+    return result
+
+
 def select(result,recalled,task,sources,bundles):
     from collections import defaultdict
     from ._session_runtime.schema_validator import validate

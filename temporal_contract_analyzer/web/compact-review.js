@@ -4,14 +4,32 @@ const filter = document.querySelector('#compact-filter');
 const category = document.querySelector('#compact-category');
 const message = document.querySelector('#message');
 const states = {pending:'Pending review', accept:'Accepted', revise:'Revision required', reject:'Rejected'};
-function refresh() {
-  const counts = Object.fromEntries(Object.keys(states).map(state => [state, 0]));
+const viewStates = {active:'当前有效', superseded:'历史已替代', pending:'待审核', revise:'需修改', reject:'已拒绝'};
+function refresh(lifecycle) {
+  if (lifecycle?.superseded_ids) {
+    const superseded = new Set(lifecycle.superseded_ids);
+    const unresolved = new Set(lifecycle.unresolved_ids);
+    for (const card of cards) {
+      const form = card.querySelector('form');
+      const review = JSON.parse(form.dataset.review);
+      card.dataset.state = review.decision;
+      card.dataset.lifecycle = review.decision === 'accept' ? (superseded.has(form.dataset.id) ? 'superseded' : 'active') : review.decision;
+      const label = viewStates[card.dataset.lifecycle];
+      let text = review.decision === 'pending' ? label : `${label} · ${review.reviewer} · ${review.at}`;
+      if (superseded.has(form.dataset.id)) text += ' · Superseded; excluded from new retrievals';
+      else if (unresolved.has(form.dataset.id)) text += ' · Supersession requires review; retained for retrieval for now';
+      card.querySelector('.compact-status').textContent = text;
+    }
+  }
+  const counts = Object.fromEntries(Object.keys(viewStates).map(state => [state, 0]));
   for (const card of cards) {
     const matchesCategory = !category.value || category.value === card.dataset.category;
-    if (matchesCategory) counts[card.dataset.state]++;
-    card.hidden = !matchesCategory || (filter.value !== 'all' && filter.value !== card.dataset.state);
+    if (matchesCategory) counts[card.dataset.lifecycle]++;
+    card.hidden = !matchesCategory || (filter.value !== 'all' && filter.value !== card.dataset.lifecycle);
   }
-  document.querySelector('#compact-counts').textContent = Object.keys(states).map(state => states[state]+' '+counts[state]).join(' · ');
+  document.querySelector('#compact-counts').textContent = Object.keys(viewStates)
+    .filter(state => ['active', 'superseded', 'pending'].includes(state) || counts[state])
+    .map(state => viewStates[state]+' '+counts[state]).join(' · ');
   document.querySelector('#compact-empty').hidden = cards.some(card => !card.hidden);
 }
 filter.addEventListener('change', refresh);
@@ -39,7 +57,7 @@ for (const form of document.querySelectorAll('form[data-id]')) {
       form.elements.decision.value = '';
       message.classList.toggle('error', false);
       message.textContent = 'Review saved to '+result.file+'.';
-      refresh();
+      refresh(result.lifecycle);
     } catch (error) {
       message.classList.toggle('error', true);
       message.textContent = error.message;

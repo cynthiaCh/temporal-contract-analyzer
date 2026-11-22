@@ -21,7 +21,7 @@ ACCEPTANCE_POLICIES = dict(learning='oracle_pass_or_action_budget_exhausted',
                            testing='single_submission_then_independent_gold')
 MODEL = identity(resolve_profile())
 V8_TRAINING_RECIPE = 'v8-compatible-v1'
-CONDITIONS = ('baseline', 'contract', 'bm25', 'structured', 'fixed_contract')
+CONDITIONS = ('baseline', 'contract', 'bm25', 'structured', 'fixed_contract', 'latent_experience')
 LIMITS = dict(selection=dict(requests=12, seconds=600), routing=dict(requests=12, seconds=600), contract=dict(requests=12, seconds=600), action=dict(requests=24, seconds=600),
               diagnosis=dict(requests=12, seconds=600), extract=dict(requests=12, seconds=600))
 TERMINAL = ('passed', 'scored', 'repair_exhausted', 'execution_invalid', 'awaiting_expert_summary', 'awaiting_content_review', 'cancelled')
@@ -210,19 +210,25 @@ class Trajectory:
         for key in ('task','candidate','store','mode','condition'):
             if key not in cfg:raise EvidenceError('Missing '+key)
         if cfg['mode'] not in ('learning','testing') or cfg['condition'] not in CONDITIONS:raise EvidenceError('Invalid mode/condition')
+        if 'frozen_experience_delivery' in cfg:raise EvidenceError('Frozen delivery is derived from validated selection')
+        if cfg['condition']=='latent_experience':
+            if cfg['mode']!='testing' or policy!='frozen' or 'frozen_selection' not in cfg:
+                raise EvidenceError('Latent experience requires frozen testing and an explicit frozen selection')
+        elif 'frozen_selection' in cfg:raise EvidenceError('Frozen selection is only supported by latent experience testing')
         if any(key in cfg for key in ('public_checks','repair_policy','testing_policy')):
             raise EvidenceError('Repair strategy switches were removed; testing submits once before independent Gold scoring')
         recipe=cfg.get('training_recipe')
         if recipe not in (None,V8_TRAINING_RECIPE):raise EvidenceError('Unknown training recipe')
         if recipe and (cfg['mode']!='learning' or not cfg.get('visible_evaluator')):raise EvidenceError('V8 training requires learning mode and a public evaluator')
-        default_retrieval='business-source-v1' if cfg['mode']=='testing' and cfg['condition']=='structured' else 'source-bound-v8' if recipe else 'semantic-v11'
+        default_retrieval='business-source-v1' if cfg['mode']=='testing' and cfg['condition'] in ('structured','latent_experience') else 'source-bound-v8' if recipe else 'semantic-v11'
         retrieval_profile=cfg.get('retrieval_profile',default_retrieval)
         if retrieval_profile not in ('semantic-v11','source-bound-v8','business-source-v1'):raise EvidenceError('Unknown retrieval profile')
         if recipe and retrieval_profile!='source-bound-v8':raise EvidenceError('V8 training requires source-bound retrieval')
         if retrieval_profile=='source-bound-v8' and cfg['condition'] not in ('structured','fixed_contract') and not recipe:raise EvidenceError('Source-bound retrieval requires structured memory')
         if cfg.get('preparation_validation_policy',preparation.POLICY)!=preparation.POLICY:raise EvidenceError('Historical validation policy is read-only; prepare a new trajectory')
         cfg['preparation_validation_policy']=preparation.POLICY
-        if retrieval_profile=='business-source-v1' and (cfg['mode']!='testing' or cfg['condition']!='structured' or policy!='frozen'):raise EvidenceError('Business retrieval requires frozen structured testing')
+        if retrieval_profile=='business-source-v1' and (cfg['mode']!='testing' or cfg['condition'] not in ('structured','latent_experience') or policy!='frozen'):raise EvidenceError('Business retrieval requires frozen structured testing')
+        if cfg['condition']=='latent_experience' and retrieval_profile!='business-source-v1':raise EvidenceError('Latent experience replays business-source selection')
         cfg['retrieval_profile']=retrieval_profile
         acceptance='training_gold_and_required_visible' if recipe else ACCEPTANCE_POLICIES[cfg['mode']]
         if cfg.get('acceptance_policy',acceptance)!=acceptance:
@@ -249,6 +255,8 @@ class Trajectory:
         except (ValueError,TypeError,OSError) as error:raise EvidenceError('Invalid model configuration: '+str(error)) from error
         if cfg.get('model',identity(settings))!=identity(settings):raise EvidenceError('Model must match the selected profile')
         cfg['model_settings']=settings
+        if settings['provider']['wire_api']=='qoder_cli':
+            cfg.setdefault('qoder_auth_dir',str(Path(__file__).resolve().parents[1]/'.tempoevo/qoder/account'))
         cfg['model_profile']=settings['profile']
         cfg.pop('model_config',None)  # Freeze resolved values, not a mutable external file.
         if cfg['mode']=='testing' and not cfg.get('gold_evaluator'):raise EvidenceError('Testing requires a separate gold evaluator')
@@ -275,6 +283,9 @@ class Trajectory:
                     if entry['bundle']['sha256'] in seen:raise EvidenceError('Duplicate approved supplemental experience')
                     seen.add(entry['bundle']['sha256']);bank['entries'].append(deepcopy(entry))
             bank['sha256']=sha(canonical({k:v for k,v in bank.items() if k!='sha256'}).encode())
+        if cfg['condition']=='latent_experience':
+            from .business_retrieval import replay
+            cfg['frozen_experience_delivery']=replay(cfg['frozen_selection'],cfg['task'],sources,[e['bundle'] for e in bank['entries']])
         from .preanalysis import analyze_candidate
         if cfg.get('backend',{}).get('kind')=='docker':
             from .tempoevo_docker import analyze,image_identity
@@ -318,7 +329,7 @@ class Trajectory:
         for role,limit in limits.items():
             if set(limit)!= {'requests','seconds'} or type(limit['requests']) is not int or not 1<=limit['requests']<=LIMITS[role]['requests'] or not 0<limit['seconds']<=600:
                 raise EvidenceError('Invalid stage limits')
-        uses_contract=cfg['condition']!='baseline'
+        uses_contract=cfg['condition'] not in ('baseline','latent_experience')
         total=attempts*limits['action']['requests']+((attempts-1)*limits['diagnosis']['requests']+limits['contract']['requests'] if uses_contract else 0)+(limits['extract']['requests'] if cfg['mode']=='learning' else 0)
         if cfg['condition'] in ('structured','fixed_contract') and not cfg.get('routing_analysis') and retrieval_profile!='business-source-v1':total+=limits['routing']['requests']
         if cfg['condition'] in ('structured','fixed_contract') and retrieval_profile!='source-bound-v8':
@@ -339,6 +350,9 @@ class Trajectory:
             evaluation_budget=dict(visible=attempts if cfg.get('visible_evaluator') else 0,oracle=attempts if cfg['mode']=='learning' else 0,gold=1 if cfg['mode']=='testing' else 0),
             held_out_eligible=False,split_status='final_only_gold_testing' if cfg['mode']=='testing' else 'unverified_no_independent_split_evidence',
             memory_snapshot_sha256=bank['sha256'],source_sha256=sha(canonical(sources).encode()))
+        if settings['provider']['wire_api']=='qoder_cli':
+            adapter=Path(__file__).with_name('qoder_backend.py')
+            evaluator_hashes[str(adapter.resolve())]=sha(adapter.read_bytes())
         self.save('protocol.json',cfg);self.save('state.json',dict(status='prepared',attempts=[],stages=[],contract=None,diagnoses=[],cancelled=False))
         # Freeze executables and their static inputs; no evaluator output enters model context here.
         self.save('binding.json',dict(protocol=sha((self.root/'protocol.json').read_bytes()),
@@ -375,7 +389,9 @@ class Trajectory:
     def retrieve(self,p,backend=None,selection_key='selection-1'):
         bank=p['memory_snapshot'];bundles=[e['bundle'] for e in bank['entries']]
         condition=p['condition'];result=dict(selected_sha256s=[],experience_text=None,reason='condition_has_no_memory')
-        if condition=='bm25':
+        if condition=='latent_experience':
+            result=deepcopy(p['frozen_experience_delivery'])
+        elif condition=='bm25':
             hits=memory.search_records(bundles,p['task'],limit=5,include_all=True)['results']
             selected=[next(b for b in bundles if b['sha256']==h['sha256']) for h in hits]
             result=dict(selected_sha256s=[b['sha256'] for b in selected],experience_text=memory.delivery_text(selected),reason='bm25_frozen_bank')
@@ -453,6 +469,8 @@ class Trajectory:
         requests=result.get('requests',0) if kind not in ('visible','gold') else 0
         row.update(tokens=result.get('tokens'),seconds=time.monotonic()-started,result_sha256=sha((directory/'result.json').read_bytes()))
         row.update(observed_tokens=result.get('observed_tokens'),usage_incomplete=result.get('usage_incomplete',False),unknown_usage_requests=result.get('unknown_usage_requests',0))
+        if result.get('request_measurement'):
+            row.update(request_measurement=result['request_measurement'],http_requests=result.get('http_requests'),credits=result.get('credits'))
         if type(requests) is int and requests>=0:row['requests']=requests
         self.save('state.json',state)
         if self.state()['cancelled']:raise EvidenceError('Cancelled during stage')
@@ -606,7 +624,7 @@ class Trajectory:
                 p=deepcopy(p);p['routing_analysis']=proposal if proposal is not None else preparation.unavailable_analysis(p['task'])
                 self.save('routing-analysis.json',p['routing_analysis'])
             delivery=read(self.root/'delivery.json') if (self.root/'delivery.json').exists() else self.retrieve(p,backend)
-            if p['condition']!='baseline' and state['contract'] is None and not state.get('contract_preparation_complete'):
+            if p['condition'] not in ('baseline','latent_experience') and state['contract'] is None and not state.get('contract_preparation_complete'):
                 def validate_draft(output):
                     check_contract(output,p['task'],sources)
                     return deepcopy(output)

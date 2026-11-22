@@ -21,7 +21,7 @@ async function main() {
     browser=await chromium.launch({executablePath:process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
     const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
     let submitted=0, release, fail=true, exists=false;
-    const config={mode:'testing'};
+    const config={mode:'testing',count:1};
     const result={meta:{id:'run-synthetic',recorded:false,status:'preparing',config,model:{}},cases:[],events:[{at:'SYNTHETIC',kind:'PREPARE',message:'Preparing controls. No model requests.'}],preparation_log:'',passed:0,failed:0,unscored:0};
     await page.route('**/api/runs',r=>r.fulfill({json:exists?[{id:'run-synthetic',title:'Synthetic preparation'}]:[]}));
     await page.route(/\/api\/run\?/,r=>r.fulfill({json:result}));
@@ -51,7 +51,8 @@ async function main() {
     assert.match(await page.locator('#artifact').innerText(),/Preparing controls/);
     assert(await page.locator('#execute').isDisabled());
     result.meta.status='preparation_failed';result.meta.error='Synthetic evaluator failure';result.preparation_log='SYNTHETIC control failed before any model request';
-    await page.click('#refresh');await page.getByText('Synthetic evaluator failure',{exact:true}).waitFor();
+    await page.click('#refresh');await page.locator('#run-error').getByText('Synthetic evaluator failure',{exact:true}).waitFor();
+    assert.equal(await page.locator('#feedback-detail').textContent(),'Synthetic evaluator failure');
     assert.match(await page.locator('#artifact').innerText(),/SYNTHETIC control failed/);
     assert.equal(submitted,2);assert.deepEqual(errors,[]);
     console.log('PASS: invalid collapsed fields, pending requests, preparation errors and live logs are visible; no execution requests');

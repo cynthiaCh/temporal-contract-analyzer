@@ -11,8 +11,10 @@ parser.add_argument('--evaluation-split',type=Path,help='Explicit frozen split r
 parser.add_argument('--training-feedback',type=Path,help='Explicit public feedback mapping JSON, frozen in every trajectory')
 parser.add_argument('--model-config',type=Path,help='Model profiles JSON file')
 parser.add_argument('--model-profile',help='Named model profile; defaults to the configuration default')
+parser.add_argument('--binary',type=Path,help='Linux agent executable (Codex or Qoder) mounted into the solver container')
 parser.add_argument('--store',type=Path,help='Reviewed experience library; defaults to experience-memory/library')
-parser.add_argument('--condition',choices=['structured','contract','baseline'],default='structured',help='Contract uses Auto-Contract without memory; baseline runs Action only without memory or Contract')
+parser.add_argument('--condition',choices=['structured','contract','baseline','latent_experience'],default='structured',help='Latent experience reuses frozen retrieval and skips Contract; baseline runs Action only without memory or Contract')
+parser.add_argument('--frozen-selections',type=Path,help='Testing-only case-to-frozen-selection mapping for latent experience')
 parser.add_argument('--training-feedback-by-family',type=Path,help='Frozen family-to-public-feedback mapping JSON')
 parser.add_argument('--learning-policy',choices=['frozen','online'],default='frozen')
 parser.add_argument('--online-memory',type=Path,help='Training-only shared provisional memory directory')
@@ -25,6 +27,9 @@ parser.add_argument('--approved-supplement-snapshot',type=Path,help='Exact audit
 parser.add_argument('--memory-snapshot',type=Path,help='Exact audited approved snapshot; validated against --store')
 parser.add_argument('--public-checks-docs',type=Path,help='Training-only case-to-public-check-description mapping')
 args=parser.parse_args()
+if bool(args.frozen_selections)!=(args.condition=='latent_experience'):parser.error('Latent experience requires --frozen-selections; other conditions cannot use it')
+if args.condition=='latent_experience' and (args.mode!='testing' or args.learning_policy!='frozen'):parser.error('Latent experience requires frozen testing')
+frozen_selections=json.loads(args.frozen_selections.read_text()) if args.frozen_selections else {}
 if bool(args.approved_supplement_store)!=bool(args.approved_supplement_snapshot):parser.error('Supplement store and snapshot must be provided together')
 if args.approved_supplement_store and args.mode!='testing':parser.error('Approved supplements are testing-only')
 if args.start_rank<1 or args.limit<1:parser.error('--start-rank and --limit must be positive')
@@ -58,6 +63,7 @@ with selection_path.open(encoding='utf-8-sig') as selection_file:
 if len({row['case_id'] for row in all_rows})!=len(all_rows) or len({int(row['rank']) for row in all_rows})!=len(all_rows):parser.error('Selection case IDs and ranks must be unique')
 rows=[row for row in all_rows if args.start_rank<=int(row['rank'])<args.start_rank+args.limit]
 if len(rows)!=args.limit:parser.error('Requested rank range is not fully present in the selection CSV')
+if args.frozen_selections and (not isinstance(frozen_selections,dict) or any(row['case_id'] not in frozen_selections for row in rows)):parser.error('Frozen selections must cover every selected case')
 expected_split='training' if args.mode=='learning' else 'testing'
 if any(row.get('split',expected_split)!=expected_split for row in rows):parser.error('Selection CSV split does not match the requested mode')
 feedback=json.loads(args.training_feedback.read_text()) if args.training_feedback else {}
@@ -80,6 +86,7 @@ else:bank=approval.validate_snapshot(store,json.loads(args.memory_snapshot.read_
 (root/'memory-snapshot.json').write_text(json.dumps(bank,indent=2)+'\n')
 out=[]
 solver=args.solver_image;grader=args.grader_image
+agent_binary=str(args.binary.resolve()) if args.binary else str(repo/'.tempoevo/qoder/linux/qoder') if settings['provider']['wire_api']=='qoder_cli' else shutil.which('codex')
 for row in rows:
  cid=row['case_id'];r=root/cid;r.mkdir();entry=dict(case_id=cid,rank=int(row['rank']),root=str(r),status='preflight_running');out.append(entry);(root/'progress.json').write_text(json.dumps(out,indent=2)+'\n')
  try:
@@ -114,10 +121,11 @@ for row in rows:
     if args.mode=='learning' and kind=='gold' and result['passed']!=(name=='reference'):raise ValueError((name,kind,'Unexpected control result',result))
    controls.append(record)
   entry['controls']=controls
-  config=dict(task_id=cid,task=c['task'],candidate=str(r/'public'),store=str(store),mode='learning',condition='structured',max_attempts=3,model=MODEL,binary=shutil.which('codex'),backend=dict(kind='docker',solver_image=solver,grader_image=grader,solver_node='/runtime/node16/bin/node'),memory_snapshot=bank,training_evaluator=gold,training_feedback=feedback,protected_paths=['README.md'])
+  config=dict(task_id=cid,task=c['task'],candidate=str(r/'public'),store=str(store),mode='learning',condition='structured',max_attempts=3,model=MODEL,binary=agent_binary,backend=dict(kind='docker',solver_image=solver,grader_image=grader,solver_node='/runtime/node16/bin/node'),memory_snapshot=bank,training_evaluator=gold,training_feedback=feedback,protected_paths=['README.md'])
   if visible:config['visible_evaluator']=visible
   config.update(model=identity(settings),model_profile=settings['profile'],condition=args.condition,training_feedback=family_feedback.get(family,feedback))
   if args.retrieval_profile:config['retrieval_profile']=args.retrieval_profile
+  if args.frozen_selections:config['frozen_selection']=frozen_selections[cid]
   if args.approved_supplement_store:config['approved_memory_supplements']=[dict(store=str(args.approved_supplement_store.resolve()),snapshot=json.loads(args.approved_supplement_snapshot.read_text()))]
   if args.training_recipe:config.update(training_recipe=args.training_recipe,required_visible_checks=True,protected_paths=['README.md','VISIBLE_CHECKS.md'])
   if args.evaluation_split:config['evaluation_split_file']=str(args.evaluation_split.resolve())
