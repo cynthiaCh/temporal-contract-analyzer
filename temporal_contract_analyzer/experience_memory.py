@@ -266,14 +266,15 @@ def snapshot(bundles):
                 sha256=digest(canonical(hashes)), scope='research_only')
 
 
-def search_records(bundles, query, namespace=None, limit=8, include_all=False):
+def search_records(bundles, query, namespace=None, limit=8, include_all=False, *, text_for_index=None):
     if not text(query) or type(limit) is not int or not 1 <= limit <= 100:
         raise EvidenceError('Search requires nonempty text and a limit from 1 to 100')
     if namespace is not None and namespace not in (taxonomy.VERSION, LEGACY_TAXONOMY):
         raise EvidenceError('Unsupported search taxonomy')
     corpus = [b for b in (bundles if include_all else tips(bundles)) if namespace is None or b['taxonomy_version'] == namespace]
     # Audit provenance, outcome records, IDs and version names never enter the index.
-    counts = [Counter(_terms(render(b)+'\n'+' '.join(b['requires']+b['excludes']))) for b in corpus]
+    indexed_text = text_for_index or render
+    counts = [Counter(_terms(indexed_text(b)+'\n'+' '.join(b['requires']+b['excludes']))) for b in corpus]
     average = sum(sum(c.values()) for c in counts)/max(1, len(counts)) or 1
     frequencies = Counter(token for c in counts for token in c)
     query_terms = set(_terms(query))

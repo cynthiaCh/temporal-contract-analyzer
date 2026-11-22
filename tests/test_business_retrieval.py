@@ -93,11 +93,54 @@ class BusinessRetrievalTests(unittest.TestCase):
         self.assertEqual([role for role,*_ in backend.calls],['action'])
         self.assertIsNone(backend.calls[0][1]['experience']);self.assertIsNone(backend.calls[0][1]['contract'])
 
-    def test_all_approved_candidates_are_assessed_without_a_label_or_unknown_prefilter(self):
+    def test_small_banks_are_assessed_without_a_label_or_unknown_prefilter(self):
         self.assertEqual(len(self.recalled['candidates']),3)
         out=self.select(self.response());ids={b['sha256']:b['id'] for b in self.bundles}
         self.assertEqual({ids[c] for c in out['selected_sha256s']},{'save-rule','departure-rule'})
         self.assertEqual(out['covered_obligations'],['O1','O2']);self.assertFalse(out['effectiveness_verified'])
+
+    def test_summary_prefilter_limits_candidates_and_preserves_full_rules(self):
+        bundles=[]
+        for i in range(12):
+            b=deepcopy(self.bundles[0]);b.update(id='rule-'+str(i),sha256=format(i,'064x'))
+            for r in b['rules']:
+                r['body']='Unrelated operation. Historical example mentions quiescence.'
+            if i==11:
+                b['rules'][0]['body']='Quiescence must precede resource release. '+('Historical detail. '*100)
+            bundles.append(b)
+        before=deepcopy(bundles)
+        recalled=retrieval.recall('quiescence',{},bundles)
+        self.assertEqual(recalled['candidates'][0]['id'],'rule-11')
+        self.assertEqual(len(recalled['candidates']),10)
+        self.assertEqual(len(recalled['omitted_candidate_sha256s']),2)
+        self.assertEqual(recalled,retrieval.recall('quiescence',{},list(reversed(bundles))))
+        self.assertEqual(bundles,before)
+        self.assertIn('Historical detail.',recalled['candidates'][0]['text'])
+        self.assertNotIn('Historical detail.',recalled['candidates'][0]['summary'])
+        self.assertLessEqual(len(recalled['candidates'][0]['summary']),900)
+        self.assertEqual(retrieval.recall('quiescence',{},[])['candidates'],[])
+
+    def test_summary_bounds_long_conditions_and_keeps_exclusion_preview(self):
+        b=deepcopy(self.bundles[0])
+        for r in b['rules']:r['body']='x'*1000
+        preview=retrieval.summary(b)
+        self.assertIn('Applicability:',preview)
+        self.assertIn('Exclusion:',preview)
+        self.assertLessEqual(len(preview),900)
+
+    def test_old_full_bank_frozen_delivery_still_replays_exactly(self):
+        from temporal_contract_analyzer.core import canonical,sha
+        bundles=[]
+        for i in range(25):
+            b=deepcopy(self.bundles[0]);b.update(id='old-'+str(i),sha256=format(i,'064x'));bundles.append(b)
+        old=retrieval.recall(TASK,{'main.py':'value = 0\n'},bundles,legacy=True)
+        output=dict(business_obligations=[dict(id='O1',text='Preserve accepted edits.',evidence=[ANCHOR])],
+            assessments=[assessment(c,['O1']) for c in old['candidates']])
+        delivery=retrieval.select(output,old,TASK,{'main.py':'value = 0\n'},bundles)
+        delivery['provisional_sha256s']=[]
+        self.assertEqual(delivery['schema_version'],'business-source-coverage-v2')
+        frozen=dict(output=output,delivery_sha256=sha(canonical(delivery).encode()))
+        self.assertEqual(retrieval.replay(frozen,TASK,{'main.py':'value = 0\n'},bundles),delivery)
 
     def test_unknown_or_incomplete_applicability_is_not_promoted_to_supported(self):
         for kind in ('unknown_requires','unknown_exclusion','missing_finding','unknown_business_premise'):

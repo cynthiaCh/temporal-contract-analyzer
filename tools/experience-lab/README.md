@@ -199,6 +199,14 @@ Protocol references: [Qoder script execution](https://docs.qoder.com/cli/run-in-
 [model selection](https://docs.qoder.com/cli/model), and
 [authentication](https://docs.qoder.com/cli/authentication).
 
+New business-experience retrieval runs rank the approved library locally using
+short extractive summaries of applicability, event relations, preservation and
+exclusions. Summaries do not call a model or change approved records. Only the
+top 10 candidates, each with its summary and full rule text, reach the model for
+source-based applicability checks. Final delivery remains limited to 5 entries
+and 16000 characters. Summary omissions are not evidence of inapplicability.
+Previously frozen full-bank deliveries retain their original replay semantics.
+
 The initial workspace provides GPT-5.6 Sol and GPT-6.1 Sol profiles at low,
 medium and high reasoning effort. `sol56-medium` matches the model name, effort,
 service tier and provider settings used in the retained GPT-5.6 experiments.

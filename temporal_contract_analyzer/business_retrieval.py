@@ -1,24 +1,42 @@
 """Public-source business applicability and obligation coverage, without cluster IDs."""
+import re
 from . import experience_memory as memory, taxonomy
 from .core import EvidenceError
 
-VERSION='business-source-coverage-v2'
-MAX_CANDIDATES=64
+VERSION='business-source-coverage-v3'
+MAX_CANDIDATES=10
 MAX_EXPERIENCES=5
 MAX_CHARACTERS=16000
 
 
-def recall(task,sources,bundles):
-    # Text ranking orders the bounded candidate presentation, not final admission.
+def summary(bundle):
+    """Local extractive preview; original rules remain authoritative for admission."""
+    lines=[]
+    for category in ('applicability','event_relation','preservation','exclusion'):
+        bodies=[r['body'] for r in bundle['rules'] if r['category']==category]
+        if not bodies:continue
+        first=re.split(r'(?<=[.!?。！？])\s+', ' '.join(bodies[0].split()), maxsplit=1)[0]
+        excerpt=first if len(first)<=200 else first[:197]+'...'
+        lines.append(memory.CATEGORIES[category]+': '+excerpt)
+    return '\n'.join(lines)
+
+
+def recall(task,sources,bundles,*,legacy=False):
+    # Legacy ranking is used only to verify previously frozen deliveries.
     docs='\n'.join(text for name,text in sources.items() if name.lower().endswith('.md'))
     query=task+'\n'+task+'\n'+docs+'\n'+'\n'.join(sources.values())
-    hits=memory.search_records(bundles,query,limit=max(1,len(bundles)),include_all=True)['results'] if bundles else []
+    hits=memory.search_records(bundles,query,limit=max(1,len(bundles)),include_all=True,
+        text_for_index=None if legacy else summary)['results'] if bundles else []
     scores={h['sha256']:h['score'] for h in hits}
     ordered=sorted(bundles,key=lambda b:(-scores.get(b['sha256'],0),b['sha256']))
-    return dict(schema_version=VERSION,bank_count=len(bundles),
-        candidates=[dict(sha256=b['sha256'],id=b['id'],text=memory.render(b),requires=b['requires'],excludes=b['excludes'],lexical_score=scores.get(b['sha256'],0)) for b in ordered[:MAX_CANDIDATES]],
-        omitted_candidate_sha256s=[b['sha256'] for b in ordered[MAX_CANDIDATES:]],
-        candidate_policy='approved_bank_text_order_without_label_or_unknown_fact_prefilter')
+    limit=64 if legacy else MAX_CANDIDATES
+    candidates=[dict(sha256=b['sha256'],id=b['id'],text=memory.render(b),requires=b['requires'],excludes=b['excludes'],lexical_score=scores.get(b['sha256'],0)) for b in ordered[:limit]]
+    if not legacy:
+        for candidate,bundle in zip(candidates,ordered[:limit]):candidate['summary']=summary(bundle)
+    return dict(schema_version='business-source-coverage-v2' if legacy else VERSION,bank_count=len(bundles),
+        candidates=candidates,
+        omitted_candidate_sha256s=[b['sha256'] for b in ordered[limit:]],
+        candidate_policy='approved_bank_text_order_without_label_or_unknown_fact_prefilter' if legacy else 'local_extractive_summary_top10_full_text_verification')
 
 
 def schema(candidates):
@@ -46,6 +64,7 @@ def payload(task,sources,ast,recalled):
         'Absence of an explicit prose deadline is not evidence that existing observable behavior may be weakened. '
         'Do not impose one universal boundary policy: infer ownership, settlement, cancellation and publication from this source. '
         'Assess EVERY candidate against its full applicability, exclusions, preservation and verification text. '
+        'Candidate summaries are incomplete retrieval previews; use the full candidate text when judging applicability. '
         'For direct/transferable, enumerate all material scenario prerequisites as premises; map business operations, objects and owners to current public code, '
         'and cover every declared requires/excludes predicate exactly once with source evidence. Known/contradicted assert the FULL predicate meaning; unknown is not false. '
         'Progress reception/decoding/audit, document saving/submission, and query cancellation are different operations; generic lifecycle/reentry overlap alone does not make guidance applicable. '
@@ -64,12 +83,17 @@ def replay(selection,task,sources,bundles):
         raise EvidenceError('Frozen selection requires output and delivery digest')
     if selection['output'] is None:
         result=dict(selected_sha256s=[],experience_text=None,reason='invalid_business_selection_discarded')
+        result['provisional_sha256s']=[]
+        if sha(canonical(result).encode())==selection['delivery_sha256']:return result
     else:
-        result=select(selection['output'],recall(task,sources,bundles),task,sources,bundles)
-    result['provisional_sha256s']=[]
-    if sha(canonical(result).encode())!=selection['delivery_sha256']:
-        raise EvidenceError('Frozen experience delivery mismatch')
-    return result
+        for legacy in (False,True):
+            try:
+                result=select(selection['output'],recall(task,sources,bundles,legacy=legacy),task,sources,bundles)
+            except ValueError:
+                continue
+            result['provisional_sha256s']=[]
+            if sha(canonical(result).encode())==selection['delivery_sha256']:return result
+    raise EvidenceError('Frozen experience delivery mismatch')
 
 
 def select(result,recalled,task,sources,bundles):
@@ -158,7 +182,7 @@ def select(result,recalled,task,sources,bundles):
         if chosen & set(row['redundant_with']) or any(code in x['redundant_with'] for x in selected):decision['selection_reason']='redundant';continue
         if len(memory.delivery_text([bysha[x['sha256']] for x in selected+[row]]) or '')>MAX_CHARACTERS:decision['selection_reason']='text_budget';continue
         selected.append(row);covered.update(row['covered_obligations']);decision['selection_reason']='selected'
-    return dict(schema_version=VERSION,reason='public_business_applicability_and_coverage',
+    return dict(schema_version=recalled['schema_version'],reason='public_business_applicability_and_coverage',
         selected_sha256s=[x['sha256'] for x in selected],experience_text=memory.delivery_text([bysha[x['sha256']] for x in selected]),
         business_obligations=obligations,covered_obligations=sorted(covered),uncovered_obligations=[x['id'] for x in obligations if x['id'] not in covered],
         decisions=decisions,validation=dict(policy='per-entry-source-validation-v1',partial=bool(issues),validated_assessments=validated,eligible_assessments=sum(x['admitted'] for x in decisions),issues=issues),effectiveness_verified=False)
