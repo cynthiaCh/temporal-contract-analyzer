@@ -107,6 +107,14 @@ class Parsing(unittest.TestCase):
         denied['message']['content'][0]['is_error']=False
         with self.assertRaises(ValueError):tool_requests([requested,denied])
 
+    def test_only_explicit_unexecuted_interruption_omits_the_gate_requirement(self):
+        requested=dict(type='assistant',message=dict(content=[dict(type='tool_use',id='partial',name='Bash',input={})]))
+        receipt='Error: Tool was not executed because the model response was interrupted before its arguments were fully received. Reissue the call with complete arguments.'
+        def result(text,error=True):return dict(type='user',message=dict(content=[dict(type='tool_result',tool_use_id='partial',is_error=error,content=text)]))
+        self.assertEqual(tool_requests([requested,result(receipt)]),(set(),{}))
+        for extra in ([],[result('Command failed')],[result(receipt,False)],[result(receipt),result('Command completed',False)]):
+            with self.subTest(results=extra):self.assertEqual(tool_requests([requested]+extra),({'partial'},{}))
+
     def test_confirmed_model_and_bounded_turns(self):
         self.assertEqual(parse_events(events(), 'DeepSeek-Flash', 2)['num_turns'], 1)
         for data, model in [(events(3), 'DeepSeek-Flash'), (events(), 'Auto'),
@@ -297,6 +305,17 @@ class Execution(unittest.TestCase):
         result = self.run_stage(ungated_tool=True)
         self.assertFalse(result['valid'])
         self.assertIn('mandatory tool gate', result['error'])
+
+    def test_interrupted_unexecuted_tool_does_not_invalidate_a_completed_stage(self):
+        data=events()
+        data[1]['message']['content']=[dict(type='tool_use',name='Bash',id='partial',input={})]
+        data.insert(2,dict(type='user',message=dict(content=[dict(type='tool_result',tool_use_id='partial',is_error=True,
+            content='Error: Tool was not executed because the model response was interrupted before its arguments were fully received. Reissue the call with complete arguments.')])))
+        result=self.run_stage(stream=data)
+        self.assertTrue(result['valid'],result)
+        data[2]['message']['content'][0]['content']='Command failed'
+        result=self.run_stage(stream=data)
+        self.assertFalse(result['valid']);self.assertIn('mandatory tool gate',result['error'])
 
     def test_action_delivers_actual_candidate_files_after_cleanup(self):
         result = self.run_stage(action=True)

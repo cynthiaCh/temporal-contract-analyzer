@@ -87,6 +87,11 @@ Testing defaults to business applicability selection from the full frozen approv
 library, an Auto-Contract draft, one bounded repair Action and one independent
 final Gold score. There is no Contract Review, Gold-driven testing retry or
 automatic A/B run. Existing project tests may be run inside the Action budget.
+The testing-only `latent_experience` ablation skips Auto-Contract and replays a
+frozen business selection through `prepare_selected.py --frozen-selections`.
+Public-source evidence and the exact delivery digest are revalidated before
+execution; only the Action and final Gold run, with a 24-turn Action cap.
+Historical retrieval usage is reused, not counted as new model calls.
 The [final case bundle](cases/README.md) contains the complete 100 cases under
 `cases/train70/` and `cases/test30/`. The [final results](experiments/testing-runs/gpt56-library-size-ablation-20261118/README.md)
 record the frozen-library-size comparison.

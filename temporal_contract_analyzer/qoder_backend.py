@@ -175,7 +175,9 @@ def readable_candidate(root):
 
 def tool_requests(events):
     """A rejected request is not an executed tool; require CLI error evidence."""
-    requested, rejected = {}, set()
+    requested, rejected, results = {}, set(), {}
+    interrupted = ('Error: Tool was not executed because the model response was interrupted '
+                   'before its arguments were fully received. Reissue the call with complete arguments.')
     for event in events:
         message = event.get('message') or {}
         if event.get('type') == 'assistant':
@@ -187,12 +189,15 @@ def tool_requests(events):
                     requested[key] = content.get('name')
         elif event.get('type') == 'user':
             for content in message.get('content', []):
-                if content.get('type') == 'tool_result' and content.get('is_error') is True:
-                    rejected.add(content['tool_use_id'])
+                if content.get('type') == 'tool_result':
+                    results.setdefault(content['tool_use_id'], []).append(content)
+                    if content.get('is_error') is True:rejected.add(content['tool_use_id'])
     unsupported = {key:name for key,name in requested.items() if name not in ALLOWED_TOOLS}
     if set(unsupported)-rejected:
         raise ValueError('Qoder did not confirm rejection of unavailable tools: '+', '.join(sorted(set(unsupported.values()))))
-    return {key for key,name in requested.items() if name in ALLOWED_TOOLS}, unsupported
+    not_executed = {key for key,rows in results.items()
+                    if all(row.get('is_error') is True and row.get('content') == interrupted for row in rows)}
+    return {key for key,name in requested.items() if name in ALLOWED_TOOLS}-not_executed, unsupported
 
 
 def parse_events(events, model, cap):

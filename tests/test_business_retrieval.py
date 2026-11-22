@@ -47,6 +47,52 @@ class BusinessRetrievalTests(unittest.TestCase):
 
     def select(self,value):return retrieval.select(value,self.recalled,TASK,{'main.py':'value = 0\n'},self.bundles)
 
+    def latent_loop(self,selection,**changes):
+        source=self.root/'source';source.mkdir(exist_ok=True);(source/'main.py').write_text('value = 0\n')
+        config=dict(task=TASK,candidate=str(source),store=str(self.library),mode='testing',
+                    condition='latent_experience',memory_snapshot=self.snapshot,frozen_selection=selection,
+                    gold_evaluator=dict(command=['synthetic-gold']))
+        config.update(changes)
+        loop=Trajectory(self.root/'latent');loop.prepare(config);return loop
+
+    def test_latent_experience_reuses_exact_guidance_with_action_only_and_final_gold(self):
+        from temporal_contract_analyzer.core import canonical,sha
+        output=self.response();delivery=self.select(output);delivery['provisional_sha256s']=[]
+        frozen=dict(output=output,delivery_sha256=sha(canonical(delivery).encode()))
+        loop=self.latent_loop(frozen);protocol=loop.verify()
+        self.assertEqual(protocol['total_request_cap'],24)
+        backend=Backend();state=loop.run(backend,execute=True)
+        self.assertEqual(state['status'],'scored',state.get('error'))
+        self.assertEqual([role for role,*_ in backend.calls],['action'])
+        payload=backend.calls[0][1]
+        self.assertIsNone(payload['contract']);self.assertEqual(payload['experience'],delivery['experience_text'])
+        self.assertNotIn('business_obligations',payload);self.assertNotIn('frozen_selection',payload)
+        self.assertEqual([s['kind'] for s in state['stages']],['action','gold'])
+        self.assertEqual(json.loads((loop.root/'delivery.json').read_text()),delivery)
+
+    def test_frozen_experience_rejects_drift_and_unbound_delivery(self):
+        from temporal_contract_analyzer.core import canonical,sha
+        output=self.response();delivery=self.select(output);delivery['provisional_sha256s']=[]
+        frozen=dict(output=output,delivery_sha256=sha(canonical(delivery).encode()))
+        with self.assertRaisesRegex(EvidenceError,'mismatch'):
+            self.latent_loop(dict(frozen,delivery_sha256='0'*64))
+        with self.assertRaisesRegex(EvidenceError,'derived'):
+            self.latent_loop(frozen,frozen_experience_delivery=delivery)
+        with self.assertRaisesRegex(EvidenceError,'frozen testing'):
+            self.latent_loop(frozen,mode='learning')
+        altered=deepcopy(frozen);altered['output']['assessments'][0]['supporting_evidence'][0]['quote']='Fabricated evidence'
+        with self.assertRaises(EvidenceError):
+            self.latent_loop(altered)
+
+    def test_frozen_invalid_selection_remains_empty_without_contract_fallback(self):
+        from temporal_contract_analyzer.core import canonical,sha
+        delivery=dict(selected_sha256s=[],experience_text=None,reason='invalid_business_selection_discarded',provisional_sha256s=[])
+        loop=self.latent_loop(dict(output=None,delivery_sha256=sha(canonical(delivery).encode())))
+        backend=Backend();state=loop.run(backend,execute=True)
+        self.assertEqual(state['status'],'scored',state.get('error'))
+        self.assertEqual([role for role,*_ in backend.calls],['action'])
+        self.assertIsNone(backend.calls[0][1]['experience']);self.assertIsNone(backend.calls[0][1]['contract'])
+
     def test_all_approved_candidates_are_assessed_without_a_label_or_unknown_prefilter(self):
         self.assertEqual(len(self.recalled['candidates']),3)
         out=self.select(self.response());ids={b['sha256']:b['id'] for b in self.bundles}
