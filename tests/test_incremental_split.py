@@ -30,5 +30,10 @@ class IncrementalSplitTests(unittest.TestCase):
   with self.assertRaises(EvidenceError):split.enforce(self.config('train0','learning'))
  def test_legacy_registry_still_works(self):
   self.assertEqual(split.assignment('draft-autosave-handoff-vanilla-port-react')['role'],'training')
+ def test_training_replay_preserves_training_role(self):
+  cfg=dict(self.config('train0','testing'),evaluation_purpose='training_replay',learning_policy='frozen',max_attempts=1)
+  self.assertEqual(split.enforce(cfg)['role'],'training')
+  for delta in ({'task_id':'test0'},{'mode':'learning'},{'learning_policy':'online'},{'max_attempts':3},{'training_evaluator':{'command':['gold']}},{'training_feedback':{'hidden':'feedback'}},{'evaluation_purpose':'typo'}):
+   with self.subTest(delta=delta),self.assertRaises(EvidenceError):split.enforce(dict(cfg,**delta))
 
 if __name__=='__main__':unittest.main()

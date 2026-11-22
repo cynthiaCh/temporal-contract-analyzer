@@ -8,6 +8,7 @@ parser.add_argument('--start-rank',type=int,default=1,help='First one-based CSV 
 parser.add_argument('--selection-file',type=Path,help='Explicit ranked case CSV; defaults to final train70 or test30 for the selected mode')
 parser.add_argument('--swe-tempoc-root',type=Path,help='Read public inputs from the frozen SWE-TempoC roster; regular cases support learning/testing')
 parser.add_argument('--evaluation-split',type=Path,help='Explicit frozen split registry for a new incremental cohort')
+parser.add_argument('--evaluation-purpose',choices=['training_replay'],help='Evaluate training members once without changing their split or learning')
 parser.add_argument('--training-feedback',type=Path,help='Explicit public feedback mapping JSON, frozen in every trajectory')
 parser.add_argument('--model-config',type=Path,help='Model profiles JSON file')
 parser.add_argument('--model-profile',help='Named model profile; defaults to the configuration default')
@@ -65,6 +66,9 @@ rows=[row for row in all_rows if args.start_rank<=int(row['rank'])<args.start_ra
 if len(rows)!=args.limit:parser.error('Requested rank range is not fully present in the selection CSV')
 if args.frozen_selections and (not isinstance(frozen_selections,dict) or any(row['case_id'] not in frozen_selections for row in rows)):parser.error('Frozen selections must cover every selected case')
 expected_split='training' if args.mode=='learning' else 'testing'
+if args.evaluation_purpose:
+ if args.mode!='testing' or args.learning_policy!='frozen':parser.error('Training replay requires frozen testing')
+ expected_split='training'
 if any(row.get('split',expected_split)!=expected_split for row in rows):parser.error('Selection CSV split does not match the requested mode')
 feedback=json.loads(args.training_feedback.read_text()) if args.training_feedback else {}
 family_feedback=json.loads(args.training_feedback_by_family.read_text()) if args.training_feedback_by_family else {}
@@ -74,7 +78,7 @@ for mapping in family_feedback.values():validate_mapping(mapping)
 visible_configs=json.loads(args.visible_evaluators.read_text()) if args.visible_evaluators else {}
 public_docs=json.loads(args.public_checks_docs.read_text()) if args.public_checks_docs else {}
 from temporal_contract_analyzer.evaluation_split import enforce
-for row in rows:enforce(dict(task_id=row['case_id'],mode=args.mode,**({'evaluation_split_file':str(args.evaluation_split.resolve())} if args.evaluation_split else {})))
+for row in rows:enforce(dict(task_id=row['case_id'],mode=args.mode,learning_policy=args.learning_policy,evaluation_purpose=args.evaluation_purpose,**({'evaluation_split_file':str(args.evaluation_split.resolve())} if args.evaluation_split else {})))
 root=args.root.resolve();root.mkdir()
 shutil.copyfile(selection_path,root/'selection.csv')
 (root/'selection-source.json').write_text(json.dumps(dict(path=str(selection_path),sha256=sha(selection_path.read_bytes()),benchmark_root=str(bench),source='swe-tempoc' if args.swe_tempoc_root else 'registered-catalog'),indent=2)+'\n')
@@ -129,6 +133,7 @@ for row in rows:
   if args.approved_supplement_store:config['approved_memory_supplements']=[dict(store=str(args.approved_supplement_store.resolve()),snapshot=json.loads(args.approved_supplement_snapshot.read_text()))]
   if args.training_recipe:config.update(training_recipe=args.training_recipe,required_visible_checks=True,protected_paths=['README.md','VISIBLE_CHECKS.md'])
   if args.evaluation_split:config['evaluation_split_file']=str(args.evaluation_split.resolve())
+  if args.evaluation_purpose:config['evaluation_purpose']=args.evaluation_purpose
   config['public_case_record']=c['case_record']
   config['learning_policy']=args.learning_policy
   if args.mode=='testing':
