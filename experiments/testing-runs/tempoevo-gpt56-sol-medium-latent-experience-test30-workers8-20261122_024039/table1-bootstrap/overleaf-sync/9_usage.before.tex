@@ -1,0 +1,115 @@
+\section{Usage and Validation}
+\label{sec:usage}
+
+% Place the Main Evaluation table early so the wide float reaches its results page.
+\begin{table*}[!t]
+    \centering
+    % \caption{Patch pass rates on 70 training and 30 test tasks}
+    \caption{Patch pass rates (bootstrap mean $\pm$ SD). DeepSeek counts all 30 test tasks, including candidate crashes; \textemdash{} denotes untested settings.}
+    \label{tab:tempoevo-main-evaluation}
+    \small
+    \setlength{\tabcolsep}{3pt}
+    \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}llllcccc@{}}
+        \toprule
+        \multicolumn{4}{c}{} & \multicolumn{4}{c}{Pass rate (\%)} \\
+        \cmidrule(lr){5-8}
+        Model & \shortstack{Agent scaffold\\(CLI version)} & \shortstack{Reasoning\\effort}
+        & Dataset & \shortstack{Latent\\Baseline}
+        & \shortstack{Latent\\+ Experience}
+        & \shortstack{Auto-Contract\\Only} & \shortstack{Auto-Contract\\+ Experience} \\
+        \midrule
+        GPT-6.1 Sol & \texttt{0.167.0-alpha.4.1} & medium & Training
+        & $51.0 \pm 5.6$ & \textemdash{} & $82.5 \pm 7.9$ & {\boldmath$92.8 \pm 3.1$} \\
+        GPT-6.1 Sol & \texttt{0.167.0-alpha.4.1} & medium & Test
+        & $72.3 \pm 8.4$ & \textemdash{} & $53.4 \pm 9.6$ & {\boldmath$90.0 \pm 5.5$} \\
+        \addlinespace
+        GPT-5.6 Sol & \texttt{0.169.0-alpha.11.1} & medium & \mbox{Train replay}
+        & $31.9 \pm 5.6$ & \textemdash{} & $38.4 \pm 5.8$ & {\boldmath$80.0 \pm 4.8$} \\
+        GPT-5.6 Sol & \texttt{0.167.0-alpha.4.1} & medium & Test
+        & $16.6 \pm 6.9$ & \textemdash{} & $34.5 \pm 9.1$ & {\boldmath$83.4 \pm 6.8$} \\
+        \addlinespace
+        DeepSeek Flash & Qoder \texttt{1.1.94} & low & Test
+        & $33.5 \pm 9.0$ & {\boldmath$60.2 \pm 9.2$} & $19.9 \pm 7.2$ & {\boldmath$60.0 \pm 9.1$} \\
+        \bottomrule
+    \end{tabular*}
+\end{table*}
+
+\subsection{Dataset}
+
+% We use 100 maintenance cases for training and testing with \tool{}. The cases
+% comprise 24 core tasks and 76 derived tasks across 11 groups (G1--G11). Each
+% case pairs a starting repository with a maintenance request, typically for a
+% local functional change. The agent must infer which temporal obligations apply
+% from documentation, code, or tests and often satisfy several at once, including
+% constraints on event order, data binding, and lifecycle permissions.
+% Executable checks assess whether the patch implements the requested change and
+% preserves those obligations under controlled event schedules. The cases cover
+% seven programming languages (JavaScript, TypeScript, Python, Java, PHP, Ruby,
+% and Go) and five framework or library families. Implementations range from
+% single-module programs to multi-module applications and upstream library
+% repositories.
+
+In this study, we constructed a dataset contains 100 maintenance cases, comprising 24 core tasks and
+76 derived tasks across 11 scenario and family groups. Each case includes a starting
+repository, a maintenance request, and executable checks. Requests typically
+describe local functional changes while leaving temporal obligations partly
+or wholly unstated. A single change often involves multiple obligations on
+event order, data binding, or lifecycle permissions, supported by repository
+documentation, code, or tests. Executable checks assess the requested behaviour
+and temporal-contract preservation under controlled event schedules. The cases
+span seven programming languages (JavaScript, TypeScript, Python, Java, PHP,
+Ruby, and Go) and five framework or library families, with implementations
+ranging from single-module programs to multi-module applications and upstream
+library repositories.
+
+
+
+\subsection{Implementation Details}
+
+% Experiments ran on Ubuntu 20.04.6 with Docker 28.1.1.
+% We used \texttt{gpt-6.1-sol} and \texttt{gpt-5.6-sol} with medium
+% reasoning effort and priority service.
+% Table~\ref{tab:tempoevo-main-evaluation} lists the Codex CLI versions
+% for the main runs. Each training-set replay allowed up to three repair Actions. Each
+% test run used one Action, followed by final scoring by the Gold
+% evaluator. Each Action was capped at 24 LLM requests and 600 seconds.
+% Evaluation used frozen experience libraries. The 20-entry subset
+% was sampled with seed \texttt{20261118}. Cases with invalid executions
+% were reported separately and excluded from pass-rate denominators.
+
+GPT runs used Ubuntu 20.04.6/Docker 28.1.1, medium reasoning effort, and
+priority service; DeepSeek used Qoder Credits on macOS. Training allowed
+three Actions; testing used one independently Gold-scored Action. Actions
+allowed 600 seconds and 24 Codex requests or 24 Qoder model turns. Q.Y. C.,
+a senior software engineer with 16 years' experience, reviewed experience
+before approval. Test libraries were frozen; DeepSeek used 58 entries.
+DeepSeek uses 1,000 paired 30-task bootstrap resamples (seed 20260925),
+counting crashes as failures; GPT rows retain valid-score denominators.
+Anomaly reruns retained valid original scores.
+Latent + Experience reuses the same per-task experience deliveries and skips
+the Auto-Contract stage.
+
+\subsection{Main Evaluation}
+
+Experience-guided repair ranks highest in all five settings
+(Table~\ref{tab:tempoevo-main-evaluation}). Auto-Contract Only improves over
+latent repair in three, but lowers DeepSeek's pass rate.
+Both experience-enabled DeepSeek variants pass 18/30 tasks.
+
+\subsection{Experience Library Size}
+
+Figure~\ref{fig:tempoevo-memory-size} compares library-size ablations on
+30 test tasks. GPT-5.6 Sol rises from 34.9\% without experience to 83.7\%
+with 40 entries and 83.6\% with 61. DeepSeek Flash yields 60.5\% with
+20 entries, 56.9\% with 40, and 60.0\% with 58, versus 19.9\% without
+experience. The 20- and 40-entry sets are nested random subsets of each
+model's frozen library.
+
+\begin{figure}[!htb]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/Acc-MemorySize-DeepSeek.png}
+    \caption{Library-size ablation (bootstrap mean $\pm$ SD).
+    Full libraries contain 61 entries for GPT and 58 for DeepSeek;
+    zero entries uses Auto-Contract Only.}
+    \label{fig:tempoevo-memory-size}
+\end{figure}

@@ -13,7 +13,7 @@ Required table note: "Execution-invalid cases are excluded from the accuracy den
 
 The 61-entry library and historical per-case experience deliveries were frozen. The source/runtime differences from the historical parent are disclosed in the run README.
 
-Overleaf has not been modified: Git authentication is unavailable and there is no connected document session. The exact existing Table 1 source is still required to preserve its structure and notes.
+Updated sections/9_usage.tex through the authenticated Firefox session. A fresh project ZIP download confirms that only this file changed and exactly matches the intended patch. The recompiled PDF contains the new cell, 75.9 ± 7.7. See overleaf-sync/ for the patch and verification records.
 
 Reproduce from any checkout containing this archive:
 
