@@ -8,18 +8,11 @@ from . import archive, experience_memory as memory
 from .core import EvidenceError, canonical, sha
 
 OPERATIONS=('new','evidence','revise','merge')
-UPDATE_CANDIDATES=16
+UPDATE_CANDIDATES=3
 
 def content(value):
     return dict(labels=sorted(value['labels']),requires=sorted(value['requires']),excludes=sorted(value['excludes']),
         rules=[dict(category=r['category'],body=' '.join(r['body'].split())) for r in value['rules']])
-
-def catalog(protocol):
-    """Compact frozen-bank discovery index, separate from solver delivery."""
-    if protocol['condition'] not in ('structured','fixed_contract','bm25'):return []
-    return [dict(sha256=b['sha256'],id=b['id'],requires=b['requires'],excludes=b['excludes'],
-                 rule_previews=[dict(category=r['category'],body=r['body'][:240]) for r in b['rules']])
-            for e in protocol['memory_snapshot']['entries'] for b in [e['bundle']]]
 
 
 def related(protocol, delivery):
@@ -27,7 +20,9 @@ def related(protocol, delivery):
     bundles=[e['bundle'] for e in protocol['memory_snapshot']['entries']]
     # Updating memory is a separate search from delivering <=5 rules to Action.
     query=protocol['task']+'\n'+'\n'.join(o['text'] for o in delivery.get('business_obligations',[]))
-    ranked=memory.search_records(bundles,query,limit=UPDATE_CANDIDATES,include_all=True)['results'] if bundles else []
+    from .business_retrieval import recall
+    bank=protocol['memory_snapshot']['entries']
+    ranked=recall(query,{},bundles,summaries={e['bundle']['sha256']:e['retrieval_summary'] for e in bank if 'retrieval_summary' in e})['candidates']
     codes=list(dict.fromkeys(delivery.get('selected_sha256s',[])+[r['sha256'] for r in ranked]))[:UPDATE_CANDIDATES]
     return [deepcopy(next(b for b in bundles if b['sha256']==code)) for code in codes]
 

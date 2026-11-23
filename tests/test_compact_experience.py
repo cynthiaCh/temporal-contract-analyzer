@@ -99,12 +99,11 @@ class CompactExperienceTests(unittest.TestCase):
         self.assertEqual(approval.freeze(self.path)['entries'], [])
         self.assertEqual(approval.active(self.path), [])
 
-    def test_changed_content_cannot_validate_an_old_snapshot(self):
+    def test_snapshot_retains_accepted_content_after_an_in_place_edit(self):
         snapshot=approval.freeze(self.path)
         self.value['experiences'][0]['event_relation']='Changed recommendation.'
         self.save()
-        with self.assertRaises(EvidenceError):
-            approval.validate_snapshot(self.path, snapshot)
+        self.assertEqual(approval.validate_snapshot(self.path,snapshot),snapshot)
 
     def test_duplicate_ids_and_invalid_predicates_are_rejected(self):
         self.value['experiences'].append(dict(self.value['experiences'][0]))

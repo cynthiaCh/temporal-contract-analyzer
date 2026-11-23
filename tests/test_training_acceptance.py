@@ -117,7 +117,7 @@ class BoundaryTests(unittest.TestCase):
   state.update(status='evaluation_running',finalized=False);loop.save('state.json',state);count=len(b.calls)
   loop.run(b,execute=True);self.assertEqual(len(b.calls),count)
  def test_extraction_failure_preserves_accepted_assessment(self):
-  loop=self.prepare();s=loop.run(Backend(invalid='extract'),execute=True)
+  loop=self.prepare();s=loop.run(Backend(2,invalid='extract'),execute=True)
   self.assertEqual(s['status'],'execution_invalid');self.assertTrue(s['training_accepted']);self.assertEqual(s['repair_stop_reason'],'oracle_accepted')
   self.assertFalse((loop.root/'candidate-pool/success.json').exists())
  def test_raw_probe_exit_one_is_a_behavior_failure_not_transport_error(self):
@@ -258,7 +258,7 @@ class CompactPublicationTests(unittest.TestCase):
         self.category.write_text(json.dumps(example.value))
 
     def trained(self):
-        loop=self.prepare();state=loop.run(fixtures.Backend(),execute=True)
+        loop=self.prepare();state=loop.run(fixtures.Backend(2),execute=True)
         self.assertEqual(state['status'],'passed',state.get('error'))
         return loop
 
@@ -276,7 +276,7 @@ class CompactPublicationTests(unittest.TestCase):
         self.assertFalse((loop.root/'candidate-pool/success-evidence.json').exists())
         item=compact.load(self.store/'candidates.json')['experiences'][0]
         self.assertEqual(item['review'],dict(reviewer=None,decision='pending',at=None))
-        self.assertEqual(item['proposal'],dict(operation='new',target_ids=[]))
+        self.assertEqual(item['learning']['origin']['first_success_attempt'],2)
         self.assertIn('Verify accepted identity',item['verification'])
         self.assertIn('Synthetic fixture',item['exclusion'])
         self.assertIn(item['id'],compact.page(self.store).decode())
@@ -299,21 +299,24 @@ class CompactPublicationTests(unittest.TestCase):
         self.assertEqual(approval.freeze(self.store),snapshot)
         self.assertEqual({p.name for p in self.category.parent.iterdir()},{'mechanisms.json'})
 
-    def test_revision_and_merge_remain_pending_and_identify_targets(self):
+    def test_revision_and_merge_update_one_id_and_require_review(self):
         value=compact.load(self.category)
         value['experiences'].append(dict(value['experiences'][0],id='other-binding'))
-        self.category.write_text(json.dumps(value));before=self.category.read_bytes()
-        for operation,count in [('revise',1),('merge',2)]:
-            loop=self.trained();path=loop.root/'candidate-pool/success.json';record=read(path)
-            targets=[entry['bundle'] for entry in approval.freeze(self.store)['entries']]
-            record['related_experiences']=targets
-            record['reflection_update'].update(operation=operation,target_sha256s=[t['sha256'] for t in targets[:count]],change_summary=['Synthetic guidance change'],supporting_attempts=[1])
-            loop.save('candidate-pool/success.json',record);loop.publish_candidate('success')
-        items=compact.load(self.store/'candidates.json')['experiences']
-        self.assertEqual([i['proposal']['operation'] for i in items],['revise','merge'])
-        self.assertEqual([len(i['proposal']['target_ids']) for i in items],[1,2])
-        self.assertTrue(all(i['review']['decision']=='pending' for i in items))
-        self.assertEqual(self.category.read_bytes(),before)
+        self.category.write_text(json.dumps(value))
+        targets=[entry['bundle'] for entry in approval.freeze(self.store)['entries']]
+        snapshot=approval.freeze(self.store)
+        loop=self.trained();path=loop.root/'candidate-pool/success.json';record=read(path)
+        record['related_experiences']=targets
+        record['reflection_update'].update(operation='merge',target_sha256s=[t['sha256'] for t in targets],change_summary=['Combine supported guidance.'],supporting_attempts=[1,2])
+        loop.save('candidate-pool/success.json',record);loop.publish_candidate('success')
+        items=compact.load(self.category)['experiences']
+        self.assertEqual(len(items),2)
+        self.assertEqual(items[0]['id'],targets[0]['id']);self.assertEqual(items[0]['review']['decision'],'pending')
+        self.assertEqual(items[1]['superseded_by'],items[0]['id'])
+        self.assertEqual(approval.validate_snapshot(self.store,snapshot),snapshot)
+        compact.save_review(self.store,self.request(items[0]))
+        self.assertEqual([e['bundle']['id'] for e in approval.freeze(self.store)['entries']],[items[0]['id']])
+        self.assertFalse((self.store/'candidates.json').exists())
 
     def test_failure_summary_publishes_pending_without_claiming_success(self):
         snapshot=approval.freeze(self.store);loop=self.prepare()

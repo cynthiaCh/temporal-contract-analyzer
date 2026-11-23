@@ -10,8 +10,8 @@ Model weights do not change: experience construction updates external guidance.
 The fixed experiment recipe is `v8-compatible-v1`, with Abstract-based
 `business-source-v1` retrieval by default and at most three repair Actions including
 the first patch. Approved, version-bound abstracts are frozen with the guidance.
-Local Abstract ranking recalls up to 10 entries; a model checks their full text
-against the current task and source before delivering up to five. Missing or
+Local Abstract ranking recalls up to 6 entries; a model checks their full text
+against the current task and source before delivering up to three. Missing or
 unapproved abstracts use the existing extractive preview. Public check descriptions are explicit public inputs. Each candidate is evaluated by
 public checks and the training Oracle; both must pass for acceptance. Failure
 permits the next budgeted Action with diagnosis and, when supported, Contract
@@ -19,7 +19,10 @@ revision. This recipe passes the latest controlled feedback rather than cumulati
 diagnosis explanations. Raw hidden assertions and reference repairs never reach
 the model. Infrastructure errors are not behavioural failures.
 
-Successful trajectories propose new guidance, evidence, revisions or merges.
+First-Action successes skip experience extraction. Failed-to-successful trajectories
+propose source-supported corrections; routine implementation-only fixes add no
+guidance. Existing entries are updated in place under a stable ID, with renewed
+content/Abstract review. Explicit merges retire other IDs only after acceptance.
 Three effective failures request a real expert summary. Proposals remain pending
 until a named reviewer accepts their exact content. Online construction can use a
 separate provisional pool in later construction tasks; testing cannot access it.
@@ -52,8 +55,8 @@ Original task + public source + available AST evidence
 
 There is no separate taxonomy-routing stage or Contract Review. Experience
 selection considers complete business applicability, exclusions, object/operation
-mapping and supported obligations. It recalls at most 10 candidates and delivers
-at most five entries / 16,000 characters, favouring additional obligation coverage
+mapping and supported obligations. It recalls at most 6 candidates and delivers
+at most three entries / 8,000 characters, favouring additional obligation coverage
 and suppressing redundancy. No applicable guidance means repair without experience.
 Model applicability judgments remain fallible; unknown premises do not count as
 satisfied. Requirements come from current task/source evidence, not experience.

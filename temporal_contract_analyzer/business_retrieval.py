@@ -4,9 +4,9 @@ from . import experience_memory as memory, taxonomy
 from .core import EvidenceError
 
 VERSION='business-source-coverage-v4'
-MAX_CANDIDATES=10
-MAX_EXPERIENCES=5
-MAX_CHARACTERS=16000
+MAX_CANDIDATES=6
+MAX_EXPERIENCES=3
+MAX_CHARACTERS=8000
 
 
 def summary(bundle):
@@ -21,7 +21,7 @@ def summary(bundle):
     return '\n'.join(lines)
 
 
-def recall(task,sources,bundles,*,summaries=None):
+def recall(task,sources,bundles,*,summaries=None,learning=None,model=None):
     def preview(bundle):
         return (summaries or {}).get(bundle['sha256'],{}).get('text') or summary(bundle)
     docs='\n'.join(text for name,text in sources.items() if name.lower().endswith('.md'))
@@ -33,14 +33,16 @@ def recall(task,sources,bundles,*,summaries=None):
     hits=memory.search_records(bundles,query,limit=max(1,len(bundles)),include_all=True,
         text_for_index=index_text)['results'] if bundles else []
     scores={h['sha256']:h['score'] for h in hits}
-    ordered=sorted(bundles,key=lambda b:(-scores.get(b['sha256'],0),b['sha256']))
+    from .experience_learning import score
+    weights={b['sha256']:score((learning or {}).get(b['sha256']),model) for b in bundles}
+    ordered=sorted(bundles,key=lambda b:(-scores.get(b['sha256'],0),-weights[b['sha256']],b['sha256']))
     limit=MAX_CANDIDATES
     candidates=[dict(sha256=b['sha256'],id=b['id'],text=memory.render(b),requires=b['requires'],excludes=b['excludes'],lexical_score=scores.get(b['sha256'],0)) for b in ordered[:limit]]
     for candidate,bundle in zip(candidates,ordered[:limit]):candidate['summary']=preview(bundle)
-    return dict(schema_version=VERSION,bank_count=len(bundles),
+    return dict(schema_version=VERSION,bank_count=len(bundles),weights=weights,
         candidates=candidates,
         omitted_candidate_sha256s=[b['sha256'] for b in ordered[limit:]],
-        candidate_policy=('reviewed_summary_top10_full_text_verification' if summaries else 'local_extractive_summary_top10_full_text_verification'))
+        candidate_policy=('reviewed_summary_top6_full_text_verification' if summaries else 'local_extractive_summary_top6_full_text_verification'))
 
 
 def schema(candidates,*,concise=False):
@@ -82,7 +84,7 @@ def payload(task,sources,ast,recalled):
         'Use unique business obligation IDs and reference only those IDs in covered_obligations. Explain a concrete contribution; identify redundancy. '
         'Return each candidate exactly once. Invalid or conflicting candidate rows are rejected individually; missing or unsupported assessments are never filled in or admitted. '
         'For weak/not_applicable/unknown return ONLY sha256, relevance and one short reason; no evidence, mappings or predicate analysis. '
-        'Write detailed assessments for at most 5 direct/transferable candidates; use brief rows for the rest. '
+        'Write detailed assessments for at most 3 direct/transferable candidates; use brief rows for the rest. '
         'Use at most 8 distinct business obligations. Every explanation and exact quote must be at most 240 characters; choose short exact excerpts, never rewrite quotations. '
         'Use at most 2 evidence excerpts per evidence list and at most 5 premises per detailed assessment. Do not repeat the same explanation across fields. '
         'Keep the entire JSON concise (target under 20000 characters); do not fill unused capacity or invent support. '
@@ -90,7 +92,7 @@ def payload(task,sources,ast,recalled):
         'All applicability judgments and proposed obligations remain fallible hypotheses for source-based repair, not correctness or effectiveness certificates.')
 
 
-def replay(selection,task,sources,bundles,*,summaries=None):
+def replay(selection,task,sources,bundles,*,summaries=None,learning=None,model=None):
     """Revalidate a frozen selector result without another model call."""
     from .core import canonical,sha
     if not isinstance(selection,dict) or set(selection)!={'output','delivery_sha256'}:
@@ -100,7 +102,7 @@ def replay(selection,task,sources,bundles,*,summaries=None):
         result['provisional_sha256s']=[]
         if sha(canonical(result).encode())==selection['delivery_sha256']:return result
     else:
-        result=select(selection['output'],recall(task,sources,bundles,summaries=summaries),task,sources,bundles)
+        result=select(selection['output'],recall(task,sources,bundles,summaries=summaries,learning=learning,model=model),task,sources,bundles)
         result['provisional_sha256s']=[]
         if sha(canonical(result).encode())==selection['delivery_sha256']:return result
     raise EvidenceError('Frozen experience delivery mismatch')
@@ -190,7 +192,7 @@ def select(result,recalled,task,sources,bundles):
         raise EvidenceError('No independently valid candidate assessments: '+str(issues[:3]))
     selected=[];covered=set()
     while accepted and len(selected)<MAX_EXPERIENCES:
-        accepted.sort(key=lambda x:(-len(set(x['covered_obligations'])-covered),x['relevance']!='direct',-candidates[x['sha256']]['lexical_score'],x['sha256']))
+        accepted.sort(key=lambda x:(-len(set(x['covered_obligations'])-covered),x['relevance']!='direct',-recalled.get('weights',{}).get(x['sha256'],0),-candidates[x['sha256']]['lexical_score'],x['sha256']))
         row=accepted.pop(0);code=row['sha256'];chosen={x['sha256'] for x in selected}
         decision=next(x for x in decisions if x['sha256']==code)
         if selected and not (set(row['covered_obligations'])-covered):decision['selection_reason']='no_new_obligation_coverage';continue

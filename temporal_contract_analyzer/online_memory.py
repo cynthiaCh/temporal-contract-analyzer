@@ -18,6 +18,9 @@ def validate_snapshot(snapshot):
     if snapshot.get('schema_version')!='online-training-snapshot-v1' or snapshot.get('sha256')!=sha(canonical(value).encode()):raise EvidenceError('Online snapshot digest mismatch')
     for row in snapshot['entries']:
         record=row['record'];bundle=row['bundle'];raw=canonical(record).encode()
+        if 'learning' in row:
+            from .experience_learning import validate
+            validate(row['learning'])
         memory.validate(bundle,lambda digest:raw if digest==sha(raw) else b'')
     return snapshot
 
@@ -45,6 +48,7 @@ def append(pool,root,task_id,record):
         audit=dict(sources=[dict(path='online-source.json',sha256=digest)],rule_links=[dict(rule_id=r['id'],source_sha256=digest,pointer='/experience/rules/'+str(i)) for i,r in enumerate(rules)],outcome_refs=[],notes=['Training-only; not approved for long-term retrieval.']))
     bundle=memory.seal(payload);memory.validate(bundle,lambda code:raw)
     row=dict(origin_root=str(root),task_id=task_id,record=record,bundle=bundle)
+    if 'learning' in record:row['learning']=record['learning']
     code=sha(canonical(row).encode())
     with locked(pool):immutable(pool/'entries'/(code+'.json'),row)
     return dict(status='available_for_subsequent_training',candidate_sha256=bundle['sha256'],entry_sha256=code)

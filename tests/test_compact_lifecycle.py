@@ -81,8 +81,9 @@ class CompactLifecycleTests(unittest.TestCase):
                  rules=[dict(category=r['category'],body=r['body']+' Additional check.') for r in target['rules']],limitations=[])
         record=dict(experience=exp,reflection_update=dict(operation='revise',target_sha256s=[target['sha256']]),related_experiences=[target])
         result=compact.publish_candidate(self.path,record)
-        candidate=next(i for i in compact.load(self.path)['experiences'] if i['id']!='entry-binding')
-        self.assertEqual(candidate['proposal']['target_sha256s'],[target['sha256']])
+        candidate=compact.load(self.path)['experiences'][0]
+        self.assertEqual(candidate['id'],'entry-binding')
+        self.assertEqual(len(compact.load(self.path)['experiences']),1)
         compact.save_review(self.path,self.request(candidate['id']))
         self.assertEqual(self.ids(),{candidate['id']})
         compact.save_review(self.path,self.request(candidate['id']))

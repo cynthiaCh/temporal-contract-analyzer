@@ -23,40 +23,9 @@ class ReflectionTests(unittest.TestCase):
     def update(self,operation,targets):
         return dict(operation=operation,target_sha256s=targets,reason='Synthetic source-supported change.',change_summary=['Add checkpoint'],failure_attribution='experience_gap',supporting_attempts=[1])
 
-    def record(self,operation='revise'):
-        a=self.bundle();b=self.bundle('second-entry') if operation=='merge' else None
-        related=[a]+([b] if b else []);experience=self.experience(a)
-        if operation!='evidence':experience['rules'][-1]['body']+=' Verify later reuse.'
-        update=reflection.plan(experience,self.update(operation,[x['sha256'] for x in related]),related,1)
-        loop=self.prepare();loop.run(fixtures.Backend(),execute=True)
-        record=read(loop.root/'candidate-pool/success.json');record.update(experience=experience,related_experiences=related,reflection_update=update)
-        loop.save('candidate-pool/success.json',record)
-        return loop,a,b
 
-    def test_revision_and_merge_retain_lineage_without_inheriting_acceptance(self):
-        loop,a,_=self.record('revise');code=loop.publish_candidate('success')
-        bundle=next(b for b in memory.records(self.store) if b['sha256']==code)
-        self.assertEqual(bundle['id'],a['id']);self.assertEqual(bundle['parent_sha256'],a['sha256'])
-        self.assertEqual(bundle['review']['status'],'candidate');self.assertEqual(approval.freeze(self.store)['entries'],[])
-        self.assertEqual(loop.publish_candidate('success'),code)
-        self.assertEqual(next(b for b in memory.records(self.store) if b['sha256']==a['sha256']),a)
 
-    def test_merge_has_one_primary_parent_and_all_source_targets(self):
-        loop,a,b=self.record('merge');code=loop.publish_candidate('success')
-        bundle=next(x for x in memory.records(self.store) if x['sha256']==code)
-        self.assertEqual(bundle['parent_sha256'],a['sha256'])
-        self.assertIn(b['sha256'],' '.join(bundle['audit']['notes']))
-        self.assertEqual(len(memory.records(self.store)),3)
 
-    def test_duplicate_is_evidence_only_review_is_separate_and_idempotent(self):
-        loop,a,_=self.record('evidence');code=loop.publish_candidate('success')
-        self.assertEqual(len(memory.records(self.store)),1);self.assertEqual(loop.publish_candidate('success'),code)
-        self.assertEqual(reflection.proposals(self.store)[0]['proposal']['status'],'awaiting_human_review')
-        with self.assertRaises(EvidenceError):reflection.review_evidence(self.store,code,dict(reviewer='',decision='accept',reason='test'))
-        reflection.review_evidence(self.store,code,dict(reviewer='Synthetic Human',decision='accept',reason='Synthetic evidence checked'))
-        self.assertEqual(len(reflection.proposals(self.store)[0]['decisions']),1)
-        self.assertEqual(reflection.proposals(self.store)[0]['review_status'],'accept')
-        self.assertEqual(approval.freeze(self.store)['entries'],[]);self.assertEqual(memory.records(self.store),[a])
 
     def test_forged_targets_delta_and_implementation_blame_are_rejected(self):
         a=self.bundle();exp=self.experience(a);exp['rules'][0]['body']+=' New boundary.'
@@ -86,11 +55,10 @@ class ReflectionTests(unittest.TestCase):
             value=deepcopy(a);value.update(id='synthetic-'+str(i),sha256=str(i).zfill(64));bundles.append(value)
         p=dict(condition='structured',task='Capture entry identity',memory_snapshot=dict(entries=[dict(bundle=b) for b in bundles]))
         related=reflection.related(p,dict(selected_sha256s=[bundles[-1]['sha256']]))
-        self.assertEqual(len(related),16)
+        self.assertEqual(len(related),3)
         self.assertEqual(related[0],bundles[-1])
-        self.assertEqual(len(reflection.catalog(p)),20)
         self.assertLessEqual({b['sha256'] for b in related},{b['sha256'] for b in bundles})
-        p['condition']='baseline';self.assertEqual(reflection.catalog(p),[])
+        p['condition']='baseline';self.assertEqual(reflection.related(p,{}),[])
 
     def test_new_with_existing_guidance_needs_an_independent_increment(self):
         a=self.bundle();exp=self.experience(a);exp['rules'][0]['body']+=' Independent operation.'
@@ -106,9 +74,9 @@ class ReflectionTests(unittest.TestCase):
         self.assertFalse((loop.root/'candidate-pool').exists())
         exp=self.experience(a);exp['rules'][-1]['body']+=' Inspect unresolved boundaries.'
         summary=dict(expert='Synthetic human',confirmed_conclusions=[],unverified_hypotheses=[],unresolved_behaviors=['Still failing'],boundaries_counterexamples=[],suggested_checks=[],experience=exp,reflection_update=self.update('revise',[a['sha256']]))
-        loop.submit_expert(summary);code=loop.publish_candidate('expert')
-        bundle=next(x for x in memory.records(self.store) if x['sha256']==code)
-        self.assertEqual(bundle['parent_sha256'],a['sha256']);self.assertEqual(loop.state()['status'],'awaiting_content_review')
+        loop.submit_expert(summary)
+        with self.assertRaisesRegex(EvidenceError,'categorized library'):loop.publish_candidate('expert')
+        self.assertEqual(loop.state()['status'],'awaiting_content_review')
         self.assertFalse(read(loop.root/'candidate-pool/expert.json')['effectiveness_verified'])
 
     def test_single_extraction_call_receives_related_context_and_emits_update(self):
@@ -119,9 +87,9 @@ class ReflectionTests(unittest.TestCase):
                 result=super().execute(kind,payload,model,limits,directory)
                 if kind=='extract':
                     self.asserted=payload['related_experiences']
-                    result['output']=dict(experience=exp,update=update)
+                    result['output']=dict(experience=exp,update=dict(update,supporting_attempts=[1,2]),abstract='Preserve accepted identity.',contributions=[])
                 return result
-        loop=self.prepare();backend=Backend()
+        loop=self.prepare();backend=Backend(2)
         with patch('temporal_contract_analyzer.experience_reflection.related',return_value=[a]):state=loop.run(backend,execute=True)
         self.assertEqual(state['status'],'passed',state.get('error'));self.assertEqual(backend.asserted,[a])
         self.assertEqual(len([c for c in backend.calls if c[0]=='extract']),1)

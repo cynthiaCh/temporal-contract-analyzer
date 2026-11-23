@@ -95,7 +95,7 @@ preparation events even before the first case exists, followed by preparation ou
 The progress panel refreshes every 2.5 seconds and shows the current stage,
 finished cases, measured completed/pending model requests, and elapsed execution
 time. Its bar counts finished cases, so it can stay at zero while the first case
-is running. A repair pass still waits for experience extraction to finish.
+is running. A first-Action pass skips extraction; a later pass waits for contrastive extraction to finish.
 Completion leaves a result banner and updates the browser tab title. A run that
 ends with failed or unscored cases asks you to review results. If the selected
 run finishes while the page is open, an alert also appears at the top of the page;
@@ -205,9 +205,9 @@ unapproved summaries fall back to short extractive previews of applicability, ev
 relations, preservation and exclusions. The local index retains original extractive
 terms for cross-language matching. Summaries do not call a model or change approved
 guidance; accepted summaries and reviews are frozen with each new run. Only the
-top 10 candidates, each with its summary and full rule text, reach the model for
-source-based applicability checks. Final delivery remains limited to 5 entries
-and 16000 characters. Summary omissions are not evidence of inapplicability.
+top 6 candidates, each with its summary and full rule text, reach the model for
+source-based applicability checks. Final delivery remains limited to 3 entries
+and 8000 characters. Summary omissions are not evidence of inapplicability.
 Previously frozen full-bank deliveries retain their original replay semantics.
 Selection output now uses brief `sha256`/`relevance`/`reason` rows for weak,
 inapplicable or unknown candidates. Detailed assessments retain the original

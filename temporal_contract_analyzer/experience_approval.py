@@ -370,11 +370,23 @@ def review_template(store, code, full=False):
 
 
 def freeze(store):
+    from .compact_experience import is_library,_locked
+    if is_library(store):
+        with _locked(store):return _freeze(store)
+    return _freeze(store)
+
+
+def _freeze(store):
     # Compact accepted replacements are resolved by approved().
     entries = approved(store)
-    from .compact_experience import is_library, reviewed_summaries
+    from .compact_experience import is_library, reviewed_summaries, documents, _bundle
     if is_library(store):
         summaries=reviewed_summaries(store)
+        records={item["id"]:(file,value,item) for file,value in documents(store) for item in value["experiences"]}
+        for entry in entries:
+            file,value,item=records[entry["bundle"]["id"]]
+            entry["compact_source"]=json.loads(_bundle(file,item)[2])
+            if "learning" in item:entry["learning"]=item["learning"]
         entries=[dict(entry, retrieval_summary=summaries[entry['bundle']['id']]) if entry['bundle']['id'] in summaries else entry for entry in entries]
     result = dict(schema_version='experience-active-snapshot-v1', scope='research_only',
                   entries=entries)
@@ -398,8 +410,22 @@ def validate_snapshot(store, snapshot):
             validate_summary(entry['retrieval_summary'])
             if entry['retrieval_summary']['review']['decision']!='accept' or entry['retrieval_summary']['source_record']!=entry['bundle']['sha256']:
                 raise EvidenceError('Snapshot summary must be accepted for this exact experience')
+        if 'learning' in entry:
+            from .experience_learning import validate
+            validate(entry['learning']);fields.add('learning')
+        if 'compact_source' in entry:fields.add('compact_source')
         memory.object_fields(entry, fields, 'active snapshot entry')
         bundle, decision = entry['bundle'], entry['expert_decision']
+        if 'compact_source' in entry:
+            from .compact_experience import _bundle
+            raw=canonical(entry['compact_source']).encode()
+            rebuilt=_bundle(Path(bundle['audit']['sources'][0]['path']),entry['compact_source'])[0]
+            if rebuilt!=bundle:raise EvidenceError('Frozen compact guidance differs from its retained source')
+            memory.validate(bundle,lambda code:raw)
+            validate_decision(decision,bundle)
+            if decision['decision']!='accept' or decision['candidate_sha256']!=bundle['sha256'] or decision['sha256']!=memory.digest(canonical({k:v for k,v in decision.items() if k!='sha256'})) or bundle['sha256'] in seen:
+                raise EvidenceError('Invalid frozen compact acceptance')
+            seen.add(bundle['sha256']);continue
         memory.validate(bundle, lambda code:memory.source_bytes(store, code))
         if history is None:
             history = decisions(store)

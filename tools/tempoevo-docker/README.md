@@ -72,7 +72,7 @@ Training rechecks applicability after Contract revisions, retains its existing
 three-Action/public-check/Oracle acceptance flow, and reserves up to 156 requests.
 Testing uses one applicability-selection stage,
 one Auto-Contract draft, one repair Action, then final-only Gold. All approved
-entries are available for retrieval, with at most five applicable entries delivered.
+entries are available for retrieval, with at most three applicable entries delivered.
 No taxonomy-routing or Contract Review stage is added. Use `--memory-snapshot`
 to bind an exact approved bank; pending guidance cannot enter that bank.
 
