@@ -16,13 +16,13 @@ from ._session_runtime.model_settings import resolve_profile, identity
 from . import preparation_validation as preparation
 from .stage_retry import restart_counts
 
-VERSION = 'tempoevo-trajectory-v12'
+VERSION = 'tempoevo-trajectory-v13'
 ACCEPTANCE_POLICIES = dict(learning='oracle_pass_or_action_budget_exhausted',
                            testing='single_submission_then_independent_gold')
 MODEL = identity(resolve_profile())
 V8_TRAINING_RECIPE = 'v8-compatible-v1'
 CONDITIONS = ('baseline', 'contract', 'bm25', 'structured', 'fixed_contract', 'latent_experience')
-LIMITS = dict(selection=dict(requests=12, seconds=600), routing=dict(requests=12, seconds=600), contract=dict(requests=12, seconds=600), action=dict(requests=24, seconds=600),
+LIMITS = dict(selection=dict(requests=12, seconds=600), contract=dict(requests=12, seconds=600), action=dict(requests=24, seconds=600),
               diagnosis=dict(requests=12, seconds=600), extract=dict(requests=12, seconds=600))
 TERMINAL = ('passed', 'scored', 'repair_exhausted', 'execution_invalid', 'awaiting_expert_summary', 'awaiting_content_review', 'cancelled')
 CONTRACT_FIELDS = ('scope', 'triggers', 'ordering_barriers', 'lifecycle_identity',
@@ -44,9 +44,9 @@ Compare behavioral fields (scope, triggers, ordering_barriers, lifecycle_identit
 forbidden_effects, checkpoints, obligations) separately from supporting_evidence and unknowns.
 Evidence formatting and unknown updates alone are not behavioral Contract changes and need no delta.
 For implementation_gap or when contract_revision_allowed is false, keep behavioral fields unchanged.
-For a real behavioral revision, return a nonempty structured_delta; when routing_recheck_required,
-return complete routing_analysis grounded only in the original task/sources. Known/contradicted facts
-require literal source evidence; use unknown for unsupported premises. Otherwise return routing_analysis=null.
+For a real behavioral revision, return a nonempty structured_delta grounded only in
+the original task/sources. Experience applicability will be rechecked separately.
+Do not generate taxonomy routing analysis or infer requirements from experience.
 contract_after.supporting_evidence must cite original task/sources. Diagnostic supporting_evidence may
 also cite the supplied previous_candidate: use file PREVIOUS_CANDIDATE:<relative path> for those quotes.
 Unprefixed files denote original sources; TASK denotes the original task. Quote literal public text.
@@ -62,6 +62,8 @@ def current_protocol(protocol):
     if recipe not in (None,V8_TRAINING_RECIPE):return False
     if recipe and (protocol.get('mode')!='learning' or not protocol.get('required_visible_checks') or not protocol.get('visible_evaluator')):return False
     if protocol.get('preparation_validation_policy')!=preparation.POLICY:return False
+    profile='business-source-v1' if protocol.get('condition') in ('structured','fixed_contract','latent_experience') else None
+    if protocol.get('retrieval_profile')!=profile:return False
     expected='training_gold_and_required_visible' if recipe else ACCEPTANCE_POLICIES.get(protocol.get('mode'))
     return (protocol.get('schema_version')==VERSION and protocol.get('mode') in ACCEPTANCE_POLICIES
             and protocol.get('acceptance_policy')==expected
@@ -88,8 +90,6 @@ CONTRACT_SCHEMA = obj_schema(dict({k: STRINGS for k in CONTRACT_FIELDS},
 DIAGNOSIS_SCHEMA = obj_schema(dict(diagnosis=dict(type='string', enum=['implementation_gap','contract_gap','both','unknown']),
     contract_after=CONTRACT_SCHEMA, structured_delta=STRINGS, supporting_evidence=EVIDENCE,
     remaining_unknowns=STRINGS, explanation=STR))
-DIAGNOSIS_SCHEMA['properties']['routing_analysis']=dict(anyOf=[dict(type='null'),taxonomy.analysis_schema()])
-DIAGNOSIS_SCHEMA['required'].append('routing_analysis')
 
 PREDICATES = list(taxonomy.definition()['mechanism_predicates'])
 EXPERIENCE_SCHEMA = obj_schema(dict(
@@ -153,7 +153,7 @@ def validate_diagnosis(diagnostic, before, task, sources, previous_candidate, co
         else:
             # Older responses used bare paths for the two source maps supplied in the
             # diagnosis payload. Resolve literal matches without promoting them to
-            # Contract/routing evidence, and archive the actual matched version(s).
+            # Contract evidence, and archive the actual matched version(s).
             matched = []
             for name, texts in [('original', sources), ('previous_candidate', previous_candidate)]:
                 if name == 'previous_candidate' and row['file'] not in texts:
@@ -188,16 +188,8 @@ def validate_diagnosis(diagnostic, before, task, sources, previous_candidate, co
         raise EvidenceError('Implementation-only/fixed condition cannot change Contract')
     if changed and not diagnostic['structured_delta']:
         raise EvidenceError('Missing Contract delta')
-    if changed:
-        analysis = diagnostic['routing_analysis']
-        if condition == 'structured' and analysis is None:
-            raise EvidenceError('Changed structured Contract requires source-bound routing recheck')
-        if analysis is not None:
-            from .experience_routing import validate_analysis
-            validate_analysis(analysis, task, sources, text_grounding=True)
     return dict(contract_after=after, contract_changed=changed, supporting_evidence_bindings=bindings,
-                restored_original_contract_evidence=bool(candidate_only), candidate_only_contract_evidence=candidate_only,
-                unused_routing_analysis=not changed and diagnostic['routing_analysis'] is not None)
+                restored_original_contract_evidence=bool(candidate_only), candidate_only_contract_evidence=candidate_only)
 
 
 class Trajectory:
@@ -230,15 +222,13 @@ class Trajectory:
         recipe=cfg.get('training_recipe')
         if recipe not in (None,V8_TRAINING_RECIPE):raise EvidenceError('Unknown training recipe')
         if recipe and (cfg['mode']!='learning' or not cfg.get('visible_evaluator')):raise EvidenceError('V8 training requires learning mode and a public evaluator')
-        default_retrieval='business-source-v1' if cfg['mode']=='testing' and cfg['condition'] in ('structured','latent_experience') else 'source-bound-v8' if recipe else 'semantic-v11'
-        retrieval_profile=cfg.get('retrieval_profile',default_retrieval)
-        if retrieval_profile not in ('semantic-v11','source-bound-v8','business-source-v1'):raise EvidenceError('Unknown retrieval profile')
-        if recipe and retrieval_profile!='source-bound-v8':raise EvidenceError('V8 training requires source-bound retrieval')
-        if retrieval_profile=='source-bound-v8' and cfg['condition'] not in ('structured','fixed_contract') and not recipe:raise EvidenceError('Source-bound retrieval requires structured memory')
+        uses_experience=cfg['condition'] in ('structured','fixed_contract','latent_experience')
+        retrieval_profile=cfg.get('retrieval_profile','business-source-v1' if uses_experience else None)
+        if retrieval_profile!=('business-source-v1' if uses_experience else None):
+            raise EvidenceError('Only Abstract-based business-source-v1 retrieval is supported; prepare a new trajectory')
+        if 'routing_analysis' in cfg:raise EvidenceError('Taxonomy routing was removed from training and testing')
         if cfg.get('preparation_validation_policy',preparation.POLICY)!=preparation.POLICY:raise EvidenceError('Historical validation policy is read-only; prepare a new trajectory')
         cfg['preparation_validation_policy']=preparation.POLICY
-        if retrieval_profile=='business-source-v1' and (cfg['mode']!='testing' or cfg['condition'] not in ('structured','latent_experience') or policy!='frozen'):raise EvidenceError('Business retrieval requires frozen structured testing')
-        if cfg['condition']=='latent_experience' and retrieval_profile!='business-source-v1':raise EvidenceError('Latent experience replays business-source selection')
         cfg['retrieval_profile']=retrieval_profile
         acceptance='training_gold_and_required_visible' if recipe else ACCEPTANCE_POLICIES[cfg['mode']]
         if cfg.get('acceptance_policy',acceptance)!=acceptance:
@@ -339,18 +329,13 @@ class Trajectory:
                 raise EvidenceError('Invalid stage limits')
         uses_contract=cfg['condition'] not in ('baseline','latent_experience')
         total=attempts*limits['action']['requests']+((attempts-1)*limits['diagnosis']['requests']+limits['contract']['requests'] if uses_contract else 0)+(limits['extract']['requests'] if cfg['mode']=='learning' else 0)
-        if cfg['condition'] in ('structured','fixed_contract') and not cfg.get('routing_analysis') and retrieval_profile!='business-source-v1':total+=limits['routing']['requests']
-        if cfg['condition'] in ('structured','fixed_contract') and retrieval_profile!='source-bound-v8':
+        if cfg['condition'] in ('structured','fixed_contract'):
             total+=(attempts if cfg['condition']=='structured' else 1)*limits['selection']['requests']
-        from . import semantic_retrieval
-        cfg['retrieval_policy']=(dict(version=semantic_retrieval.VERSION,max_candidates=semantic_retrieval.MAX_CANDIDATES,
-            max_experiences=semantic_retrieval.MAX_EXPERIENCES,max_characters=semantic_retrieval.MAX_CHARACTERS)
-            if cfg['condition'] in ('structured','fixed_contract') else
-            dict(version='bm25-v1' if cfg['condition']=='bm25' else 'no-memory',max_experiences=5 if cfg['condition']=='bm25' else 0))
-        if retrieval_profile=='source-bound-v8':cfg['retrieval_policy']=dict(version='source-bound-routing-v8',max_experiences=5)
-        if retrieval_profile=='business-source-v1':
+        if uses_experience:
             from . import business_retrieval
             cfg['retrieval_policy']=dict(version=business_retrieval.VERSION,max_candidates=business_retrieval.MAX_CANDIDATES,max_experiences=business_retrieval.MAX_EXPERIENCES,max_characters=business_retrieval.MAX_CHARACTERS)
+        else:
+            cfg['retrieval_policy']=dict(version='bm25-v1' if cfg['condition']=='bm25' else 'no-memory',max_experiences=5 if cfg['condition']=='bm25' else 0)
         cfg.update(schema_version=VERSION,model=identity(settings),memory_snapshot=bank,max_attempts=attempts,limits=limits,total_request_cap=total,
             contract_review_policy=None,
             store=str(store),original_inventory=inventory(files),feedback_fields=['observations','regressions','unknowns'],
@@ -367,7 +352,7 @@ class Trajectory:
 
     def verify(self):
         p=read(self.root/'protocol.json')
-        if not current_protocol(p):raise EvidenceError('Historical protocol is read-only; prepare a new V12 root')
+        if not current_protocol(p):raise EvidenceError('Historical protocol is read-only; prepare a new root under '+VERSION)
         from .evaluation_split import enforce
         enforce(p)
         binding=read(self.root/'binding.json')
@@ -404,13 +389,7 @@ class Trajectory:
             hits=memory.search_records(bundles,p['task'],limit=5,include_all=True)['results']
             selected=[next(b for b in bundles if b['sha256']==h['sha256']) for h in hits]
             result=dict(selected_sha256s=[b['sha256'] for b in selected],experience_text=memory.delivery_text(selected),reason='bm25_frozen_bank')
-        elif condition in ('structured','fixed_contract') and p.get('retrieval_profile')=='source-bound-v8':
-            from . import experience_routing as routing,experience_updates as updates
-            sources={k:v.decode() for k,v in capture(self.root/'original')[0].items()};a=p['routing_analysis']
-            review=dict(input_sha256=routing.input_digest(a,p['task'],sources),reviewer='unreviewed_model_analysis',approved=False,
-                blocking_issues=[],scope_unknowns=[],evidence=[],reason='V8-compatible source-bound routing')
-            result=updates.route_view(dict(task=p['task'],sources=sources,analysis=a,review=review),bundles)
-        elif condition=='structured' and p.get('retrieval_profile')=='business-source-v1':
+        elif condition in ('structured','fixed_contract'):
             from . import business_retrieval as retrieval
             sources={k:v.decode() for k,v in capture(self.root/'original')[0].items()}
             recalled=retrieval.recall(p['task'],sources,bundles,summaries={e['bundle']['sha256']:e['retrieval_summary'] for e in bank['entries'] if 'retrieval_summary' in e})
@@ -427,19 +406,6 @@ class Trajectory:
                         issue_count=len(validation['issues']),selected_count=len(result['selected_sha256s']),
                         detail_path='retrieval/'+selection_key+'-validation.json')
             else:result=dict(selected_sha256s=[],experience_text=None,reason='empty_approved_bank')
-        elif condition in ('structured','fixed_contract'):
-            from . import semantic_retrieval as retrieval
-            sources={k:v.decode() for k,v in capture(self.root/'original')[0].items()};a=p['routing_analysis']
-            recalled=retrieval.recall(p['task'],sources,a,bundles)
-            self.save('retrieval/'+selection_key+'-recall.json',recalled)
-            if recalled['candidates']:
-                if backend is None:raise EvidenceError('Structured delivery requires explicit semantic assessment execution')
-                result=self._preparation_output(p,backend,selection_key,'selection',
-                    retrieval.payload(p['task'],sources,read(self.root/'ast-evidence.json'),a,recalled),
-                    lambda output:retrieval.select(output,recalled,a,p['task'],sources,bundles))
-                if result is None:result=dict(selected_sha256s=[],experience_text=None,reason='invalid_selection_discarded')
-            else:
-                result=dict(selected_sha256s=[],experience_text=None,reason='no_mechanism_eligible_experience',route=recalled['mechanism_route'])
         online={r['bundle']['sha256'] for r in read(self.root/'online-snapshot.json')['entries']} if p.get('learning_policy')=='online' else set()
         result['provisional_sha256s']=[c for c in result.get('selected_sha256s',[]) if c in online]
         if result['provisional_sha256s']:result['experience_text']='TRAINING ONLY: includes unreviewed provisional guidance with unknown effectiveness. Check against public task/source evidence.\n'+result['experience_text']
@@ -509,13 +475,6 @@ class Trajectory:
         warnings=state.setdefault('preparation_warnings',[])
         if entry not in warnings:warnings.append(entry)
         self.save('state.json',state)
-
-    def _advisory_analysis(self,value,public,stage):
-        checked,warnings=preparation.analysis(value,public['task'],public['sources'])
-        for warning in warnings:
-            warning=deepcopy(warning);code=warning.pop('code')
-            self._preparation_warning(stage,code,**warning)
-        return checked
 
     def _preparation_output(self,p,backend,key,kind,payload,validator):
         """One correction in the original stage budget, then discard invalid guidance.
@@ -633,18 +592,6 @@ class Trajectory:
                     snapshot=online_memory.validate_snapshot(read(path))
                     if self.state().get('online_snapshot_sha256')!=snapshot['sha256']:raise EvidenceError('Unbound online snapshot')
                 p=deepcopy(p);p['memory_snapshot']['entries']+=snapshot['entries']
-            if not (self.root/'delivery.json').exists() and p['condition'] in ('structured','fixed_contract') and p.get('retrieval_profile')!='business-source-v1':
-                from . import experience_routing as routing
-                if not p.get('routing_analysis'):
-                    proposal=self._preparation_output(p,backend,'routing','routing',dict(public,schema=taxonomy.analysis_schema(),
-                        instruction=routing.analysis_prompt(p['task'],sources,public['ast'],embed_sources=False)),
-                        lambda output:self._advisory_analysis(output,public,'routing'))
-                else:
-                    try:proposal=self._advisory_analysis(p['routing_analysis'],public,'routing')
-                    except (EvidenceError,ValueError) as error:
-                        self._preparation_warning('routing','supplied_analysis_discarded',error=str(error));proposal=None
-                p=deepcopy(p);p['routing_analysis']=proposal if proposal is not None else preparation.unavailable_analysis(p['task'])
-                self.save('routing-analysis.json',p['routing_analysis'])
             delivery=read(self.root/'delivery.json') if (self.root/'delivery.json').exists() else self.retrieve(p,backend)
             if p['condition'] not in ('baseline','latent_experience') and state['contract'] is None and not state.get('contract_preparation_complete'):
                 def validate_draft(output):
@@ -665,29 +612,24 @@ class Trajectory:
                     def validate_diagnostic(output):
                         from ._session_runtime.schema_validator import validate
                         validate(output,DIAGNOSIS_SCHEMA);proposal=deepcopy(output)
-                        if proposal['routing_analysis'] is not None:
-                            proposal['routing_analysis']=self._advisory_analysis(proposal['routing_analysis'],public,'diagnosis-'+str(number))
                         return proposal,validate_diagnosis(proposal,before,p['task'],sources,last['candidate_sources'],p['condition'])
                     validated=None
                     if before is not None:
                         validated=self._preparation_output(p,backend,'diagnosis-'+str(number),'diagnosis',dict(public,
-                            contract_before=before,contract_revision_allowed=p['condition']!='fixed_contract',routing_recheck_required=p['condition']=='structured',feedback=last['feedback'],previous_candidate=last['candidate_sources'],
+                            contract_before=before,contract_revision_allowed=p['condition']!='fixed_contract',feedback=last['feedback'],previous_candidate=last['candidate_sources'],
                             instruction=DIAGNOSIS_INSTRUCTION,schema=DIAGNOSIS_SCHEMA),validate_diagnostic)
                     else:self._preparation_warning('diagnosis-'+str(number),'diagnosis_skipped_without_contract')
                     if validated is None:
-                        diagnostic=dict(diagnosis='unknown',contract_after=before,routing_analysis=None,structured_delta=[],
+                        diagnostic=dict(diagnosis='unknown',contract_after=before,structured_delta=[],
                             supporting_evidence=deepcopy(before['supporting_evidence']) if before else [],
                             remaining_unknowns=['No accepted diagnostic revision.'],explanation='No validated diagnostic revision is available; preserve the previous draft and use original task/source evidence.')
                         checked=dict(contract_after=before,contract_changed=False,supporting_evidence_bindings=[],diagnostic_fallback=True)
                     else:diagnostic,checked=validated
                     after=checked.pop('contract_after')
                     diagnostic=dict(diagnostic,contract_after=after)
-                    if checked['contract_changed']:
-                        if diagnostic.get('routing_analysis') is not None:
-                            routed=deepcopy(p);routed['routing_analysis']=diagnostic['routing_analysis']
-                            delivery=self.retrieve(routed,backend,'selection-'+str(number))
-                            p=routed
-                            self.save('revisions/'+str(number)+'-delivery.json',delivery)
+                    if checked['contract_changed'] and p['condition']=='structured':
+                        delivery=self.retrieve(p,backend,'selection-'+str(number))
+                        self.save('revisions/'+str(number)+'-delivery.json',delivery)
                     self.save('revisions/'+str(number)+'.json',dict(contract_before=before,**diagnostic,**checked))
                     state=self.state();state['contract']=after
                     if not any(d['attempt']==number for d in state['diagnoses']):state['diagnoses'].append(dict(attempt=number,**diagnostic,**checked))

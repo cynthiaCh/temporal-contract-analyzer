@@ -369,9 +369,8 @@ def review_template(store, code, full=False):
     return result
 
 
-def freeze(store, *, legacy=False):
-    # The legacy argument remains for compatibility. Native active pointers do
-    # not gate this bank; compact accepted replacements are resolved by approved().
+def freeze(store):
+    # Compact accepted replacements are resolved by approved().
     entries = approved(store)
     from .compact_experience import is_library, reviewed_summaries
     if is_library(store):

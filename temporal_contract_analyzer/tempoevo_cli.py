@@ -5,7 +5,7 @@ from .tempoevo_v4 import Trajectory
 
 
 def register(sub):
-    parser=sub.add_parser('tempoevo',help='V11 bounded training and single-submission testing')
+    parser=sub.add_parser('tempoevo',help='Abstract-guided training and single-submission testing')
     actions=parser.add_subparsers(dest='tempo_action',required=True)
     for name in ('prepare','run','status','cancel','expert-summary','publish-candidate'):
         p=actions.add_parser(name);p.add_argument('--root',type=Path,required=True)

@@ -249,8 +249,11 @@ Saving makes no model requests. Credentials are not exposed in the editor.
 
 ## Execution and review boundaries
 
-- Training uses the current V8-compatible construction recipe, with at most three
-  repair Actions. Each Action is bounded by 24 requests and 600 seconds. Its
+- Training uses the current V8-compatible construction recipe and defaults to the
+  same Abstract-based business selection as testing, with at most three repair
+  Actions. Contract revisions recheck applicability against the frozen bank;
+  fixed-Contract training selects once. Prepare a new batch to use this default.
+  Each Action is bounded by 24 requests and 600 seconds. Its
   approved input memory is frozen during the batch; this UI does not enable online
   admission or automatically accept extracted candidates.
 - Testing uses one repair Action, frozen memory, and the existing independent

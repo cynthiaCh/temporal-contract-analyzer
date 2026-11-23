@@ -2,20 +2,16 @@
 import unittest
 
 import test_tempoevo_v4 as fixtures
-from temporal_contract_analyzer import taxonomy
 from temporal_contract_analyzer.core import EvidenceError
 from temporal_contract_analyzer.tempoevo_v4 import validate_diagnosis
 
 
-def analysis():
-    return dict(taxonomy_version=taxonomy.VERSION, contract='Preserve accepted work.',
-                obligation_labels=[], facts=[], unknowns=[])
 
 
 def diagnostic():
     return dict(diagnosis='implementation_gap', contract_after=fixtures.contract(),
                 structured_delta=[], supporting_evidence=[dict(file='TASK', quote='Preserve accepted work.')],
-                routing_analysis=None, remaining_unknowns=[], explanation='Implementation needs another attempt.')
+                remaining_unknowns=[], explanation='Implementation needs another attempt.')
 
 
 class DiagnosisValidationTests(unittest.TestCase):
@@ -29,8 +25,7 @@ class DiagnosisValidationTests(unittest.TestCase):
                                   {'main.py': 'value = 0\n'}, {'main.py': 'value = 1\n'}, condition)
 
     def test_metadata_only_revision_does_not_request_delta_or_rerouting(self):
-        # An unusable optional routing proposal must never be delivered or applied
-        # when the behavioral Contract is unchanged.
+        # Metadata changes must not trigger experience reselection.
         for condition in ('contract', 'structured', 'fixed_contract'):
             for kind in ('implementation_gap', 'unknown'):
                 with self.subTest(condition=condition, diagnosis=kind):
@@ -41,15 +36,12 @@ class DiagnosisValidationTests(unittest.TestCase):
                                 out = result['output']
                                 out['contract_after']['supporting_evidence'] = [dict(file='TASK', quote='accepted work.')]
                                 out['contract_after']['unknowns'] = ['Acceptance does not identify a failure cause.']
-                                out['routing_analysis'] = analysis()
-                                out['routing_analysis']['facts'] = [dict(predicate='entry_snapshot', state='known', evidence=[])]
                             return result
-                    loop = self.fixture.prepare(condition=condition, routing_analysis=analysis())
+                    loop = self.fixture.prepare(condition=condition)
                     backend = MetadataBackend(2, diagnosis=kind)
                     state = loop.run(backend, execute=True)
                     self.assertEqual(state['status'], 'passed', state.get('error'))
                     self.assertFalse(state['diagnoses'][0]['contract_changed'])
-                    self.assertTrue(state['diagnoses'][0]['unused_routing_analysis'])
                     self.assertFalse((loop.root/'revisions/2-delivery.json').exists())
                     self.assertEqual(len([c for c in backend.calls if c[0] == 'action']), 2)
 
@@ -98,15 +90,6 @@ class DiagnosisValidationTests(unittest.TestCase):
         value['contract_after']['checkpoints'] = ['A new requirement.']
         with self.assertRaisesRegex(EvidenceError, 'Unsupported public-source citation'):
             self.check(value)
-        value = diagnostic()
-        value['diagnosis'] = 'contract_gap'
-        value['contract_after']['checkpoints'] = ['Check completion.']
-        value['structured_delta'] = ['Add completion checkpoint.']
-        value['routing_analysis'] = analysis()
-        value['routing_analysis']['facts'] = [dict(predicate='entry_snapshot', state='known', evidence=[])]
-        with self.assertRaisesRegex(EvidenceError, 'facts\[0\].evidence'):
-            self.check(value)
-
     def test_candidate_only_contract_citations_do_not_stop_unchanged_diagnosis(self):
         class CandidateContractBackend(fixtures.Backend):
             def execute(inner, stage, payload, *args):
@@ -151,9 +134,6 @@ class DiagnosisValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(EvidenceError, 'Missing Contract delta'):
             self.check(value)
         value['structured_delta'] = ['Add checkpoint.']
-        with self.assertRaisesRegex(EvidenceError, 'routing recheck'):
-            self.check(value)
-        value['routing_analysis'] = analysis()
         self.assertTrue(self.check(value)['contract_changed'])
         with self.assertRaisesRegex(EvidenceError, 'fixed condition'):
             self.check(value, 'fixed_contract')
@@ -162,30 +142,29 @@ class DiagnosisValidationTests(unittest.TestCase):
             self.check(value)
 
     def test_invalid_revision_is_discarded_without_committing_behavior_change(self):
-        loop = self.fixture.prepare(condition='structured', routing_analysis=analysis())
-        state = loop.run(fixtures.Backend(2, diagnosis='contract_gap', revise=True), execute=True)
+        class MissingDelta(fixtures.Backend):
+            def execute(inner,*args):
+                result=super().execute(*args)
+                if args[0]=='diagnosis':result['output']['structured_delta']=[]
+                return result
+        loop = self.fixture.prepare(condition='structured')
+        state = loop.run(MissingDelta(2, diagnosis='contract_gap', revise=True), execute=True)
         self.assertEqual(state['status'], 'passed', state.get('error'))
-        self.assertTrue(any('routing recheck' in (w.get('error') or '') for w in state['preparation_warnings']))
+        self.assertTrue(any('Missing Contract delta' in (w.get('error') or '') for w in state['preparation_warnings']))
         self.assertEqual(state['contract'], fixtures.contract())
         self.assertTrue(state['diagnoses'][0]['diagnostic_fallback'])
         self.assertFalse(state['diagnoses'][0]['contract_changed'])
         self.assertEqual(fixtures.read(loop.root/'revisions/2.json')['contract_after'], fixtures.contract())
 
     def test_failed_reselection_does_not_commit_revision(self):
-        class RevisingBackend(fixtures.Backend):
-            def execute(inner, stage, payload, *args):
-                result = super().execute(stage, payload, *args)
-                if stage == 'diagnosis':
-                    result['output']['routing_analysis'] = analysis()
-                return result
-        loop = self.fixture.prepare(condition='structured', routing_analysis=analysis())
+        loop = self.fixture.prepare(condition='structured')
         original_retrieve = loop.retrieve
         def failed_retrieve(protocol, backend=None, selection_key='selection-1'):
             if selection_key == 'selection-2':
                 raise EvidenceError('Synthetic selection failure')
             return original_retrieve(protocol, backend, selection_key)
         loop.retrieve = failed_retrieve
-        state = loop.run(RevisingBackend(2, diagnosis='contract_gap', revise=True), execute=True)
+        state = loop.run(fixtures.Backend(2, diagnosis='contract_gap', revise=True), execute=True)
         self.assertEqual(state['status'], 'execution_invalid')
         self.assertIn('Synthetic selection failure', state['error'])
         self.assertEqual(state['contract'], fixtures.contract())

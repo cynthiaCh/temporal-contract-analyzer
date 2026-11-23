@@ -50,7 +50,7 @@ python3 -B -m temporal_contract_analyzer experience-memory review --store /path/
 ## Optional integrations
 
 The only training/testing execution entrypoint is `tempoevo run --execute`.
-Prepare new V12 trajectories with `tempoevo prepare`. Historical V1–V3 batches are
+Prepare new V13 trajectories with `tempoevo prepare`. Historical V1–V3 batches are
 read-only: `history status --root BATCH` or `history report --root BATCH`.
 The retired `experience-evolution` command and old orchestration modules are removed.
 Shared native/Docker/scoring infrastructure remains separate from trajectory policy.
@@ -60,13 +60,12 @@ Shared native/Docker/scoring infrastructure remains separate from trajectory pol
 - On macOS, double-click `launch-ast-review.command` to open AST evidence review. It restarts the configured report service in the foreground; keep the terminal open and press Ctrl+C to stop it. Report annotations, analysis review and experience activation use separate records.
 - Benchmark execution requires the separately provisioned benchmark, matching scoring runtime and calibration. Set `TCA_BENCH_ROOT` explicitly for reproducible use; checkout-based sibling discovery remains a compatibility convenience.
 - The shared native runner requires explicit executables, isolation tools and frozen runtime/evaluator bindings; importing it cannot start a historical scheduler.
-- The [Docker backend](docs/DOCKER_BACKEND.md) provides shared isolation, zero-model calibration and trusted scoring infrastructure using pinned SWE-TempoC images. All new V12 model stages, AST extraction and evaluators use Docker; `tempoevo run --execute` remains the sole training entrypoint. See [Docker training setup](docs/DOCKER_TRAINING.md).
+- The [Docker backend](docs/DOCKER_BACKEND.md) provides shared isolation, zero-model calibration and trusted scoring infrastructure using pinned SWE-TempoC images. All new V13 model stages, AST extraction and evaluators use Docker; `tempoevo run --execute` remains the sole training entrypoint. See [Docker training setup](docs/DOCKER_TRAINING.md).
 
 ## Offline verification
 
 ```sh
 python3 -B -m unittest discover -s tests
-python3 -B examples/tempoevo-v4/offline_demo.py /tmp/tca-v4-demo-new
 python3 -B tools/export-release.py /path/to/new-clean-export
 ```
 
@@ -79,9 +78,9 @@ This is a prepared source tree, not a published release. The owner has not selec
 ## Current construction and testing
 
 See [WORKFLOW.md](docs/WORKFLOW.md) for the single current description of stages,
-feedback, budgets and memory review. The fixed construction recipe uses V8
-source-bound routing, up to three Actions, and public checks plus the training
-Oracle for acceptance. It updates external experience, not model weights.
+feedback, budgets and memory review. The fixed construction recipe uses Abstract-based
+business applicability selection, up to three Actions, and public checks plus the
+training Oracle for acceptance. It updates external experience, not model weights.
 
 Testing defaults to business applicability selection from the full frozen approved
 library, an Auto-Contract draft, one bounded repair Action and one independent
@@ -107,7 +106,7 @@ python3 tools/generate_bootstrap_indices.py --reference case-results.csv \
   --label-column passed --output-dir /tmp/tempoevo-bootstrap
 ```
 
-New runs require fresh V12 roots. Historical results and decisions stay unchanged.
+New runs require fresh V13 roots. Historical results and decisions stay unchanged.
 The sole current split is [cases/split.json](cases/split.json): 70 development
 cases and 30 test cases, with no overlapping case IDs. Reserved test IDs cannot
 run learning. The cases have historical exposure and shared source mechanisms;

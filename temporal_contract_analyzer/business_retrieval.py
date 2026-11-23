@@ -21,8 +21,7 @@ def summary(bundle):
     return '\n'.join(lines)
 
 
-def recall(task,sources,bundles,*,legacy=False,summaries=None):
-    # Legacy ranking is used only to verify previously frozen deliveries.
+def recall(task,sources,bundles,*,summaries=None):
     def preview(bundle):
         return (summaries or {}).get(bundle['sha256'],{}).get('text') or summary(bundle)
     docs='\n'.join(text for name,text in sources.items() if name.lower().endswith('.md'))
@@ -32,17 +31,16 @@ def recall(task,sources,bundles,*,legacy=False,summaries=None):
         # Retain source-language terms when the reviewed preview uses another language.
         return accepted+'\n'+accepted+'\n'+summary(bundle) if accepted else summary(bundle)
     hits=memory.search_records(bundles,query,limit=max(1,len(bundles)),include_all=True,
-        text_for_index=None if legacy else index_text)['results'] if bundles else []
+        text_for_index=index_text)['results'] if bundles else []
     scores={h['sha256']:h['score'] for h in hits}
     ordered=sorted(bundles,key=lambda b:(-scores.get(b['sha256'],0),b['sha256']))
-    limit=64 if legacy else MAX_CANDIDATES
+    limit=MAX_CANDIDATES
     candidates=[dict(sha256=b['sha256'],id=b['id'],text=memory.render(b),requires=b['requires'],excludes=b['excludes'],lexical_score=scores.get(b['sha256'],0)) for b in ordered[:limit]]
-    if not legacy:
-        for candidate,bundle in zip(candidates,ordered[:limit]):candidate['summary']=preview(bundle)
-    return dict(schema_version='business-source-coverage-v2' if legacy else VERSION,bank_count=len(bundles),
+    for candidate,bundle in zip(candidates,ordered[:limit]):candidate['summary']=preview(bundle)
+    return dict(schema_version=VERSION,bank_count=len(bundles),
         candidates=candidates,
         omitted_candidate_sha256s=[b['sha256'] for b in ordered[limit:]],
-        candidate_policy='approved_bank_text_order_without_label_or_unknown_fact_prefilter' if legacy else ('reviewed_summary_top10_full_text_verification' if summaries else 'local_extractive_summary_top10_full_text_verification'))
+        candidate_policy=('reviewed_summary_top10_full_text_verification' if summaries else 'local_extractive_summary_top10_full_text_verification'))
 
 
 def schema(candidates,*,concise=False):
@@ -102,13 +100,9 @@ def replay(selection,task,sources,bundles,*,summaries=None):
         result['provisional_sha256s']=[]
         if sha(canonical(result).encode())==selection['delivery_sha256']:return result
     else:
-        for legacy in (False,True):
-            try:
-                result=select(selection['output'],recall(task,sources,bundles,legacy=legacy,summaries=summaries),task,sources,bundles)
-            except ValueError:
-                continue
-            result['provisional_sha256s']=[]
-            if sha(canonical(result).encode())==selection['delivery_sha256']:return result
+        result=select(selection['output'],recall(task,sources,bundles,summaries=summaries),task,sources,bundles)
+        result['provisional_sha256s']=[]
+        if sha(canonical(result).encode())==selection['delivery_sha256']:return result
     raise EvidenceError('Frozen experience delivery mismatch')
 
 

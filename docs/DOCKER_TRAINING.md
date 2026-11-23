@@ -94,8 +94,10 @@ runs, receipts, memory approvals and scores remain unchanged.
 Online construction uses `--learning-policy online --online-memory /new/batch/provisional`
 with `--condition structured`; testing never reads this provisional pool.
 The fixed experiment recipe additionally uses `--training-recipe v8-compatible-v1`
-and explicit `--public-checks-docs`, retaining source-bound routing and joint
-public/Gold acceptance. The review interface remains required for long-term publication.
+and explicit `--public-checks-docs`, using Abstract-based `business-source-v1`
+retrieval by default while retaining joint public/Gold acceptance. Approved
+abstracts are frozen alongside guidance; provisional entries without approved
+abstracts retain extractive-preview fallback. The review interface remains required for long-term publication.
 
 Testing uses `--mode testing --condition structured`; its default retrieval profile
 is `business-source-v1`. All approved entries form the frozen candidate pool,

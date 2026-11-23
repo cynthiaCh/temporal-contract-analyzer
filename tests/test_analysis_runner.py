@@ -191,7 +191,7 @@ class AnalysisRunnerTests(unittest.TestCase):
             supporting_evidence=[dict(file='TASK',quote='Preserve accepted work.')])
         diagnosis=dict(diagnosis='implementation_gap',contract_after=contract,
             structured_delta=[],supporting_evidence=contract['supporting_evidence'],
-            remaining_unknowns=[],explanation='Retain the Contract.',routing_analysis=None)
+            remaining_unknowns=[],explanation='Retain the Contract.')
         experience=dict(labels=['I'],requires=['entry_snapshot'],excludes=[],
             rules=[dict(category='verification',body='Verify accepted identity.')],limitations=[])
         for output,schema in ((contract,CONTRACT_SCHEMA),(diagnosis,DIAGNOSIS_SCHEMA),(experience,EXPERIENCE_SCHEMA)):

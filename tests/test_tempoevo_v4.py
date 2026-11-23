@@ -24,16 +24,23 @@ class Backend:
         if stage=='contract':out=contract()
         elif stage=='selection':
             evidence=[dict(file='TASK',quote=payload['task'])]
+            business='business_obligations' in payload.get('schema',{}).get('properties',{})
+            obligations=([dict(id='preserve',text='Preserve accepted work.',evidence=evidence)] if business else payload['obligations'])
             out=dict(assessments=[dict(sha256=c['sha256'],relevance='direct',
                 premises=[dict(condition='Synthetic public obligation',status='supported',evidence=evidence)],
                 object_mapping='Synthetic accepted work',contribution='Synthetic entry preservation',
-                covered_obligations=[o['id'] for o in payload['obligations']],supporting_evidence=evidence,
+                covered_obligations=[o['id'] for o in obligations],supporting_evidence=evidence,
                 redundant_with=[],reason='Synthetic applicability fixture; not evidence of real semantic correctness.') for c in payload['candidates']])
+            if business:
+                out['business_obligations']=obligations
+                for row,candidate in zip(out['assessments'],payload['candidates']):
+                    row['predicate_findings']=[dict(kind=k,predicate=key,state='known' if k=='requires' else 'contradicted',evidence=evidence)
+                        for k in ('requires','excludes') for key in candidate[k]]
         elif stage=='diagnosis':
             after=deepcopy(payload['contract_before'])
             if self.revise:after['checkpoints'].append('Check completion before navigation.')
             if self.delete:after['obligations']=[]
-            out=dict(diagnosis=self.diagnosis,contract_after=after,routing_analysis=None,structured_delta=['Add checkpoint'] if self.revise else [],
+            out=dict(diagnosis=self.diagnosis,contract_after=after,structured_delta=['Add checkpoint'] if self.revise else [],
                 supporting_evidence=[dict(file='TASK',quote='Preserve accepted work.')],remaining_unknowns=[],explanation='Synthetic diagnosis.')
         elif stage=='extract':out=dict(labels=['I'],requires=['entry_snapshot'],excludes=[],rules=[dict(category='verification',body='Verify accepted identity through reentry.')],limitations=['Synthetic fixture'])
         else:
@@ -96,18 +103,6 @@ class V4Tests(unittest.TestCase):
             if role=='action':self.assertNotIn('within_task_reflections',payload)
         self.assertIn('training_acceptance',state['attempts'][0]['feedback'])
 
-    def test_v8_structured_recipe_routes_without_semantic_stage_and_caps_requests(self):
-        from unittest.mock import patch
-        from temporal_contract_analyzer import experience_updates, taxonomy
-        loop=self.prepare(condition='structured',training_recipe='v8-compatible-v1')
-        protocol=loop.verify();self.assertEqual(protocol['total_request_cap'],132)
-        self.assertEqual(protocol['retrieval_policy']['version'],'source-bound-routing-v8')
-        # Isolate delivery from model analysis; routing input is already source-grounded here.
-        protocol['routing_analysis']=dict(taxonomy_version=taxonomy.VERSION,contract='Preserve accepted work.',obligation_labels=[],facts=[],unknowns=[])
-        routed=dict(selected_sha256s=[],experience_text=None,reason='fixture')
-        with patch.object(experience_updates,'route_view',return_value=routed) as route:
-            result=loop.retrieve(protocol)
-        route.assert_called_once();self.assertEqual(result['selected_sha256s'],[])
 
     def test_v8_recipe_cannot_be_used_in_testing_or_without_public_evaluator(self):
         from temporal_contract_analyzer import experience_approval as approval
@@ -116,21 +111,6 @@ class V4Tests(unittest.TestCase):
         with self.assertRaises(EvidenceError):
             self.prepare(mode='testing',training_recipe='v8-compatible-v1',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
 
-    def test_testing_v8_router_keeps_one_action_and_independent_gold(self):
-        from temporal_contract_analyzer import taxonomy, experience_approval as approval
-        analysis=dict(taxonomy_version=taxonomy.VERSION,contract='Preserve accepted work.',obligation_labels=[],facts=[],unknowns=[])
-        loop=self.prepare(mode='testing',condition='structured',retrieval_profile='source-bound-v8',
-            routing_analysis=analysis,memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
-        protocol=loop.verify();self.assertEqual(protocol['total_request_cap'],36)
-        self.assertFalse(protocol['required_visible_checks']);self.assertNotIn('training_recipe',protocol)
-        backend=Backend(2);state=loop.run(backend,execute=True)
-        self.assertEqual(state['status'],'scored',state.get('error'));self.assertFalse(state['gold_result']['passed'])
-        self.assertEqual(len(state['attempts']),1)
-        self.assertEqual([r[0] for r in backend.calls],['contract','action'])
-        self.assertEqual([r['kind'] for r in state['stages']].count('gold'),1)
-        self.assertFalse((loop.root/'candidate-pool').exists())
-        self.assertEqual(protocol['memory_snapshot'],approval.freeze(self.store))
-        for _,payload,*_ in backend.calls:self.assertNotIn('SECRET_GOLD',json.dumps(payload))
 
     def test_invalid_retrieval_profiles_do_not_silently_change_testing(self):
         with self.assertRaises(EvidenceError):self.prepare(retrieval_profile='unknown')
@@ -145,9 +125,7 @@ class V4Tests(unittest.TestCase):
             exclusion='Confirm public policy.',verification='Exercise reentry.')
         value=dict(schema_version=compact.VERSION,experiences=[item]);file.write_text(json.dumps(value))
         base=approval.freeze(self.store)
-        from temporal_contract_analyzer import taxonomy
-        cfg=dict(mode='testing',condition='structured',retrieval_profile='source-bound-v8',
-            routing_analysis=dict(taxonomy_version=taxonomy.VERSION,contract='Preserve accepted work.',obligation_labels=[],facts=[],unknowns=[]),
+        cfg=dict(mode='testing',condition='structured',
             memory_snapshot=base,gold_evaluator=dict(command=['synthetic-gold']))
         pending=dict(store=str(directory),snapshot=approval.freeze(directory))
         with self.assertRaises(EvidenceError):self.prepare(**cfg,approved_memory_supplements=[pending])
@@ -299,10 +277,8 @@ class V4Tests(unittest.TestCase):
 
     def test_fixed_contract_ablation_keeps_action_budget(self):
         from temporal_contract_analyzer import experience_approval as approval
-        from temporal_contract_analyzer import taxonomy
         task='Preserve accepted work.'
-        analysis=dict(taxonomy_version=taxonomy.VERSION,contract=task,obligation_labels=[],facts=[],unknowns=[])
-        loop=self.prepare(condition='fixed_contract',routing_analysis=analysis)
+        loop=self.prepare(condition='fixed_contract')
         state=loop.run(Backend(3),execute=True)
         self.assertEqual(state['status'],'passed',state.get('error'));self.assertEqual(len(state['attempts']),3)
         self.assertEqual(len(state['diagnoses']),2)
@@ -336,7 +312,7 @@ class V4Tests(unittest.TestCase):
         with patch('temporal_contract_analyzer.execution_backend.NativeBackend.execute',return_value=fake) as call:
             result=adapter.execute('diagnosis',payload,MODEL,dict(requests=12,seconds=600),directory)
         self.assertTrue(result['valid']);self.assertEqual(call.call_args[0][1],'analysis')
-        self.assertEqual(call.call_args[0][0]['execution_policy'],'tempoevo-trajectory-v12')
+        self.assertEqual(call.call_args[0][0]['execution_policy'],'tempoevo-trajectory-v13')
         self.assertEqual(result['requests'],1)
 
     def test_action_adapter_accepts_complete_candidate_without_read_audit(self):
@@ -396,7 +372,7 @@ class V4Tests(unittest.TestCase):
         memory.add(f.store,pending,[f.source])
         for condition in ('structured','bm25'):
             loop=self.prepare(store=str(f.store),condition=condition,
-                task='Preserve accepted work. Keep the entry snapshot.',routing_analysis=f.visible()['analysis'])
+                task='Preserve accepted work. Keep the entry snapshot.')
             backend=Backend();state=loop.run(backend,execute=True)
             self.assertEqual(state['status'],'passed',state.get('error'))
             delivery=read(loop.root/'delivery.json');self.assertEqual(delivery['selected_sha256s'],[approved['sha256']])
@@ -437,32 +413,12 @@ class V4Tests(unittest.TestCase):
         self.assertEqual(loop.report()['requests'],1)
 
     def test_structured_revision_rechecks_from_same_frozen_bank(self):
-        from temporal_contract_analyzer import taxonomy
-        analysis=dict(taxonomy_version=taxonomy.VERSION,contract='Preserve accepted work.',obligation_labels=[],facts=[],unknowns=[])
-        loop=self.prepare(condition='structured',routing_analysis=analysis)
-        class Revising(Backend):
-            def execute(inner,*args):
-                result=super().execute(*args)
-                if args[0]=='diagnosis':result['output']['routing_analysis']=analysis
-                return result
-        state=loop.run(Revising(2,'contract_gap',revise=True),execute=True)
+        loop=self.prepare(condition='structured')
+        state=loop.run(Backend(2,'contract_gap',revise=True),execute=True)
         self.assertEqual(state['status'],'passed',state.get('error'))
         self.assertTrue((loop.root/'revisions/2-delivery.json').exists())
         self.assertEqual(loop.verify()['memory_snapshot_sha256'],read(loop.root/'memory-snapshot.json')['sha256'])
 
-    def test_raw_input_structured_mode_budgets_analysis_before_retrieval(self):
-        from temporal_contract_analyzer import taxonomy
-        loop=self.prepare(condition='structured');self.assertEqual(loop.verify()['total_request_cap'],168)
-        class RoutingBackend(Backend):
-            def execute(inner,kind,payload,model,limits,directory):
-                if kind=='routing':
-                    inner.calls.append((kind,deepcopy(payload),model,limits))
-                    return dict(valid=True,model=MODEL,requests=1,output=dict(taxonomy_version=taxonomy.VERSION,
-                        contract='Preserve accepted work.',obligation_labels=[],facts=[],unknowns=[]))
-                return super().execute(kind,payload,model,limits,directory)
-        backend=RoutingBackend();state=loop.run(backend,execute=True)
-        self.assertEqual(state['status'],'passed',state.get('error'))
-        self.assertEqual([r[0] for r in backend.calls],['routing','contract','action','extract'])
 
     def test_completed_contract_checkpoint_reuses_archive_without_double_billing(self):
         from temporal_contract_analyzer.tempoevo_v4 import CONTRACT_SCHEMA

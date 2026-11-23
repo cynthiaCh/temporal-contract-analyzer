@@ -150,19 +150,6 @@ class BusinessRetrievalTests(unittest.TestCase):
         bad=deepcopy(output);bad['assessments'][0]['supporting_evidence']=[ANCHOR]*3
         with self.assertRaises(ValueError):validate(bad,schema)
 
-    def test_old_full_bank_frozen_delivery_still_replays_exactly(self):
-        from temporal_contract_analyzer.core import canonical,sha
-        bundles=[]
-        for i in range(25):
-            b=deepcopy(self.bundles[0]);b.update(id='old-'+str(i),sha256=format(i,'064x'));bundles.append(b)
-        old=retrieval.recall(TASK,{'main.py':'value = 0\n'},bundles,legacy=True)
-        output=dict(business_obligations=[dict(id='O1',text='Preserve accepted edits.',evidence=[ANCHOR])],
-            assessments=[assessment(c,['O1']) for c in old['candidates']])
-        delivery=retrieval.select(output,old,TASK,{'main.py':'value = 0\n'},bundles)
-        delivery['provisional_sha256s']=[]
-        self.assertEqual(delivery['schema_version'],'business-source-coverage-v2')
-        frozen=dict(output=output,delivery_sha256=sha(canonical(delivery).encode()))
-        self.assertEqual(retrieval.replay(frozen,TASK,{'main.py':'value = 0\n'},bundles),delivery)
 
     def test_unknown_or_incomplete_applicability_is_not_promoted_to_supported(self):
         for kind in ('unknown_requires','unknown_exclusion','missing_finding','unknown_business_premise'):
@@ -228,6 +215,50 @@ class BusinessRetrievalTests(unittest.TestCase):
     def test_entirely_unusable_output_still_requires_correction(self):
         for value in ({},dict(self.response(),assessments=[]),dict(self.response(),business_obligations=[])):
             with self.assertRaises((EvidenceError,ValueError)):self.select(value)
+
+    def test_training_uses_frozen_abstracts_and_reselects_without_taxonomy_analysis(self):
+        for file,value in compact.documents(self.library):
+            for record in value['experiences']:
+                compact.save_summary(self.library,dict(id=record['id'],expected_record=compact._bundle(file,record)[0]['sha256'],
+                    expected_summary=None,text='Accepted abstract for '+record['id'],expert_questions='None.',
+                    reviewer='Synthetic fixture reviewer',decision='accept'))
+        snapshot=approval.freeze(self.library)
+        abstracts={entry['bundle']['sha256']:entry['retrieval_summary']['text'] for entry in snapshot['entries']}
+        source=self.root/'source';source.mkdir();(source/'main.py').write_text('value = 0\n')
+        for condition,recipe in [('structured',None),('structured','v8-compatible-v1'),('fixed_contract','v8-compatible-v1')]:
+            with self.subTest(condition=condition,recipe=recipe):
+                config=dict(task=TASK,candidate=str(source),store=str(self.library),mode='learning',condition=condition,
+                    visible_evaluator=dict(command=['synthetic-visible']),training_evaluator=dict(command=['synthetic-training']),
+                    memory_snapshot=snapshot)
+                if recipe:config['training_recipe']=recipe
+                loop=Trajectory(self.root/('training-'+condition+'-'+str(recipe)));loop.prepare(config)
+                protocol=loop.verify()
+                self.assertEqual(protocol['retrieval_profile'],'business-source-v1')
+                self.assertEqual(protocol['total_request_cap'],156 if condition=='structured' else 132)
+                self.assertEqual(protocol['max_attempts'],3)
+                backend=Backend(2,diagnosis='contract_gap' if condition=='structured' else 'implementation_gap',revise=condition=='structured')
+                state=loop.run(backend,execute=True)
+                self.assertEqual(state['status'],'passed',state.get('error'))
+                self.assertEqual(len(state['attempts']),2)
+                self.assertTrue((loop.root/'candidate-pool/success.json').is_file())
+                self.assertEqual(protocol['memory_snapshot'],snapshot)
+                kinds=[kind for kind,*_ in backend.calls]
+                self.assertNotIn('routing',kinds)
+                self.assertEqual(kinds.count('selection'),2 if condition=='structured' else 1)
+                self.assertEqual(kinds[-1],'extract')
+                for kind,payload,*_ in backend.calls:
+                    if kind=='selection':
+                        for candidate in payload['candidates']:
+                            self.assertEqual(candidate['summary'],abstracts[candidate['sha256']])
+                            self.assertIn('Preserve original public behavior.',candidate['text'])
+                    if kind=='diagnosis':self.assertNotIn('routing_recheck_required',payload)
+                    if kind=='action':self.assertTrue(payload['experience'])
+                if condition=='structured':
+                    self.assertTrue((loop.root/'revisions/2-delivery.json').is_file())
+                    self.assertNotIn('routing_analysis',state['diagnoses'][0])
+                if recipe:
+                    for kind,payload,*_ in backend.calls:
+                        if kind=='action':self.assertNotIn('within_task_reflections',payload)
 
     def test_pipeline_has_selection_draft_action_and_one_gold_without_review_or_routing(self):
         source=self.root/'source';source.mkdir();(source/'main.py').write_text('value = 0\n')

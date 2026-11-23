@@ -128,35 +128,20 @@ class AdvisoryTests(unittest.TestCase):
         self.assertEqual(loop._preparation_output(p,Limited(),'contract','contract',dict(task=p['task'],sources={}),lambda x:x),{'ready':True})
         self.assertEqual([x['requests'] for x in calls],[9,3])
 
-    def test_unusable_routing_output_falls_back_without_matching_experience(self):
-        class NoRouting(Backend):
-            def execute(inner,kind,payload,*args):
-                if kind=='routing':
-                    inner.calls.append((kind,deepcopy(payload),args[0],args[1]))
-                    return dict(valid=True,requests=1,model=MODEL,output={})
-                return super().execute(kind,payload,*args)
-        loop=self.prepare(condition='structured',retrieval_profile='source-bound-v8');backend=NoRouting()
-        state=loop.run(backend,execute=True)
-        self.assertEqual(state['status'],'scored',state.get('error'))
-        self.assertEqual([c[0] for c in backend.calls].count('routing'),2)
-        self.assertEqual(read(loop.root/'delivery.json')['selected_sha256s'],[])
-        self.assertEqual(read(loop.root/'routing-analysis.json')['facts'],[])
-        self.assertEqual(len(state['attempts']),1)
 
-    def test_invalid_semantic_selection_is_withdrawn_and_action_continues(self):
+    def test_invalid_business_selection_is_withdrawn_and_action_continues(self):
         from unittest.mock import patch
         class NoSelection(Backend):
             def execute(inner,kind,payload,*args):
                 result=super().execute(kind,payload,*args)
                 if kind=='selection':result['output']={}
                 return result
-        analysis=dict(taxonomy_version=taxonomy.VERSION,contract='Preserve accepted work.',obligation_labels=[],facts=[],unknowns=[])
-        recalled=dict(candidates=[dict(sha256='a'*64,id='synthetic',text='Synthetic recalled entry')],mechanism_route={})
-        loop=self.prepare(condition='structured',retrieval_profile='semantic-v11',routing_analysis=analysis);backend=NoSelection()
-        with patch('temporal_contract_analyzer.semantic_retrieval.recall',return_value=recalled):state=loop.run(backend,execute=True)
+        recalled=dict(candidates=[dict(sha256='a'*64,id='synthetic',text='Synthetic recalled entry',requires=[],excludes=[])],mechanism_route={})
+        loop=self.prepare(condition='structured');backend=NoSelection()
+        with patch('temporal_contract_analyzer.business_retrieval.recall',return_value=recalled):state=loop.run(backend,execute=True)
         self.assertEqual(state['status'],'scored',state.get('error'));self.assertEqual(len(state['attempts']),1)
         self.assertEqual([c[0] for c in backend.calls].count('selection'),2)
-        self.assertEqual(read(loop.root/'delivery.json')['reason'],'invalid_selection_discarded')
+        self.assertEqual(read(loop.root/'delivery.json')['reason'],'invalid_business_selection_discarded')
         self.assertIsNone(next(c[1] for c in backend.calls if c[0]=='action')['experience'])
 
     def test_protected_files_and_invalid_gold_remain_hard_failures(self):

@@ -51,7 +51,7 @@ execution tools, taxonomy, manual reminders, routing policy and common repair
 prompts fixed. Do not generate tasks or search agent architectures. Manual
 checklists are not learned results.
 
-The only model-execution protocol is V12 (`tempoevo run --execute`); see
+The only model-execution protocol is V13 (`tempoevo run --execute`); see
 `docs/WORKFLOW.md`. Fixed construction uses the V8-compatible source-bound recipe,
 up to three Actions, and joint public/training-Oracle acceptance. Successful
 reflection and real expert failure summaries produce candidates for named review.

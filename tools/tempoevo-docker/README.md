@@ -27,7 +27,7 @@ archives the actual selected CSV and source digest. It validates unique ranks
 and case IDs, existing split restrictions, public source identity and the current
 protocol. Failed preparation remains explicit in `progress.json`.
 
-Current V12 testing uses Auto-Contract and, for `structured`, a frozen approved
+Current V13 testing uses Auto-Contract and, for `structured`, a frozen approved
 experience snapshot. It permits one bounded Action, then one independent Gold
 evaluation. Gold does not enter model feedback or retry decisions. Testing does
 not extract or publish experiences. Historical difficulty-based selection is
@@ -54,7 +54,7 @@ the non-cumulative Action feedback format. It requires `--public-checks-docs`
 evaluator runs outside the solver; only descriptions enter the candidate. Its
 original/reference/negative controls are archived alongside independent Gold
 controls, and the reference must pass both evaluators. Default retrieval and acceptance settings are
-unchanged; V12 uses advisory preparation validation. Testing rejects this recipe and training-only check descriptions.
+unchanged; V13 uses advisory preparation validation. Testing rejects this recipe and training-only check descriptions.
 
 The current experiment uses the final 30 test cases with frozen approved
 libraries of 0/20/40/61 entries. See [the current workflow](../../docs/WORKFLOW.md)
@@ -67,17 +67,20 @@ original bytes, source paths and SHA-256 hashes, and commit them to Git. Stage c
 candidates in the categorized library as pending for review. Committing candidates
 does not approve them or change an already frozen retrieval snapshot.
 
-Testing defaults to `business-source-v1`: one applicability-selection stage,
+Structured training and testing default to Abstract-based `business-source-v1`.
+Training rechecks applicability after Contract revisions, retains its existing
+three-Action/public-check/Oracle acceptance flow, and reserves up to 156 requests.
+Testing uses one applicability-selection stage,
 one Auto-Contract draft, one repair Action, then final-only Gold. All approved
 entries are available for retrieval, with at most five applicable entries delivered.
 No taxonomy-routing or Contract Review stage is added. Use `--memory-snapshot`
 to bind an exact approved bank; pending guidance cannot enter that bank.
 
-V12 preparation validation is advisory: missing mechanism evidence becomes unknown,
+V13 preparation validation is advisory: missing mechanism evidence becomes unknown,
 and unusable model guidance gets one correction sharing its original request/time
 budget. Failed correction discards the guidance and continues to the sole testing
 Action; it does not relax tool permissions, approved-memory checks or Gold isolation.
-Use a new output root; historical V11 bindings and results remain read-only.
+Use a new output root; historical V12 and earlier bindings and results remain read-only.
 See [the current workflow](../../docs/WORKFLOW.md).
 
 For a prepared single-group testing batch, `run_testing.py --root RUN_ROOT

@@ -188,9 +188,7 @@ class IndependentTestingTests(unittest.TestCase):
             submissions=[]
             for gold_at,public in ((1,True),(99,True),(1,False),(99,False),(99,None)):
                 with self.subTest(condition=condition,gold_at=gold_at,public=public):
-                    loop=self.prepare(condition=condition,routing_analysis=dict(
-                        taxonomy_version=taxonomy.VERSION,
-                        contract='Preserve accepted work.',obligation_labels=[],facts=[],unknowns=[]))
+                    loop=self.prepare(condition=condition)
                     class Backend(AcceptanceBackend):
                         def execute(inner,*args):
                             self.assertFalse(any(k=='gold' for k,_ in inner.evaluations))

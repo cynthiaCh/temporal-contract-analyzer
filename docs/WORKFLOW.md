@@ -1,15 +1,18 @@
 # Current experience construction and testing workflow
 
-The execution protocol is `tempoevo-trajectory-v12`. The only model-execution
+The execution protocol is `tempoevo-trajectory-v13`. The only model-execution
 entrypoint is `tempoevo run --execute`; preparation and inspection never call a
 model. All model roles use a frozen profile, currently `gpt-6.1-sol / medium`.
 Model weights do not change: experience construction updates external guidance.
 
 ## Experience construction
 
-The fixed experiment recipe is `v8-compatible-v1`, with `source-bound-v8`
-retrieval and at most three repair Actions including the first patch. Public
-check descriptions are explicit public inputs. Each candidate is evaluated by
+The fixed experiment recipe is `v8-compatible-v1`, with Abstract-based
+`business-source-v1` retrieval by default and at most three repair Actions including
+the first patch. Approved, version-bound abstracts are frozen with the guidance.
+Local Abstract ranking recalls up to 10 entries; a model checks their full text
+against the current task and source before delivering up to five. Missing or
+unapproved abstracts use the existing extractive preview. Public check descriptions are explicit public inputs. Each candidate is evaluated by
 public checks and the training Oracle; both must pass for acceptance. Failure
 permits the next budgeted Action with diagnosis and, when supported, Contract
 revision. This recipe passes the latest controlled feedback rather than cumulative
@@ -20,8 +23,16 @@ Successful trajectories propose new guidance, evidence, revisions or merges.
 Three effective failures request a real expert summary. Proposals remain pending
 until a named reviewer accepts their exact content. Online construction can use a
 separate provisional pool in later construction tasks; testing cannot access it.
-The fixed structured recipe caps each trajectory at 132 requests. Action stages
-have 24 requests / 600 seconds; other model stages have at most 12 / 600 seconds.
+The default structured recipe caps each trajectory at 156 requests: three Actions
+at 24 each, two diagnoses at 12 each, one Contract draft at 12, up to three
+applicability selections at 12 each, and extraction at 12. Each stage has a
+600-second limit. Contract revisions reselect from the same frozen bank without
+requiring a separate taxonomy analysis. Fixed-Contract training selects once.
+Abstract-based business selection is the only training/testing retrieval route.
+Taxonomy-routing and semantic-selection pipelines have been removed. Prepare a
+new V13 trajectory; older protocols remain available for read-only inspection. Online training
+keeps its existing provisional-pool lifecycle and uses extractive previews for
+provisional guidance without approved abstracts.
 
 ## Testing
 
@@ -41,7 +52,7 @@ Original task + public source + available AST evidence
 
 There is no separate taxonomy-routing stage or Contract Review. Experience
 selection considers complete business applicability, exclusions, object/operation
-mapping and supported obligations. It recalls at most 64 candidates and delivers
+mapping and supported obligations. It recalls at most 10 candidates and delivers
 at most five entries / 16,000 characters, favouring additional obligation coverage
 and suppressing redundancy. No applicable guidance means repair without experience.
 Model applicability judgments remain fallible; unknown premises do not count as
@@ -86,7 +97,7 @@ Raw outputs, warnings, corrections and measured usage remain in the run archive.
 [Experience Review](EXPERIENCE_MEMORY.md) remains required for long-term publication;
 it is separate from the removed automatic Contract Review. Opening the review UI
 does not execute a model. Historical results, approvals and frozen run directories
-are unchanged. V11 and earlier executions and old Contract Review policies are
+are unchanged. V12 and earlier executions and old Contract Review policies are
 read-only; changes require a new root, never rewriting an old score.
 
 See [Docker setup](DOCKER_TRAINING.md), [evaluation boundaries](PUBLIC_TEST_ADAPTERS.md)

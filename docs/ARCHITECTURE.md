@@ -1,10 +1,10 @@
 # Architecture and source map
 
-The current protocol is `tempoevo-trajectory-v12`; see [WORKFLOW.md](WORKFLOW.md).
+The current protocol is `tempoevo-trajectory-v13`; see [WORKFLOW.md](WORKFLOW.md).
 The fixed construction and testing paths are:
 
 ```text
-Construction: public task/source -> AST evidence -> source-bound experience routing
+Construction: public task/source -> AST evidence -> Abstract recall + full-text applicability
   -> Auto-Contract -> Action -> public + training Oracle acceptance
   -> failure: diagnosis/revision -> next Action, at most three total
   -> success: reflection -> candidate pool -> named content review -> approved bank
@@ -29,7 +29,7 @@ Testing uses a frozen approved bank; provisional guidance is construction-only.
 | AST evidence | `core.py`, `preanalysis.py`, `javascript/` |
 | Business applicability selection | `business_retrieval.py` |
 | Preparation validation/fallback | `preparation_validation.py` |
-| Source-bound construction routing | `experience_routing.py`, `experience_updates.py` |
+| Standalone taxonomy analysis and memory utilities | `experience_routing.py`, `experience_updates.py` |
 | Experience storage and review | `compact_experience.py`, `experience_memory.py`, `experience_approval.py`, `memory_review.py` |
 | Training acceptance projection | `training_acceptance.py` |
 | Historical inspection | `history_cli.py`, `history status/report` |

@@ -63,7 +63,7 @@ class Commands(unittest.TestCase):
         with patch.object(runner, 'REPO', repository), patch.dict(os.environ, {}, clear=True):
             self.assertEqual(runner.default_benchmark(), str(fallback))
             with patch.dict(os.environ, {'TCA_BENCH_ROOT': str(self.root/'explicit')}):
-                self.assertEqual(runner.default_benchmark(), str(self.root/'explicit'))
+                self.assertEqual(runner.default_benchmark(), str((self.root/'explicit').resolve()))
             preferred = self.root/'temporal-contract-bench'
             (preferred/'experiments/temporal-diagnostics-v1').mkdir(parents=True)
             (preferred/'experiments/temporal-diagnostics-v1/corpus.json').write_text('{}')

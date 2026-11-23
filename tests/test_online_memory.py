@@ -33,13 +33,20 @@ class OnlineTests(unittest.TestCase):
         self.assertEqual(read(second.root/'candidate-pool/success-online.json')['status'],'evidence_only')
         self.assertEqual(approval.freeze(self.store)['entries'],[])
 
-    def test_structured_routing_keeps_source_applicability_checks(self):
+
+    def test_default_structured_training_uses_business_selection_with_provisional_fallback(self):
         first=self.online('first');first.run(fixtures.Backend(),execute=True)
-        f=memory_fixtures.MemoryTests();f.setUp();self.addCleanup(f.doCleanups)
-        for known,expected in [('known',True),('unknown',False)]:
-            loop=self.online('structured-'+known,condition='structured',task='Preserve accepted work. Keep the entry snapshot.',routing_analysis=f.visible(known)['analysis'])
-            state=loop.run(fixtures.Backend(),execute=True);self.assertEqual(state['status'],'passed',state.get('error'))
-            self.assertEqual(bool(read(loop.root/'delivery.json')['provisional_sha256s']),expected)
+        loop=self.online('abstract-training',condition='structured',training_recipe='v8-compatible-v1',
+            task='Preserve accepted work. Keep the entry snapshot.')
+        self.assertEqual(loop.verify()['retrieval_profile'],'business-source-v1')
+        backend=fixtures.Backend();state=loop.run(backend,execute=True)
+        self.assertEqual(state['status'],'passed',state.get('error'))
+        self.assertTrue(read(loop.root/'delivery.json')['provisional_sha256s'])
+        kinds=[kind for kind,*_ in backend.calls]
+        self.assertIn('selection',kinds);self.assertNotIn('routing',kinds)
+        self.assertEqual(read(loop.root/'retrieval/selection-1-recall.json')['candidate_policy'],
+                         'local_extractive_summary_top10_full_text_verification')
+        self.assertEqual(approval.freeze(self.store)['entries'],[])
 
     def test_snapshot_stays_fixed_during_task_and_resume_does_not_duplicate(self):
         first=self.online('first');first.run(fixtures.Backend(),execute=True)

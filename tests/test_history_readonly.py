@@ -32,10 +32,10 @@ class HistoryTests(unittest.TestCase):
         for command in (['experience-evolution','prepare'],['experience-evolution','run'],['history','run']):
             with self.subTest(command=command),redirect_stderr(StringIO()),self.assertRaises(SystemExit):main(command)
     def test_old_modules_are_removed_and_shared_bridge_rejects_old_protocols(self):
-        for name in ('experience_workflow','experience_development','experience_evaluation','experience_evolution','experience_candidate_handoff','evolution_cli','evolution_backend'):
+        for name in ('experience_workflow','experience_development','experience_evaluation','experience_evolution','experience_candidate_handoff','evolution_cli','evolution_backend','semantic_retrieval'):
             self.assertIsNone(importlib.util.find_spec('temporal_contract_analyzer.'+name))
         policies=[f'experience-development-v{version}' for version in (1,2,3)]
-        policies += [f'tempoevo-trajectory-v{version}' for version in range(4,12)]
+        policies += [f'tempoevo-trajectory-v{version}' for version in range(4,13)]
         for policy in policies:
-            with self.subTest(policy=policy),self.assertRaisesRegex(EvidenceError,'only V12'):
+            with self.subTest(policy=policy),self.assertRaisesRegex(EvidenceError,'only tempoevo-trajectory-v13'):
                 NativeBackend().execute(dict(execution_policy=policy),'repair','',None,Path('/never-created'))
