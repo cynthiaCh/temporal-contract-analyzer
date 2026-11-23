@@ -29,12 +29,12 @@ Testing uses a frozen approved bank; provisional guidance is construction-only.
 | AST evidence | `core.py`, `preanalysis.py`, `javascript/` |
 | Business applicability selection | `business_retrieval.py` |
 | Preparation validation/fallback | `preparation_validation.py` |
-| Standalone taxonomy analysis and memory utilities | `experience_routing.py`, `experience_updates.py` |
+| Standalone taxonomy analysis and memory utilities | `experience_routing.py` |
 | Experience storage and review | `compact_experience.py`, `experience_memory.py`, `experience_approval.py`, `memory_review.py` |
 | Training acceptance projection | `training_acceptance.py` |
 | Historical inspection | `history_cli.py`, `history status/report` |
 
 Module filenames do not select a historical execution protocol. Old data are
 read-only; inspecting them does not schedule models, rewrite scores or approve
-experience. See [retirement boundaries](LEGACY_RETIREMENT.md) and
+experience. See [the current workflow](WORKFLOW.md) and
 [evaluation isolation](PUBLIC_TEST_ADAPTERS.md).

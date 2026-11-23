@@ -112,8 +112,8 @@ def load(path):
         raise EvidenceError('Category name must not be empty')
     if 'review' in value:
         validate_review(value['review'])
-    if not isinstance(value['experiences'], list) or not value['experiences']:
-        raise EvidenceError('Experience list must not be empty')
+    if not isinstance(value['experiences'], list):
+        raise EvidenceError('Experience list must be an array')
     ids = set()
     for item in value['experiences']:
         fields = {'id', 'title', 'labels', 'requires', 'excludes'} | {key for key, _ in SECTIONS}
@@ -374,7 +374,7 @@ def publish_candidate(path, record):
                 return dict(published_sha256=_bundle(file,old)[0]['sha256'],publication_kind='experience_update')
             value['experiences'][value['experiences'].index(old)]=item
         else:
-            path=Path(path);file=path if path.is_file() else path/'candidates.json'
+            path=Path(path);file=path if path.is_file() else (values[0][0] if len(values)==1 and not values[0][1]['experiences'] else path/'candidates.json')
             value=next((v for f,v in values if f==file),None)
             if value is None:value=dict(schema_version=VERSION,category='Candidate experiences',experiences=[])
             value['experiences'].append(item)

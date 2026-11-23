@@ -97,7 +97,7 @@ Raw outputs, warnings, corrections and measured usage remain in the run archive.
 
 ## Review, records and interpretation
 
-[Experience Review](EXPERIENCE_MEMORY.md) remains required for long-term publication;
+[Experience Review](../experience-memory/README.md) remains required for long-term publication;
 it is separate from the removed automatic Contract Review. Opening the review UI
 does not execute a model. Historical results, approvals and frozen run directories
 are unchanged. V12 and earlier executions and old Contract Review policies are

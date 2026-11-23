@@ -83,6 +83,25 @@ class CompactExperienceTests(unittest.TestCase):
         self.assertNotIn('retrieval_summary',approval.freeze(self.path)['entries'][0])
         self.assertIn('Outdated',compact.page(self.path).decode())
 
+    def test_current_cli_initializes_an_empty_library_and_old_review_routes_are_gone(self):
+        from contextlib import redirect_stdout,redirect_stderr
+        from io import StringIO
+        from temporal_contract_analyzer.cli import main
+        store=self.path.parent/'fresh-library'
+        with redirect_stdout(StringIO()):self.assertEqual(main(['experience-memory','init','--store',str(store)]),0)
+        self.assertEqual(memory.records(store),[])
+        server=ReviewServer(store);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        client=build_opener(ProxyHandler({}))
+        try:
+            self.assertIn('Experience &amp; summary review',client.open(server.url).read().decode())
+            for path in ('/api/library','/api/reflection-proposals','/memory-review.js','/memory-review.html'):
+                with self.subTest(path=path),self.assertRaises(HTTPError) as caught:client.open(server.url+path)
+                self.assertEqual(caught.exception.code,404)
+        finally:server.shutdown();server.server_close();thread.join()
+        for command in ('expert-review','review-template','recode','submit','activate','rollback'):
+            with self.subTest(command=command),redirect_stderr(StringIO()),self.assertRaises(SystemExit):
+                main(['experience-memory',command,'--store',str(store)])
+
     def test_read_search_and_freeze_create_no_sidecars(self):
         records=memory.records(self.path)
         self.assertEqual(len(records), 1)

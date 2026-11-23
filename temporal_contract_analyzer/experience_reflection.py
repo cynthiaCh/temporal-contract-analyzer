@@ -1,10 +1,8 @@
 """Source-bound reflection proposals. Never approve guidance or dispatch models."""
 from copy import deepcopy
-import fcntl
 import json
 from pathlib import Path
-import re
-from . import archive, experience_memory as memory
+from . import experience_memory as memory
 from .core import EvidenceError, canonical, sha
 
 OPERATIONS=('new','evidence','revise','merge')
@@ -59,37 +57,3 @@ def immutable(path,value):
     else:
         with path.open('xb') as f:f.write(raw)
     return value
-
-def publish_evidence(store,record):
-    record={k:v for k,v in record.items() if k not in ('published_sha256','published_proposal_sha256','publication_kind')}
-    value=dict(schema_version='experience-evidence-proposal-v1',status='awaiting_human_review',record=record,effectiveness_verified=False)
-    code=sha(canonical(value).encode())
-    with (Path(store)/'decision.lock').open('a') as lock:
-        fcntl.flock(lock,fcntl.LOCK_EX)
-        immutable(Path(store)/'workflow/evidence-proposals'/(code+'.json'),value)
-    return code
-
-def proposals(store):
-    root=Path(store)/'workflow/evidence-proposals';out=[]
-    for path in sorted(root.glob('*.json')):
-        value=json.loads(path.read_text());code=sha(canonical(value).encode())
-        if path.stem!=code:raise EvidenceError('Reflection evidence digest mismatch')
-        decisions=[]
-        for p in sorted((Path(store)/'workflow/evidence-reviews'/code).glob('*.json')):
-            d=json.loads(p.read_text())
-            if p.stem!=sha(canonical(d).encode()):raise EvidenceError('Reflection review digest mismatch')
-            decisions.append(d)
-        decisions.sort(key=lambda d:(d['at'],sha(canonical(d).encode())))
-        out.append(dict(sha256=code,proposal=value,decisions=decisions,
-            review_status='awaiting_human_review' if not decisions else decisions[-1]['decision']))
-    return out
-
-def review_evidence(store,code,request):
-    if not isinstance(request,dict) or set(request)!={'reviewer','decision','reason'} or request['decision'] not in ('accept','reject') or not memory.text(request['reviewer']) or not memory.text(request['reason']):raise EvidenceError('Evidence review requires a named human, decision and reason')
-    if not isinstance(code,str) or not re.fullmatch('[a-f0-9]{64}',code):raise EvidenceError('Invalid evidence proposal digest')
-    with (Path(store)/'decision.lock').open('a') as lock:
-        fcntl.flock(lock,fcntl.LOCK_EX)
-        if not any(p['sha256']==code for p in proposals(store)):raise EvidenceError('Unknown evidence proposal')
-        decision=dict(request,proposal_sha256=code,at=archive.now())
-        digest=sha(canonical(decision).encode());immutable(Path(store)/'workflow/evidence-reviews'/code/(digest+'.json'),decision)
-    return decision

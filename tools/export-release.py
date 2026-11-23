@@ -15,7 +15,6 @@ FILES = ('README.md', 'MASTER_PROMPT.md', 'pyproject.toml', 'setup.cfg',
          'launch-ast-review.command')
 SKIP = {'.git', '__pycache__', 'node_modules', '.venv', '.vscode-test',
         'build', 'dist', 'runtime'}
-PRIVATE_DOCS = {'docs/CLEANUP.md', 'docs/RELEASE_SCOPE.md'}
 
 
 def digest(path):
@@ -32,7 +31,7 @@ def sources():
             for name in sorted(files):
                 path = Path(folder) / name
                 relative = path.relative_to(ROOT).as_posix()
-                if (relative in PRIVATE_DOCS or name.endswith(('.pyc', '.pyo', '.vsix'))
+                if (name.endswith(('.pyc', '.pyo', '.vsix'))
                         or name in {'.DS_Store', 'auth.json', '.env'}):
                     continue
                 paths.append(relative)

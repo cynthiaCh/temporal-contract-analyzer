@@ -32,7 +32,7 @@ class HistoryTests(unittest.TestCase):
         for command in (['experience-evolution','prepare'],['experience-evolution','run'],['history','run']):
             with self.subTest(command=command),redirect_stderr(StringIO()),self.assertRaises(SystemExit):main(command)
     def test_old_modules_are_removed_and_shared_bridge_rejects_old_protocols(self):
-        for name in ('experience_workflow','experience_development','experience_evaluation','experience_evolution','experience_candidate_handoff','evolution_cli','evolution_backend','semantic_retrieval'):
+        for name in ('experience_workflow','experience_development','experience_evaluation','experience_evolution','experience_candidate_handoff','evolution_cli','evolution_backend','semantic_retrieval','experience_recoding','experience_submission','experience_updates','failure_learning'):
             self.assertIsNone(importlib.util.find_spec('temporal_contract_analyzer.'+name))
         policies=[f'experience-development-v{version}' for version in (1,2,3)]
         policies += [f'tempoevo-trajectory-v{version}' for version in range(4,13)]

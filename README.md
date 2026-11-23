@@ -11,7 +11,7 @@ TempoEvo combines temporal-contract analysis, contract-guided repair and reusabl
 - `vscode-extension/`: optional editor integration source.
 - `experience-memory/`: local exposed research candidates, when present in the development checkout. They are not shipped as expert-approved defaults in the clean source export.
 
-Historical experiments, raw model outputs, interrupted runs, scores and publication material are preserved in a separate research archive. See [archive boundaries](docs/ARCHIVE.md) and the local cleanup record, when present. Removing working files does not rewrite Git history.
+Historical experiments, raw model outputs, interrupted runs, scores and publication material are preserved in a separate research archive. See [archive boundaries](docs/ARCHIVE.md). Removing working files does not rewrite Git history.
 
 ## Requirements and use
 
@@ -45,7 +45,7 @@ python3 -B -m temporal_contract_analyzer experience-memory verify --store /path/
 python3 -B -m temporal_contract_analyzer experience-memory review --store /path/to/memory
 ```
 
-[Architecture and source map](docs/ARCHITECTURE.md), [memory format and retrieval](docs/EXPERIENCE_MEMORY.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [current workflow](docs/WORKFLOW.md) document the interfaces. Experience Review accepts exact immutable candidate versions; edits require their own acceptance. Approved records, including historical records, are eligible for future frozen retrieval snapshots when public task/source evidence satisfies their applicability and exclusion predicates. Cross-case effect validation is not an eligibility gate. Success candidates and human failure summaries remain unapproved until reviewed. Opening or submitting the review page cannot start model execution. Held-out testing reads a frozen approved snapshot and cannot learn. No paid calls are authorized by reading this README.
+[Architecture and source map](docs/ARCHITECTURE.md), [experience storage and review](experience-memory/README.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [current workflow](docs/WORKFLOW.md) document the interfaces. Experience Review edits stable entries in place; content changes require renewed approval. Accepted, active entries enter frozen retrieval snapshots when current task/source evidence supports their applicability and exclusions. Cross-case effect validation is not an eligibility gate. Success candidates and human failure summaries remain unapproved until reviewed. Opening or submitting the review page cannot start model execution. Held-out testing reads a frozen approved snapshot and cannot learn. No paid calls are authorized by reading this README.
 
 ## Optional integrations
 

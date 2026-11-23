@@ -1,13 +1,13 @@
-"""Persistent exact-version handoff, editing and activation. No model dispatch here."""
+"""Archived acceptance metadata and revocations; no editing or model dispatch."""
 from contextlib import contextmanager
 from copy import deepcopy
 import fcntl
 import json
-from pathlib import Path
 import re
+from pathlib import Path
 
 from . import archive, experience_memory as memory
-from .core import EvidenceError, canonical, sha
+from .core import EvidenceError
 
 
 def load(path, default=None):
@@ -56,53 +56,6 @@ def nonce(value):
     if not isinstance(value,str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}',value):
         raise EvidenceError('A stable request_id is required')
     return value
-
-
-def edit(store,code,request):
-    memory.object_fields(request,{'request_id','actor','reason','rules','labels','requires','excludes'},'human edit')
-    nonce(request['request_id'])
-    if not memory.text(request['actor']) or not memory.text(request['reason']):
-        raise EvidenceError('Editing requires the actual editor name and reason')
-    store=Path(store);binding=dict(parent_sha256=code,**request)
-    with locked(store):
-        receipt_path=store/'workflow/edit-requests'/(request['request_id']+'.json')
-        old=load(receipt_path)
-        if old is not None:
-            if old['request']!=binding:raise EvidenceError('Edit request_id reused with different content')
-            return next(b for b in memory.records(store) if b['sha256']==old['candidate_sha256'])
-        parent=next((b for b in memory.records(store) if b['sha256']==code),None)
-        if parent is None:raise EvidenceError('Unknown edit parent')
-        if not isinstance(request['rules'],list) or [r.get('id') for r in request['rules'] if isinstance(r,dict)]!=[r['id'] for r in parent['rules']]:
-            raise EvidenceError('This editor preserves rule IDs/count; edit bodies and categories, not a merge workbench')
-        if all(request[k]==parent[k] for k in ('rules','labels','requires','excludes')):
-            raise EvidenceError('No rule or applicability changes to save')
-        evidence=dict(binding,kind='manual_revision',changed_rule_ids=[r['id'] for i,r in enumerate(request['rules']) if r!=parent['rules'][i]])
-        raw=(json.dumps(evidence,ensure_ascii=False,sort_keys=True,indent=2)+'\n').encode();digest=sha(raw)
-        evidence_path=store/'workflow/edits'/(request['request_id']+'.json')
-        payload={k:deepcopy(v) for k,v in parent.items() if k in memory.FIELDS}
-        payload.update(schema_version=memory.BUNDLE_VERSION_V2,version='edit-'+request['request_id'],parent_sha256=code,
-            **{k:deepcopy(request[k]) for k in ('rules','labels','requires','excludes')})
-        payload['review']=dict(status='candidate',kind='human',source_sha256=digest,
-            limitations=['Human edit proposal awaiting content acceptance; effects remain unverified.'])
-        payload['audit']['sources'].append(dict(path=str(evidence_path),sha256=digest))
-        payload['audit']['outcome_refs']=[]
-        payload['audit']['notes'].append('Edited by '+request['actor']+': '+request['reason'])
-        sealed=memory.seal(payload)
-        memory.validate(sealed,lambda key:raw if key==digest else (store/'sources'/key).read_bytes())
-        evidence_path.parent.mkdir(parents=True,exist_ok=True)
-        if evidence_path.exists() and evidence_path.read_bytes()!=raw:raise EvidenceError('Immutable edit evidence conflicts')
-        if not evidence_path.exists():
-            from .experience_submission import publish
-            publish(evidence_path,raw)
-        existing=next((b for b in memory.records(store) if b['sha256']==sealed['sha256']),None)
-        bundle=existing or memory.add(store,payload,[evidence_path])
-        origin=metadata(store,code) or {}
-        _update(store,bundle['sha256'],origin_root=origin.get('origin_root'),generation=origin.get('generation',0)+1,
-            review_policy='human-content-only-v1',ai_status='not_run',content_review_available=True,status='awaiting_human_review',
-            edit=dict(actor=request['actor'],reason=request['reason'],request_id=request['request_id']),
-            validation_job=None,validation_status='not_started')
-        archive.atomic_json(receipt_path,dict(request=binding,candidate_sha256=bundle['sha256']))
-        return bundle
 
 
 def on_decision(store,row):
