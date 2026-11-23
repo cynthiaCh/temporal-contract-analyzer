@@ -32,10 +32,10 @@ Pending, rejected and evidence-only candidates must also be committed to Git. Ex
 
 The category files in `library/` are the current source of truth for both guidance
 and its `summary` object (`text`, `expert_questions`, exact `source_record`, and
-inline `review`). The 58 Chinese previews from `retrieval-summaries.json` have
-been imported as **pending**, without changing existing guidance acceptance or
-replacement targets. The standalone JSON and Markdown summaries are historical
-exports; editing them no longer updates the library.
+inline `review`). All current abstracts are in English and accepted under Rhys,
+with expert judgments incorporated into their applicability boundaries. Guidance
+acceptance and replacement targets are unchanged. Redundant standalone summary
+exports have been removed; edit and review summaries in the library.
 
 Open `launch-experience-review.command`. The review queue supports content search,
 category, experience state and summary state filters. Select an entry, compare its
