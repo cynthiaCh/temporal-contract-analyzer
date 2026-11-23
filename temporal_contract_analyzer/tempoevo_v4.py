@@ -295,7 +295,7 @@ class Trajectory:
             bank['sha256']=sha(canonical({k:v for k,v in bank.items() if k!='sha256'}).encode())
         if cfg['condition']=='latent_experience':
             from .business_retrieval import replay
-            cfg['frozen_experience_delivery']=replay(cfg['frozen_selection'],cfg['task'],sources,[e['bundle'] for e in bank['entries']])
+            cfg['frozen_experience_delivery']=replay(cfg['frozen_selection'],cfg['task'],sources,[e['bundle'] for e in bank['entries']],summaries={e['bundle']['sha256']:e['retrieval_summary'] for e in bank['entries'] if 'retrieval_summary' in e})
         from .preanalysis import analyze_candidate
         if cfg.get('backend',{}).get('kind')=='docker':
             from .tempoevo_docker import analyze,image_identity
@@ -413,7 +413,7 @@ class Trajectory:
         elif condition=='structured' and p.get('retrieval_profile')=='business-source-v1':
             from . import business_retrieval as retrieval
             sources={k:v.decode() for k,v in capture(self.root/'original')[0].items()}
-            recalled=retrieval.recall(p['task'],sources,bundles)
+            recalled=retrieval.recall(p['task'],sources,bundles,summaries={e['bundle']['sha256']:e['retrieval_summary'] for e in bank['entries'] if 'retrieval_summary' in e})
             self.save('retrieval/'+selection_key+'-recall.json',recalled)
             if recalled['candidates']:
                 if backend is None:raise EvidenceError('Business delivery requires explicit public-source applicability assessment')

@@ -29,6 +29,60 @@ class CompactExperienceTests(unittest.TestCase):
     def save(self):
         self.path.write_text(json.dumps(self.value))
 
+    def summary_request(self, decision='accept'):
+        item=compact.load(self.path)['experiences'][0]
+        return dict(id=item['id'],expected_record=memory.records(self.path)[0]['sha256'],
+                    expected_summary=item.get('summary'),text='Capture the accepting document before callbacks.',
+                    expert_questions='No unresolved questions.',reviewer='Synthetic reviewer',decision=decision)
+
+    def test_summary_review_preserves_guidance_and_freezes_accepted_preview(self):
+        from temporal_contract_analyzer.business_retrieval import recall
+        original=approval.freeze(self.path)
+        bundle=original['entries'][0]['bundle']
+        request=self.summary_request('pending')
+        compact.save_summary(self.path,request)
+        self.assertEqual(original,approval.freeze(self.path))
+        compact.save_summary(self.path,self.summary_request())
+        snapshot=approval.freeze(self.path)
+        entry=snapshot['entries'][0]
+        self.assertEqual(bundle,entry['bundle'])
+        self.assertEqual(entry['retrieval_summary']['text'],request['text'])
+        self.assertEqual(approval.validate_snapshot(self.path,snapshot),snapshot)
+        recalled=recall('document callbacks',{},[bundle],summaries={bundle['sha256']:entry['retrieval_summary']})
+        self.assertEqual(recalled['candidates'][0]['summary'],request['text'])
+        compact.save_summary(self.path,self.summary_request('reject'))
+        self.assertEqual(original,approval.freeze(self.path))
+        self.assertEqual(approval.validate_snapshot(self.path,snapshot),snapshot)
+
+    def test_summary_http_review_and_stale_submission(self):
+        server=ReviewServer(self.path)
+        thread=threading.Thread(target=server.serve_forever,daemon=True)
+        thread.start()
+        client=build_opener(ProxyHandler({}))
+        try:
+            request=Request(server.url+'/api/compact-summary',data=json.dumps(self.summary_request()).encode(),
+                            headers={'Content-Type':'application/json','X-TCA-Request':'local'})
+            result=json.loads(client.open(request).read())
+            self.assertEqual(result['summary']['review']['decision'],'accept')
+            self.assertEqual(approval.freeze(self.path)['entries'][0]['retrieval_summary'],result['summary'])
+            with self.assertRaises(HTTPError):client.open(request)
+        finally:
+            server.shutdown();server.server_close();thread.join()
+
+    def test_summary_stale_write_and_stale_guidance_are_not_admitted(self):
+        compact.save_summary(self.path,self.summary_request())
+        stale=self.summary_request()
+        current=self.summary_request();current['text']='Updated summary.'
+        compact.save_summary(self.path,current)
+        before=self.path.read_bytes()
+        with self.assertRaises(EvidenceError):compact.save_summary(self.path,stale)
+        self.assertEqual(before,self.path.read_bytes())
+        value=compact.load(self.path)
+        value['experiences'][0]['event_relation']='Changed recommendation.'
+        self.path.write_text(json.dumps(value))
+        self.assertNotIn('retrieval_summary',approval.freeze(self.path)['entries'][0])
+        self.assertIn('Outdated',compact.page(self.path).decode())
+
     def test_read_search_and_freeze_create_no_sidecars(self):
         records=memory.records(self.path)
         self.assertEqual(len(records), 1)
@@ -67,8 +121,9 @@ class CompactExperienceTests(unittest.TestCase):
         self.assertIn('Entry binding &lt;example&gt;', html)
         self.assertNotIn('Entry binding <example>', html)
         self.assertIn('data-lifecycle="active"', html)
-        self.assertIn('当前有效', html)
-        self.assertIn('含历史与待审核', html)
+        self.assertIn('Active', html)
+        self.assertNotIn('历史已替代', html)
+        self.assertNotIn('条记录', html)
 
     def request(self, item_id='entry-binding', decision='accept'):
         value,item=next((value,item) for _,value in compact.documents(self.path)

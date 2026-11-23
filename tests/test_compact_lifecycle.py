@@ -33,7 +33,11 @@ class CompactLifecycleTests(unittest.TestCase):
         self.assertEqual(self.ids(),{'v2'})
         self.assertEqual({r['bundle']['id'] for r in approval.active(self.path)},{'v2'})
         self.assertEqual(len(memory.records(self.path)),2)
-        self.assertIn('Superseded; excluded from new retrievals',compact.page(self.path).decode())
+        html=compact.page(self.path).decode()
+        self.assertNotIn('data-target="entry-binding"',html)
+        self.assertNotIn('data-id="entry-binding"',html)
+        self.assertNotIn('value="superseded"',html)
+        self.assertIn('data-target="v2"',html)
         self.assertEqual(approval.validate_snapshot(self.path,snapshot),snapshot)
         original=json.loads(before)['experiences'][0]
         self.assertEqual(compact.load(self.path)['experiences'][0],original)
@@ -46,7 +50,7 @@ class CompactLifecycleTests(unittest.TestCase):
         self.assertEqual(self.ids(),{'v2','other'})
         self.assertEqual(set(result['lifecycle']['active_ids']),{'v2','other'})
         html=compact.page(self.path).decode()
-        self.assertIn('data-lifecycle="superseded"',html)
+        self.assertNotIn('data-lifecycle="superseded"',html)
         self.assertIn('data-lifecycle="reject"',html)
 
     def test_conflicting_missing_and_cyclic_lineages_are_visible_and_reported(self):

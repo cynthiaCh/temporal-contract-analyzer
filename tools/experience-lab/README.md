@@ -200,8 +200,11 @@ Protocol references: [Qoder script execution](https://docs.qoder.com/cli/run-in-
 [authentication](https://docs.qoder.com/cli/authentication).
 
 New business-experience retrieval runs rank the approved library locally using
-short extractive summaries of applicability, event relations, preservation and
-exclusions. Summaries do not call a model or change approved records. Only the
+accepted, version-bound summaries stored alongside each experience. Missing or
+unapproved summaries fall back to short extractive previews of applicability, event
+relations, preservation and exclusions. The local index retains original extractive
+terms for cross-language matching. Summaries do not call a model or change approved
+guidance; accepted summaries and reviews are frozen with each new run. Only the
 top 10 candidates, each with its summary and full rule text, reach the model for
 source-based applicability checks. Final delivery remains limited to 5 entries
 and 16000 characters. Summary omissions are not evidence of inapplicability.

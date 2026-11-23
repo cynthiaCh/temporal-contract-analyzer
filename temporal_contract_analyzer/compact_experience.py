@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import fcntl
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 
@@ -121,20 +122,58 @@ def load(path):
         if isinstance(item, dict) and 'proposal' in item:
             fields.add('proposal')
         if isinstance(item,dict) and 'evidence_ref' in item:fields.add('evidence_ref')
+        if isinstance(item,dict) and 'summary' in item:fields.add('summary')
         memory.object_fields(item, fields, 'experience')
         if not memory.text(item['id']) or item['id'] in ids or not memory.text(item['title']) \
                 or any(not memory.text(item[key]) for key, _ in SECTIONS):
             raise EvidenceError('Invalid or duplicate experience')
         ids.add(item['id'])
         validate_review(review_for(value, item))
+        if 'summary' in item:validate_summary(item['summary'])
         if 'proposal' in item:
             validate_proposal(item['proposal'])
         if 'evidence_ref' in item:evidence_attachment(path,item)
     return value
 
 
+def validate_summary(value):
+    memory.object_fields(value, {'text','expert_questions','review','source_record'}, 'experience summary')
+    if not memory.text(value['text']) or not memory.text(value['expert_questions']):
+        raise EvidenceError('Summary and expert questions must not be empty')
+    if not isinstance(value['source_record'],str) or not re.fullmatch(r'[0-9a-f]{64}',value['source_record']):
+        raise EvidenceError('Summary must bind its experience version')
+    validate_review(value['review'])
+
+
+def reviewed_summaries(path):
+    return {item['id']:item['summary'] for file,value in documents(path) for item in value['experiences']
+            if 'summary' in item and item['summary']['review']['decision']=='accept'
+            and item['summary']['source_record']==_bundle(file,item)[0]['sha256']}
+
+
+def save_summary(path, request):
+    memory.object_fields(request, {'id','expected_record','expected_summary','text','expert_questions','reviewer','decision'}, 'summary review request')
+    if not memory.text(request['reviewer']) or request['decision'] not in STATES:
+        raise EvidenceError('Enter a reviewer and select a summary decision')
+    with _locked(path):
+        values=documents(path)
+        match=next(((file,value,item) for file,value in values for item in value['experiences'] if item['id']==request['id']),None)
+        if match is None:raise EvidenceError('Experience not found')
+        file,value,item=match
+        if _bundle(file,item)[0]['sha256']!=request['expected_record'] or item.get('summary')!=request['expected_summary']:
+            raise EvidenceError('Experience or summary changed; refresh before reviewing again')
+        review=(dict(reviewer=None,decision='pending',at=None) if request['decision']=='pending' else
+                dict(reviewer=request['reviewer'].strip(),decision=request['decision'],at=archive.now()))
+        summary=dict(text=request['text'].strip(),expert_questions=request['expert_questions'].strip(),
+                     source_record=request['expected_record'],review=review)
+        validate_summary(summary)
+        item['summary']=summary
+        _write(file,value)
+        return dict(summary=summary,file=file.name)
+
+
 def _bundle(file, item):
-    raw=canonical({k:v for k,v in item.items() if k!='review'}).encode('utf-8')
+    raw=canonical({k:v for k,v in item.items() if k not in ('review','summary')}).encode('utf-8')
     code=sha(raw)
     bundle=memory.seal(dict(schema_version=memory.BUNDLE_VERSION_V2,
         id=item['id'], version='single-file-v1', parent_sha256=None,
@@ -315,10 +354,15 @@ def publish_candidate(path, record):
         item['proposal']=proposal
         item=dict(id='candidate-'+sha(canonical(item).encode())[:32],**item,
                   review=dict(reviewer=None,decision='pending',at=None))
+        from .business_retrieval import summary as preview
+        candidate_file=Path(path) if Path(path).is_file() else Path(path)/'candidates.json'
+        candidate_bundle=_bundle(candidate_file,item)[0]
+        item['summary']=dict(text=preview(candidate_bundle),expert_questions='Not reviewed.',source_record=candidate_bundle['sha256'],
+                             review=dict(reviewer=None,decision='pending',at=None))
         existing=next(((file,entry) for file,value in values for entry in value['experiences'] if entry['id']==item['id']),None)
         if existing:
             file,entry=existing
-            if {k:v for k,v in entry.items() if k!='review'}!={k:v for k,v in item.items() if k!='review'}:
+            if {k:v for k,v in entry.items() if k not in ('review','summary')}!={k:v for k,v in item.items() if k not in ('review','summary')}:
                 raise EvidenceError('Published candidate content changed; refusing to overwrite it')
         else:
             path=Path(path);file=path if path.is_file() else path/'candidates.json'
@@ -372,26 +416,53 @@ def page(path):
     values = documents(path)
     bundles = {b['id']:b for b in materialize(path)[0]}
     cards = []
+    queue = []
     lifecycle=active_view(path)
-    categories = list(dict.fromkeys(value.get('category', 'Uncategorized') for _,value in values))
-    entries = [(file,value,item) for file,value in values for item in value['experiences']]
+    superseded = set(lifecycle['superseded_ids'])
+    entries = [(file,value,item) for file,value in values for item in value['experiences']
+               if item['id'] not in superseded]
+    categories = list(dict.fromkeys(value.get('category', 'Uncategorized') for _,value,_ in entries))
     for file, value, item in entries:
         category = value.get('category', 'Uncategorized')
         review = review_for(value, item)
         state = review['decision']
-        view_state = ('superseded' if item['id'] in lifecycle['superseded_ids'] else 'active') if state=='accept' else state
-        status = {'active':'当前有效', 'superseded':'历史已替代', 'pending':'待审核'}.get(view_state, STATES[state])
+        view_state = 'active' if state=='accept' else state
+        status = {'active':'Active', 'pending':'Pending review'}.get(view_state, STATES[state])
         saved = status if state=='pending' else f'{status} · {review["reviewer"]} · {review["at"]}'
-        if item['id'] in lifecycle['superseded_ids']:saved+=' · Superseded; excluded from new retrievals'
-        elif item['id'] in lifecycle['unresolved_ids']:saved+=' · Supersession requires review; retained for retrieval for now'
+        if item['id'] in lifecycle['unresolved_ids']:saved+=' · Supersession requires review; retained for retrieval for now'
         sections = ''.join(f'<dt>{label}</dt><dd>{escape(item[key])}</dd>'
                            for key, label in SECTIONS)
         proposal=item.get('proposal')
         appendix=('<p class="meta">Evidence attachment: '+escape(item['evidence_ref']['path'])+'</p>') if 'evidence_ref' in item else ''
         context=('<p class="meta">Proposal: '+escape(proposal['operation'])+' · Targets: '+escape(', '.join(proposal['target_ids']) or 'none')+'</p>') if proposal else ''
-        cards.append(f'<article class="panel" data-state="{state}" data-lifecycle="{view_state}" data-category="{escape(category, quote=True)}"><h2>{escape(item["title"])}</h2>'
+        summary=item.get('summary')
+        summary_state=summary['review']['decision'] if summary else 'pending'
+        if summary and summary['source_record']!=bundles[item['id']]['sha256']:summary_state='stale'
+        summary_labels=dict(STATES,stale='Outdated · review again')
+        summary_status=summary_labels[summary_state]
+        summary_review=(summary or {}).get('review',{})
+        reviewed_by=' · '.join(str(summary_review[k]) for k in ('reviewer','at') if summary_review.get(k))
+        questions=summary['expert_questions'] if summary else 'Not reviewed.'
+        queue.append(f'<button type="button" class="queue-item" data-target="{escape(item["id"],quote=True)}">'
+                     f'<strong>{escape(item["title"])}</strong><small>{escape(category)} · {escape(status)}</small>'
+                     f'<small>Summary · {escape(summary_status)}</small></button>')
+        summary_panel=(f'<section class="summary-panel"><div class="section-heading"><h3>Retrieval summary</h3>'
+            f'<span class="summary-status">{escape(summary_status)}</span></div>'
+            '<p class="meta">Review against the full experience below. Only accepted summaries inform retrieval.</p>'
+            f'<p class="meta summary-review-meta">{escape(reviewed_by)}</p>'
+            f'<form class="summary-form" data-summary-id="{escape(item["id"],quote=True)}" '
+            f'data-record="{bundles[item["id"]]["sha256"]}" data-summary="{escape(canonical(summary),quote=True)}">'
+            f'<label>Summary<textarea name="text" required rows="7">{escape(summary["text"] if summary else "")}</textarea></label>'
+            f'<label>Questions for the expert<textarea name="expert_questions" required rows="3">{escape(questions)}</textarea></label>'
+            '<div class="review-fields"><label>Reviewer<input name="reviewer" required value="'
+            +escape((summary or {}).get('review',{}).get('reviewer') or '',quote=True)+'"></label>'
+            '<label>Summary decision<select name="decision" required><option value="">Select a decision</option>'
+            '<option value="pending">Save draft · Pending review</option><option value="accept">Accept summary</option>'
+            '<option value="revise">Revision required</option><option value="reject">Reject summary</option></select></label></div>'
+            '<button type="submit" class="primary">Save summary review</button></form></section>')
+        cards.append(f'<article class="panel" data-id="{escape(item["id"],quote=True)}" data-summary-state="{summary_state}" data-state="{state}" data-lifecycle="{view_state}" data-category="{escape(category, quote=True)}"><h2>{escape(item["title"])}</h2>'
                      f'<p class="meta">{escape(category)} · {escape(file.name)}</p>'
-                     f'<p class="compact-status">{escape(saved)}</p>{context}{appendix}<dl>{sections}</dl>'
+                     f'<p class="compact-status">{escape(saved)}</p>{context}{appendix}{summary_panel}<details class="full-experience"><summary>Full experience · applicability and verification</summary><dl>{sections}</dl></details><h3>Experience review</h3>'
                      f'<form data-id="{escape(item["id"], quote=True)}" '
                      f'data-record="{bundles[item["id"]]["sha256"]}" '
                      f'data-review="{escape(canonical(review), quote=True)}">'
@@ -403,16 +474,25 @@ def page(path):
                      '<button type="submit">Save review</button></form></article>')
     html = ('<!doctype html><html lang="en"><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            '<title>TempoEvo · Experience review</title><link rel="stylesheet" href="/memory-review.css">'
-            '<script src="/compact-review.js" defer></script><body class="compact-review"><main><section>'
-            f'<h1>TempoEvo · Experience library · {len(cards)} 条记录（含历史与待审核）</h1><p id="compact-counts"></p>'
-            f'<p>Experience location: <code>{escape(str(path))}</code></p>'
-            '<p>Read the experience and its applicability boundaries before reviewing. Decisions are saved to the category file without creating a separate review file.</p>'
+            '<title>TempoEvo · Expert review</title><link rel="stylesheet" href="/memory-review.css">'
+            '<script src="/compact-review.js" defer></script><body class="compact-review">'
+            '<header class="review-topbar"><span class="review-brand">T</span><strong>TempoEvo</strong>'
+            '<span class="brand-caption">RESEARCH WORKSPACE</span><span class="local">Expert review · Local only</span></header>'
+            '<div class="review-heading"><p class="eyebrow">TEMPORAL CONTRACTS / EXPERIENCE LEARNING</p>'
+            '<h1>Experience &amp; summary review</h1><p>Inspect the full guidance. Refine its summary. Record your decisions.</p></div>'
+            '<main><aside class="review-queue"><h2>Review queue</h2>'
+            '<p id="compact-counts"></p>'
+            '<label>Search<input id="compact-search" type="search" placeholder="Title, ID or content"></label>'
             '<label>Category<select id="compact-category"><option value="">All categories</option>'
             + ''.join(f'<option>{escape(category)}</option>' for category in categories) + '</select></label>'
-            '<label>Show<select id="compact-filter"><option value="all">All experiences</option>'
-            '<option value="active">当前有效</option><option value="superseded">历史已替代</option><option value="pending">待审核 / Pending review</option>'
+            '<label>Experience state<select id="compact-filter"><option value="all">All experiences</option>'
+            '<option value="active">Active</option><option value="pending">Pending review</option>'
             '<option value="revise">Revision required</option><option value="reject">Rejected</option></select></label>'
-            '<p id="compact-empty" hidden>No experiences in this category.</p>'
-            + ''.join(cards) + '</section></main><p id="message" role="status" aria-live="polite"></p></body></html>')
+            '<label>Summary state<select id="summary-filter"><option value="all">All summaries</option>'
+            '<option value="pending">Pending review / Missing</option><option value="accept">Accepted</option>'
+            '<option value="revise">Revision required</option><option value="reject">Rejected</option><option value="stale">Outdated</option></select></label>'
+            '<nav id="compact-queue" aria-label="Experiences">'+''.join(queue)+'</nav></aside>'
+            '<section class="review-detail"><p id="compact-empty" hidden>No experiences match these filters.</p>'
+            + ''.join(cards) + f'<details class="library-location"><summary>Library location</summary><code>{escape(str(path))}</code></details>'
+            '</section></main><p id="message" role="status" aria-live="polite"></p></body></html>')
     return html.encode('utf-8')

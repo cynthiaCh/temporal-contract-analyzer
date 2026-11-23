@@ -373,6 +373,10 @@ def freeze(store, *, legacy=False):
     # The legacy argument remains for compatibility. Native active pointers do
     # not gate this bank; compact accepted replacements are resolved by approved().
     entries = approved(store)
+    from .compact_experience import is_library, reviewed_summaries
+    if is_library(store):
+        summaries=reviewed_summaries(store)
+        entries=[dict(entry, retrieval_summary=summaries[entry['bundle']['id']]) if entry['bundle']['id'] in summaries else entry for entry in entries]
     result = dict(schema_version='experience-active-snapshot-v1', scope='research_only',
                   entries=entries)
     result['sha256'] = memory.digest(canonical(result))
@@ -388,7 +392,14 @@ def validate_snapshot(store, snapshot):
     history = None
     bundles = None
     for entry in snapshot['entries']:
-        memory.object_fields(entry, {'bundle', 'expert_decision'}, 'active snapshot entry')
+        fields={'bundle','expert_decision'}
+        if 'retrieval_summary' in entry:
+            from .compact_experience import validate_summary
+            fields.add('retrieval_summary')
+            validate_summary(entry['retrieval_summary'])
+            if entry['retrieval_summary']['review']['decision']!='accept' or entry['retrieval_summary']['source_record']!=entry['bundle']['sha256']:
+                raise EvidenceError('Snapshot summary must be accepted for this exact experience')
+        memory.object_fields(entry, fields, 'active snapshot entry')
         bundle, decision = entry['bundle'], entry['expert_decision']
         memory.validate(bundle, lambda code:memory.source_bytes(store, code))
         if history is None:

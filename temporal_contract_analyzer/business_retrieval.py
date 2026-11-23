@@ -3,7 +3,7 @@ import re
 from . import experience_memory as memory, taxonomy
 from .core import EvidenceError
 
-VERSION='business-source-coverage-v3'
+VERSION='business-source-coverage-v4'
 MAX_CANDIDATES=10
 MAX_EXPERIENCES=5
 MAX_CHARACTERS=16000
@@ -21,22 +21,28 @@ def summary(bundle):
     return '\n'.join(lines)
 
 
-def recall(task,sources,bundles,*,legacy=False):
+def recall(task,sources,bundles,*,legacy=False,summaries=None):
     # Legacy ranking is used only to verify previously frozen deliveries.
+    def preview(bundle):
+        return (summaries or {}).get(bundle['sha256'],{}).get('text') or summary(bundle)
     docs='\n'.join(text for name,text in sources.items() if name.lower().endswith('.md'))
     query=task+'\n'+task+'\n'+docs+'\n'+'\n'.join(sources.values())
+    def index_text(bundle):
+        accepted=(summaries or {}).get(bundle['sha256'],{}).get('text')
+        # Retain source-language terms when the reviewed preview uses another language.
+        return accepted+'\n'+accepted+'\n'+summary(bundle) if accepted else summary(bundle)
     hits=memory.search_records(bundles,query,limit=max(1,len(bundles)),include_all=True,
-        text_for_index=None if legacy else summary)['results'] if bundles else []
+        text_for_index=None if legacy else index_text)['results'] if bundles else []
     scores={h['sha256']:h['score'] for h in hits}
     ordered=sorted(bundles,key=lambda b:(-scores.get(b['sha256'],0),b['sha256']))
     limit=64 if legacy else MAX_CANDIDATES
     candidates=[dict(sha256=b['sha256'],id=b['id'],text=memory.render(b),requires=b['requires'],excludes=b['excludes'],lexical_score=scores.get(b['sha256'],0)) for b in ordered[:limit]]
     if not legacy:
-        for candidate,bundle in zip(candidates,ordered[:limit]):candidate['summary']=summary(bundle)
+        for candidate,bundle in zip(candidates,ordered[:limit]):candidate['summary']=preview(bundle)
     return dict(schema_version='business-source-coverage-v2' if legacy else VERSION,bank_count=len(bundles),
         candidates=candidates,
         omitted_candidate_sha256s=[b['sha256'] for b in ordered[limit:]],
-        candidate_policy='approved_bank_text_order_without_label_or_unknown_fact_prefilter' if legacy else 'local_extractive_summary_top10_full_text_verification')
+        candidate_policy='approved_bank_text_order_without_label_or_unknown_fact_prefilter' if legacy else ('reviewed_summary_top10_full_text_verification' if summaries else 'local_extractive_summary_top10_full_text_verification'))
 
 
 def schema(candidates,*,concise=False):
@@ -86,7 +92,7 @@ def payload(task,sources,ast,recalled):
         'All applicability judgments and proposed obligations remain fallible hypotheses for source-based repair, not correctness or effectiveness certificates.')
 
 
-def replay(selection,task,sources,bundles):
+def replay(selection,task,sources,bundles,*,summaries=None):
     """Revalidate a frozen selector result without another model call."""
     from .core import canonical,sha
     if not isinstance(selection,dict) or set(selection)!={'output','delivery_sha256'}:
@@ -98,7 +104,7 @@ def replay(selection,task,sources,bundles):
     else:
         for legacy in (False,True):
             try:
-                result=select(selection['output'],recall(task,sources,bundles,legacy=legacy),task,sources,bundles)
+                result=select(selection['output'],recall(task,sources,bundles,legacy=legacy,summaries=summaries),task,sources,bundles)
             except ValueError:
                 continue
             result['provisional_sha256s']=[]

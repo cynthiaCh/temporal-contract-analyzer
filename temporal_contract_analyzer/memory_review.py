@@ -151,6 +151,11 @@ class ReviewHandler(LocalHandler):
 
     def post(self, data):
         if self.server.compact:
+            if urlsplit(self.path).path == '/api/compact-summary':
+                from .compact_experience import save_summary
+                with self.server.review_lock:
+                    self.send(save_summary(self.server.store,data))
+                return
             if urlsplit(self.path).path != '/api/compact-review':
                 self.send({'error': 'Not found'}, 404)
                 return

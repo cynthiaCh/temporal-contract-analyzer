@@ -27,3 +27,31 @@ Old `records/`, `sources/` and similar directories are historical material, excl
 ## Preserving training candidates in Git
 
 Pending, rejected and evidence-only candidates must also be committed to Git. External experiment directories are outside this repository's Git management and cannot be the sole preservation location. At the end of each training round, archive temporary experience, candidate reflections and evidence proposals unchanged under `training-runs/<run-id>/`, with file hashes and provenance manifests, and commit them. Publish content revisions separately as pending entries in `library/candidates.json`. Archive directories are not category libraries or default retrieval inputs. A Git commit is not review approval and must not change frozen snapshots or automatically activate experience.
+
+## Experience and summary review
+
+The category files in `library/` are the current source of truth for both guidance
+and its `summary` object (`text`, `expert_questions`, exact `source_record`, and
+inline `review`). The 58 Chinese previews from `retrieval-summaries.json` have
+been imported as **pending**, without changing existing guidance acceptance or
+replacement targets. The standalone JSON and Markdown summaries are historical
+exports; editing them no longer updates the library.
+
+Open `launch-experience-review.command`. The review queue supports content search,
+category, experience state and summary state filters. Select an entry, compare its
+editable summary and expert questions against the full experience, then enter your
+name and save a draft or review decision. Experience acceptance and summary
+acceptance are separate. Neither opening the page nor saving a review calls a model.
+
+New training publications include a pending extractive preview in the same record.
+Only accepted summaries bound to the current experience version enter newly frozen
+snapshots. Pending, rejected, missing or outdated summaries fall back to the existing
+extractive preview; accepted guidance remains eligible. Editing a summary requires
+an explicit new decision, and concurrent edits are rejected rather than overwritten.
+Changing guidance invalidates its old summary for retrieval until it is reviewed again.
+
+Business matching prioritizes accepted summaries in the local index, retaining the
+original extractive terms for English/Chinese matching. The top 10 candidates still
+include full guidance for source-based applicability checks; final delivery remains
+limited to five entries. Frozen snapshots include the accepted summary and its review,
+so later summary edits do not change an existing run. No new repair benefit is claimed.

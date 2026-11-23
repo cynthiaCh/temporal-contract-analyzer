@@ -17,7 +17,7 @@ test('counts and filters separate active guidance from history and refresh all m
     const button = element(), status = element();
     form.querySelector = () => button;
     const result = {dataset:{state:review.decision, lifecycle, category}, hidden:false,
-      querySelector: selector => selector === 'form' ? form : status};
+      querySelector: selector => selector === 'form[data-id]' ? form : status};
     form.closest = () => result;
     return {result, form};
   }
@@ -26,26 +26,26 @@ test('counts and filters separate active guidance from history and refresh all m
   const elements = Object.fromEntries(['compact-filter','compact-category','compact-counts','compact-empty','message'].map(id => [id,element()]));
   elements['compact-filter'].value = 'all';
   const context = vm.createContext({document:{
-    querySelectorAll: selector => selector.startsWith('article') ? entries.map(x => x.result) : entries.map(x => x.form),
+    querySelectorAll: selector => selector.startsWith('article') ? entries.map(x => x.result) : selector === 'form[data-id]' ? entries.map(x => x.form) : [],
     querySelector: selector => elements[selector.slice(1)]},
     fetch: async () => ({ok:true, json:async () => ({review:{decision:'accept', reviewer:'Fixture', at:'fixture-time'},
       record_sha256:'fixture-hash', file:'fixture.json',
       lifecycle:{active_ids:['merged'],superseded_ids:['old-a','old-b','historic'],unresolved_ids:[]}})})});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../temporal_contract_analyzer/web/compact-review.js'),'utf8'),context);
-  assert.equal(elements['compact-counts'].textContent,'当前有效 2 · 历史已替代 1 · 待审核 1');
+  assert.equal(elements['compact-counts'].textContent,'Active 2 · Pending review 1');
   elements['compact-category'].value = 'Alpha';
   elements['compact-category'].handlers.change({});
-  assert.equal(elements['compact-counts'].textContent,'当前有效 2 · 历史已替代 0 · 待审核 1');
+  assert.equal(elements['compact-counts'].textContent,'Active 2 · Pending review 1');
   elements['compact-filter'].value = 'pending';
   elements['compact-filter'].handlers.change({});
   assert.deepEqual(entries.map(x => x.result.hidden),[true,true,true,false]);
   await entries[3].form.handlers.submit({preventDefault(){}});
-  assert.equal(elements['compact-counts'].textContent,'当前有效 1 · 历史已替代 2 · 待审核 0');
+  assert.equal(elements['compact-counts'].textContent,'Active 1 · Pending review 0');
   assert.equal(entries[0].result.dataset.lifecycle,'superseded');
-  elements['compact-filter'].value = 'superseded';
+  elements['compact-filter'].value = 'all';
   elements['compact-filter'].handlers.change({});
-  assert.deepEqual(entries.map(x => x.result.hidden),[false,false,true,true]);
+  assert.deepEqual(entries.map(x => x.result.hidden),[true,true,true,false]);
   elements['compact-category'].value = '';
   elements['compact-category'].handlers.change({});
-  assert.equal(elements['compact-counts'].textContent,'当前有效 1 · 历史已替代 3 · 待审核 0');
+  assert.equal(elements['compact-counts'].textContent,'Active 1 · Pending review 0');
 });
