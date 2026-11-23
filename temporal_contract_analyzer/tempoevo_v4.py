@@ -210,6 +210,8 @@ class Trajectory:
     def prepare(self, config):
         if self.root.exists():raise EvidenceError('Use a new trajectory root')
         cfg=deepcopy(config)
+        if cfg.get('ast_policy','enabled') not in ('enabled','disabled'):
+            raise EvidenceError('Invalid AST policy')
         policy=cfg.get('learning_policy','frozen')
         if policy not in ('frozen','online'):raise EvidenceError('Invalid learning policy')
         if policy=='online' and (cfg.get('mode')!='learning' or cfg.get('condition') not in ('structured','bm25') or not cfg.get('online_memory') or not memory.text(cfg.get('task_id'))):raise EvidenceError('Online memory requires memory-enabled learning and an explicit training pool')
@@ -293,7 +295,9 @@ class Trajectory:
             from .business_retrieval import replay
             cfg['frozen_experience_delivery']=replay(cfg['frozen_selection'],cfg['task'],sources,[e['bundle'] for e in bank['entries']],summaries={e['bundle']['sha256']:e['retrieval_summary'] for e in bank['entries'] if 'retrieval_summary' in e},learning={e['bundle']['sha256']:e['learning'] for e in bank['entries'] if 'learning' in e},model=identity(settings)['model'])
         from .preanalysis import analyze_candidate
-        if cfg.get('backend',{}).get('kind')=='docker':
+        if cfg.get('ast_policy')=='disabled':
+            full,ast=dict(status='disabled',reason='explicit_no_ast_ablation'),{}
+        elif cfg.get('backend',{}).get('kind')=='docker':
             from .tempoevo_docker import analyze,image_identity
             image_identity(cfg['backend']['grader_image'])
             full,ast=analyze(sources,cfg['backend'])

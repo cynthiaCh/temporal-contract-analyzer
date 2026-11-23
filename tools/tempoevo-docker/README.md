@@ -89,6 +89,13 @@ The root contains `plan.json` plus `batch/progress.json`; every case must use th
 same frozen approved bank and current single-submission testing protocol. One case
 error does not abort the other cases, and incomplete previously started stages
 are not replayed. Results retain the full denominator and archive after completion.
+
+For an explicit AST ablation, prepare a new root with `--no-ast`. The frozen
+protocol records `ast_policy=disabled`; analysis is skipped and selection,
+Contract and Action receive an empty AST object. Original source files, memory
+retrieval, repair budgets and final Gold scoring are retained. Selection is
+rerun without AST, so this measures its effect across the full pipeline rather
+than holding the per-case experience deliveries fixed.
 The current study uses the full approved categorized library as its retrieval pool;
 A/B is historical and is not launched by this command.
 

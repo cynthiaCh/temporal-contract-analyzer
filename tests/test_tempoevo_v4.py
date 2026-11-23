@@ -384,6 +384,32 @@ class V4Tests(unittest.TestCase):
                 self.assertEqual(backend.calls[0][0],'selection')
                 self.assertEqual([c['sha256'] for c in backend.calls[0][1]['candidates']],[approved['sha256']])
 
+    def test_no_ast_testing_keeps_sources_memory_contract_and_final_score(self):
+        from unittest.mock import patch
+        from temporal_contract_analyzer import experience_approval as approval
+        import test_experience_memory as fixtures
+        f=fixtures.MemoryTests('test_storage_preserves_single_source_body_and_evidence')
+        f.setUp();self.addCleanup(f.doCleanups);approved=f.add()
+        with patch('temporal_contract_analyzer.preanalysis.analyze_candidate',side_effect=AssertionError('AST must not run')):
+            loop=self.prepare(store=str(f.store),mode='testing',condition='structured',ast_policy='disabled',
+                task='Preserve accepted work. Keep the entry snapshot.',memory_snapshot=approval.freeze(f.store),
+                gold_evaluator=dict(command=['synthetic-gold']),visible_evaluator=None)
+        backend=Backend();state=loop.run(backend,execute=True)
+        self.assertEqual(state['status'],'scored',state.get('error'))
+        self.assertTrue(state['gold_result']['passed'])
+        self.assertEqual([c[0] for c in backend.calls],['selection','contract','action'])
+        for stage,payload,_,_ in backend.calls:
+            self.assertEqual(payload['ast'],{})
+            self.assertEqual(payload['sources'],{'main.py':'value = 0\n'})
+            if stage in ('contract','action'):self.assertIn(approved['rules'][0]['body'],payload['experience'])
+        self.assertEqual(loop.verify()['total_request_cap'],48)
+        self.assertEqual(read(loop.root/'ast-evidence.json'),{})
+        self.assertEqual((loop.root/'original/main.py').read_text(),'value = 0\n')
+
+    def test_unknown_ast_policy_is_rejected(self):
+        with self.assertRaisesRegex(EvidenceError,'Invalid AST policy'):
+            self.prepare(ast_policy='maybe')
+
     def test_cli_prepare_status_never_call_models(self):
         from temporal_contract_analyzer.cli import main
         from contextlib import redirect_stdout
