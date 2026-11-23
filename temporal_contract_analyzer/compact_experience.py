@@ -1,5 +1,6 @@
 """Categorized experience files and inline acceptance, without audit sidecars."""
 from html import escape
+from copy import deepcopy
 from contextlib import contextmanager
 import fcntl
 import json
@@ -451,6 +452,11 @@ def _save_review(path, request):
         del value['review']
     item['review'] = dict(reviewer=request['reviewer'].strip(), decision=request['decision'], at=archive.now())
     if pending and request['decision']=='accept':
+        # Carry forward the latest same-ID observations, including usage during review.
+        if 'learning' in owner:
+            metadata=deepcopy(owner['learning'])
+            if metadata['origin'] is None:metadata['origin']=item['learning']['origin']
+            item['learning']=metadata
         # Preserve permanent retirement metadata from previous consolidations.
         for key in ('superseded','superseded_by'):
             if key in owner:item[key]=owner[key]

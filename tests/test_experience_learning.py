@@ -93,6 +93,92 @@ class LearningTests(unittest.TestCase):
         result,issues=learning.contributions([dict(row,decision='adopted')],[bundle],attempts,TASK,{})
         self.assertFalse(result);self.assertTrue(issues)
 
+    def test_additions_and_deletions_allow_context_only_at_the_same_edit(self):
+        bundle=approval.freeze(self.store)['entries'][0]['bundle']
+        for old,new,before_quote,after_quote in [
+            ('run()\n','if ready:\n    run()\n','run()','if ready:'),
+            ('bad()\ngood()\n','good()\n','bad()','good()'),
+            ('good()\n','good()\npublish()\n','good()','publish()'),
+            ('good()\nbad()\n','good()\n','bad()','good()'),
+        ]:
+            with self.subTest(before=old):
+                attempts=[dict(acceptance_passed=False,candidate_sources={'main.py':old},delivered_sha256s=[bundle['sha256']]),
+                          dict(acceptance_passed=True,candidate_sources={'main.py':new},delivered_sha256s=[bundle['sha256']])]
+                row=dict(experience_sha256=bundle['sha256'],rule_id=bundle['rules'][0]['id'],rule_quote=bundle['rules'][0]['body'],decision='adopted',
+                    before=dict(file='main.py',quote=before_quote),after=dict(file='main.py',quote=after_quote),
+                    supporting_evidence=[dict(file='TASK',quote='Preserve accepted work.')],reason='Synthetic paired edit.')
+                result,issues=learning.contributions([row],[bundle],attempts,TASK,{})
+                self.assertEqual(result,{bundle['id']:'adopted'});self.assertFalse(issues)
+
+    def test_unrelated_edits_cannot_be_paired_for_credit(self):
+        old={'main.py':'left = 0\nkeep()\nright = 0\n'}
+        new={'main.py':'left = 1\nkeep()\nright = 1\n'}
+        self.assertFalse(learning._changed_pair(dict(file='main.py',quote='left = 0'),dict(file='main.py',quote='right = 1'),old,new))
+
+    def test_third_attempt_credits_an_earlier_change_only_if_retained(self):
+        bundle=approval.freeze(self.store)['entries'][0]['bundle']
+        attempts=[dict(acceptance_passed=False,candidate_sources={'main.py':'bound = False\nother = False\n'},delivered_sha256s=[bundle['sha256']]),
+                  dict(acceptance_passed=False,candidate_sources={'main.py':'bound = True\nother = False\n'},delivered_sha256s=[bundle['sha256']]),
+                  dict(acceptance_passed=True,candidate_sources={'main.py':'bound = True\nother = True\n'},delivered_sha256s=[bundle['sha256']])]
+        row=dict(experience_sha256=bundle['sha256'],rule_id=bundle['rules'][0]['id'],rule_quote=bundle['rules'][0]['body'],decision='adopted',
+            before=dict(file='main.py',quote='bound = False'),after=dict(file='main.py',quote='bound = True'),
+            supporting_evidence=[dict(file='TASK',quote='Preserve accepted work.')],reason='Second-attempt change survives final success.')
+        result,issues=learning.contributions([row],[bundle],attempts,TASK,{})
+        self.assertEqual(result,{bundle['id']:'adopted'});self.assertFalse(issues)
+        attempts[-1]['candidate_sources']['main.py']='bound = False\nother = True\n'
+        result,issues=learning.contributions([row],[bundle],attempts,TASK,{})
+        self.assertFalse(result);self.assertTrue(issues)
+
+    def test_invalid_reflection_keeps_success_and_records_deliveries_without_credit(self):
+        class InvalidReflection(Backend):
+            def execute(inner,kind,payload,*args):
+                result=super().execute(kind,payload,*args)
+                if kind=='extract':result['output']['update']['supporting_attempts']=[2]
+                return result
+        loop=self.prepare('invalid-reflection');backend=InvalidReflection(2)
+        state=loop.run(backend,execute=True)
+        self.assertEqual(state['status'],'passed');self.assertTrue(state['training_accepted']);self.assertTrue(state['finalized'])
+        self.assertEqual(state['extraction_disposition'],'failed');self.assertIn('failed and successful',state['extraction_error'])
+        self.assertFalse((loop.root/'candidate-pool/success.json').exists())
+        self.assertTrue(any(v.get('learning',{}).get('usage_by_model') for v in compact.load(self.file)['experiences']))
+        summary=read(loop.root/'summary.json');self.assertEqual(summary['extraction_error'],state['extraction_error'])
+        count=len(backend.calls);before=self.file.read_bytes();loop.run(backend,execute=True)
+        self.assertEqual(len(backend.calls),count);self.assertEqual(self.file.read_bytes(),before)
+
+    def test_usage_write_failure_does_not_invalidate_repair(self):
+        from unittest.mock import patch
+        loop=self.prepare('usage-failure')
+        with patch('temporal_contract_analyzer.experience_learning.record_usage',side_effect=OSError('Synthetic write failure')):
+            state=loop.run(Backend(),execute=True)
+        self.assertEqual(state['status'],'passed');self.assertTrue(state['finalized'])
+        self.assertIn('Synthetic write failure',state['learning_error'])
+
+    def test_revision_preserves_latest_same_id_statistics_without_extra_initial_credit(self):
+        bundle=approval.freeze(self.store)['entries'][0]['bundle'];expected={bundle['id']:bundle['sha256']}
+        learning.record_usage(self.store,'old-case','model-a',expected,{bundle['id']:'adopted'})
+        record=self.revision_record();record['learning']=learning.empty(priority=1)
+        compact.publish_candidate(self.store,record)
+        learning.record_usage(self.store,'during-review','model-a',expected,{bundle['id']:'rule_error'})
+        before=deepcopy(compact.load(self.file)['experiences'][0]['learning'])
+        self.review_draft('accept')
+        saved=compact.load(self.file)['experiences'][0]
+        self.assertEqual(saved['learning'],before);self.assertEqual(learning.score(saved['learning'],'model-a'),0)
+        self.assertEqual(saved['review']['decision'],'accept')
+
+    def test_revision_retains_known_origin_and_fills_unknown_origin(self):
+        original=self.file.read_bytes()
+        origin=dict(reflection_model='model-a',reflection_effort='medium',repair_model='model-a',first_success_attempt=2)
+        newer=dict(origin,reflection_model='model-b',repair_model='model-b')
+        for previous in (None,origin):
+            with self.subTest(origin=previous):
+                self.file.write_bytes(original)
+                value=compact.load(self.file);value['experiences'][0]['learning']=learning.empty(previous)
+                self.file.write_text(json.dumps(value))
+                record=self.revision_record();record['learning']=learning.empty(newer,1)
+                compact.publish_candidate(self.store,record);self.review_draft('accept')
+                saved=compact.load(self.file)['experiences'][0]['learning']
+                self.assertEqual(saved['origin'],previous or newer);self.assertEqual(saved['initial_priority'],0)
+
     def revision_record(self,merge=False):
         bundles=[e['bundle'] for e in approval.freeze(self.store)['entries']]
         b=bundles[0]

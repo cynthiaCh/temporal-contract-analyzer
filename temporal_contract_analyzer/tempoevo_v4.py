@@ -722,43 +722,47 @@ class Trajectory:
                 failed_attempts={a['number'] for a in state['attempts'][:-1] if a['acceptance_passed'] is False and
                     (a['visible_passed'] is False or (a.get('oracle_result') or {}).get('passed') is False)}
                 if passed and failed_attempts:
-                    learned=self._step(p,backend,'extract','extract',dict(task=p['task'],sources=sources,
-                        related_experiences=related,
-                        initial_contract=read(self.root/'initial-contract.json') if p['condition']!='baseline' else None,
-                        final_contract=self.state()['contract'],
-                        trajectory=[dict(number=a['number'],visible_passed=a['visible_passed'],acceptance_passed=a['acceptance_passed'],
-                            feedback=a['feedback'],delivered_sha256s=a['delivered_sha256s'],
-                            diff=evidence['diffs'][i]['from_previous']) for i,a in enumerate(state['attempts'])],
-                        schema=REFLECTION_SCHEMA,instruction='Compare the failed and successful changes, using the original task/source and the supplied related guidance only. '
-                        'Extract only a reusable correction, not routine syntax/import/path fixes. Classify implementation-only work as implementation_gap. '
-                        'Prefer evidence or an in-place revision over new entries; merge only explicitly overlapping guidance. '
-                        'Use actual failed AND successful supporting_attempts. Preserve still-applicable obligations and distinguish unknown causes. '
-                        'Write a concise English abstract within 1000 characters, covering applicability, recommendation, preservation and exclusions. '
-                        'For each contribution, quote an exact delivered rule and exact before/after code from the failed/successful patches, plus original TASK/source evidence. '
-                        'Use adopted only for an observable implementation of the rule, misleading only for a specifically evidenced harmful recommendation, '
-                        'and rule_error only when the rule itself or its applicability is demonstrably wrong. Do not score all delivered guidance for the overall verdict. '
-                        'Omit uncertain contributions; no contribution is preferable to a fabricated attribution. Passing does not prove causal benefit.'))['output']
-                    from ._session_runtime.schema_validator import validate
-                    validate(learned,REFLECTION_SCHEMA)
-                    from . import experience_learning as learning
-                    judgments,issues=learning.contributions(learned['contributions'],related,state['attempts'],p['task'],sources)
-                    self.status(self.state()['status'],contributions=learned['contributions'],contribution_decisions=judgments,contribution_issues=issues)
-                    update=reflection.plan(learned['experience'],learned['update'],related,len(state['attempts']))
-                    if update['failure_attribution']=='implementation_gap':
-                        self.status(self.state()['status'],extraction_disposition='implementation_only')
-                    else:
-                        supporting=set(update['supporting_attempts'])
-                        if state['attempts'][-1]['number'] not in supporting or not supporting.intersection(failed_attempts):
-                            raise EvidenceError('Reusable experience needs failed and successful attempt evidence')
-                        origin=dict(reflection_model=p['model']['model'],reflection_effort=p['model']['reasoning_effort'],
-                            repair_model=p['model']['model'],first_success_attempt=len(state['attempts']))
-                        metadata=learning.empty(origin,1 if update['failure_attribution']=='experience_gap' else 0)
-                        self.save('candidate-pool/success.json',dict(status='awaiting_content_review',origin='success',
-                            task=p['task'],evidence=evidence,training_accepted=True,final_training_acceptance=self.state()['final_acceptance'],
-                            source_sha256=p['source_sha256'],initial_contract=read(self.root/'initial-contract.json') if p['condition']!='baseline' else None,
-                            final_contract=self.state()['contract'],trajectory=state['attempts'],experience=learned['experience'],abstract=learned['abstract'],
-                            learning=metadata,reflection_update=update,related_experiences=related,effectiveness_verified=False))
-                        self._enqueue_online(p,'success')
+                    try:
+                        learned=self._step(p,backend,'extract','extract',dict(task=p['task'],sources=sources,
+                            related_experiences=related,
+                            initial_contract=read(self.root/'initial-contract.json') if p['condition']!='baseline' else None,
+                            final_contract=self.state()['contract'],
+                            trajectory=[dict(number=a['number'],visible_passed=a['visible_passed'],acceptance_passed=a['acceptance_passed'],
+                                feedback=a['feedback'],delivered_sha256s=a['delivered_sha256s'],
+                                diff=evidence['diffs'][i]['from_previous']) for i,a in enumerate(state['attempts'])],
+                            schema=REFLECTION_SCHEMA,instruction='Compare the failed and successful changes, using the original task/source and the supplied related guidance only. '
+                            'Extract only a reusable correction, not routine syntax/import/path fixes. Classify implementation-only work as implementation_gap. '
+                            'Prefer evidence or an in-place revision over new entries; merge only explicitly overlapping guidance. '
+                            'Use actual failed AND successful supporting_attempts. Preserve still-applicable obligations and distinguish unknown causes. '
+                            'Write a concise English abstract within 1000 characters, covering applicability, recommendation, preservation and exclusions. '
+                            'For each contribution, quote an exact delivered rule, before code from any failed attempt and after code retained in the final successful attempt, plus original TASK/source evidence. For pure additions or deletions, include adjacent context on the unchanged side of the same edit. '
+                            'Use adopted only for an observable implementation of the rule, misleading only for a specifically evidenced harmful recommendation, '
+                            'and rule_error only when the rule itself or its applicability is demonstrably wrong. Do not score all delivered guidance for the overall verdict. '
+                            'Omit uncertain contributions; no contribution is preferable to a fabricated attribution. Passing does not prove causal benefit.'))['output']
+                        from ._session_runtime.schema_validator import validate
+                        validate(learned,REFLECTION_SCHEMA)
+                        from . import experience_learning as learning
+                        judgments,issues=learning.contributions(learned['contributions'],related,state['attempts'],p['task'],sources)
+                        self.status(self.state()['status'],contributions=learned['contributions'],contribution_decisions=judgments,contribution_issues=issues)
+                        update=reflection.plan(learned['experience'],learned['update'],related,len(state['attempts']))
+                        if update['failure_attribution']=='implementation_gap':
+                            self.status(self.state()['status'],extraction_disposition='implementation_only')
+                        else:
+                            supporting=set(update['supporting_attempts'])
+                            if state['attempts'][-1]['number'] not in supporting or not supporting.intersection(failed_attempts):
+                                raise EvidenceError('Reusable experience needs failed and successful attempt evidence')
+                            origin=dict(reflection_model=p['model']['model'],reflection_effort=p['model']['reasoning_effort'],
+                                repair_model=p['model']['model'],first_success_attempt=len(state['attempts']))
+                            metadata=learning.empty(origin,1 if update['failure_attribution']=='experience_gap' else 0)
+                            self.save('candidate-pool/success.json',dict(status='awaiting_content_review',origin='success',
+                                task=p['task'],evidence=evidence,training_accepted=True,final_training_acceptance=self.state()['final_acceptance'],
+                                source_sha256=p['source_sha256'],initial_contract=read(self.root/'initial-contract.json') if p['condition']!='baseline' else None,
+                                final_contract=self.state()['contract'],trajectory=state['attempts'],experience=learned['experience'],abstract=learned['abstract'],
+                                learning=metadata,reflection_update=update,related_experiences=related,effectiveness_verified=False))
+                            self._enqueue_online(p,'success')
+                    except Exception as error:
+                        if self.state()['cancelled']:raise
+                        self.status(self.state()['status'],extraction_disposition='failed',extraction_error=repr(error),contribution_decisions={})
                 elif passed:
                     self.status(self.state()['status'],extraction_disposition='first_pass_skipped' if len(state['attempts'])==1 else 'no_confirmed_failure')
                 elif len(state['attempts'])==3 and all(a['acceptance_passed'] is False for a in state['attempts']):
@@ -767,7 +771,10 @@ class Trajectory:
                         attempts=self.state()['attempts'],contract_changes=self.state()['diagnoses'],
                         summary=None,expert=None,related_experiences=related,reflection_update_schema=REFLECTION_UPDATE_SCHEMA,effectiveness_verified=False))
                     self.status('awaiting_expert_summary')
-                self._record_learning_usage(p)
+                try:self._record_learning_usage(p)
+                except Exception as error:
+                    if self.state()['cancelled']:raise
+                    self.status(self.state()['status'],learning_error=repr(error))
         except (Exception,KeyboardInterrupt) as error:
             if self.state()['status']!='cancelled':self.status('execution_invalid',error=repr(error),stop_reason='execution_invalid',training_accepted=self.state().get('training_accepted'))
         if self.state()['status'] in ('passed','scored','awaiting_expert_summary','repair_exhausted'):self.status(self.state()['status'],finalized=True)
@@ -869,5 +876,6 @@ class Trajectory:
             unknown_request_stages=[s['key'] for s in state['stages'] if s['kind'] in LIMITS and type(s.get('requests')) is not int],
             cumulative_action_request_cap=p['limits']['action']['requests']*p['max_attempts'],
             stages=state['stages'],delivery=read(self.root/'delivery.json') if (self.root/'delivery.json').exists() else None,
-            candidate_learning_enabled=p['mode']=='learning',error=state.get('error'))
+            candidate_learning_enabled=p['mode']=='learning',extraction_disposition=state.get('extraction_disposition'),
+            extraction_error=state.get('extraction_error'),learning_error=state.get('learning_error'),error=state.get('error'))
         self.save('summary.json',result);return result

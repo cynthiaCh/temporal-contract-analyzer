@@ -118,7 +118,8 @@ class BoundaryTests(unittest.TestCase):
   loop.run(b,execute=True);self.assertEqual(len(b.calls),count)
  def test_extraction_failure_preserves_accepted_assessment(self):
   loop=self.prepare();s=loop.run(Backend(2,invalid='extract'),execute=True)
-  self.assertEqual(s['status'],'execution_invalid');self.assertTrue(s['training_accepted']);self.assertEqual(s['repair_stop_reason'],'oracle_accepted')
+  self.assertEqual(s['status'],'passed');self.assertTrue(s['training_accepted']);self.assertEqual(s['repair_stop_reason'],'oracle_accepted')
+  self.assertEqual(s['extraction_disposition'],'failed');self.assertTrue(s['finalized'])
   self.assertFalse((loop.root/'candidate-pool/success.json').exists())
  def test_raw_probe_exit_one_is_a_behavior_failure_not_transport_error(self):
   import sys

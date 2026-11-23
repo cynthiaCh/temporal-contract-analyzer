@@ -68,7 +68,7 @@ retrieved update candidates, instead of the full library and repeated source sna
 With one selection this is at most five entries; reselection retains all actually
 delivered entries for attribution.
 Implementation-only fixes do not produce new guidance. Three failures still
-request an expert summary. No additional scoring model call is added.
+request an expert summary. No additional scoring model call is added. Failed extraction skips experience publication and credit without invalidating an accepted repair. Extraction and usage-write errors appear separately in the existing run state and summary; reruns do not repeat completed repairs.
 
 Each entry keeps `learning.origin`, `initial_priority` and `usage_by_model`.
 Origins record the verified reflection model/effort, repair model and first
@@ -76,10 +76,13 @@ successful Action. Unknown historical origins remain null; existing entries star
 at zero rather than receiving invented credit. A source-supported experience-gap
 correction starts at one. Unique-case observations count deliveries, evidenced
 adoptions and specifically evidenced misleading recommendations separately.
+Same-ID revision approval retains the latest cumulative observations, including those recorded while its draft was under review; it does not add another initial-priority bonus. Existing reflection origins remain recorded, with a known draft origin filling an unknown origin. These are ID-level observations, not proof that every revision has the same benefit.
 Small case-result keys in the same JSON make updates idempotent across retries;
 full evidence remains in the existing trajectory. Literal rule/code/source quotes
-are checked, and before/after excerpts must overlap actual edits rather than
-unchanged context. Semantic contribution judgments remain fallible and are not causal
+are checked, and before/after excerpts must identify the same actual edit rather than
+unrelated context. Pure additions and deletions allow adjacent context on the unchanged
+side. Before evidence may come from any failed attempt; after evidence must remain
+in the final successful code. Semantic contribution judgments remain fallible and are not causal
 proof. Uncertain or malformed claims receive no credit. A rule-error finding is
 retained as a visible review concern; it does not change approval or disable guidance. Case failure alone never decrements every entry.
 

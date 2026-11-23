@@ -74,7 +74,8 @@ def contributions(rows,related,attempts,task,sources):
     from .tempoevo_v4 import evidence_valid
     allowed={b['sha256']:b for b in related};results={};issues=[]
     if len(attempts)<2 or attempts[-1]['acceptance_passed'] is not True:return results,issues
-    before=attempts[-2]['candidate_sources'];after=attempts[-1]['candidate_sources']
+    failed=[a['candidate_sources'] for a in attempts[:-1] if a['acceptance_passed'] is False]
+    after=attempts[-1]['candidate_sources']
     delivered={code for a in attempts for code in a['delivered_sha256s']}
     grouped={}
     for row in rows:grouped.setdefault(row['experience_sha256'],[]).append(row)
@@ -84,12 +85,11 @@ def contributions(rows,related,attempts,task,sources):
             row=items[0];bundle=allowed[code]
             rule=next((r for r in bundle['rules'] if r['id']==row['rule_id']),None)
             if rule is None or not memory.text(row['rule_quote']) or row['rule_quote'] not in rule['body']:raise EvidenceError('Unsupported experience rule quote')
-            evidence_valid([row['before']],task,before);evidence_valid([row['after']],task,after)
-            if row['before']['file'] not in before or row['after']['file'] not in after or row['before']['quote']==row['after']['quote']:
+            evidence_valid([row['after']],task,after)
+            if row['before']['quote']==row['after']['quote']:
                 raise EvidenceError('Contribution requires changed failed and successful code')
-            if before.get(row['after']['file'])==after.get(row['after']['file']):raise EvidenceError('Contribution code did not change')
-            if not _changed_quote(row['before'],before,after) or not _changed_quote(row['after'],after,before):
-                raise EvidenceError('Contribution quotes must overlap actual changed code')
+            if not any(_changed_pair(row['before'],row['after'],before,after) for before in failed):
+                raise EvidenceError('Contribution quotes must identify the same actual edit from a failed attempt')
             if not row['supporting_evidence']:raise EvidenceError('Contribution needs original task/source evidence')
             evidence_valid(row['supporting_evidence'],task,sources)
             results[bundle['id']]=row['decision']
@@ -97,21 +97,36 @@ def contributions(rows,related,attempts,task,sources):
     return results,issues
 
 
-def _changed_quote(evidence,side,other):
-    """Locate literal excerpts overlapping an actual edit, excluding diff context."""
+def _changed_pair(before_quote,after_quote,before,after):
+    """Pair literal excerpts at one edit, including insertion/deletion boundaries."""
     from difflib import SequenceMatcher
-    text=side[evidence['file']];opposite=other.get(evidence['file'],'')
-    lines=text.splitlines(keepends=True);other_lines=opposite.splitlines(keepends=True);offsets=[0]
-    for line in lines:offsets.append(offsets[-1]+len(line))
-    ranges=[]
-    for tag,a,b,c,d in SequenceMatcher(None,lines,other_lines,autojunk=False).get_opcodes():
-        if tag=='equal' or a==b:continue
-        chunk=text[offsets[a]:offsets[b]];other_chunk=''.join(other_lines[c:d])
-        ranges.extend((offsets[a]+start,offsets[a]+end) for kind,start,end,_,_ in
-                      SequenceMatcher(None,chunk,other_chunk,autojunk=False).get_opcodes()
-                      if kind!='equal' and start<end)
-    quote=evidence['quote'];start=text.find(quote)
-    while start>=0:
-        if any(start<end and start+len(quote)>begin for begin,end in ranges):return True
-        start=text.find(quote,start+1)
+    name=before_quote['file']
+    if name!=after_quote['file'] or name not in before or name not in after:return False
+    old=before[name];new=after[name]
+    def locations(text,quote):
+        start=text.find(quote)
+        while start>=0:
+            yield start,start+len(quote)
+            start=text.find(quote,start+1)
+    left=list(locations(old,before_quote['quote']));right=list(locations(new,after_quote['quote']))
+    if not left or not right:return False
+    def overlaps(text,quotes,start,end):
+        for a,b in quotes:
+            if start!=end:
+                if a<end and b>start:return True
+            elif a<=start<=b:return True
+            else:
+                gap=text[b:start] if b<start else text[start:a]
+                if gap.isspace() and gap.count('\n')<=1:return True
+        return False
+    old_lines=old.splitlines(keepends=True);new_lines=new.splitlines(keepends=True)
+    old_offsets=[0];new_offsets=[0]
+    for line in old_lines:old_offsets.append(old_offsets[-1]+len(line))
+    for line in new_lines:new_offsets.append(new_offsets[-1]+len(line))
+    for tag,a,b,c,d in SequenceMatcher(None,old_lines,new_lines,autojunk=False).get_opcodes():
+        if tag=='equal':continue
+        old_start=old_offsets[a];new_start=new_offsets[c]
+        for kind,i,j,k,l in SequenceMatcher(None,old[old_start:old_offsets[b]],new[new_start:new_offsets[d]],autojunk=False).get_opcodes():
+            if kind!='equal' and overlaps(old,left,old_start+i,old_start+j) and overlaps(new,right,new_start+k,new_start+l):
+                return True
     return False
