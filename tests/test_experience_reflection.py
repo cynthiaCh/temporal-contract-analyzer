@@ -60,6 +60,17 @@ class ReflectionTests(unittest.TestCase):
         self.assertLessEqual({b['sha256'] for b in related},{b['sha256'] for b in bundles})
         p['condition']='baseline';self.assertEqual(reflection.related(p,{}),[])
 
+    def test_three_delivered_entries_do_not_crowd_out_update_discovery(self):
+        a=self.bundle();bundles=[]
+        for i in range(12):
+            value=deepcopy(a);value.update(id='synthetic-'+str(i),sha256=str(i).zfill(64));bundles.append(value)
+        p=dict(condition='structured',task='Capture entry identity',memory_snapshot=dict(entries=[dict(bundle=b) for b in bundles]))
+        delivered=[b['sha256'] for b in bundles[-3:]]
+        related=reflection.related(p,dict(selected_sha256s=delivered))
+        self.assertEqual([b['sha256'] for b in related[:3]],delivered)
+        self.assertEqual(len(related),5)
+        self.assertTrue(all(b['sha256'] not in delivered for b in related[3:]))
+
     def test_new_with_existing_guidance_needs_an_independent_increment(self):
         a=self.bundle();exp=self.experience(a);exp['rules'][0]['body']+=' Independent operation.'
         for missing in ('change_summary','supporting_attempts'):

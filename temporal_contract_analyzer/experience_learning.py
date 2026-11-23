@@ -63,9 +63,7 @@ def record_usage(store,case_id,model,expected,judgments):
                 row['positive_cases']=sum(v=='adopted' for v in row['cases'].values())
                 row['negative_cases']=sum(v in ('misleading','rule_error') for v in row['cases'].values())
                 validate(metadata);item['learning']=metadata
-                if result=='rule_error':
-                    from . import archive
-                    item['review']=dict(reviewer='Automated screening: '+model,decision='revise',at=archive.now())
+                # A model finding is a review concern, not an approval decision.
                 dirty=True;changed.append(item['id'])
             if dirty:compact._write(file,value)
     return changed
@@ -90,8 +88,30 @@ def contributions(rows,related,attempts,task,sources):
             if row['before']['file'] not in before or row['after']['file'] not in after or row['before']['quote']==row['after']['quote']:
                 raise EvidenceError('Contribution requires changed failed and successful code')
             if before.get(row['after']['file'])==after.get(row['after']['file']):raise EvidenceError('Contribution code did not change')
+            if not _changed_quote(row['before'],before,after) or not _changed_quote(row['after'],after,before):
+                raise EvidenceError('Contribution quotes must overlap actual changed code')
             if not row['supporting_evidence']:raise EvidenceError('Contribution needs original task/source evidence')
             evidence_valid(row['supporting_evidence'],task,sources)
             results[bundle['id']]=row['decision']
         except (EvidenceError,ValueError) as error:issues.append(dict(experience_sha256=code,error=str(error)))
     return results,issues
+
+
+def _changed_quote(evidence,side,other):
+    """Locate literal excerpts overlapping an actual edit, excluding diff context."""
+    from difflib import SequenceMatcher
+    text=side[evidence['file']];opposite=other.get(evidence['file'],'')
+    lines=text.splitlines(keepends=True);other_lines=opposite.splitlines(keepends=True);offsets=[0]
+    for line in lines:offsets.append(offsets[-1]+len(line))
+    ranges=[]
+    for tag,a,b,c,d in SequenceMatcher(None,lines,other_lines,autojunk=False).get_opcodes():
+        if tag=='equal' or a==b:continue
+        chunk=text[offsets[a]:offsets[b]];other_chunk=''.join(other_lines[c:d])
+        ranges.extend((offsets[a]+start,offsets[a]+end) for kind,start,end,_,_ in
+                      SequenceMatcher(None,chunk,other_chunk,autojunk=False).get_opcodes()
+                      if kind!='equal' and start<end)
+    quote=evidence['quote'];start=text.find(quote)
+    while start>=0:
+        if any(start<end and start+len(quote)>begin for begin,end in ranges):return True
+        start=text.find(quote,start+1)
+    return False

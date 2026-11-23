@@ -116,32 +116,47 @@ def load(path):
         raise EvidenceError('Experience list must be an array')
     ids = set()
     for item in value['experiences']:
-        fields = {'id', 'title', 'labels', 'requires', 'excludes'} | {key for key, _ in SECTIONS}
-        if isinstance(item, dict) and 'review' in item:
-            fields.add('review')
-        if isinstance(item, dict) and 'proposal' in item:
-            fields.add('proposal')
-        if isinstance(item,dict) and 'evidence_ref' in item:fields.add('evidence_ref')
-        if isinstance(item,dict) and 'summary' in item:fields.add('summary')
-        if isinstance(item,dict) and 'learning' in item:fields.add('learning')
-        if isinstance(item,dict) and 'superseded_by' in item:fields.add('superseded_by')
-        if isinstance(item,dict) and 'superseded' in item:fields.add('superseded')
-        memory.object_fields(item, fields, 'experience')
-        if not memory.text(item['id']) or item['id'] in ids or not memory.text(item['title']) \
-                or any(not memory.text(item[key]) for key, _ in SECTIONS):
-            raise EvidenceError('Invalid or duplicate experience')
-        if 'superseded_by' in item and (not memory.text(item['superseded_by']) or item['superseded_by']==item['id']):raise EvidenceError('Invalid explicit replacement')
-        if 'superseded' in item and type(item['superseded']) is not bool:raise EvidenceError('Invalid replacement state')
-        ids.add(item['id'])
-        validate_review(review_for(value, item))
-        if 'summary' in item:validate_summary(item['summary'])
-        if 'learning' in item:
-            from .experience_learning import validate
-            validate(item['learning'])
-        if 'proposal' in item:
-            validate_proposal(item['proposal'])
-        if 'evidence_ref' in item:evidence_attachment(path,item)
+        _validate_item(path,value,item,ids)
     return value
+
+
+def _validate_item(path,value,item,ids):
+    fields = {'id', 'title', 'labels', 'requires', 'excludes'} | {key for key, _ in SECTIONS}
+    if isinstance(item, dict) and 'review' in item:
+        fields.add('review')
+    if isinstance(item, dict) and 'proposal' in item:
+        fields.add('proposal')
+    if isinstance(item,dict) and 'evidence_ref' in item:fields.add('evidence_ref')
+    if isinstance(item,dict) and 'summary' in item:fields.add('summary')
+    if isinstance(item,dict) and 'learning' in item:fields.add('learning')
+    if isinstance(item,dict) and 'superseded_by' in item:fields.add('superseded_by')
+    if isinstance(item,dict) and 'superseded' in item:fields.add('superseded')
+    if isinstance(item,dict) and 'pending_revision' in item:fields.add('pending_revision')
+    memory.object_fields(item, fields, 'experience')
+    if not memory.text(item['id']) or item['id'] in ids or not memory.text(item['title']) \
+            or any(not memory.text(item[key]) for key, _ in SECTIONS):
+        raise EvidenceError('Invalid or duplicate experience')
+    if 'superseded_by' in item and (not memory.text(item['superseded_by']) or item['superseded_by']==item['id']):raise EvidenceError('Invalid explicit replacement')
+    if 'superseded' in item and type(item['superseded']) is not bool:raise EvidenceError('Invalid replacement state')
+    ids.add(item['id'])
+    validate_review(review_for(value, item))
+    if 'summary' in item:validate_summary(item['summary'])
+    if 'learning' in item:
+        from .experience_learning import validate
+        validate(item['learning'])
+    if 'proposal' in item:
+        validate_proposal(item['proposal'])
+    if 'evidence_ref' in item:evidence_attachment(path,item)
+    if 'pending_revision' in item:
+        pending=item['pending_revision']
+        memory.object_fields(pending, {'base_record','item'}, 'pending revision')
+        if not isinstance(pending['base_record'],str) or not re.fullmatch(r'[0-9a-f]{64}',pending['base_record']):
+            raise EvidenceError('Invalid revision base')
+        draft=pending['item']
+        if not isinstance(draft,dict) or draft.get('id')!=item['id'] or 'pending_revision' in draft:
+            raise EvidenceError('Revision must retain the same ID without nested drafts')
+        _validate_item(path,value,draft,set())
+        if review_for(value,draft)['decision']=='accept':raise EvidenceError('Accepted revisions must be promoted')
 
 
 def validate_summary(value):
@@ -168,6 +183,7 @@ def save_summary(path, request):
         match=next(((file,value,item) for file,value in values for item in value['experiences'] if item['id']==request['id']),None)
         if match is None:raise EvidenceError('Experience not found')
         file,value,item=match
+        if 'pending_revision' in item:item=item['pending_revision']['item']
         if _bundle(file,item)[0]['sha256']!=request['expected_record'] or item.get('summary')!=request['expected_summary']:
             raise EvidenceError('Experience or summary changed; refresh before reviewing again')
         review=(dict(reviewer=None,decision='pending',at=None) if request['decision']=='pending' else
@@ -181,7 +197,7 @@ def save_summary(path, request):
 
 
 def _bundle(file, item):
-    raw=canonical({k:v for k,v in item.items() if k not in ('review','summary','learning','superseded_by','superseded')}).encode('utf-8')
+    raw=canonical({k:v for k,v in item.items() if k not in ('review','summary','learning','superseded_by','superseded','pending_revision')}).encode('utf-8')
     code=sha(raw)
     bundle=memory.seal(dict(schema_version=memory.BUNDLE_VERSION_V2,
         id=item['id'], version='single-file-v1', parent_sha256=None,
@@ -324,7 +340,7 @@ def _write(file, value):
 
 
 def publish_candidate(path, record):
-    """Update one stable entry in place; only explicit merges retire other IDs."""
+    """Stage a same-ID draft; accepted guidance changes only after review."""
     from . import experience_reflection as reflection
     from .experience_learning import empty,validate
     experience=record['experience'];update=record['reflection_update']
@@ -364,20 +380,16 @@ def publish_candidate(path, record):
                 if _bundle(file,old)[0]['sha256']!=update['target_sha256s'][0] or (primary not in active_view(path)['active_ids'] and review_for(value,old)['decision']!='revise'):
                     raise EvidenceError('Update target changed; rebase against current guidance')
             if same:
-                if update['operation']=='merge':
-                    for owner,document in values:
-                        changed=False
-                        for target in document['experiences']:
-                            if target['id'] in target_ids[1:] and target.get('superseded_by')!=primary:
-                                target['superseded_by']=primary;changed=True
-                        if changed:_write(owner,document)
                 return dict(published_sha256=_bundle(file,old)[0]['sha256'],publication_kind='experience_update')
-            value['experiences'][value['experiences'].index(old)]=item
+            # Keep accepted guidance live while its same-ID draft is reviewed.
+            staged=primary and review_for(value,old)['decision']=='accept'
+            if not staged:value['experiences'][value['experiences'].index(old)]=item
         else:
             path=Path(path);file=path if path.is_file() else (values[0][0] if len(values)==1 and not values[0][1]['experiences'] else path/'candidates.json')
             value=next((v for f,v in values if f==file),None)
             if value is None:value=dict(schema_version=VERSION,category='Candidate experiences',experiences=[])
             value['experiences'].append(item)
+        if not existing:staged=False
         item['review']=dict(reviewer=None,decision='pending',at=None)
         item['learning']=record.get('learning',empty());validate(item['learning'])
         bundle=_bundle(file,item)[0]
@@ -385,16 +397,15 @@ def publish_candidate(path, record):
         item['summary']=dict(text=record.get('abstract') or preview(bundle),expert_questions='None.',source_record=bundle['sha256'],
             review=dict(reviewer=None,decision='pending',at=None))
         validate_summary(item['summary'])
+        if staged:
+            pending=dict(base_record=_bundle(file,old)[0]['sha256'],item=item)
+            previous=old.get('pending_revision')
+            if previous and _bundle(file,previous['item'])[0]['sha256']==bundle['sha256']:
+                return dict(published_sha256=bundle['sha256'],publication_kind='experience_update')
+            if previous and previous['item']['review']['decision']=='pending':
+                raise EvidenceError('A different revision draft already exists; review it before publishing another')
+            old['pending_revision']=pending
         _write(file,value)
-        if update['operation']=='merge':
-            for owner,document in values:
-                dirty=False
-                for old in document['experiences']:
-                    if old['id'] in target_ids[1:]:
-                        code=update['target_sha256s'][target_ids.index(old['id'])]
-                        if _bundle(owner,old)[0]['sha256']!=code:raise EvidenceError('Merge target changed')
-                        old['superseded_by']=item['id'];dirty=True
-                if dirty:_write(owner,document)
         return dict(published_sha256=bundle['sha256'],publication_kind='experience_update' if primary else 'experience_entry')
 
 
@@ -416,6 +427,13 @@ def _save_review(path, request):
     if match is None:
         raise EvidenceError('Experience not found')
     file, value, item = match
+    owner=item
+    retired_targets=set(owner.get('proposal',{}).get('target_ids',[])) & set(active_view(path)['superseded_ids'])
+    pending=item.get('pending_revision')
+    if pending:
+        if _bundle(file,owner)[0]['sha256']!=pending['base_record']:
+            raise EvidenceError('Accepted guidance changed; rebase the revision')
+        item=pending['item'];bundle=_bundle(file,item)[0]
     if bundle['sha256']!=request['expected_record'] or review_for(value, item)!=request['expected_review']:
         raise EvidenceError('Experience or review state changed; refresh before reviewing again')
     proposal=item.get('proposal',{})
@@ -432,27 +450,33 @@ def _save_review(path, request):
             entry.setdefault('review', dict(value['review']))
         del value['review']
     item['review'] = dict(reviewer=request['reviewer'].strip(), decision=request['decision'], at=archive.now())
+    if pending and request['decision']=='accept':
+        # Preserve permanent retirement metadata from previous consolidations.
+        for key in ('superseded','superseded_by'):
+            if key in owner:item[key]=owner[key]
+        value['experiences'][value['experiences'].index(owner)]=item
     # Preserve JSON field order so a review update does not reformat every entry.
     _write(file,value)
     if request['decision']=='accept':
+        merge_targets=(set(proposal.get('target_ids',[])) | retired_targets) if pending else set()
         for owner,document in values:
             changed=False
             for target in document['experiences']:
-                if target.get('superseded_by')==item['id'] and not target.get('superseded'):
-                    target['superseded']=True;changed=True
+                if target['id'] in merge_targets or (target.get('superseded_by')==item['id'] and not target.get('superseded')):
+                    target['superseded']=True;target['superseded_by']=item['id'];changed=True
             if changed:_write(owner,document)
     return dict(review=item['review'], record_sha256=bundle['sha256'], file=file.name, lifecycle=active_view(path))
 
 
 def page(path):
     values = documents(path)
-    bundles = {b['id']:b for b in materialize(path)[0]}
     cards = []
     queue = []
     lifecycle=active_view(path)
     superseded = set(lifecycle['superseded_ids'])
-    entries = [(file,value,item) for file,value in values for item in value['experiences']
+    entries = [(file,value,item.get('pending_revision',{}).get('item',item)) for file,value in values for item in value['experiences']
                if item['id'] not in superseded]
+    bundles={item['id']:_bundle(file,item)[0] for file,_,item in entries}
     categories = list(dict.fromkeys(value.get('category', 'Uncategorized') for _,value,_ in entries))
     for file, value, item in entries:
         category = value.get('category', 'Uncategorized')
@@ -466,11 +490,23 @@ def page(path):
                            for key, label in SECTIONS)
         proposal=item.get('proposal')
         appendix=('<p class="meta">Evidence attachment: '+escape(item['evidence_ref']['path'])+'</p>') if 'evidence_ref' in item else ''
-        context=('<p class="meta">Proposal: '+escape(proposal['operation'])+' · Targets: '+escape(', '.join(proposal['target_ids']) or 'none')+'</p>') if proposal else ''
+        original=next(i for i in value['experiences'] if i['id']==item['id'])
+        draft_note=''
+        if 'pending_revision' in original:
+            original_sections=''.join(f'<dt>{label}</dt><dd>{escape(original[key])}</dd>' for key,label in SECTIONS)
+            draft_note=('<div class="revision-note"><p>Revision draft; accepted guidance remains active until approval.</p>'
+                        '<details><summary>Currently accepted guidance · compare with this draft</summary><dl>'
+                        +original_sections+'</dl></details></div>')
+        context=draft_note+('<p class="meta">Proposal: '+escape(proposal['operation'])+' · Targets: '+escape(', '.join(proposal['target_ids']) or 'none')+'</p>' if proposal else '')
         from .experience_learning import score,empty
         metadata=item.get('learning',empty());origin=metadata['origin']
         learning_info=('Unknown' if origin is None else origin['reflection_model']+' / '+str(origin['reflection_effort'])+'; first success: '+str(origin['first_success_attempt']))
         learning_display=f'<p class="meta">Weight: {score(metadata)} · Reflection model: {escape(learning_info)}</p>'
+        concerns=[model+' / '+case for model,row in metadata['usage_by_model'].items()
+                  for case,result in row['cases'].items() if result=='rule_error']
+        if concerns:
+            learning_display+=('<details><summary>Model review concerns · guidance approval is unchanged</summary><p>'
+                               +escape('; '.join(concerns))+'</p></details>')
         summary=item.get('summary')
         summary_state=summary['review']['decision'] if summary else 'pending'
         if summary and summary['source_record']!=bundles[item['id']]['sha256']:summary_state='stale'

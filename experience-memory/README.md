@@ -17,7 +17,7 @@ Ordinary updates keep the same ID. They do not create a version chain.
 
 Each entry includes a stable ID, English title, labels, applicability conditions, recommendation, preservation requirements, counterexamples and verification. Inline `review` records store reviewer, decision and time, under this session's authorization for Iris to accept experience. New entries without `review` appear as pending and are excluded from default retrieval. Content acceptance does not establish success in new transfer experiments.
 
-New training candidates are published centrally to `library/candidates.json` as needed, appear directly in the review page as pending, and are excluded from default retrieval without changing existing approved snapshots. New mechanisms receive a stable ID. Revisions overwrite the target entry in place and reset content/summary review to pending; merges retain the primary ID and explicitly mark other targets as replaced after acceptance. Detailed reflections remain in the task's original `candidate-pool/`, without copying legacy source, version or decision files. Evidence-only additions with unchanged experience content retain the original candidate rather than creating duplicates.
+New training candidates are published centrally to `library/candidates.json` as needed, appear directly in the review page as pending, and are excluded from default retrieval without changing existing approved snapshots. New mechanisms receive a stable ID. Revisions retain the same ID and store a pending draft alongside accepted guidance. The old text and summary remain available to retrieval until the draft is accepted; rejecting a draft leaves them unchanged. Merges likewise retire their other targets only after acceptance. Detailed reflections remain in the task's original `candidate-pool/`, without copying legacy source, version or decision files. Evidence-only additions with unchanged experience content retain the original candidate rather than creating duplicates.
 
 Double-click `launch-experience-review.command` at the repository root to open review. Filter by category and review state together. Decisions are written only to the entry's category file, without separate decision files, case copies or source archives. Direct file editing is also supported; IDs must be unique across files. New topics can use additional files in the same format, discovered automatically by the page.
 
@@ -63,8 +63,10 @@ so later summary edits do not change an existing run. No new repair benefit is c
 ## Simple learning and priority
 
 First-Action successes skip extraction. Only failed-to-successful training
-trajectories call the existing extractor, using patch differences and at most
-three related entries instead of the full library and repeated source snapshots.
+trajectories call the existing extractor, using patch differences and the delivered entries plus up to two independently
+retrieved update candidates, instead of the full library and repeated source snapshots.
+With one selection this is at most five entries; reselection retains all actually
+delivered entries for attribution.
 Implementation-only fixes do not produce new guidance. Three failures still
 request an expert summary. No additional scoring model call is added.
 
@@ -76,9 +78,10 @@ correction starts at one. Unique-case observations count deliveries, evidenced
 adoptions and specifically evidenced misleading recommendations separately.
 Small case-result keys in the same JSON make updates idempotent across retries;
 full evidence remains in the existing trajectory. Literal rule/code/source quotes
-are checked, but semantic contribution judgments remain fallible and are not causal
-proof. Uncertain or malformed claims receive no credit. A rule-error finding pauses
-the entry for content review. Case failure alone never decrements every entry.
+are checked, and before/after excerpts must overlap actual edits rather than
+unchanged context. Semantic contribution judgments remain fallible and are not causal
+proof. Uncertain or malformed claims receive no credit. A rule-error finding is
+retained as a visible review concern; it does not change approval or disable guidance. Case failure alone never decrements every entry.
 
 Priority is clamped to [-3, 5]: initial priority plus positive cases minus negative
 cases. Current-repair-model observations are preferred; absent those, global

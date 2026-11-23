@@ -84,6 +84,10 @@ for (const form of document.querySelectorAll('form[data-id]')) {
       form.dataset.review = JSON.stringify(result.review);
       form.dataset.record = result.record_sha256;
       form.elements.decision.value = '';
+      if (result.review.decision === 'accept') {
+        const note = card.querySelector('.revision-note');
+        if (note) note.hidden = true;
+      }
       message.classList.toggle('error', false);
       message.textContent = 'Review saved to '+result.file+'.';
       refresh(result.lifecycle);

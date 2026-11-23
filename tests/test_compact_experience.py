@@ -146,7 +146,9 @@ class CompactExperienceTests(unittest.TestCase):
     def request(self, item_id='entry-binding', decision='accept'):
         value,item=next((value,item) for _,value in compact.documents(self.path)
                         for item in value['experiences'] if item['id']==item_id)
-        bundle=next(b for b in memory.records(self.path) if b['id']==item_id)
+        item=item.get('pending_revision',{}).get('item',item)
+        file=next(file for file,value in compact.documents(self.path) if any(i['id']==item_id for i in value['experiences']))
+        bundle=compact._bundle(file,item)[0]
         return dict(id=item_id, expected_record=bundle['sha256'],
                     expected_review=compact.review_for(value,item),
                     reviewer='Synthetic reviewer', decision=decision)

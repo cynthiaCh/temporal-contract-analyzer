@@ -75,7 +75,71 @@ class LearningTests(unittest.TestCase):
         self.assertEqual(sum(sum(r['positive_cases'] for r in v.get('learning',learning.empty())['usage_by_model'].values()) for v in values),1)
         before=self.file.read_bytes();loop.run(Crediting(2),execute=True);self.assertEqual(self.file.read_bytes(),before)
 
-    def test_concurrent_counting_and_rule_error_pause(self):
+    def test_unchanged_context_cannot_credit_or_discredit_guidance(self):
+        bundle=approval.freeze(self.store)['entries'][0]['bundle']
+        before='unchanged_a = 1\nunchanged_b = 2\nresult = 0\n'
+        after='unchanged_a = 1\nunchanged_b = 2\nresult = 3\n'
+        attempts=[dict(acceptance_passed=False,candidate_sources={'main.py':before},delivered_sha256s=[bundle['sha256']]),
+                  dict(acceptance_passed=True,candidate_sources={'main.py':after},delivered_sha256s=[bundle['sha256']])]
+        row=dict(experience_sha256=bundle['sha256'],rule_id=bundle['rules'][0]['id'],rule_quote=bundle['rules'][0]['body'],
+            before=dict(file='main.py',quote='unchanged_a = 1'),after=dict(file='main.py',quote='unchanged_b = 2'),
+            supporting_evidence=[dict(file='TASK',quote='Preserve accepted work.')],reason='Unchanged context.')
+        for decision in ('adopted','misleading','rule_error'):
+            result,issues=learning.contributions([dict(row,decision=decision)],[bundle],attempts,TASK,{})
+            self.assertFalse(result);self.assertTrue(issues)
+        # Context on a changed line is still not itself changed code.
+        attempts[0]['candidate_sources']['main.py']='unchanged_a = 1; unchanged_b = 2; result = 0\n'
+        attempts[1]['candidate_sources']['main.py']='unchanged_a = 1; unchanged_b = 2; result = 3\n'
+        result,issues=learning.contributions([dict(row,decision='adopted')],[bundle],attempts,TASK,{})
+        self.assertFalse(result);self.assertTrue(issues)
+
+    def revision_record(self,merge=False):
+        bundles=[e['bundle'] for e in approval.freeze(self.store)['entries']]
+        b=bundles[0]
+        experience=dict(labels=b['labels'],requires=b['requires'],excludes=b['excludes'],
+            rules=[dict(category=r['category'],body=r['body']+' Revised checkpoint.') for r in b['rules']],limitations=[])
+        return dict(experience=experience,related_experiences=bundles,abstract='Revised guidance.',
+            reflection_update=dict(operation='merge' if merge else 'revise',target_sha256s=[b['sha256'] for b in (bundles if merge else bundles[:1])]))
+
+    def test_rejected_revision_keeps_original_and_allows_replacement_draft(self):
+        original=approval.freeze(self.store)
+        record=self.revision_record();compact.publish_candidate(self.store,record)
+        self.review_draft('reject')
+        self.assertEqual(approval.freeze(self.store),original)
+        record['experience']['rules'][1]['body']+=' Another proposed check.'
+        compact.publish_candidate(self.store,record)
+        self.assertEqual(approval.freeze(self.store),original)
+        self.assertEqual(compact.load(self.file)['experiences'][0]['pending_revision']['item']['review']['decision'],'pending')
+
+    def test_merge_draft_retires_targets_only_after_acceptance(self):
+        original=approval.freeze(self.store)
+        record=self.revision_record(merge=True);compact.publish_candidate(self.store,record)
+        self.assertEqual(approval.freeze(self.store),original)
+        self.review_draft('reject')
+        self.assertEqual(approval.freeze(self.store),original)
+        self.review_draft('accept')
+        current=approval.freeze(self.store)
+        self.assertEqual([e['bundle']['id'] for e in current['entries']],['save'])
+        self.assertNotEqual(current['entries'][0]['bundle'],original['entries'][0]['bundle'])
+        self.assertEqual(approval.validate_snapshot(self.store,original),original)
+
+    def test_stale_merge_target_cannot_replace_accepted_primary(self):
+        original=approval.freeze(self.store)
+        compact.publish_candidate(self.store,self.revision_record(merge=True))
+        value=compact.load(self.file);value['experiences'][1]['event_relation']='Separately revised target.'
+        self.file.write_text(json.dumps(value));before=self.file.read_bytes()
+        with self.assertRaisesRegex(EvidenceError,'target changed'):self.review_draft('accept')
+        self.assertEqual(self.file.read_bytes(),before)
+        self.assertEqual(approval.freeze(self.store)['entries'][0]['bundle'],original['entries'][0]['bundle'])
+
+    def test_pending_draft_cannot_overwrite_a_different_unreviewed_draft(self):
+        record=self.revision_record();compact.publish_candidate(self.store,record)
+        record['experience']['rules'][1]['body']+=' Conflicting draft.'
+        before=self.file.read_bytes()
+        with self.assertRaisesRegex(EvidenceError,'different revision draft'):compact.publish_candidate(self.store,record)
+        self.assertEqual(self.file.read_bytes(),before)
+
+    def test_concurrent_counting_and_rule_error_preserves_approval(self):
         from concurrent.futures import ThreadPoolExecutor
         snapshot=approval.freeze(self.store);bundle=snapshot['entries'][0]['bundle'];expected={bundle['id']:bundle['sha256']}
         with ThreadPoolExecutor(max_workers=4) as pool:
@@ -84,8 +148,9 @@ class LearningTests(unittest.TestCase):
         self.assertEqual(row['delivered_cases'],1);self.assertEqual(row['positive_cases'],1)
         learning.record_usage(self.store,'bad-case','model-a',expected,{bundle['id']:'rule_error'})
         saved=compact.load(self.file)['experiences'][0]
-        self.assertEqual(saved['review']['decision'],'revise');self.assertEqual(saved['learning']['usage_by_model']['model-a']['negative_cases'],1)
-        self.assertNotIn(bundle['id'],compact.active_view(self.store)['active_ids'])
+        self.assertEqual(saved['review']['decision'],'accept');self.assertEqual(saved['learning']['usage_by_model']['model-a']['negative_cases'],1)
+        self.assertIn(bundle['id'],compact.active_view(self.store)['active_ids'])
+        self.assertIn('bad-case',compact.page(self.store).decode())
         self.assertEqual(approval.validate_snapshot(self.store,snapshot),snapshot)
 
     def test_in_place_revision_keeps_id_and_old_snapshot(self):
@@ -96,9 +161,27 @@ class LearningTests(unittest.TestCase):
             reflection_update=dict(operation='revise',target_sha256s=[bundle['sha256']]),learning=learning.empty())
         compact.publish_candidate(self.store,record)
         saved=compact.load(self.file)['experiences'];self.assertEqual(len(saved),2);self.assertEqual(saved[0]['id'],bundle['id'])
-        self.assertEqual(saved[0]['review']['decision'],'pending');self.assertEqual(saved[0]['summary']['review']['decision'],'pending')
+        self.assertEqual(saved[0]['review']['decision'],'accept')
+        draft=saved[0]['pending_revision']['item']
+        self.assertEqual(draft['review']['decision'],'pending');self.assertEqual(draft['summary']['review']['decision'],'pending')
+        self.assertEqual(approval.freeze(self.store)['entries'][0]['bundle'],bundle)
+        self.assertIn('Revision draft; accepted guidance remains active',compact.page(self.store).decode())
         self.assertEqual(approval.validate_snapshot(self.store,snapshot),snapshot)
         compact.publish_candidate(self.store,record);self.assertEqual(len(compact.load(self.file)['experiences']),2)
+        compact.save_summary(self.store,dict(id=draft['id'],expected_record=compact._bundle(self.file,draft)[0]['sha256'],
+            expected_summary=draft['summary'],text='Reviewed draft summary.',expert_questions='None.',reviewer='Reviewer',decision='accept'))
+        self.assertEqual(approval.freeze(self.store)['entries'][0]['bundle'],bundle)
+        self.review_draft('accept')
+        promoted=compact.load(self.file)['experiences'][0]
+        self.assertNotIn('pending_revision',promoted)
+        self.assertEqual(promoted['event_relation'],'Capture document identity before saving.')
+        self.assertEqual(approval.freeze(self.store)['entries'][0]['retrieval_summary']['text'],'Reviewed draft summary.')
+        self.assertEqual(approval.validate_snapshot(self.store,snapshot),snapshot)
+
+    def review_draft(self,decision):
+        owner=compact.load(self.file)['experiences'][0];draft=owner['pending_revision']['item']
+        return compact.save_review(self.store,dict(id=draft['id'],expected_record=compact._bundle(self.file,draft)[0]['sha256'],
+            expected_review=draft['review'],reviewer='Synthetic reviewer',decision=decision))
     def test_editing_a_consolidated_entry_does_not_revive_retired_sources(self):
         value=compact.load(self.file);parent,retired=value['experiences']
         retired['superseded']=True
@@ -109,10 +192,9 @@ class LearningTests(unittest.TestCase):
             rules=[dict(category=r['category'],body=r['body']+' Retain later accepted work.') for r in bundle['rules']],limitations=[])
         compact.publish_candidate(self.store,dict(experience=experience,related_experiences=[bundle],
             reflection_update=dict(operation='revise',target_sha256s=[bundle['sha256']])))
-        self.assertFalse(approval.freeze(self.store)['entries'])
+        self.assertEqual([e['bundle']['id'] for e in approval.freeze(self.store)['entries']],[bundle['id']])
+        self.review_draft('accept')
         saved=compact.load(self.file)['experiences'][0];self.assertNotIn('proposal',saved)
-        compact.save_review(self.store,dict(id=saved['id'],expected_record=compact._bundle(self.file,saved)[0]['sha256'],
-            expected_review=saved['review'],reviewer='Synthetic reviewer',decision='accept'))
         self.assertEqual([e['bundle']['id'] for e in approval.freeze(self.store)['entries']],[saved['id']])
         self.assertEqual(approval.validate_snapshot(self.store,snapshot),snapshot)
 
@@ -124,4 +206,4 @@ class LearningTests(unittest.TestCase):
         payload=next(p for role,p,*_ in backend.calls if role=='extract')
         self.assertNotIn('experience_catalog',payload)
         self.assertTrue(all('candidate_sources' not in a for a in payload['trajectory']))
-        self.assertLessEqual(len(payload['related_experiences']),3)
+        self.assertLessEqual(len(payload['related_experiences']),5)

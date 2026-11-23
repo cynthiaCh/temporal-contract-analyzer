@@ -6,7 +6,7 @@ from . import experience_memory as memory
 from .core import EvidenceError, canonical, sha
 
 OPERATIONS=('new','evidence','revise','merge')
-UPDATE_CANDIDATES=3
+UPDATE_DISCOVERY_CANDIDATES=2
 
 def content(value):
     return dict(labels=sorted(value['labels']),requires=sorted(value['requires']),excludes=sorted(value['excludes']),
@@ -16,12 +16,14 @@ def content(value):
 def related(protocol, delivery):
     if protocol['condition'] not in ('structured','fixed_contract','bm25'):return []
     bundles=[e['bundle'] for e in protocol['memory_snapshot']['entries']]
-    # Updating memory is a separate search from delivering <=5 rules to Action.
+    # Keep delivered rules for attribution and reserve separate update discovery.
     query=protocol['task']+'\n'+'\n'.join(o['text'] for o in delivery.get('business_obligations',[]))
     from .business_retrieval import recall
     bank=protocol['memory_snapshot']['entries']
     ranked=recall(query,{},bundles,summaries={e['bundle']['sha256']:e['retrieval_summary'] for e in bank if 'retrieval_summary' in e})['candidates']
-    codes=list(dict.fromkeys(delivery.get('selected_sha256s',[])+[r['sha256'] for r in ranked]))[:UPDATE_CANDIDATES]
+    delivered=list(dict.fromkeys(delivery.get('selected_sha256s',[])))
+    discovered=[r['sha256'] for r in ranked if r['sha256'] not in delivered][:UPDATE_DISCOVERY_CANDIDATES]
+    codes=list(dict.fromkeys(delivered+discovered))
     return [deepcopy(next(b for b in bundles if b['sha256']==code)) for code in codes]
 
 

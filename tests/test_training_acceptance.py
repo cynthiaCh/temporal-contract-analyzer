@@ -263,7 +263,8 @@ class CompactPublicationTests(unittest.TestCase):
         return loop
 
     def request(self, item):
-        bundle=next(b for b in memory.records(self.store) if b['id']==item['id'])
+        file=next(file for file,value in compact.documents(self.store) if any(i['id']==item['id'] for i in value['experiences']))
+        bundle=compact._bundle(file,item)[0]
         return dict(id=item['id'],expected_record=bundle['sha256'],expected_review=item['review'],reviewer='Synthetic reviewer',decision='accept')
 
     def test_publish_review_and_retry_preserve_approved_content_and_snapshot(self):
@@ -311,10 +312,13 @@ class CompactPublicationTests(unittest.TestCase):
         loop.save('candidate-pool/success.json',record);loop.publish_candidate('success')
         items=compact.load(self.category)['experiences']
         self.assertEqual(len(items),2)
-        self.assertEqual(items[0]['id'],targets[0]['id']);self.assertEqual(items[0]['review']['decision'],'pending')
-        self.assertEqual(items[1]['superseded_by'],items[0]['id'])
+        self.assertEqual(items[0]['id'],targets[0]['id'])
+        draft=items[0]['pending_revision']['item']
+        self.assertEqual(draft['review']['decision'],'pending')
+        self.assertNotIn('superseded_by',items[1])
+        self.assertEqual(approval.freeze(self.store),snapshot)
         self.assertEqual(approval.validate_snapshot(self.store,snapshot),snapshot)
-        compact.save_review(self.store,self.request(items[0]))
+        compact.save_review(self.store,self.request(draft))
         self.assertEqual([e['bundle']['id'] for e in approval.freeze(self.store)['entries']],[items[0]['id']])
         self.assertFalse((self.store/'candidates.json').exists())
 
