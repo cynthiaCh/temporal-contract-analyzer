@@ -100,10 +100,11 @@ class Commands(unittest.TestCase):
         self.assertEqual(command[command.index('--binary')+1], str(binary.resolve()))
         self.assertEqual(model['request_unit'], 'model turns')
 
-    def test_training_requires_actual_check_descriptions(self):
+    def test_training_uses_current_flow_without_legacy_recipe(self):
         self.config['mode'] = 'learning'
-        with self.assertRaisesRegex(ValueError, 'Public check descriptions'):
-            runner.prepare_command(self.config, self.root/'new')
+        command,_,_=runner.prepare_command(self.config,self.root/'new')
+        self.assertNotIn('--training-recipe',command)
+        self.assertNotIn('--public-checks-docs',command)
 
     def test_worker_and_dataset_limits(self):
         for field, value in [('workers', 0), ('workers', 9), ('count', 31), ('start', 0), ('mode', 'unknown')]:

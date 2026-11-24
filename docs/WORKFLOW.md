@@ -7,25 +7,22 @@ Model weights do not change: experience construction updates external guidance.
 
 ## Experience construction
 
-The fixed experiment recipe is `v8-compatible-v1`, with Abstract-based
-`business-source-v1` retrieval by default and at most three repair Actions including
-the first patch. Approved, version-bound abstracts are frozen with the guidance.
-Local Abstract ranking recalls up to 6 entries; a model checks their full text
-against the current task and source before delivering up to three. Missing or
-unapproved abstracts use the existing extractive preview. Public check descriptions are explicit public inputs. Each candidate is evaluated by
-public checks and the training Oracle; both must pass for acceptance. Failure
-permits the next budgeted Action with diagnosis and, when supported, Contract
-revision. This recipe passes the latest controlled feedback rather than cumulative
-diagnosis explanations. Raw hidden assertions and reference repairs never reach
-the model. Infrastructure errors are not behavioural failures.
+Current training uses Abstract-based business selection and the categorized
+`experience-memory/library`: 58 active entries with accepted current Abstracts.
+The legacy V8 compatibility recipe and extractive-summary retrieval have been removed.
+New runs reject historical libraries and missing or outdated Abstracts. Public checks
+provide advisory feedback; the training Oracle decides acceptance. Failed Actions
+can receive diagnosis and cumulative task-local reflections within the existing
+three-Action budget. Hidden assertions and reference repairs never reach the model.
+Infrastructure errors are not behavioural failures.
 
 First-Action successes skip experience extraction. Failed-to-successful trajectories
 propose source-supported corrections; routine implementation-only fixes add no
 guidance. Existing entries are updated in place under a stable ID, with renewed
 content/Abstract review. Explicit merges retire other IDs only after acceptance.
 Three effective failures request a real expert summary. Proposals remain pending
-until a named reviewer accepts their exact content. Online construction can use a
-separate provisional pool in later construction tasks; testing cannot access it.
+until a named reviewer accepts their exact content. Online construction can collect proposals in a separate provisional pool for review;
+unreviewed proposals do not guide later tasks. Testing cannot access the pool.
 The default structured recipe caps each trajectory at 156 requests: three Actions
 at 24 each, two diagnoses at 12 each, one Contract draft at 12, up to three
 applicability selections at 12 each, and extraction at 12. Each stage has a
@@ -33,9 +30,7 @@ applicability selections at 12 each, and extraction at 12. Each stage has a
 requiring a separate taxonomy analysis. Fixed-Contract training selects once.
 Abstract-based business selection is the only training/testing retrieval route.
 Taxonomy-routing and semantic-selection pipelines have been removed. Prepare a
-new V13 trajectory; older protocols remain available for read-only inspection. Online training
-keeps its existing provisional-pool lifecycle and uses extractive previews for
-provisional guidance without approved abstracts.
+new V13 trajectory; older protocols remain available for read-only inspection. Provisional guidance without an accepted Abstract cannot enter current retrieval.
 
 ## Testing
 

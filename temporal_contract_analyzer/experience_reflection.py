@@ -14,7 +14,7 @@ def content(value):
 
 
 def related(protocol, delivery):
-    if protocol['condition'] not in ('structured','fixed_contract','bm25'):return []
+    if protocol['condition'] not in ('structured','fixed_contract'):return []
     bundles=[e['bundle'] for e in protocol['memory_snapshot']['entries']]
     # Keep delivered rules for attribution and reserve separate update discovery.
     query=protocol['task']+'\n'+'\n'.join(o['text'] for o in delivery.get('business_obligations',[]))

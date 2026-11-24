@@ -394,10 +394,11 @@ def publish_candidate(path, record):
         item['review']=dict(reviewer=None,decision='pending',at=None)
         item['learning']=record.get('learning',empty());validate(item['learning'])
         bundle=_bundle(file,item)[0]
-        from .business_retrieval import summary as preview
-        item['summary']=dict(text=record.get('abstract') or preview(bundle),expert_questions='None.',source_record=bundle['sha256'],
-            review=dict(reviewer=None,decision='pending',at=None))
-        validate_summary(item['summary'])
+        if record.get('abstract'):
+            item['summary']=dict(text=record['abstract'],expert_questions='None.',source_record=bundle['sha256'],
+                review=dict(reviewer=None,decision='pending',at=None))
+            validate_summary(item['summary'])
+        else:item.pop('summary',None)
         if staged:
             pending=dict(base_record=_bundle(file,old)[0]['sha256'],item=item)
             previous=old.get('pending_revision')

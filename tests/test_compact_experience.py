@@ -54,6 +54,17 @@ class CompactExperienceTests(unittest.TestCase):
         self.assertEqual(original,approval.freeze(self.path))
         self.assertEqual(approval.validate_snapshot(self.path,snapshot),snapshot)
 
+    def test_new_runs_reject_historical_abstracts_but_records_remain_readable(self):
+        compact.save_summary(self.path,self.summary_request())
+        snapshot=approval.freeze(self.path)
+        approval.require_current_abstract_bank(self.path,snapshot)
+        request=self.summary_request();request['text']='Updated reviewed boundary and exclusion.'
+        compact.save_summary(self.path,request)
+        self.assertEqual(approval.validate_snapshot(self.path,snapshot),snapshot)
+        with self.assertRaisesRegex(EvidenceError,'Historical experience or Abstract'):
+            approval.require_current_abstract_bank(self.path,snapshot)
+        approval.require_current_abstract_bank(self.path,approval.freeze(self.path))
+
     def test_summary_http_review_and_stale_submission(self):
         server=ReviewServer(self.path)
         thread=threading.Thread(target=server.serve_forever,daemon=True)

@@ -136,14 +136,6 @@ def prepare_command(config, batch):
         command += ['--binary', str(binary)]
     elif sys.platform == 'darwin' and container_codex.is_file():
         command += ['--binary', str(container_codex)]
-    if mode == 'learning':
-        docs = checked_path(config.get('public_checks'), 'Public check descriptions')
-        with selection.open(encoding='utf-8-sig', newline='') as handle:
-            selected = [r['case_id'] for r in csv.DictReader(handle) if start <= int(r['rank']) < start + count]
-        descriptions = read(docs)
-        if any(not isinstance(descriptions.get(cid), str) or not descriptions[cid].strip() for cid in selected):
-            raise ValueError('Public check descriptions do not cover every selected training case')
-        command += ['--training-recipe', 'v8-compatible-v1', '--public-checks-docs', str(docs)]
     return command, dict(os.environ, TCA_BENCH_ROOT=str(bench)), public_profiles(model_file)[config['model_profile']]
 
 

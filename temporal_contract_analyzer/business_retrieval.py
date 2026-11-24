@@ -3,46 +3,39 @@ import re
 from . import experience_memory as memory, taxonomy
 from .core import EvidenceError
 
-VERSION='business-source-coverage-v4'
+VERSION='business-source-coverage-v5'
 MAX_CANDIDATES=6
 MAX_EXPERIENCES=3
 MAX_CHARACTERS=8000
 
 
-def summary(bundle):
-    """Local extractive preview; original rules remain authoritative for admission."""
-    lines=[]
-    for category in ('applicability','event_relation','preservation','exclusion'):
-        bodies=[r['body'] for r in bundle['rules'] if r['category']==category]
-        if not bodies:continue
-        first=re.split(r'(?<=[.!?。！？])\s+', ' '.join(bodies[0].split()), maxsplit=1)[0]
-        excerpt=first if len(first)<=200 else first[:197]+'...'
-        lines.append(memory.CATEGORIES[category]+': '+excerpt)
-    return '\n'.join(lines)
+def require_summaries(bundles, summaries):
+    """New retrieval uses reviewed abstracts; old previews are not a fallback."""
+    from .compact_experience import validate_summary
+    for bundle in bundles:
+        value=(summaries or {}).get(bundle['sha256'])
+        if value is None:
+            raise EvidenceError('Reviewed Abstract required for experience '+bundle['id']+'; use experience-memory/library, not a historical snapshot')
+        validate_summary(value)
+        if value['review']['decision']!='accept' or value['source_record']!=bundle['sha256']:
+            raise EvidenceError('Reviewed Abstract is not current for experience '+bundle['id'])
 
 
 def recall(task,sources,bundles,*,summaries=None,learning=None,model=None):
-    def preview(bundle):
-        return (summaries or {}).get(bundle['sha256'],{}).get('text') or summary(bundle)
+    require_summaries(bundles,summaries)
     docs='\n'.join(text for name,text in sources.items() if name.lower().endswith('.md'))
     query=task+'\n'+task+'\n'+docs+'\n'+'\n'.join(sources.values())
-    def index_text(bundle):
-        accepted=(summaries or {}).get(bundle['sha256'],{}).get('text')
-        # Retain source-language terms when the reviewed preview uses another language.
-        return accepted+'\n'+accepted+'\n'+summary(bundle) if accepted else summary(bundle)
     hits=memory.search_records(bundles,query,limit=max(1,len(bundles)),include_all=True,
-        text_for_index=index_text)['results'] if bundles else []
+        text_for_index=lambda bundle:summaries[bundle['sha256']]['text'])['results'] if bundles else []
     scores={h['sha256']:h['score'] for h in hits}
     from .experience_learning import score
     weights={b['sha256']:score((learning or {}).get(b['sha256']),model) for b in bundles}
     ordered=sorted(bundles,key=lambda b:(-scores.get(b['sha256'],0),-weights[b['sha256']],b['sha256']))
-    limit=MAX_CANDIDATES
-    candidates=[dict(sha256=b['sha256'],id=b['id'],text=memory.render(b),requires=b['requires'],excludes=b['excludes'],lexical_score=scores.get(b['sha256'],0)) for b in ordered[:limit]]
-    for candidate,bundle in zip(candidates,ordered[:limit]):candidate['summary']=preview(bundle)
-    return dict(schema_version=VERSION,bank_count=len(bundles),weights=weights,
-        candidates=candidates,
-        omitted_candidate_sha256s=[b['sha256'] for b in ordered[limit:]],
-        candidate_policy=('reviewed_summary_top6_full_text_verification' if summaries else 'local_extractive_summary_top6_full_text_verification'))
+    candidates=[dict(sha256=b['sha256'],id=b['id'],text=memory.render(b),requires=b['requires'],excludes=b['excludes'],
+        lexical_score=scores.get(b['sha256'],0),summary=summaries[b['sha256']]['text']) for b in ordered[:MAX_CANDIDATES]]
+    return dict(schema_version=VERSION,bank_count=len(bundles),weights=weights,candidates=candidates,
+        omitted_candidate_sha256s=[b['sha256'] for b in ordered[MAX_CANDIDATES:]],
+        candidate_policy='reviewed_abstract_top6_full_text_verification')
 
 
 def schema(candidates,*,concise=False):

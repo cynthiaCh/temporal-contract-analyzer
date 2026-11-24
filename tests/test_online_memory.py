@@ -15,38 +15,30 @@ class OnlineTests(unittest.TestCase):
     prepare=fixtures.V4Tests.prepare
 
     def online(self,task_id,**kw):
-        config=dict(learning_policy='online',online_memory=str(self.root/'provisional'),task_id=task_id,condition='bm25')
+        config=dict(learning_policy='online',online_memory=str(self.root/'provisional'),task_id=task_id,condition='structured')
         config.update(kw);return self.prepare(**config)
 
-    def test_prepared_later_task_uses_new_unreviewed_candidate_immediately(self):
-        first=self.online('first');second=self.online('second')  # both prepared before any learning
+    def test_later_training_keeps_unreviewed_proposals_out_of_retrieval(self):
+        first=self.online('first');second=self.online('second')
         self.assertEqual(first.run(fixtures.Backend(2),execute=True)['status'],'passed')
-        self.assertEqual(memory.records(self.store),[]);self.assertEqual(approval.freeze(self.store)['entries'],[])
-        receipt=read(first.root/'candidate-pool/success-online.json');self.assertEqual(receipt['status'],'available_for_subsequent_training')
-        with self.assertRaisesRegex(EvidenceError,'categorized library'):first.publish_candidate('success')
-        self.assertEqual(approval.freeze(self.store)['entries'],[])
-        b=fixtures.Backend(2);state=second.run(b,execute=True);self.assertEqual(state['status'],'passed',state.get('error'))
-        delivery=read(second.root/'delivery.json');self.assertEqual(delivery['provisional_sha256s'],[receipt['candidate_sha256']])
-        self.assertIn('unreviewed provisional',b.calls[0][1]['experience']);self.assertIn('Verify accepted identity',b.calls[0][1]['experience'])
-        self.assertTrue(list((self.root/'provisional/usage').glob('*.json')))
-        self.assertEqual(len(list((self.root/'provisional/entries').glob('*.json'))),1)  # exact duplicate becomes evidence supplement
-        self.assertEqual(read(second.root/'candidate-pool/success-online.json')['status'],'evidence_only')
+        self.assertTrue(list((self.root/'provisional/entries').glob('*.json')))
+        backend=fixtures.Backend(2);state=second.run(backend,execute=True)
+        self.assertEqual(state['status'],'passed',state.get('error'))
+        self.assertTrue(read(second.root/'online-snapshot.json')['entries'])
+        delivery=read(second.root/'delivery.json')
+        self.assertEqual(delivery['selected_sha256s'],[])
+        self.assertEqual(delivery['provisional_sha256s'],[])
+        self.assertTrue(all(payload.get('experience') is None for role,payload,*_ in backend.calls if role in ('action','contract')))
         self.assertEqual(approval.freeze(self.store)['entries'],[])
 
-
-    def test_default_structured_training_uses_business_selection_with_provisional_fallback(self):
+    def test_structured_training_has_no_provisional_preview_fallback(self):
         first=self.online('first');first.run(fixtures.Backend(2),execute=True)
-        loop=self.online('abstract-training',condition='structured',training_recipe='v8-compatible-v1',
-            task='Preserve accepted work. Keep the entry snapshot.')
-        self.assertEqual(loop.verify()['retrieval_profile'],'business-source-v1')
+        loop=self.online('abstract-training',task='Preserve accepted work. Keep the entry snapshot.')
         backend=fixtures.Backend(2);state=loop.run(backend,execute=True)
         self.assertEqual(state['status'],'passed',state.get('error'))
-        self.assertTrue(read(loop.root/'delivery.json')['provisional_sha256s'])
-        kinds=[kind for kind,*_ in backend.calls]
-        self.assertIn('selection',kinds);self.assertNotIn('routing',kinds)
-        self.assertEqual(read(loop.root/'retrieval/selection-1-recall.json')['candidate_policy'],
-                         'local_extractive_summary_top6_full_text_verification')
-        self.assertEqual(approval.freeze(self.store)['entries'],[])
+        self.assertEqual(read(loop.root/'retrieval/selection-1-recall.json')['bank_count'],0)
+        self.assertNotIn('selection',[kind for kind,*_ in backend.calls])
+        self.assertFalse(read(loop.root/'delivery.json')['provisional_sha256s'])
 
     def test_snapshot_stays_fixed_during_task_and_resume_does_not_duplicate(self):
         first=self.online('first');first.run(fixtures.Backend(2),execute=True)
@@ -60,12 +52,12 @@ class OnlineTests(unittest.TestCase):
 
     def test_frozen_learning_and_testing_never_consume_pool(self):
         first=self.online('first');first.run(fixtures.Backend(2),execute=True)
-        frozen=self.prepare(condition='bm25');frozen.run(fixtures.Backend(2),execute=True)
+        frozen=self.prepare(condition='structured');frozen.run(fixtures.Backend(2),execute=True)
         self.assertFalse((frozen.root/'online-snapshot.json').exists());self.assertEqual(read(frozen.root/'delivery.json')['selected_sha256s'],[])
-        testing=self.prepare(mode='testing',condition='bm25',memory_snapshot=approval.freeze(self.store),gold_evaluator={'command':['synthetic-gold']})
+        testing=self.prepare(mode='testing',condition='structured',memory_snapshot=approval.freeze(self.store),gold_evaluator={'command':['synthetic-gold']})
         testing.run(fixtures.Backend(2),execute=True)
         self.assertFalse((testing.root/'online-snapshot.json').exists())
-        for config in [dict(mode='testing'),dict(condition='contract'),dict(condition='baseline'),dict(online_memory=str(self.store))]:
+        for config in [dict(mode='testing'),dict(condition='contract'),dict(condition='baseline'),dict(online_memory=str(self.root/'library'))]:
             with self.assertRaises(EvidenceError):self.online('invalid',**config)
         with self.assertRaises(EvidenceError):self.prepare(online_memory=str(self.root/'provisional'))
 
@@ -98,4 +90,5 @@ class OnlineTests(unittest.TestCase):
         base.execute=call;state=loop.run(base,execute=True)
         self.assertEqual(state['status'],'passed',state.get('error'))
         self.assertEqual(len(read(loop.root/'online-snapshot.json')['entries']),1)
-        self.assertEqual(len(online_memory.capture(self.root/'provisional',self.root/'later','later')['entries']),2)
+        later=online_memory.capture(self.root/'provisional',self.root/'later','later')['entries']
+        self.assertEqual({entry['task_id'] for entry in later},{'first','second','concurrent'})

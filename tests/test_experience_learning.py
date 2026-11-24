@@ -7,7 +7,7 @@ import unittest
 from temporal_contract_analyzer import compact_experience as compact,experience_approval as approval,experience_learning as learning,business_retrieval as retrieval
 from temporal_contract_analyzer.tempoevo_v4 import Trajectory,read
 from temporal_contract_analyzer.core import EvidenceError
-from test_business_retrieval import item,TASK
+from test_business_retrieval import item,TASK,approve_abstracts
 from test_tempoevo_v4 import Backend
 
 class LearningTests(unittest.TestCase):
@@ -15,6 +15,7 @@ class LearningTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name)
         self.store=self.root/'library';self.store.mkdir();self.file=self.store/'entries.json'
         self.file.write_text(json.dumps(dict(schema_version=compact.VERSION,experiences=[item('save','Keep accepted work.'),item('other','Keep accepted work.')])) )
+        approve_abstracts(self.store)
         self.source=self.root/'source';self.source.mkdir();(self.source/'main.py').write_text('value = 0\n')
     def prepare(self,name,**kw):
         config=dict(task=TASK,candidate=str(self.source),store=str(self.store),condition='structured',mode='learning',
@@ -43,7 +44,7 @@ class LearningTests(unittest.TestCase):
         metadata=learning.empty();metadata['usage_by_model']['model-a']=dict(delivered_cases=1,positive_cases=1,negative_cases=0,cases={'case-a':'adopted'})
         value=compact.load(self.file);value['experiences'][1]['learning']=metadata;self.file.write_text(json.dumps(value))
         snapshot=approval.freeze(self.store);entries=snapshot['entries'];bundles=[e['bundle'] for e in entries]
-        recalled=retrieval.recall(TASK,{},bundles,learning={e['bundle']['sha256']:e.get('learning') for e in entries},model='model-a')
+        recalled=retrieval.recall(TASK,{},bundles,summaries={e['bundle']['sha256']:e['retrieval_summary'] for e in entries},learning={e['bundle']['sha256']:e.get('learning') for e in entries},model='model-a')
         self.assertEqual(recalled['candidates'][0]['id'],'other')
         payload=retrieval.payload(TASK,{}, {},recalled)
         self.assertNotIn('weights',payload);self.assertNotIn('learning',json.dumps(payload))

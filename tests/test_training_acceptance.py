@@ -185,7 +185,7 @@ class IndependentTestingTests(unittest.TestCase):
         self.assertFalse(backend.calls);self.assertFalse(backend.evaluations)
 
     def test_gold_and_public_verdicts_cannot_change_testing_submission(self):
-        for condition in ('baseline','contract','bm25','structured','fixed_contract'):
+        for condition in ('baseline','contract','structured','fixed_contract'):
             submissions=[]
             for gold_at,public in ((1,True),(99,True),(1,False),(99,False),(99,None)):
                 with self.subTest(condition=condition,gold_at=gold_at,public=public):

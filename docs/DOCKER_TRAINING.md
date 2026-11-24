@@ -53,8 +53,7 @@ code is never mounted into the model's solver workspace. The fixed construction
 recipe requires its declared public checks and training Oracle acceptance. Testing
 may use existing public tests without adding an outer repair loop.
 
-Fixed construction uses at most three Actions and joint public/Oracle acceptance
-to decide retries.
+Current training uses at most three Actions and Oracle acceptance to decide retries. Public checks are advisory.
 Testing uses one bounded Action, then one independent Gold score with no feedback.
 The model can run public project tests and revise code inside that Action. All stages
 use one frozen model profile. Training alone extracts candidates for review;
@@ -68,8 +67,7 @@ Prepare and run the fixed construction recipe (preparation is zero-model):
 TCA_BENCH_ROOT=/absolute/benchmark python3 -B tools/tempoevo-docker/prepare_selected.py \
   --root /new/batch --limit 10 --solver-image sha256:ACTUAL_SOLVER_ID \
   --grader-image sha256:ACTUAL_GRADER_ID \
-  --mode learning --condition structured --training-recipe v8-compatible-v1 \
-  --public-checks-docs /absolute/path/to/public-check-descriptions.json
+  --mode learning --condition structured --store experience-memory/library
 python3 -B tools/tempoevo-docker/run_selected.py --root /new/batch --execute
 ```
 
@@ -93,15 +91,13 @@ runs, receipts, memory approvals and scores remain unchanged.
 
 Online construction uses `--learning-policy online --online-memory /new/batch/provisional`
 with `--condition structured`; testing never reads this provisional pool.
-The fixed experiment recipe additionally uses `--training-recipe v8-compatible-v1`
-and explicit `--public-checks-docs`, using Abstract-based `business-source-v1`
-retrieval by default while retaining joint public/Gold acceptance. Approved
-abstracts are frozen alongside guidance; provisional entries without approved
-abstracts retain extractive-preview fallback. The review interface remains required for long-term publication.
+Current runs require reviewed, current Abstracts from the categorized library;
+legacy V8 recipes and extractive-preview fallback have been removed. Newly
+proposed guidance remains pending until guidance and Abstract review.
 
 Testing uses `--mode testing --condition structured`; its default retrieval profile
 is `business-source-v1`. All approved entries form the frozen candidate pool,
-then business applicability and obligation coverage select at most five entries.
+then business applicability and obligation coverage select at most three entries.
 There is no separate taxonomy-routing or Contract Review stage. Preparation output
 gets at most one correction within its original budget, then invalid guidance is
 discarded without spending another repair Action. Gold remains final-only.

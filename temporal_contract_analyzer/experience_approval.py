@@ -440,3 +440,19 @@ def validate_snapshot(store, snapshot):
             raise EvidenceError('Snapshot must bind unique expert-accepted records')
         seen.add(bundle['sha256'])
     return snapshot
+
+
+def require_current_abstract_bank(store, snapshot):
+    """Preparation only: historical result readers retain their frozen inputs."""
+    from .compact_experience import is_library
+    from .business_retrieval import require_summaries
+    if not is_library(store):
+        raise EvidenceError('New experience runs require the categorized experience-memory/library')
+    entries=snapshot['entries']
+    require_summaries([e['bundle'] for e in entries],
+        {e['bundle']['sha256']:e['retrieval_summary'] for e in entries if 'retrieval_summary' in e})
+    current={e['bundle']['sha256']:e for e in freeze(store)['entries']}
+    for entry in entries:
+        active=current.get(entry['bundle']['sha256'])
+        if active is None or active.get('retrieval_summary')!=entry['retrieval_summary']:
+            raise EvidenceError('Historical experience or Abstract cannot prepare a new run: '+entry['bundle']['id'])

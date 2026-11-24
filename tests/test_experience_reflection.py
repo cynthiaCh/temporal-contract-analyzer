@@ -17,6 +17,10 @@ class ReflectionTests(unittest.TestCase):
         payload=deepcopy(fixture.payload);payload['id']=identifier
         return memory.add(self.store,payload,[fixture.source])
 
+    def abstract_entry(self,bundle):
+        return dict(bundle=bundle,retrieval_summary=dict(text='Capture entry identity.',expert_questions='None.',source_record=bundle['sha256'],
+            review=dict(reviewer='Synthetic reviewer',decision='accept',at='2026-11-24T00:00:00Z')))
+
     def experience(self,b):
         return dict(labels=b['labels'],requires=b['requires'],excludes=b['excludes'],rules=[{k:r[k] for k in ('category','body')} for r in b['rules']],limitations=['Synthetic reflection'])
 
@@ -45,7 +49,7 @@ class ReflectionTests(unittest.TestCase):
         self.assertEqual(result['operation'],'merge');self.assertEqual(len(result['target_sha256s']),2)
 
     def test_reflection_uses_frozen_shortlist_not_unreviewed_live_records(self):
-        a=self.bundle();p=dict(condition='structured',task='Capture entry identity',memory_snapshot=dict(entries=[dict(bundle=a)]))
+        a=self.bundle();p=dict(condition='structured',task='Capture entry identity',memory_snapshot=dict(entries=[self.abstract_entry(a)]))
         self.assertEqual([b['sha256'] for b in reflection.related(p,dict(selected_sha256s=[a['sha256']]))],[a['sha256']])
         p['condition']='baseline';self.assertEqual(reflection.related(p,{}),[])
 
@@ -53,7 +57,7 @@ class ReflectionTests(unittest.TestCase):
         a=self.bundle();bundles=[]
         for i in range(20):
             value=deepcopy(a);value.update(id='synthetic-'+str(i),sha256=str(i).zfill(64));bundles.append(value)
-        p=dict(condition='structured',task='Capture entry identity',memory_snapshot=dict(entries=[dict(bundle=b) for b in bundles]))
+        p=dict(condition='structured',task='Capture entry identity',memory_snapshot=dict(entries=[self.abstract_entry(b) for b in bundles]))
         related=reflection.related(p,dict(selected_sha256s=[bundles[-1]['sha256']]))
         self.assertEqual(len(related),3)
         self.assertEqual(related[0],bundles[-1])
@@ -64,7 +68,7 @@ class ReflectionTests(unittest.TestCase):
         a=self.bundle();bundles=[]
         for i in range(12):
             value=deepcopy(a);value.update(id='synthetic-'+str(i),sha256=str(i).zfill(64));bundles.append(value)
-        p=dict(condition='structured',task='Capture entry identity',memory_snapshot=dict(entries=[dict(bundle=b) for b in bundles]))
+        p=dict(condition='structured',task='Capture entry identity',memory_snapshot=dict(entries=[self.abstract_entry(b) for b in bundles]))
         delivered=[b['sha256'] for b in bundles[-3:]]
         related=reflection.related(p,dict(selected_sha256s=delivered))
         self.assertEqual([b['sha256'] for b in related[:3]],delivered)

@@ -20,6 +20,14 @@ def item(code,text):
         review=dict(reviewer='Synthetic fixture reviewer',decision='accept',at='2026-11-17T00:00:00Z'))
 
 
+def approve_abstracts(store):
+    for file,value in compact.documents(store):
+        for record in value['experiences']:
+            compact.save_summary(store,dict(id=record['id'],expected_record=compact._bundle(file,record)[0]['sha256'],
+                expected_summary=record.get('summary'),text=record['event_relation'],expert_questions='None.',
+                reviewer='Synthetic fixture reviewer',decision='accept'))
+
+
 def assessment(candidate,coverage,relevance='direct'):
     return dict(sha256=candidate['sha256'],relevance=relevance,
         premises=[dict(condition='Current operation maps to the proposed rule.',status='supported',evidence=[ANCHOR])],
@@ -36,8 +44,13 @@ class BusinessRetrievalTests(unittest.TestCase):
             item('save-rule','Coalesce document edits and retain accepted saves.'),
             item('progress-rule','Decode progress packets and preserve audit history.'),
             item('departure-rule','Preserve document saves at departure.')])))
+        for file,value in compact.documents(self.library):
+            for record in value['experiences']:
+                compact.save_summary(self.library,dict(id=record['id'],expected_record=compact._bundle(file,record)[0]['sha256'],
+                    expected_summary=None,text=record['event_relation'],expert_questions='None.',reviewer='Synthetic fixture reviewer',decision='accept'))
         self.snapshot=approval.freeze(self.library);self.bundles=[x['bundle'] for x in self.snapshot['entries']]
-        self.recalled=retrieval.recall(TASK,{'main.py':'value = 0\n'},self.bundles)
+        self.summaries={e['bundle']['sha256']:e['retrieval_summary'] for e in self.snapshot['entries']}
+        self.recalled=retrieval.recall(TASK,{'main.py':'value = 0\n'},self.bundles,summaries=self.summaries)
 
     def response(self):
         obligations=[dict(id='O1',text='Preserve accepted edits.',evidence=[ANCHOR]),dict(id='O2',text='Preserve departure behavior.',evidence=[ANCHOR])]
@@ -99,34 +112,29 @@ class BusinessRetrievalTests(unittest.TestCase):
         self.assertEqual({ids[c] for c in out['selected_sha256s']},{'save-rule','departure-rule'})
         self.assertEqual(out['covered_obligations'],['O1','O2']);self.assertFalse(out['effectiveness_verified'])
 
-    def test_summary_prefilter_limits_candidates_and_preserves_full_rules(self):
-        bundles=[]
+    def test_missing_pending_and_stale_abstracts_are_rejected(self):
+        with self.assertRaisesRegex(EvidenceError,'Reviewed Abstract required'):
+            retrieval.recall(TASK,{},self.bundles)
+        for decision,source in [('pending',self.bundles[0]['sha256']),('accept','0'*64)]:
+            values=deepcopy(self.summaries)
+            values[self.bundles[0]['sha256']]['review']=dict(reviewer=None,decision='pending',at=None) if decision=='pending' else values[self.bundles[0]['sha256']]['review']
+            values[self.bundles[0]['sha256']]['source_record']=source
+            with self.assertRaises(EvidenceError):retrieval.recall(TASK,{},self.bundles,summaries=values)
+
+    def test_abstract_only_index_does_not_reintroduce_old_excerpts(self):
+        bundles=[];summaries={}
         for i in range(12):
-            b=deepcopy(self.bundles[0]);b.update(id='rule-'+str(i),sha256=format(i,'064x'))
-            for r in b['rules']:
-                r['body']='Unrelated operation. Historical example mentions quiescence.'
-            if i==11:
-                b['rules'][0]['body']='Quiescence must precede resource release. '+('Historical detail. '*100)
-            bundles.append(b)
-        before=deepcopy(bundles)
-        recalled=retrieval.recall('quiescence',{},bundles)
+            bundle=deepcopy(self.bundles[0]);bundle.update(id='rule-'+str(i),sha256=format(i,'064x'))
+            for rule in bundle['rules']:rule['body']='quiescence historical detail.' if i!=11 else 'Other full guidance.'
+            bundles.append(bundle)
+            summaries[bundle['sha256']]=dict(text='quiescence before release.' if i==11 else 'Unrelated operation.',
+                source_record=bundle['sha256'],expert_questions='None.',review=dict(reviewer='Synthetic reviewer',decision='accept',at='2026-11-24T00:00:00Z'))
+        recalled=retrieval.recall('quiescence',{},bundles,summaries=summaries)
         self.assertEqual(recalled['candidates'][0]['id'],'rule-11')
         self.assertEqual(len(recalled['candidates']),6)
-        self.assertEqual(len(recalled['omitted_candidate_sha256s']),6)
-        self.assertEqual(recalled,retrieval.recall('quiescence',{},list(reversed(bundles))))
-        self.assertEqual(bundles,before)
-        self.assertIn('Historical detail.',recalled['candidates'][0]['text'])
-        self.assertNotIn('Historical detail.',recalled['candidates'][0]['summary'])
-        self.assertLessEqual(len(recalled['candidates'][0]['summary']),900)
+        self.assertEqual(recalled,retrieval.recall('quiescence',{},list(reversed(bundles)),summaries=summaries))
+        self.assertEqual(recalled['candidates'][0]['text'],retrieval.memory.render(bundles[-1]))
         self.assertEqual(retrieval.recall('quiescence',{},[])['candidates'],[])
-
-    def test_summary_bounds_long_conditions_and_keeps_exclusion_preview(self):
-        b=deepcopy(self.bundles[0])
-        for r in b['rules']:r['body']='x'*1000
-        preview=retrieval.summary(b)
-        self.assertIn('Applicability:',preview)
-        self.assertIn('Exclusion:',preview)
-        self.assertLessEqual(len(preview),900)
 
     def test_concise_negative_rows_do_not_admit_experience(self):
         from temporal_contract_analyzer._session_runtime.schema_validator import validate
@@ -220,12 +228,12 @@ class BusinessRetrievalTests(unittest.TestCase):
         for file,value in compact.documents(self.library):
             for record in value['experiences']:
                 compact.save_summary(self.library,dict(id=record['id'],expected_record=compact._bundle(file,record)[0]['sha256'],
-                    expected_summary=None,text='Accepted abstract for '+record['id'],expert_questions='None.',
+                    expected_summary=record.get('summary'),text='Accepted abstract for '+record['id'],expert_questions='None.',
                     reviewer='Synthetic fixture reviewer',decision='accept'))
         snapshot=approval.freeze(self.library)
         abstracts={entry['bundle']['sha256']:entry['retrieval_summary']['text'] for entry in snapshot['entries']}
         source=self.root/'source';source.mkdir();(source/'main.py').write_text('value = 0\n')
-        for condition,recipe in [('structured',None),('structured','v8-compatible-v1'),('fixed_contract','v8-compatible-v1')]:
+        for condition,recipe in [('structured',None),('fixed_contract',None)]:
             with self.subTest(condition=condition,recipe=recipe):
                 config=dict(task=TASK,candidate=str(source),store=str(self.library),mode='learning',condition=condition,
                     visible_evaluator=dict(command=['synthetic-visible']),training_evaluator=dict(command=['synthetic-training']),

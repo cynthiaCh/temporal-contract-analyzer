@@ -20,8 +20,7 @@ VERSION = 'tempoevo-trajectory-v13'
 ACCEPTANCE_POLICIES = dict(learning='oracle_pass_or_action_budget_exhausted',
                            testing='single_submission_then_independent_gold')
 MODEL = identity(resolve_profile())
-V8_TRAINING_RECIPE = 'v8-compatible-v1'
-CONDITIONS = ('baseline', 'contract', 'bm25', 'structured', 'fixed_contract', 'latent_experience')
+CONDITIONS = ('baseline', 'contract', 'structured', 'fixed_contract', 'latent_experience')
 LIMITS = dict(selection=dict(requests=12, seconds=600), contract=dict(requests=12, seconds=600), action=dict(requests=24, seconds=600),
               diagnosis=dict(requests=12, seconds=600), extract=dict(requests=12, seconds=600))
 TERMINAL = ('passed', 'scored', 'repair_exhausted', 'execution_invalid', 'awaiting_expert_summary', 'awaiting_content_review', 'cancelled')
@@ -58,13 +57,11 @@ def read(path):
 
 
 def current_protocol(protocol):
-    recipe=protocol.get('training_recipe')
-    if recipe not in (None,V8_TRAINING_RECIPE):return False
-    if recipe and (protocol.get('mode')!='learning' or not protocol.get('required_visible_checks') or not protocol.get('visible_evaluator')):return False
+    if protocol.get('training_recipe'):return False
     if protocol.get('preparation_validation_policy')!=preparation.POLICY:return False
     profile='business-source-v1' if protocol.get('condition') in ('structured','fixed_contract','latent_experience') else None
     if protocol.get('retrieval_profile')!=profile:return False
-    expected='training_gold_and_required_visible' if recipe else ACCEPTANCE_POLICIES.get(protocol.get('mode'))
+    expected=ACCEPTANCE_POLICIES.get(protocol.get('mode'))
     return (protocol.get('schema_version')==VERSION and protocol.get('mode') in ACCEPTANCE_POLICIES
             and protocol.get('acceptance_policy')==expected
             and (protocol['mode']!='testing' or (protocol.get('max_attempts')==1
@@ -214,7 +211,7 @@ class Trajectory:
             raise EvidenceError('Invalid AST policy')
         policy=cfg.get('learning_policy','frozen')
         if policy not in ('frozen','online'):raise EvidenceError('Invalid learning policy')
-        if policy=='online' and (cfg.get('mode')!='learning' or cfg.get('condition') not in ('structured','bm25') or not cfg.get('online_memory') or not memory.text(cfg.get('task_id'))):raise EvidenceError('Online memory requires memory-enabled learning and an explicit training pool')
+        if policy=='online' and (cfg.get('mode')!='learning' or cfg.get('condition') not in ('structured',) or not cfg.get('online_memory') or not memory.text(cfg.get('task_id'))):raise EvidenceError('Online memory requires memory-enabled learning and an explicit training pool')
         if policy!='online' and cfg.get('online_memory'):raise EvidenceError('Frozen/testing trajectories cannot access an online pool')
         cfg['learning_policy']=policy
         for key in ('task','candidate','store','mode','condition'):
@@ -227,9 +224,7 @@ class Trajectory:
         elif 'frozen_selection' in cfg:raise EvidenceError('Frozen selection is only supported by latent experience testing')
         if any(key in cfg for key in ('public_checks','repair_policy','testing_policy')):
             raise EvidenceError('Repair strategy switches were removed; testing submits once before independent Gold scoring')
-        recipe=cfg.get('training_recipe')
-        if recipe not in (None,V8_TRAINING_RECIPE):raise EvidenceError('Unknown training recipe')
-        if recipe and (cfg['mode']!='learning' or not cfg.get('visible_evaluator')):raise EvidenceError('V8 training requires learning mode and a public evaluator')
+        if cfg.get('training_recipe'):raise EvidenceError('Historical training recipes have been removed')
         uses_experience=cfg['condition'] in ('structured','fixed_contract','latent_experience')
         retrieval_profile=cfg.get('retrieval_profile','business-source-v1' if uses_experience else None)
         if retrieval_profile!=('business-source-v1' if uses_experience else None):
@@ -238,10 +233,10 @@ class Trajectory:
         if cfg.get('preparation_validation_policy',preparation.POLICY)!=preparation.POLICY:raise EvidenceError('Historical validation policy is read-only; prepare a new trajectory')
         cfg['preparation_validation_policy']=preparation.POLICY
         cfg['retrieval_profile']=retrieval_profile
-        acceptance='training_gold_and_required_visible' if recipe else ACCEPTANCE_POLICIES[cfg['mode']]
+        acceptance=ACCEPTANCE_POLICIES[cfg['mode']]
         if cfg.get('acceptance_policy',acceptance)!=acceptance:
             raise EvidenceError('Historical protocol is read-only; prepare a new trajectory')
-        if cfg.get('required_visible_checks') and not recipe:
+        if cfg.get('required_visible_checks'):
             raise EvidenceError('Training and testing use public checks as advisory feedback only')
         from .evaluation_split import enforce
         split=enforce(cfg)
@@ -278,6 +273,7 @@ class Trajectory:
             if any(pool==p or pool in p.parents or p in pool.parents for p in (store,source,self.root)):raise EvidenceError('Online pool must be separate from long-term store and trajectory/candidate')
             cfg['online_memory']=str(pool)
         bank=approval.validate_snapshot(store,cfg['memory_snapshot']) if cfg.get('memory_snapshot') else approval.freeze(store)
+        if uses_experience:approval.require_current_abstract_bank(store,bank)
         supplements=cfg.get('approved_memory_supplements',[])
         if not isinstance(supplements,list):raise EvidenceError('Approved memory supplements must be a list')
         if supplements:
@@ -286,6 +282,7 @@ class Trajectory:
             for supplement in supplements:
                 if not isinstance(supplement,dict) or set(supplement)!={'store','snapshot'}:raise EvidenceError('Supplement requires an audited store and exact approved snapshot')
                 accepted=approval.validate_snapshot(Path(supplement['store']),supplement['snapshot'])
+                approval.require_current_abstract_bank(Path(supplement['store']),accepted)
                 if not accepted['entries']:raise EvidenceError('Approved supplement must contain accepted guidance')
                 for entry in accepted['entries']:
                     if entry['bundle']['sha256'] in seen:raise EvidenceError('Duplicate approved supplemental experience')
@@ -345,11 +342,11 @@ class Trajectory:
             from . import business_retrieval
             cfg['retrieval_policy']=dict(version=business_retrieval.VERSION,max_candidates=business_retrieval.MAX_CANDIDATES,max_experiences=business_retrieval.MAX_EXPERIENCES,max_characters=business_retrieval.MAX_CHARACTERS)
         else:
-            cfg['retrieval_policy']=dict(version='bm25-v1' if cfg['condition']=='bm25' else 'no-memory',max_experiences=5 if cfg['condition']=='bm25' else 0)
+            cfg['retrieval_policy']=dict(version='no-memory',max_experiences=0)
         cfg.update(schema_version=VERSION,model=identity(settings),memory_snapshot=bank,max_attempts=attempts,limits=limits,total_request_cap=total,
             contract_review_policy=None,
             store=str(store),original_inventory=inventory(files),feedback_fields=['observations','regressions','unknowns'],
-            required_visible_checks=bool(recipe),acceptance_policy=acceptance,
+            required_visible_checks=False,acceptance_policy=acceptance,
             evaluation_budget=dict(visible=attempts if cfg.get('visible_evaluator') else 0,oracle=attempts if cfg['mode']=='learning' else 0,gold=1 if cfg['mode']=='testing' else 0),
             held_out_eligible=False,split_status='final_only_gold_testing' if cfg['mode']=='testing' else 'unverified_no_independent_split_evidence',
             memory_snapshot_sha256=bank['sha256'],source_sha256=sha(canonical(sources).encode()))
@@ -395,10 +392,6 @@ class Trajectory:
         condition=p['condition'];result=dict(selected_sha256s=[],experience_text=None,reason='condition_has_no_memory')
         if condition=='latent_experience':
             result=deepcopy(p['frozen_experience_delivery'])
-        elif condition=='bm25':
-            hits=memory.search_records(bundles,p['task'],limit=5,include_all=True)['results']
-            selected=[next(b for b in bundles if b['sha256']==h['sha256']) for h in hits]
-            result=dict(selected_sha256s=[b['sha256'] for b in selected],experience_text=memory.delivery_text(selected),reason='bm25_frozen_bank')
         elif condition in ('structured','fixed_contract'):
             from . import business_retrieval as retrieval
             sources={k:v.decode() for k,v in capture(self.root/'original')[0].items()}
@@ -601,7 +594,8 @@ class Trajectory:
                 else:
                     snapshot=online_memory.validate_snapshot(read(path))
                     if self.state().get('online_snapshot_sha256')!=snapshot['sha256']:raise EvidenceError('Unbound online snapshot')
-                p=deepcopy(p);p['memory_snapshot']['entries']+=snapshot['entries']
+                # Proposals remain available for review, not automatic retrieval.
+                # Only the prepared reviewed-Abstract bank can guide this task.
             delivery=read(self.root/'delivery.json') if (self.root/'delivery.json').exists() else self.retrieve(p,backend)
             if p['condition'] not in ('baseline','latent_experience') and state['contract'] is None and not state.get('contract_preparation_complete'):
                 def validate_draft(output):
@@ -656,9 +650,6 @@ class Trajectory:
                         for d in state['diagnoses'] if d['attempt']<=number],
                     instruction='Repair the supplied current candidate. Use cumulative within_task_reflections from the actual preceding failed candidates, including when Contract is unchanged or no cross-task experience matched. Treat their explanations as fallible hypotheses: retain unknowns, check against public task/source and observations, and do not turn inferred causes or checks into new business requirements. Preserve original task obligations and correct behavior. No scorer, reference, gold patch or hidden tests are available.')
                 payload['preparation_warnings']=deepcopy(state.get('preparation_warnings',[]))
-                if p.get('training_recipe')==V8_TRAINING_RECIPE:
-                    payload.pop('within_task_reflections',None)
-                    payload['instruction']='Repair the supplied current candidate. Preserve original task obligations and correct behavior. No scorer, reference, gold patch or hidden tests are available.'
                 payload['instruction']+=' The automatic Contract and preparation checks are unverified guidance. Original task and public source establish requirements. If Contract is null or preparation warnings remain, investigate from those original inputs; do not infer new requirements from rejected guidance or unknown premises.'
                 if p['mode']=='testing':
                     payload['instruction']+=' This is the only testing Action. You may run available public project tests and revise code within this session budget. Submit one final candidate; no Gold verdict or later repair Action will be available.'
@@ -690,7 +681,7 @@ class Trajectory:
                         evaluator=p['training_evaluator'],purpose='training_acceptance'))
                     if inventory(capture(directory)[0])!=inventory({k:v.encode() for k,v in candidate.items()}):raise EvidenceError('Oracle evaluator mutated candidate')
                     accepted=result['passed'] and (evaluation['passed'] is True or not p['required_visible_checks'])
-                    feedback['training_acceptance' if p.get('training_recipe')==V8_TRAINING_RECIPE else 'oracle_acceptance']=deepcopy(result['feedback'])
+                    feedback['oracle_acceptance']=deepcopy(result['feedback'])
                     self.save('training-exposure.json',dict(task_id=p.get('task_id'),source_sha256=p['source_sha256'],training_feedback_used=True,eligible_for_independent_testing=False))
                 state=self.state();state['attempts'].append(dict(number=number,visible_passed=evaluation['passed'],
                     delivered_sha256s=delivery.get('selected_sha256s',[]),
@@ -739,6 +730,7 @@ class Trajectory:
                             'Prefer evidence or an in-place revision over new entries; merge only explicitly overlapping guidance. '
                             'Use actual failed AND successful supporting_attempts. Preserve still-applicable obligations and distinguish unknown causes. '
                             'Write a concise English abstract within 1000 characters, covering applicability, recommendation, preservation and exclusions. '
+                            'Retain material conditions, negations, operation order and exceptions; do not turn conditional settlement into a universal deadline. Omit historical outcomes and repeated context. '
                             'For each contribution, quote an exact delivered rule, before code from any failed attempt and after code retained in the final successful attempt, plus original TASK/source evidence. For pure additions or deletions, include adjacent context on the unchanged side of the same edit. '
                             'Use adopted only for an observable implementation of the rule, misleading only for a specifically evidenced harmful recommendation, '
                             'and rule_error only when the rule itself or its applicability is demonstrably wrong. Do not score all delivered guidance for the overall verdict. '

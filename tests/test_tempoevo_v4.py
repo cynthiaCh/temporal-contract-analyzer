@@ -62,6 +62,11 @@ class V4Tests(unittest.TestCase):
     def prepare(self, **changes):
         cfg=dict(task='Preserve accepted work.',candidate=str(self.source),store=str(self.store),mode='learning',condition='contract',visible_evaluator=dict(command=['synthetic-visible']),training_evaluator=dict(command=['synthetic-training']))
         cfg.update(changes)
+        if cfg['condition'] in ('structured','fixed_contract','latent_experience') and cfg['store']==str(self.store):
+            from temporal_contract_analyzer import compact_experience as compact
+            current=self.root/'library';current.mkdir(exist_ok=True)
+            (current/'entries.json').write_text(json.dumps(dict(schema_version=compact.VERSION,experiences=[])))
+            cfg['store']=str(current)
         if cfg['mode']=='testing':cfg.pop('training_evaluator',None)
         loop=Trajectory(self.root/('run-'+str(len(list(self.root.glob('run-*'))))));loop.prepare(cfg);return loop
 
@@ -85,32 +90,9 @@ class V4Tests(unittest.TestCase):
         loop=self.prepare(training_evaluator=dict(command=['python3',str(grader)]))
         grader.write_text('different scorer')
         with self.assertRaisesRegex(EvidenceError,'Trusted evaluator input changed'):loop.verify()
-    def test_v8_recipe_uses_public_and_gold_acceptance_without_reflection_payload(self):
-        class PublicFailsFirst(Backend):
-            def evaluate(self,stage,payload,directory):
-                result=super().evaluate(stage,payload,directory)
-                if stage!='gold':
-                    n=int((Path(payload['candidate'])/'main.py').read_text().split('=')[1])
-                    result['passed']=n>=2
-                return result
-        loop=self.prepare(training_recipe='v8-compatible-v1')
-        backend=PublicFailsFirst(1);state=loop.run(backend,execute=True)
-        self.assertEqual(state['status'],'passed',state.get('error'))
-        self.assertEqual(len(state['attempts']),2)
-        self.assertFalse(state['attempts'][0]['acceptance_passed'])
-        self.assertIn('diagnosis',[role for role,*_ in backend.calls])
-        for role,payload,*_ in backend.calls:
-            if role=='action':self.assertNotIn('within_task_reflections',payload)
-        self.assertIn('training_acceptance',state['attempts'][0]['feedback'])
-
-
-    def test_v8_recipe_cannot_be_used_in_testing_or_without_public_evaluator(self):
-        from temporal_contract_analyzer import experience_approval as approval
-        with self.assertRaises(EvidenceError):
-            self.prepare(training_recipe='v8-compatible-v1',visible_evaluator=None)
-        with self.assertRaises(EvidenceError):
-            self.prepare(mode='testing',training_recipe='v8-compatible-v1',memory_snapshot=approval.freeze(self.store),gold_evaluator=dict(command=['synthetic-gold']))
-
+    def test_historical_training_recipe_is_removed(self):
+        with self.assertRaisesRegex(EvidenceError,'removed'):
+            self.prepare(training_recipe='v8-compatible-v1')
 
     def test_invalid_retrieval_profiles_do_not_silently_change_testing(self):
         with self.assertRaises(EvidenceError):self.prepare(retrieval_profile='unknown')
@@ -130,7 +112,9 @@ class V4Tests(unittest.TestCase):
         pending=dict(store=str(directory),snapshot=approval.freeze(directory))
         with self.assertRaises(EvidenceError):self.prepare(**cfg,approved_memory_supplements=[pending])
         value['experiences'][0]['review']=dict(reviewer='Synthetic test reviewer',decision='accept',at='2026-11-16T00:00:00Z')
-        file.write_text(json.dumps(value));snapshot=approval.freeze(directory);supplement=dict(store=str(directory),snapshot=snapshot)
+        file.write_text(json.dumps(value))
+        compact.save_summary(directory,dict(id=item['id'],expected_record=compact._bundle(file,value['experiences'][0])[0]['sha256'],expected_summary=None,text='Keep accepted identity.',expert_questions='None.',reviewer='Synthetic test reviewer',decision='accept'))
+        snapshot=approval.freeze(directory);supplement=dict(store=str(directory),snapshot=snapshot)
         bad=deepcopy(snapshot);bad['entries'][0]['expert_decision']['reviewer']='forged'
         with self.assertRaises(EvidenceError):self.prepare(**cfg,approved_memory_supplements=[dict(store=str(directory),snapshot=bad)])
         with self.assertRaises(EvidenceError):self.prepare(**cfg,approved_memory_supplements=[supplement,supplement])
@@ -370,9 +354,14 @@ class V4Tests(unittest.TestCase):
     def test_frozen_retrieval_delivers_approved_only_before_contract(self):
         import test_experience_memory as fixtures
         f=fixtures.MemoryTests('test_storage_preserves_single_source_body_and_evidence');f.setUp();self.addCleanup(f.doCleanups)
-        approved=f.add();pending=deepcopy(f.payload);pending.update(id='not-approved');pending['review']['status']='candidate'
-        memory.add(f.store,pending,[f.source])
-        for condition in ('structured','bm25'):
+        from test_business_retrieval import item,approve_abstracts
+        from temporal_contract_analyzer import compact_experience as compact
+        current=self.root/'approved-library';current.mkdir();pending=item('pending','Keep entry snapshot.');pending.pop('review')
+        (current/'entries.json').write_text(json.dumps(dict(schema_version=compact.VERSION,experiences=[item('approved','Keep entry snapshot.'),pending])))
+        approve_abstracts(current);f.store=current
+        from temporal_contract_analyzer import experience_approval as approval
+        approved=approval.freeze(current)['entries'][0]['bundle']
+        for condition in ('structured',):
             loop=self.prepare(store=str(f.store),condition=condition,
                 task='Preserve accepted work. Keep the entry snapshot.')
             backend=Backend();state=loop.run(backend,execute=True)
@@ -389,7 +378,12 @@ class V4Tests(unittest.TestCase):
         from temporal_contract_analyzer import experience_approval as approval
         import test_experience_memory as fixtures
         f=fixtures.MemoryTests('test_storage_preserves_single_source_body_and_evidence')
-        f.setUp();self.addCleanup(f.doCleanups);approved=f.add()
+        f.setUp();self.addCleanup(f.doCleanups)
+        from test_business_retrieval import item,approve_abstracts
+        from temporal_contract_analyzer import compact_experience as compact
+        current=self.root/'approved-library';current.mkdir()
+        (current/'entries.json').write_text(json.dumps(dict(schema_version=compact.VERSION,experiences=[item('approved','Keep entry snapshot.')])))
+        approve_abstracts(current);f.store=current;approved=approval.freeze(current)['entries'][0]['bundle']
         with patch('temporal_contract_analyzer.preanalysis.analyze_candidate',side_effect=AssertionError('AST must not run')):
             loop=self.prepare(store=str(f.store),mode='testing',condition='structured',ast_policy='disabled',
                 task='Preserve accepted work. Keep the entry snapshot.',memory_snapshot=approval.freeze(f.store),

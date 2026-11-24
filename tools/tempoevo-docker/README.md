@@ -46,26 +46,12 @@ source projection differs from historical full-repository baselines and must be
 reported when comparing that case. Full grading is validated by the eventual
 final score, not by preparation or source extraction alone.
 
-The explicit learning-only `--training-recipe v8-compatible-v1` restores V8
-source-bound experience routing, required external public checks plus Gold, and
-the non-cumulative Action feedback format. It requires `--public-checks-docs`
-(case ID to public example description) and can use an exact audited
-`--memory-snapshot` with its retained approved history in `--store`. The public
-evaluator runs outside the solver; only descriptions enter the candidate. Its
-original/reference/negative controls are archived alongside independent Gold
-controls, and the reference must pass both evaluators. Default retrieval and acceptance settings are
-unchanged; V13 uses advisory preparation validation. Testing rejects this recipe and training-only check descriptions.
-
-The current experiment uses the final 30 test cases with frozen approved
-libraries of 0/20/40/61 entries. See [the current workflow](../../docs/WORKFLOW.md)
-and [the final results](../../experiments/testing-runs/gpt56-library-size-ablation-20261118/README.md).
-
-Training artifacts written outside the Git worktree must not be the only copy of
-learned guidance. After a batch, archive provisional entries, candidate reflections
-and evidence proposals under `experience-memory/training-runs/<run-id>/`, preserving
-original bytes, source paths and SHA-256 hashes, and commit them to Git. Stage content
-candidates in the categorized library as pending for review. Committing candidates
-does not approve them or change an already frozen retrieval snapshot.
+New experience experiments use `experience-memory/library`, currently 58 active
+entries with reviewed Abstracts. `--memory-snapshot` may select a current subset;
+legacy stores, missing/outdated Abstracts and historical experience snapshots are
+rejected before case preparation. The V8 compatibility recipe has been removed.
+Historical experiment outcomes remain records of their original inputs, not results
+of the current Abstract library. Keep bulky raw logs in the external run directory.
 
 Structured training and testing default to Abstract-based `business-source-v1`.
 Training rechecks applicability after Contract revisions, retains its existing

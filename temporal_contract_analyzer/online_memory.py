@@ -51,7 +51,7 @@ def append(pool,root,task_id,record):
     if 'learning' in record:row['learning']=record['learning']
     code=sha(canonical(row).encode())
     with locked(pool):immutable(pool/'entries'/(code+'.json'),row)
-    return dict(status='available_for_subsequent_training',candidate_sha256=bundle['sha256'],entry_sha256=code)
+    return dict(status='pending_review',candidate_sha256=bundle['sha256'],entry_sha256=code)
 
 def usage(pool,root,attempt,selected,accepted):
     if not selected:return

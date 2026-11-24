@@ -199,16 +199,12 @@ Protocol references: [Qoder script execution](https://docs.qoder.com/cli/run-in-
 [model selection](https://docs.qoder.com/cli/model), and
 [authentication](https://docs.qoder.com/cli/authentication).
 
-New business-experience retrieval runs rank the approved library locally using
-accepted, version-bound summaries stored alongside each experience. Missing or
-unapproved summaries fall back to short extractive previews of applicability, event
-relations, preservation and exclusions. The local index retains original extractive
-terms for cross-language matching. Summaries do not call a model or change approved
-guidance; accepted summaries and reviews are frozen with each new run. Only the
-top 6 candidates, each with its summary and full rule text, reach the model for
-source-based applicability checks. Final delivery remains limited to 3 entries
-and 8000 characters. Summary omissions are not evidence of inapplicability.
-Previously frozen full-bank deliveries retain their original replay semantics.
+New business-experience runs use the current categorized library and index only
+accepted, current Abstracts. Missing, rejected and outdated Abstracts are rejected
+at preparation; extractive previews and historical stores are not fallback inputs.
+The top six candidates include full rules for source-based applicability checks;
+final delivery remains at most three entries / 8000 characters. A new experiment
+cannot reuse a historical experience snapshot as a current Abstract library.
 Selection output now uses brief `sha256`/`relevance`/`reason` rows for weak,
 inapplicable or unknown candidates. Detailed assessments retain the original
 source-evidence checks. Explanations and exact quotes are bounded to 240

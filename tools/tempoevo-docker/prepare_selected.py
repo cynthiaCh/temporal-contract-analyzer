@@ -21,13 +21,11 @@ parser.add_argument('--learning-policy',choices=['frozen','online'],default='fro
 parser.add_argument('--online-memory',type=Path,help='Training-only shared provisional memory directory')
 parser.add_argument('--mode',choices=['learning','testing'],default='learning')
 parser.add_argument('--visible-evaluators',type=Path,help='Optional existing project evaluator mapping; omitted by default')
-parser.add_argument('--training-recipe',choices=['v8-compatible-v1'],help='Restore V8 learning semantics with public checks and behavior feedback')
 parser.add_argument('--retrieval-profile',choices=['business-source-v1'],help='Memory router; Abstract-based business-source-v1 is the only training/testing retrieval profile')
 parser.add_argument('--approved-supplement-store',type=Path,help='Additional reviewed memory store for frozen testing only')
 parser.add_argument('--approved-supplement-snapshot',type=Path,help='Exact audited snapshot from the supplemental store')
 parser.add_argument('--memory-snapshot',type=Path,help='Exact audited approved snapshot; validated against --store')
 parser.add_argument('--no-ast',action='store_true',help='Ablation: omit AST analysis and hints from every model stage; retain all public sources')
-parser.add_argument('--public-checks-docs',type=Path,help='Training-only case-to-public-check-description mapping')
 args=parser.parse_args()
 if bool(args.frozen_selections)!=(args.condition=='latent_experience'):parser.error('Latent experience requires --frozen-selections; other conditions cannot use it')
 if args.condition=='latent_experience' and (args.mode!='testing' or args.learning_policy!='frozen'):parser.error('Latent experience requires frozen testing')
@@ -38,8 +36,6 @@ if args.start_rank<1 or args.limit<1:parser.error('--start-rank and --limit must
 if args.learning_policy=='online' and (args.condition!='structured' or not args.online_memory):parser.error('Online learning requires structured condition and --online-memory')
 if args.learning_policy=='frozen' and args.online_memory:parser.error('Frozen runs cannot read an online pool')
 if args.mode=='testing' and (args.learning_policy!='frozen' or args.training_feedback or args.training_feedback_by_family):parser.error('Testing forbids online memory and training-Gold feedback')
-if args.mode=='testing' and (args.training_recipe or args.public_checks_docs):parser.error('Testing forbids a training recipe and training-only check descriptions')
-if args.training_recipe and not args.public_checks_docs:parser.error('V8 training requires explicit public check descriptions')
 repo=Path(__file__).resolve().parents[2];sys.path.insert(0,str(repo))
 store=(args.store or repo/'experience-memory/library').resolve()
 from temporal_contract_analyzer.case_catalog import bench_root
@@ -77,7 +73,6 @@ from temporal_contract_analyzer.training_acceptance import validate_mapping
 validate_mapping(feedback)
 for mapping in family_feedback.values():validate_mapping(mapping)
 visible_configs=json.loads(args.visible_evaluators.read_text()) if args.visible_evaluators else {}
-public_docs=json.loads(args.public_checks_docs.read_text()) if args.public_checks_docs else {}
 from temporal_contract_analyzer.evaluation_split import enforce
 for row in rows:enforce(dict(task_id=row['case_id'],mode=args.mode,learning_policy=args.learning_policy,evaluation_purpose=args.evaluation_purpose,**({'evaluation_split_file':str(args.evaluation_split.resolve())} if args.evaluation_split else {})))
 root=args.root.resolve();root.mkdir()
@@ -88,6 +83,7 @@ if args.condition in ('contract','baseline'):
  from temporal_contract_analyzer.core import canonical
  bank['sha256']=sha(canonical(bank).encode())
 else:bank=approval.validate_snapshot(store,json.loads(args.memory_snapshot.read_text())) if args.memory_snapshot else approval.freeze(store)
+if args.condition not in ('contract','baseline'):approval.require_current_abstract_bank(store,bank)
 (root/'memory-snapshot.json').write_text(json.dumps(bank,indent=2)+'\n')
 out=[]
 solver=args.solver_image;grader=args.grader_image
@@ -100,13 +96,7 @@ for row in rows:
   cfg=dict(manifest=c['case_record']['manifest'],runtime=m.get('framework',{}).get('runtime',m.get('adapter')),family=family)
   if c['case_record'].get('projection'):cfg.update(case_id=cid,projection=c['case_record']['projection'])
   (r/'case.json').write_text(json.dumps(cfg)+'\n');shutil.copytree(c['candidate'],r/'public')
-  if args.public_checks_docs:
-   doc=public_docs.get(cid)
-   if not isinstance(doc,str) or not doc.strip():raise ValueError('Missing public check description for '+cid)
-   (r/'public/VISIBLE_CHECKS.md').write_text(doc)
   visible=visible_configs.get(cid)
-  if args.training_recipe and not visible:
-   visible=dict(image=grader,inputs={str(r/'case.json'):'/checks/case.json',str(repo/'tools/tempoevo-docker/public_checks.cjs'):'/checks/public_checks.cjs'},command=['/opt/swe-tempoc/.swe-tempoc/toolchains/node-v16.20.2/bin/node','/checks/public_checks.cjs'],seconds=180)
   gold=dict(image=grader,inputs={str(r/'case.json'):'/checks/case.json',str(repo/'tools/tempoevo-docker/gold.py'):'/checks/gold.py'},command=['/usr/bin/python3','/checks/gold.py'],seconds=180)
   if m.get('schema_version')=='python-pilot-0.1':gold['inputs'][str(repo/'tools/tempoevo-docker/python_gold.py')]=gold['inputs'].pop(str(repo/'tools/tempoevo-docker/gold.py'))
   if cfg.get('projection') and cfg['projection']['kind']=='frozen_base_public_projection_v1':
@@ -122,7 +112,6 @@ for row in rows:
    for kind,ev in ([('visible',visible)] if args.mode=='testing' else ([('visible',visible)] if visible else [])+[('gold',gold)]):
     d=r/'checks'/name/kind;d.mkdir(parents=True);result=NativeV4Backend({}).evaluate(kind,dict(candidate=str(subject),evaluator=ev),d);(d/'result.json').write_text(json.dumps(result,indent=2)+'\n');record[kind]=dict(valid=result.get('valid'),passed=result.get('passed'),verdict=result.get('verdict'),error=result.get('error'))
     if result.get('valid') is not True:raise ValueError((name,kind,record[kind]))
-    if args.training_recipe and name=='reference' and kind=='visible' and result['passed'] is not True:raise ValueError((name,kind,'Reference must pass public examples',result))
     if args.mode=='learning' and kind=='gold' and result['passed']!=(name=='reference'):raise ValueError((name,kind,'Unexpected control result',result))
    controls.append(record)
   entry['controls']=controls
@@ -133,7 +122,6 @@ for row in rows:
   if args.retrieval_profile:config['retrieval_profile']=args.retrieval_profile
   if args.frozen_selections:config['frozen_selection']=frozen_selections[cid]
   if args.approved_supplement_store:config['approved_memory_supplements']=[dict(store=str(args.approved_supplement_store.resolve()),snapshot=json.loads(args.approved_supplement_snapshot.read_text()))]
-  if args.training_recipe:config.update(training_recipe=args.training_recipe,required_visible_checks=True,protected_paths=['README.md','VISIBLE_CHECKS.md'])
   if args.evaluation_split:config['evaluation_split_file']=str(args.evaluation_split.resolve())
   if args.evaluation_purpose:config['evaluation_purpose']=args.evaluation_purpose
   config['public_case_record']=c['case_record']

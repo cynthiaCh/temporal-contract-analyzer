@@ -7,3 +7,5 @@ Authorized GPT-6.1 Sol and GPT-5.6 Sol / medium, train70 and test30,200 cases in
 Reuse the requested bootstrap generator method:1000 paired index draws,seed20260925,sample SD. Preserve all valid scores; one recovery wave for infrastructure-invalid outcomes. Update only Table1 after valid results exist; preserve original cells and re-read current online source before editing.
 
 Comparison scope: current business-source-coverage-v4 recalls6 candidates and delivers at most3 entries/8000characters. Some historical Table1 full-method runs used version2 with up to64candidates and5delivered/16000characters; the new column is therefore a current-pipeline no-AST condition, not an isolated historical-runtime AST intervention.
+
+Library correction (2026-11-24): The four groups used the historical 61-entry bank without current reviewed Abstracts. These scores do not evaluate the current 58-entry Abstract library and must not be described as an isolated AST ablation of that library. A matched current-library AST/no-AST rerun is needed. Scores are preserved with their original scope.
