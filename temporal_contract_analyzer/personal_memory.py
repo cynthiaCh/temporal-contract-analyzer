@@ -1,0 +1,119 @@
+"""Project-scoped personal corrections; independent of research memory and models."""
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import uuid
+
+from . import archive
+from .core import EvidenceError
+
+
+def store_path(store=None):
+    return Path(store or os.environ.get('TCA_PERSONAL_MEMORY') or
+                Path.home()/'.temporal-contract-analyzer'/'personal-memory').expanduser().resolve()
+
+
+def project_path(project):
+    path = Path(project).expanduser()
+    if not path.is_absolute() or not path.is_dir():
+        raise EvidenceError('project must be an existing absolute project directory')
+    return str(path.resolve())
+
+
+def terms(text):
+    tokens = set(re.findall(r'[a-z0-9_]+', text.lower()))
+    for run in re.findall(r'[\u3400-\u9fff]+', text):
+        tokens.update(run[i:i+2] for i in range(max(1, len(run)-1)))
+    return tokens
+
+
+class PersonalMemory:
+    def __init__(self, store=None):
+        self.root = store_path(store)
+
+    @contextmanager
+    def locked(self):
+        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with (self.root/'.lock').open('a') as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            yield
+
+    def read(self, experience_id, project):
+        if not re.fullmatch(r'[0-9a-f]{32}', experience_id):
+            raise EvidenceError('Invalid experience_id')
+        path = self.root/(experience_id+'.json')
+        if not path.is_file():
+            raise EvidenceError('Unknown personal experience')
+        row = json.loads(path.read_text(encoding='utf-8'))
+        if row['project'] != project:
+            raise EvidenceError('Experience belongs to another project')
+        return row
+
+    def recall(self, project, query, limit=5, offset=0):
+        project = project_path(project)
+        needles = terms(query)
+        matches = []
+        if self.root.exists():
+            for path in self.root.glob('*.json'):
+                row = json.loads(path.read_text(encoding='utf-8'))
+                if row['project'] != project or row['deleted']:
+                    continue
+                current = row['history'][-1]
+                score = len(needles & terms(current['correction']+' '+current['guidance']))
+                if needles and not score:
+                    continue
+                matches.append(dict(experience_id=row['experience_id'],
+                                    project=project, score=score, **current))
+        matches.sort(key=lambda row: (-row['score'], row['experience_id']))
+        return dict(items=matches[offset:offset+limit], total=len(matches),
+                    next_offset=offset+limit if offset+limit < len(matches) else None,
+                    qualification='Lexical candidates, not verified applicability. Check current task/source; user corrections are not test results.')
+
+    def remember(self, project, correction, guidance='', experience_id=None, expected_version=None):
+        project = project_path(project)
+        if not correction.strip():
+            raise EvidenceError('A verbatim user correction is required')
+        with self.locked():
+            if experience_id:
+                row = self.read(experience_id, project)
+                self.check_version(row, expected_version)
+                if row['deleted']:
+                    raise EvidenceError('Restore deleted experience before revising')
+            else:
+                if expected_version is not None:
+                    raise EvidenceError('expected_version requires experience_id')
+                row = dict(experience_id=uuid.uuid4().hex, project=project, version=0,
+                           deleted=False, history=[])
+            row['version'] += 1
+            row['history'].append(dict(version=row['version'], action='record' if not experience_id else 'revise',
+                                       correction=correction, guidance=guidance,
+                                       recorded_at=datetime.now(timezone.utc).isoformat()))
+            archive.atomic_json(self.root/(row['experience_id']+'.json'), row)
+            return row
+
+    @staticmethod
+    def check_version(row, expected_version):
+        if expected_version != row['version']:
+            raise EvidenceError('Experience changed or expected_version missing; read current version first')
+
+    def manage(self, project, experience_id, action='show', expected_version=None):
+        project = project_path(project)
+        if action == 'show':
+            return self.read(experience_id, project)
+        if action not in ('delete', 'restore'):
+            raise EvidenceError('Unknown personal memory action')
+        with self.locked():
+            row = self.read(experience_id, project)
+            self.check_version(row, expected_version)
+            row['version'] += 1
+            previous = row['history'][-1]
+            row['deleted'] = action == 'delete'
+            row['history'].append(dict(version=row['version'], action=action,
+                                       correction=previous['correction'], guidance=previous['guidance'],
+                                       recorded_at=datetime.now(timezone.utc).isoformat()))
+            archive.atomic_json(self.root/(row['experience_id']+'.json'), row)
+            return row

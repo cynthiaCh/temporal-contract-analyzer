@@ -90,7 +90,8 @@ class ReportMCPTests(unittest.TestCase):
         lines = [json.loads(line) for line in process.stdout.splitlines()]
         self.assertEqual([r['id'] for r in lines],[1,2,3])
         self.assertEqual({t['name'] for t in lines[1]['result']['tools']},
-                         {'scan_project','list_reports','read_report','read_source','read_context','compare_reports'})
+                         {'scan_project','list_reports','read_report','read_source','read_context','compare_reports',
+                          'recall_experience','remember_correction','manage_experience'})
         self.assertFalse(lines[2]['result']['isError'])
         meta = json.loads(lines[2]['result']['content'][0]['text'])
         self.assertTrue(archive.verify(meta['report_id'],self.store)['verified'])

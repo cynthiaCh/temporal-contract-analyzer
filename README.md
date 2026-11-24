@@ -47,6 +47,14 @@ python3 -B -m temporal_contract_analyzer experience-memory review --store /path/
 
 [Architecture and source map](docs/ARCHITECTURE.md), [experience storage and review](experience-memory/README.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [current workflow](docs/WORKFLOW.md) document the interfaces. Experience Review edits stable entries in place; content changes require renewed approval. Accepted, active entries enter frozen retrieval snapshots when current task/source evidence supports their applicability and exclusions. Cross-case effect validation is not an eligibility gate. Success candidates and human failure summaries remain unapproved until reviewed. Opening or submitting the review page cannot start model execution. Held-out testing reads a frozen approved snapshot and cannot learn. No paid calls are authorized by reading this README.
 
+## Personal use with coding agents
+
+The local stdio MCP serves source analysis plus project-scoped personal experience.
+Connect Codex or another MCP client, recall corrections before coding, and record
+explicit user corrections directly without experiment training or research approval.
+The personal library is separate from the experiment bank. See
+[setup, tool arguments and agent instructions](docs/PERSONAL_MCP.md).
+
 ## Optional integrations
 
 The only training/testing execution entrypoint is `tempoevo run --execute`.

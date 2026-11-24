@@ -1,7 +1,8 @@
 """Small dependency-free MCP stdio adapter (2025-06-18), no model calls.
 
-Only initialize/ping/tools are advertised. All results refer to the same archive
-as the CLI/editor. A bound research session exposes exactly one frozen layer.
+Only initialize/ping/tools are advertised. Reports share the CLI/editor archive.
+Personal corrections use a separate local store. Bound research sessions expose
+exactly one frozen layer and cannot access personal memory.
 """
 import json
 from pathlib import Path
@@ -44,6 +45,25 @@ TOOLS = [
 ]
 
 
+PERSONAL_TOOLS = [
+    tool('recall_experience', 'Before coding, recall project-scoped personal corrections. Pass the absolute project root and a task query; empty query lists active entries. Results are lexical candidates: verify applicability against current task/source. Follow next_offset for more.',
+         dict(project=STRING, query=STRING, limit={'type': 'integer', 'minimum': 1, 'maximum': 20},
+              offset={'type': 'integer', 'minimum': 0}), ['project', 'query']),
+    tool('remember_correction', 'Record an explicit user correction immediately in personal memory, without research approval. Preserve verbatim correction separately from optional model guidance. Default to the current project root. Never invent user feedback or claim test verification. Revise a known entry with experience_id and its expected_version; do not silently replace another rule.',
+         dict(project=STRING, correction=STRING, guidance=STRING, experience_id=STRING,
+              expected_version={'type': 'integer', 'minimum': 1}), ['project', 'correction'], writes=True),
+    tool('manage_experience', 'Show personal experience and version history, or soft-delete/restore it at user request. Mutations require expected_version from a fresh read. Deleted content remains on disk for recovery but is excluded from recall.',
+         dict(project=STRING, experience_id=STRING,
+              action={'type': 'string', 'enum': ['show', 'delete', 'restore']},
+              expected_version={'type': 'integer', 'minimum': 1}), ['project', 'experience_id'], writes=True),
+]
+PERSONAL_INSTRUCTIONS = (' Before editing, call recall_experience with the current absolute project root and task query; '
+    'check candidates against current task/source. When the user explicitly corrects a mistake or asks to remember a rule, '
+    'call remember_correction, preserving their original words and project scope. Personal corrections take effect immediately '
+    'without research review; they are user guidance, not independently verified facts. Use manage_experience to inspect '
+    'history or delete/restore at user request. Do not claim a memory operation succeeded unless the tool succeeded.')
+
+
 def validate(definition, args):
     schema = definition['inputSchema']
     if not isinstance(args, dict) or set(args) - set(schema['properties']) or set(schema['required']) - set(args):
@@ -62,9 +82,11 @@ def validate(definition, args):
 
 
 class Session:
-    def __init__(self, store=None, node=None, report_id=None, layer=None):
+    def __init__(self, store=None, node=None, report_id=None, layer=None, personal_store=None):
         self.store = archive.store_path(store)
         self.node = node
+        from .personal_memory import PersonalMemory
+        self.personal_memory = PersonalMemory(personal_store)
         self.report_id, self.layer = report_id, layer
         if bool(report_id) != bool(layer):
             raise EvidenceError('Research binding requires both --report-id and --layer')
@@ -83,7 +105,7 @@ class Session:
         if self.report_id:
             return [tool('read_report', 'Read the one frozen material assigned to this research session. No other reports, layers or source snapshots are exposed.',
                          dict(offset={'type': 'integer', 'minimum': 0}, limit={'type': 'integer', 'minimum': 1, 'maximum': 20000}), writes=True)]
-        return TOOLS
+        return TOOLS + PERSONAL_TOOLS
 
     def page(self, report_id, text, offset, limit, material):
         if offset > len(text):
@@ -105,6 +127,12 @@ class Session:
         if not definition:
             raise EvidenceError('Unknown or unavailable tool')
         validate(definition, args)
+        if name == 'recall_experience':
+            return self.personal_memory.recall(**args)
+        if name == 'remember_correction':
+            return self.personal_memory.remember(**args)
+        if name == 'manage_experience':
+            return self.personal_memory.manage(**args)
         if name == 'scan_project':
             if not Path(args['path']).is_absolute():
                 raise EvidenceError('scan_project requires an absolute candidate path')
@@ -157,7 +185,7 @@ class Session:
             version = requested if requested in {'2024-11-05', '2025-03-26', '2025-06-18'} else '2025-06-18'
             return dict(response, result=dict(protocolVersion=version, capabilities={'tools': {'listChanged': False}},
                         serverInfo={'name': 'temporal-contracts', 'version': VERSION},
-                        instructions='Use archived evidence as incomplete review hints. Scan first, read the report by ID, verify source and behavior, then test changes. Never treat zero hints as proof of safety.'))
+                        instructions='Use archived evidence as incomplete review hints. Scan first, read the report by ID, verify source and behavior, then test changes. Never treat zero hints as proof of safety.' + (PERSONAL_INSTRUCTIONS if not self.report_id else '')))
         if method == 'ping':
             return dict(response, result={})
         if not self.ready:
@@ -180,8 +208,8 @@ class Session:
             self.pending_delivery = None
 
 
-def serve(store=None, node=None, report_id=None, layer=None):
-    session = Session(store, node, report_id, layer)
+def serve(store=None, node=None, report_id=None, layer=None, personal_store=None):
+    session = Session(store, node, report_id, layer, personal_store)
     while True:
         line = sys.stdin.buffer.readline(1024*1024+1)
         if not line:

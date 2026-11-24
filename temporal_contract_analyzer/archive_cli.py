@@ -58,6 +58,7 @@ def register(sub):
     stop = commands.add_parser('stop', help='Stop the report browser')
     mcp = commands.add_parser('mcp', help='Serve MCP over stdio for Codex')
     mcp.add_argument('--node')
+    mcp.add_argument('--personal-store', help='Personal corrections directory (default: TCA_PERSONAL_MEMORY or ~/.temporal-contract-analyzer/personal-memory)')
     mcp.add_argument('--report-id', help='Restrict this research session to one frozen report')
     mcp.add_argument('--layer', help='The only frozen layer exposed in a restricted research session')
     for command in (init, scan, listing, show, check, context, compare, server, opening, stop, mcp):
@@ -124,7 +125,7 @@ def run(args):
         value = stop_server(store)
     elif name == 'mcp':
         from .mcp_server import serve
-        serve(store, args.node, args.report_id, args.layer)
+        serve(store, args.node, args.report_id, args.layer, args.personal_store)
         return 0
     else:
         raise EvidenceError('Unknown report command')
