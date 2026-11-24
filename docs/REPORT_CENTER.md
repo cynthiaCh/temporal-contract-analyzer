@@ -72,6 +72,13 @@ Or copy an ID from the extension and ask:
 | `read_context` | Enrich archived hints with candidate definitions; page through separate JSON with provenance and gaps |
 | `compare_reports` | Compare two scans of the same project and scope |
 
+The same unrestricted MCP also exposes `recall_experience`, `remember_correction`
+and `manage_experience`. Recall combines a read-only temporal guidance pack with
+current-project personal corrections; writes affect personal memory only. See
+[everyday workflow, configuration and arguments](PERSONAL_MCP.md). This flow uses
+the current agent and does not start experiment training. Restricted frozen-layer
+sessions continue to expose only their assigned report.
+
 The browser provides a **Source context** tab and **Expand related source** on boundary cards. The CLI equivalent is `reports context REPORT_ID`. See [context enrichment](CONTEXT_ENRICHMENT.md) for parameters and scope. Restricted frozen-layer MCP sessions expose only their designated layer, without this tool.
 
 The extension can capture unsaved editor contents; Codex/browser scans read disk. To study identical input, have Codex **read the report ID supplied by the extension**, rather than rescan and assume equality. A shared Node configuration reduces parser-runtime differences across entry points. Archiving and the browser do not call models; material returned through MCP enters the current Codex session.

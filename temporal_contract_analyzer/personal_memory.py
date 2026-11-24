@@ -11,6 +11,8 @@ import uuid
 from . import archive
 from .core import EvidenceError
 
+DETAIL_FIELDS = ('context', 'mistake', 'applicability', 'exclusions', 'related_general_id')
+
 
 def store_path(store=None):
     return Path(store or os.environ.get('TCA_PERSONAL_MEMORY') or
@@ -63,20 +65,25 @@ class PersonalMemory:
                 if row['project'] != project or row['deleted']:
                     continue
                 current = row['history'][-1]
-                score = len(needles & terms(current['correction']+' '+current['guidance']))
+                text = ' '.join(current.get(key, '') for key in ('correction', 'guidance')+DETAIL_FIELDS)
+                score = len(needles & terms(text))
                 if needles and not score:
                     continue
                 matches.append(dict(experience_id=row['experience_id'],
-                                    project=project, score=score, **current))
+                                    project=project, source='personal', scope='project', read_only=False, score=score, **current))
         matches.sort(key=lambda row: (-row['score'], row['experience_id']))
-        return dict(items=matches[offset:offset+limit], total=len(matches),
-                    next_offset=offset+limit if offset+limit < len(matches) else None,
+        end = len(matches) if limit is None else offset+limit
+        return dict(items=matches[offset:end], total=len(matches),
+                    next_offset=end if end < len(matches) else None,
                     qualification='Lexical candidates, not verified applicability. Check current task/source; user corrections are not test results.')
 
-    def remember(self, project, correction, guidance='', experience_id=None, expected_version=None):
+    def remember(self, project, correction, guidance=None, experience_id=None, expected_version=None,
+                 context=None, mistake=None, applicability=None, exclusions=None, related_general_id=None):
         project = project_path(project)
         if not correction.strip():
             raise EvidenceError('A verbatim user correction is required')
+        details = dict(context=context, mistake=mistake, applicability=applicability,
+                       exclusions=exclusions, related_general_id=related_general_id)
         with self.locked():
             if experience_id:
                 row = self.read(experience_id, project)
@@ -88,10 +95,25 @@ class PersonalMemory:
                     raise EvidenceError('expected_version requires experience_id')
                 row = dict(experience_id=uuid.uuid4().hex, project=project, version=0,
                            deleted=False, history=[])
+            previous = row['history'][-1] if row['history'] else {}
+            content = dict(correction=correction,
+                           guidance=previous.get('guidance', '') if guidance is None else guidance)
+            content.update({key: previous.get(key, '') if value is None else value
+                            for key, value in details.items()})
+            if experience_id:
+                if all(previous.get(key, '') == value for key, value in content.items()):
+                    return row
+            else:
+                # Exact repeats need no new entry; semantic similarity stays with the agent.
+                for path in sorted(self.root.glob('*.json')):
+                    existing = json.loads(path.read_text(encoding='utf-8'))
+                    if existing['project'] == project and not existing['deleted']:
+                        current = existing['history'][-1]
+                        if all(current.get(key, '') == value for key, value in content.items()):
+                            return existing
             row['version'] += 1
             row['history'].append(dict(version=row['version'], action='record' if not experience_id else 'revise',
-                                       correction=correction, guidance=guidance,
-                                       recorded_at=datetime.now(timezone.utc).isoformat()))
+                                       **content, recorded_at=datetime.now(timezone.utc).isoformat()))
             archive.atomic_json(self.root/(row['experience_id']+'.json'), row)
             return row
 
@@ -113,7 +135,7 @@ class PersonalMemory:
             previous = row['history'][-1]
             row['deleted'] = action == 'delete'
             row['history'].append(dict(version=row['version'], action=action,
-                                       correction=previous['correction'], guidance=previous['guidance'],
+                                       **{key: previous.get(key, '') for key in ('correction', 'guidance')+DETAIL_FIELDS},
                                        recorded_at=datetime.now(timezone.utc).isoformat()))
             archive.atomic_json(self.root/(row['experience_id']+'.json'), row)
             return row

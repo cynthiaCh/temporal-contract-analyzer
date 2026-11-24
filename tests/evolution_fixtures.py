@@ -31,19 +31,3 @@ sys.exit(0 if passed else 1)
     index = root/'experiments/temporal-diagnostics-v1'
     index.mkdir(parents=True)
     (index/'corpus.json').write_text(json.dumps(dict(cases=entries)))
-
-
-def synthetic_screen(store, code):
-    """Synthetic admission fixture only, never real development-effect evidence."""
-    from temporal_contract_analyzer import experience_screening as screening
-    if (store/'screening'/(code+'.json')).exists():return
-    def score(passed):
-        return dict(verdict='PASS' if passed else 'UNDERREACH',
-                    behavior_states={'target':passed,'preserved':True},origin='synthetic_fixture')
-    screening.save(store,dict(schema_version=screening.VERSION,candidate_sha256=code,
-        origin='synthetic_fixture_not_real_model_or_effect_evidence',
-        source=dict(source_unit='synthetic-source',critical_relations=['preserved'],
-                    old=[score(False),score(False)],new=[score(True),score(True)]),
-        transfers=[dict(source_unit='synthetic-transfer-'+str(i),critical_relations=['preserved'],prompts_identical=False,
-                        old=[score(False),score(False)],new=[score(True),score(True)]) for i in (1,2)],
-        budget=dict(within=True,complete=True,requests=13,cap=300,unknown_requests=0)))

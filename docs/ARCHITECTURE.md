@@ -38,3 +38,14 @@ Module filenames do not select a historical execution protocol. Old data are
 read-only; inspecting them does not schedule models, rewrite scores or approve
 experience. See [the current workflow](WORKFLOW.md) and
 [evaluation isolation](PUBLIC_TEST_ADAPTERS.md).
+
+
+## Everyday MCP memory
+
+`general_memory.py` reads the shipped reviewed temporal guidance pack and combines
+its candidates with `personal_memory.py` project corrections. `mcp_server.py`
+exposes unified recall and personal-only writes; `experience-memory export-general`
+creates a new guidance-only pack using existing approval and replacement rules.
+The calling agent handles semantic applicability and incremental correction
+choices. No new model runner is introduced. Restricted report sessions cannot
+access either memory source. Details: [personal MCP](PERSONAL_MCP.md).

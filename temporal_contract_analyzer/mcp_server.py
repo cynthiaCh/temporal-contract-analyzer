@@ -46,22 +46,33 @@ TOOLS = [
 
 
 PERSONAL_TOOLS = [
-    tool('recall_experience', 'Before coding, recall project-scoped personal corrections. Pass the absolute project root and a task query; empty query lists active entries. Results are lexical candidates: verify applicability against current task/source. Follow next_offset for more.',
-         dict(project=STRING, query=STRING, limit={'type': 'integer', 'minimum': 1, 'maximum': 20},
+    tool('recall_experience', 'Before coding, recall read-only general temporal guidance and current-project personal corrections (any coding topic). Pass absolute project root and task query; empty query lists entries. source=personal supports checking existing corrections before writing. Candidates are interleaved by source: inspect full applicability, exclusions and current source; use at most 3 nonredundant entries. Follow next_offset as needed.',
+         dict(project=STRING, query=STRING, source={'type': 'string', 'enum': ['all', 'personal', 'general']}, limit={'type': 'integer', 'minimum': 1, 'maximum': 20},
               offset={'type': 'integer', 'minimum': 0}), ['project', 'query']),
-    tool('remember_correction', 'Record an explicit user correction immediately in personal memory, without research approval. Preserve verbatim correction separately from optional model guidance. Default to the current project root. Never invent user feedback or claim test verification. Revise a known entry with experience_id and its expected_version; do not silently replace another rule.',
+    tool('remember_correction', 'Record an explicit user correction immediately in personal memory, without research approval. Preserve verbatim correction separately from optional model guidance. Any coding topic is allowed, not only temporal bugs. First recall related personal entries; add new information, revise the same rule locally, or skip an exact repeat. Default to the current project root. Never invent user feedback or claim test verification. Revise a known entry with experience_id and its expected_version; do not silently replace another rule.',
          dict(project=STRING, correction=STRING, guidance=STRING, experience_id=STRING,
+              context=STRING, mistake=STRING, applicability=STRING, exclusions=STRING, related_general_id=STRING,
               expected_version={'type': 'integer', 'minimum': 1}), ['project', 'correction'], writes=True),
     tool('manage_experience', 'Show personal experience and version history, or soft-delete/restore it at user request. Mutations require expected_version from a fresh read. Deleted content remains on disk for recovery but is excluded from recall.',
          dict(project=STRING, experience_id=STRING,
               action={'type': 'string', 'enum': ['show', 'delete', 'restore']},
               expected_version={'type': 'integer', 'minimum': 1}), ['project', 'experience_id'], writes=True),
 ]
-PERSONAL_INSTRUCTIONS = (' Before editing, call recall_experience with the current absolute project root and task query; '
-    'check candidates against current task/source. When the user explicitly corrects a mistake or asks to remember a rule, '
-    'call remember_correction, preserving their original words and project scope. Personal corrections take effect immediately '
-    'without research review; they are user guidance, not independently verified facts. Use manage_experience to inspect '
-    'history or delete/restore at user request. Do not claim a memory operation succeeded unless the tool succeeded.')
+PERSONAL_INSTRUCTIONS = (' TempoEvo specializes in temporal-contract-aware maintenance. Before coding, call '
+    'recall_experience with the absolute project root and task query to consult general temporal guidance and personal '
+    'project corrections. Personal corrections may concern ANY coding error, API, business rule or workflow; do not '
+    'force temporal labels on them. Check full applicability/exclusions against current requirements and source, '
+    'select at most 3 nonredundant entries or none, and use temporal scans when relevant. Current explicit requirements '
+    'take precedence; project corrections specialize general advice only within their scope. Ask about unresolved '
+    'business conflicts rather than inventing semantics. When the user explicitly corrects a mistake or asks to '
+    'remember a rule, first recall relevant personal entries (source=personal), then use remember_correction to add a new rule, revise the same '
+    'rule by ID/current version, or skip a duplicate. Preserve original user words in correction and keep any model '
+    'guidance, context, mistake, applicability and exclusions separate; leave unknowns empty. On revision, omitted '
+    'fields retain their previous values; explicitly clear or replace fields when obsolete, preserve still-valid '
+    'constraints, and never rewrite the entire library. Link a project-specific exception using related_general_id '
+    'when applicable; never modify the general pack. Personal corrections take effect immediately without research '
+    'review and are not independently verified facts. Use manage_experience for history or delete/restore at user '
+    'request. Do not claim a memory operation succeeded unless the tool succeeded.')
 
 
 def validate(definition, args):
@@ -82,12 +93,17 @@ def validate(definition, args):
 
 
 class Session:
-    def __init__(self, store=None, node=None, report_id=None, layer=None, personal_store=None):
+    def __init__(self, store=None, node=None, report_id=None, layer=None, personal_store=None, general_store=None):
         self.store = archive.store_path(store)
         self.node = node
         from .personal_memory import PersonalMemory
         self.personal_memory = PersonalMemory(personal_store)
+        from .general_memory import GeneralMemory
+        self.general_memory = GeneralMemory(general_store)
         self.report_id, self.layer = report_id, layer
+        if not report_id and (self.general_memory.path == self.personal_memory.root
+                              or self.personal_memory.root in self.general_memory.path.parents):
+            raise EvidenceError('Personal storage must not contain the read-only general pack')
         if bool(report_id) != bool(layer):
             raise EvidenceError('Research binding requires both --report-id and --layer')
         if report_id:
@@ -128,7 +144,8 @@ class Session:
             raise EvidenceError('Unknown or unavailable tool')
         validate(definition, args)
         if name == 'recall_experience':
-            return self.personal_memory.recall(**args)
+            from .general_memory import recall_combined
+            return recall_combined(self.personal_memory, self.general_memory, **args)
         if name == 'remember_correction':
             return self.personal_memory.remember(**args)
         if name == 'manage_experience':
@@ -185,7 +202,7 @@ class Session:
             version = requested if requested in {'2024-11-05', '2025-03-26', '2025-06-18'} else '2025-06-18'
             return dict(response, result=dict(protocolVersion=version, capabilities={'tools': {'listChanged': False}},
                         serverInfo={'name': 'temporal-contracts', 'version': VERSION},
-                        instructions='Use archived evidence as incomplete review hints. Scan first, read the report by ID, verify source and behavior, then test changes. Never treat zero hints as proof of safety.' + (PERSONAL_INSTRUCTIONS if not self.report_id else '')))
+                        instructions='Use archived evidence as incomplete review hints. When scanning, read the report by ID, verify source and behavior, then test changes. Never treat zero hints as proof of safety.' + (PERSONAL_INSTRUCTIONS if not self.report_id else '')))
         if method == 'ping':
             return dict(response, result={})
         if not self.ready:
@@ -208,8 +225,8 @@ class Session:
             self.pending_delivery = None
 
 
-def serve(store=None, node=None, report_id=None, layer=None, personal_store=None):
-    session = Session(store, node, report_id, layer, personal_store)
+def serve(store=None, node=None, report_id=None, layer=None, personal_store=None, general_store=None):
+    session = Session(store, node, report_id, layer, personal_store, general_store)
     while True:
         line = sys.stdin.buffer.readline(1024*1024+1)
         if not line:

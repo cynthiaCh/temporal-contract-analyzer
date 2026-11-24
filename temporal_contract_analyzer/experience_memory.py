@@ -320,43 +320,6 @@ def search(store, query, namespace=None, limit=8, required_labels=None):
     return result
 
 
-def legacy_payload(entry, identifier, registry_path, review_path, extra_sources=(),
-                   admitted=False, notes=(), rule_links=None, outcome_refs=None):
-    """Deterministic import adapter, not recoding or a new semantic review."""
-    object_fields(entry, {'requires', 'excludes', 'version', 'primary_class', 'text',
-                          'text_sha256', 'sha256'}, 'historical frozen entry')
-    if not text(entry['text']) or not text(entry['version']) or not isinstance(entry['primary_class'], str):
-        raise EvidenceError('Malformed historical text, version or class')
-    if entry['text_sha256'] != digest(entry['text']) or entry['sha256'] != digest(
-            canonical({k:v for k,v in entry.items() if k != 'sha256'})):
-        raise EvidenceError('Historical entry digest mismatch')
-    headers = list(re.finditer(r'^R([0-9]{2}) \[([^\]\n]+)\]\n', entry['text'], re.MULTILINE))
-    reverse = {v:k for k,v in CATEGORIES.items()}
-    rules = []
-    for index, match in enumerate(headers):
-        end = headers[index+1].start()-2 if index+1 < len(headers) else len(entry['text'])-1
-        category = reverse.get(match.group(2))
-        if category is None:
-            raise EvidenceError('Unknown historical rule category; no automatic rewrite')
-        rules.append(dict(id='R'+match.group(1), category=category, body=entry['text'][match.end():end]))
-    if not rules or render(dict(rules=rules)) != entry['text']:
-        raise EvidenceError('Historical text does not round-trip exactly; do not silently normalize')
-    paths = list(dict.fromkeys([str(registry_path), str(review_path)]+[str(p) for p in extra_sources]))
-    sources = [dict(path=p, sha256=sha(Path(p).read_bytes())) for p in paths]
-    review_code = sha(Path(review_path).read_bytes())
-    links = rule_links if rule_links is not None else [dict(rule_id=r['id'], source_sha256=review_code,
-            pointer=f'/rules/{i}') for i, r in enumerate(rules)]
-    return dict(schema_version=BUNDLE_VERSION, id=identifier, version=entry['version'], parent_sha256=None,
-        taxonomy_version=LEGACY_TAXONOMY, labels=[entry['primary_class']], requires=entry['requires'],
-        excludes=entry['excludes'], rules=rules,
-        review=dict(status='research_admitted' if admitted else 'candidate', kind='ai_assisted_historical',
-                    source_sha256=review_code,
-                    limitations=['Historical review retained; import is not a fresh semantic review or production admission.',
-                                 'Historical labels are retained; delivery uses reviewed applicability predicates.']),
-        audit=dict(sources=sources, rule_links=links, outcome_refs=[] if outcome_refs is None else outcome_refs,
-                   notes=list(notes)+['Exact historical body and applicability retained; no new model output.']))
-
-
 def delivery_entries(bundles):
     """Historical labels stay unchanged; reviewed predicates decide applicability."""
     from . import experience_routing as routing

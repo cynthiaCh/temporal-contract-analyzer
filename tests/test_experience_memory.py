@@ -43,9 +43,6 @@ class MemoryTests(unittest.TestCase):
     def add(self, payload=None):
         bundle = memory.add(self.store, self.payload if payload is None else payload, [self.source])
         if bundle['review']['status'] == 'research_admitted':
-            if bundle['taxonomy_version'] == taxonomy.VERSION:
-                from evolution_fixtures import synthetic_screen
-                synthetic_screen(self.store,bundle['sha256'])
             approval.decide(self.store, bundle['sha256'], dict(reviewer='SYNTHETIC_EXPERT_FIXTURE',
                 decision='accept', reason='Synthetic operator-action fixture, not real expert approval.',
                 scope='exploratory', rules=[dict(rule_id=r['id'], supported=True,
@@ -200,32 +197,6 @@ class MemoryTests(unittest.TestCase):
             self.add(payload)
         self.assertEqual(len(memory.search(self.store, 'entry')['results']), 2)
         self.assertIsNone(memory.retrieve(self.store, self.visible())['experience_text'])
-
-    def test_legacy_import_is_exact_and_retains_false_unknown_and_review_identity(self):
-        rendered = memory.render(self.payload)
-        entry = dict(text=rendered, version='legacy-v1', primary_class='T3',
-                     requires=['entry_snapshot'], excludes=[], text_sha256=memory.digest(rendered))
-        entry['sha256'] = memory.digest(memory.canonical(entry))
-        registry = self.root/'synthetic-registry.json'
-        registry.write_text(json.dumps([entry]))
-        review = self.root/'synthetic-review.json'
-        review.write_text(json.dumps(dict(origin='synthetic_fixture', rules=[{}]*5,
-            expected=False, actual=None, prior_success=True, regression=True, cause='unknown')))
-        payload = memory.legacy_payload(entry, 'legacy-guidance', registry, review, admitted=True)
-        bundle = memory.add(self.store, payload, [registry, review])
-        self.assertEqual(memory.render(bundle), rendered)
-        self.assertEqual(bundle['body_sha256'], entry['text_sha256'])
-        stored = json.loads((self.store/'sources'/bundle['review']['source_sha256']).read_bytes())
-        self.assertIs(stored['expected'], False)
-        self.assertIsNone(stored['actual'])
-        self.assertTrue(stored['prior_success'] and stored['regression'])
-        self.assertEqual(stored['cause'], 'unknown')
-        self.assertEqual(bundle['review']['kind'], 'ai_assisted_historical')
-        entry['text'] = rendered.rstrip('\n')
-        entry['text_sha256'] = memory.digest(entry['text'])
-        entry['sha256'] = memory.digest(memory.canonical({k:v for k,v in entry.items() if k!='sha256'}))
-        with self.assertRaises(EvidenceError):
-            memory.legacy_payload(entry, 'partial', registry, review)
 
     def test_malformed_and_incomplete_objects_are_not_completed(self):
         for change in (dict(rules=None), dict(rules=[None]), dict(review=None), dict(rules=[])):

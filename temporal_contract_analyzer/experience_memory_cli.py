@@ -9,9 +9,10 @@ from .core import EvidenceError
 def register(sub):
     parser=sub.add_parser('experience-memory',help='Current experience library and offline discovery; no model calls')
     actions=parser.add_subparsers(dest='memory_action',required=True)
-    for name in ('init','list','verify','freeze','show','search','retrieve','active','review'):
+    for name in ('init','list','verify','freeze','show','search','retrieve','active','review','export-general'):
         action=actions.add_parser(name);action.add_argument('--store',type=Path,required=True)
         if name!='review':action.add_argument('--output',type=Path,help='New file only; default is standard output')
+        if name=='export-general':action.add_argument('--version',required=True,help='Readable guidance pack version')
         if name=='show':
             action.add_argument('identifier',help='Stable experience ID or archived digest')
             action.add_argument('--format',choices=('json','md'),default='json')
@@ -38,6 +39,9 @@ def run(args):
         args.store.mkdir(parents=True)
         archive.atomic_json(args.store/'entries.json',dict(schema_version=compact.VERSION,category='Experiences',experiences=[]))
         value=dict(initialized=True,scope='research_only')
+    elif action=='export-general':
+        from .general_memory import export_pack
+        value=export_pack(args.store,args.version)
     elif action=='search':value=memory.search(args.store,args.query,args.taxonomy,args.limit,args.label)
     elif action=='retrieve':
         value=memory.retrieve(args.store,json.loads(args.input.read_text()),args.expected_snapshot,

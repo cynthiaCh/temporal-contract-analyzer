@@ -102,3 +102,14 @@ See [Docker setup](DOCKER_TRAINING.md), [evaluation boundaries](PUBLIC_TEST_ADAP
 and the [final 70/30 case bundle](../cases/README.md).
 The existing cases are historically exposed and share source families. Their
 results describe diagnostic performance, not unseen-source generalization.
+
+
+## Everyday agent use (separate from experimental evaluation)
+
+The local MCP now recalls a read-only general temporal guidance pack together with
+project-scoped personal corrections. The host agent checks current applicability
+and chooses a few useful entries. Explicit user corrections on any coding topic
+enter personal memory immediately; local revisions preserve history and do not
+change the general pack. See [MCP setup and workflow](PERSONAL_MCP.md).
+This path does not run the construction controller or Gold, and does not replace
+the frozen experimental protocol or its historical result interpretation.

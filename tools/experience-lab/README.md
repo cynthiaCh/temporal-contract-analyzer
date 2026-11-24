@@ -245,7 +245,7 @@ Saving makes no model requests. Credentials are not exposed in the editor.
 
 ## Execution and review boundaries
 
-- Training uses the current V8-compatible construction recipe and defaults to the
+- Training uses the current V13 construction flow and defaults to the
   same Abstract-based business selection as testing, with at most three repair
   Actions. Contract revisions recheck applicability against the frozen bank;
   fixed-Contract training selects once. Prepare a new batch to use this default.

@@ -9,7 +9,7 @@ TempoEvo combines temporal-contract analysis, contract-guided repair and reusabl
 - `MASTER_PROMPT.md`: link to the canonical [controller prompt](temporal_contract_analyzer/prompts/MASTER_PROMPT.md).
 - `tests/`, `case-clusters/`, `templates/`, `examples/`: offline checks and small fixtures.
 - `vscode-extension/`: optional editor integration source.
-- `experience-memory/`: local exposed research candidates, when present in the development checkout. They are not shipped as expert-approved defaults in the clean source export.
+- `experience-memory/`: original research library, when present in the development checkout. The raw bank stays outside clean source exports; `temporal_contract_analyzer/data/temporal-experience.json` supplies a reviewed guidance-only pack for everyday MCP use.
 
 Historical experiments, raw model outputs, interrupted runs, scores and publication material are preserved in a separate research archive. See [archive boundaries](docs/ARCHIVE.md). Removing working files does not rewrite Git history.
 
@@ -50,7 +50,9 @@ python3 -B -m temporal_contract_analyzer experience-memory review --store /path/
 ## Personal use with coding agents
 
 The local stdio MCP serves source analysis plus project-scoped personal experience.
-Connect Codex or another MCP client, recall corrections before coding, and record
+It includes a read-only pack of 58 reviewed temporal experiences and a separate
+personal store for corrections on any coding topic. Connect Codex or another MCP
+client, recall both sources before coding, and record
 explicit user corrections directly without experiment training or research approval.
 The personal library is separate from the experiment bank. See
 [setup, tool arguments and agent instructions](docs/PERSONAL_MCP.md).
@@ -60,7 +62,6 @@ The personal library is separate from the experiment bank. See
 The only training/testing execution entrypoint is `tempoevo run --execute`.
 Prepare new V13 trajectories with `tempoevo prepare`. Historical V1–V3 batches are
 read-only: `history status --root BATCH` or `history report --root BATCH`.
-The retired `experience-evolution` command and old orchestration modules are removed.
 Shared native/Docker/scoring infrastructure remains separate from trajectory policy.
 
 - The report UI can be opened with `python3 -B -m temporal_contract_analyzer reports open`.
@@ -81,7 +82,7 @@ Tests use synthetic runners and fixtures. They do not establish repair benefit o
 
 ## Distribution status
 
-This is a prepared source tree, not a published release. The owner has not selected a project license. Preserve upstream notices for any separately redistributed third-party code. No license grant or venue acceptance is implied. The exported source excludes exposed research memory, original experiment data, installed dependencies and Git history.
+This is a prepared source tree, not a published release. The owner has not selected a project license. Preserve upstream notices for any separately redistributed third-party code. No license grant or venue acceptance is implied. The exported source includes the reviewed guidance-only pack; it excludes the original research memory, experiment data, installed dependencies and Git history.
 
 ## Current construction and testing
 
