@@ -72,7 +72,7 @@ Or copy an ID from the extension and ask:
 | `read_context` | Enrich archived hints with candidate definitions; page through separate JSON with provenance and gaps |
 | `compare_reports` | Compare two scans of the same project and scope |
 
-The same unrestricted MCP also exposes `recall_experience`, `remember_correction`
+The same unrestricted MCP also exposes `recall_experience`, `prepare_correction`, `remember_correction`
 and `manage_experience`. Recall combines a read-only temporal guidance pack with
 current-project personal corrections; writes affect personal memory only. See
 [everyday workflow, configuration and arguments](PERSONAL_MCP.md). This flow uses

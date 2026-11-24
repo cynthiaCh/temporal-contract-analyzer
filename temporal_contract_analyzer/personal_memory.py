@@ -33,6 +33,26 @@ def terms(text):
     return tokens
 
 
+CORRECTION_INSTRUCTIONS = (
+    'Compare the user correction and current task context with each candidate, considering the same '
+    'object/API, scenario, requirement and scope, not just shared words. Choose add for an independent '
+    'rule, revise for a correction or extension of the same rule, or noop when an existing rule already '
+    'fully covers the feedback. Similar vocabulary alone is not grounds to merge. If the new feedback '
+    'clearly replaces an earlier rule, revise that rule; otherwise clarify a material unresolved '
+    'business conflict rather than silently overwriting it. For revise, use the exact candidate '
+    'experience_id and version as expected_version; inspect its history with manage_experience '
+    'when needed. Write cumulative guidance that preserves still-valid old requirements and '
+    'incorporates the new correction; keep the new verbatim user words in correction, never rewrite '
+    'historical quotes. Omitted optional fields retain their previous values; replace or explicitly '
+    'clear obsolete fields. For add, omit experience_id and expected_version. For noop, do not write '
+    'or increment a version; explain which existing rule covers the feedback. Leave unknown reasons '
+    'and boundaries empty. This tool uses lexical matching only: a zero-match or top-5 result is '
+    'not proof that no related rule exists. Broaden the query or list personal entries if needed. '
+    'This is personal memory on any coding topic, without research approval or general-pack writes. '
+    'The host coding agent makes the semantic decision; the server neither calls an LLM nor certifies it.'
+)
+
+
 class PersonalMemory:
     def __init__(self, store=None):
         self.root = store_path(store)
@@ -76,6 +96,21 @@ class PersonalMemory:
         return dict(items=matches[offset:end], total=len(matches),
                     next_offset=end if end < len(matches) else None,
                     qualification='Lexical candidates, not verified applicability. Check current task/source; user corrections are not test results.')
+
+    def prepare_correction(self, project, correction, context='', query=''):
+        project = project_path(project)
+        if not correction.strip():
+            raise EvidenceError('A verbatim user correction is required')
+        search_query = query.strip() or '\n'.join(part for part in (correction, context) if part)
+        recalled = self.recall(project, search_query, limit=5)
+        return dict(project=project, correction=correction, context=context, query=search_query,
+                    source='personal', candidates=recalled['items'],
+                    total_matches=recalled['total'], candidate_limit=5,
+                    next_offset=recalled['next_offset'],
+                    instructions=CORRECTION_INSTRUCTIONS,
+                    write_tool='remember_correction',
+                    write_defaults=dict(project=project, correction=correction,
+                                        **({'context': context} if context else {})))
 
     def remember(self, project, correction, guidance=None, experience_id=None, expected_version=None,
                  context=None, mistake=None, applicability=None, exclusions=None, related_general_id=None):

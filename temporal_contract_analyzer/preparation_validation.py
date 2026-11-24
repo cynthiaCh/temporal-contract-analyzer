@@ -39,9 +39,3 @@ def analysis(value, task, sources):
                 result['unknowns'].append(note)
     validate_analysis(result, task, sources, text_grounding=True)
     return result, warnings
-
-
-def unavailable_analysis(task):
-    return dict(taxonomy_version=taxonomy.VERSION, contract=task[:1800],
-                obligation_labels=[], facts=[],
-                unknowns=['Routing unavailable; no unsupported experience premises admitted.'])

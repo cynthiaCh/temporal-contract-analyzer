@@ -137,8 +137,9 @@ class PersonalMemoryTests(unittest.TestCase):
             session = Session(self.root/'reports', report_id='bound', layer='facts',
                               personal_store=self.store)
         self.assertEqual([tool['name'] for tool in session.definitions()], ['read_report'])
-        with self.assertRaises(EvidenceError):
-            session.call('remember_correction', dict(project=str(self.project), correction='x'))
+        for name in ('prepare_correction', 'remember_correction'):
+            with self.subTest(tool=name), self.assertRaises(EvidenceError):
+                session.call(name, dict(project=str(self.project), correction='x'))
         self.assertFalse(self.store.exists())
 
     def test_environment_selects_personal_store(self):

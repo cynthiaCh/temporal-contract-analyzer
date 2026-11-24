@@ -11,6 +11,7 @@ import uuid
 
 from . import archive
 from .core import EvidenceError, VERSION, sha
+from .personal_memory import CORRECTION_INSTRUCTIONS
 
 
 def tool(name, description, properties, required=(), writes=False):
@@ -49,7 +50,9 @@ PERSONAL_TOOLS = [
     tool('recall_experience', 'Before coding, recall read-only general temporal guidance and current-project personal corrections (any coding topic). Pass absolute project root and task query; empty query lists entries. source=personal supports checking existing corrections before writing. Candidates are interleaved by source: inspect full applicability, exclusions and current source; use at most 3 nonredundant entries. Follow next_offset as needed.',
          dict(project=STRING, query=STRING, source={'type': 'string', 'enum': ['all', 'personal', 'general']}, limit={'type': 'integer', 'minimum': 1, 'maximum': 20},
               offset={'type': 'integer', 'minimum': 0}), ['project', 'query']),
-    tool('remember_correction', 'Record an explicit user correction immediately in personal memory, without research approval. Preserve verbatim correction separately from optional model guidance. Any coding topic is allowed, not only temporal bugs. First recall related personal entries; add new information, revise the same rule locally, or skip an exact repeat. Default to the current project root. Never invent user feedback or claim test verification. Revise a known entry with experience_id and its expected_version; do not silently replace another rule.',
+    tool('prepare_correction', 'Before storing explicit user feedback, match the top 5 personal experiences in the current project. Read-only: returns original correction, candidate IDs/versions and instructions for the host LLM to choose add, revise or noop. Pass task/module context; optional query can broaden lexical matching. Never reads the general pack or calls a model. Then use remember_correction for add/revise; skip writes for noop.',
+         dict(project=STRING, correction=STRING, context=STRING, query=STRING), ['project', 'correction']),
+    tool('remember_correction', 'Record an explicit user correction immediately in personal memory, without research approval. Preserve verbatim correction separately from optional model guidance. Any coding topic is allowed, not only temporal bugs. Prefer prepare_correction first: compare its top-5 candidates and choose add, revise or noop. Preserve valid prior constraints in cumulative guidance when revising. Noop requires no write. Direct writes remain supported, with exact-repeat protection. Default to the current project root. Never invent user feedback or claim test verification. Revise a known entry with experience_id and its expected_version; do not silently replace another rule.',
          dict(project=STRING, correction=STRING, guidance=STRING, experience_id=STRING,
               context=STRING, mistake=STRING, applicability=STRING, exclusions=STRING, related_general_id=STRING,
               expected_version={'type': 'integer', 'minimum': 1}), ['project', 'correction'], writes=True),
@@ -63,16 +66,14 @@ PERSONAL_INSTRUCTIONS = (' TempoEvo specializes in temporal-contract-aware maint
     'project corrections. Personal corrections may concern ANY coding error, API, business rule or workflow; do not '
     'force temporal labels on them. Check full applicability/exclusions against current requirements and source, '
     'select at most 3 nonredundant entries or none, and use temporal scans when relevant. Current explicit requirements '
-    'take precedence; project corrections specialize general advice only within their scope. Ask about unresolved '
-    'business conflicts rather than inventing semantics. When the user explicitly corrects a mistake or asks to '
-    'remember a rule, first recall relevant personal entries (source=personal), then use remember_correction to add a new rule, revise the same '
-    'rule by ID/current version, or skip a duplicate. Preserve original user words in correction and keep any model '
-    'guidance, context, mistake, applicability and exclusions separate; leave unknowns empty. On revision, omitted '
-    'fields retain their previous values; explicitly clear or replace fields when obsolete, preserve still-valid '
-    'constraints, and never rewrite the entire library. Link a project-specific exception using related_general_id '
-    'when applicable; never modify the general pack. Personal corrections take effect immediately without research '
-    'review and are not independently verified facts. Use manage_experience for history or delete/restore at user '
-    'request. Do not claim a memory operation succeeded unless the tool succeeded.')
+    'take precedence; project corrections specialize general advice only within their scope. '
+    'When the user explicitly corrects a mistake or asks to remember a rule, call prepare_correction with their '
+    'verbatim feedback and current task/module context. It returns up to 5 personal candidates. Analyze them using '
+    'the following rules, then call remember_correction for add/revise, or skip writes for noop. '
+    + CORRECTION_INSTRUCTIONS +
+    ' Link a project exception with related_general_id when applicable; never write the general pack. Corrections '
+    'take effect immediately and are not independently verified. Use manage_experience for history or user-requested '
+    'delete/restore. Do not claim a memory operation succeeded unless the tool succeeded.')
 
 
 def validate(definition, args):
@@ -146,6 +147,8 @@ class Session:
         if name == 'recall_experience':
             from .general_memory import recall_combined
             return recall_combined(self.personal_memory, self.general_memory, **args)
+        if name == 'prepare_correction':
+            return self.personal_memory.prepare_correction(**args)
         if name == 'remember_correction':
             return self.personal_memory.remember(**args)
         if name == 'manage_experience':

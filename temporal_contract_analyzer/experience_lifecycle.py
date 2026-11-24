@@ -36,7 +36,7 @@ def view(store,code):
     value=deepcopy(value)
     value['content_review_available']=True
     if value.get('origin_root'):
-        root=Path(value['origin_root']);auth=load(root/'execution-authorization.json')
+        root=Path(value['origin_root'])
         state=load(root/'state.json',{})
         value.update(execution_authorized=False,legacy_origin_read_only=True,origin_status=state.get('status'),origin_error=state.get('error'))
     else:value['execution_authorized']=False
@@ -73,12 +73,6 @@ def on_decision(store,row):
             _revoke_locked(store,old,row['reviewer'],'Review-only decision withdrew pending automatic enable')
 
 
-def latest_acceptance(store,code):
-    from . import experience_approval as approval
-    rows=[r for r in approval.decisions(store) if r['candidate_sha256']==code]
-    return rows[-1] if rows and rows[-1]['decision']=='accept' else None
-
-
 def _revoke_locked(store,grant,actor,reason):
     from . import experience_approval as approval
     file=Path(store)/'workflow/revocations'/(grant['sha256']+'.json')
@@ -89,12 +83,3 @@ def _revoke_locked(store,grant,actor,reason):
         approval._change(store,index,bundle,grant,'withdraw_enable',saved['actor'],saved['reason'])
     _update(store,bundle['sha256'],status='authorization_revoked',enable_blocker='Automatic enable authorization withdrawn',authorization_withdrawal=saved)
     return saved
-
-
-def revoke(store,code,request):
-    memory.object_fields(request,{'actor','reason'},'authorization withdrawal')
-    if not memory.text(request['actor']) or not isinstance(request['reason'],str):raise EvidenceError('Actual revoking operator is required')
-    with locked(store):
-        grant=latest_acceptance(store,code)
-        if not grant or not grant.get('enable_authorization',{}).get('authorized'):raise EvidenceError('No current automatic enable authorization')
-        return _revoke_locked(store,grant,request['actor'],request['reason'])

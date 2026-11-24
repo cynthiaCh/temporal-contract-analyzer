@@ -19,7 +19,9 @@ Task + current source
   -> agent checks applicability, exclusions, conflicts and redundant advice
   -> agent uses at most three useful entries (or none), edits and validates
   -> explicit user correction
-  -> recall related personal rules, then add / revise locally / skip duplicate
+  -> prepare_correction: top-5 project candidates + comparison instructions
+  -> host agent chooses add / revise locally / noop
+  -> remember_correction for add/revise; no write for noop
   -> later task or session recalls the current versions
 ```
 
@@ -130,9 +132,12 @@ append the following to the consuming project's AGENTS.md (Codex) or CLAUDE.md
 - Current explicit requirements take precedence. Project corrections specialize
   general advice only within their scope; ask about unresolved business conflicts.
 - When the user explicitly corrects a mistake or requests a remembered rule,
-  first recall related entries with `source=personal`. Add a genuinely new rule,
-  revise the same rule using `remember_correction` with its ID/current version,
-  or skip a duplicate. This is direct personal recording, not research review.
+  call `prepare_correction` with the verbatim correction and current task/module
+  context. Compare its top-5 personal candidates by object, scenario and scope.
+  Add an independent rule, revise a correction/extension of the same rule using
+  `remember_correction` with its ID/current version, or skip writes when already
+  fully covered. Similar words alone do not justify a merge. This is direct
+  personal recording, not research review.
 - Preserve user words in `correction`. Put model guidance, context, the prior mistake,
   applicability and exclusions in separate fields; leave unknowns empty.
 - Revise only the affected entry. Preserve valid prior constraints in the updated
@@ -146,7 +151,7 @@ append the following to the consuming project's AGENTS.md (Codex) or CLAUDE.md
 
 ## Tools and arguments
 
-All three tools require `project`: the same existing absolute project root on
+All four tools require `project`: the same existing absolute project root on
 record and recall. Symlink paths are resolved. There is no cross-project fallback
 or global-scope inference. A project rename requires an explicit future migration;
 this version does not infer renamed repositories.
@@ -154,9 +159,55 @@ this version does not infer renamed repositories.
 | Tool | Arguments | Result |
 |---|---|---|
 | `recall_experience` | `project`, `query`; optional `source` (`all`, `personal`, `general`; default `all`), `limit` (1–20, default 5), `offset` | General and personal candidates with provenance, counts and `next_offset` |
+| `prepare_correction` | `project`, `correction`; optional task/module `context`, broader `query` | Up to 5 project-only candidates, IDs/versions, comparison instructions and write defaults; no writes |
 | `remember_correction` | `project`, `correction`; optional `guidance`, `context`, `mistake`, `applicability`, `exclusions`, `related_general_id` | New active entry, stable ID, version and history |
 | `remember_correction` (revision) | Same fields plus `experience_id`, `expected_version` | New revision of that entry; prior revisions retained |
 | `manage_experience` | `project`, `experience_id`; optional `action` (`show`, `delete`, `restore`; default `show`) | Full entry and history; mutations require `expected_version` |
+
+## Match before adding or revising
+
+For an explicit correction, first call `prepare_correction` (the host supplies the
+MCP tools/call envelope):
+
+```json
+{"project":"/work/my-app","correction":"Pending orders need a yellow badge.","context":"Order list; status 2 means pending confirmation."}
+```
+
+The server searches only active personal experience in this project, with a fixed
+candidate limit of 5. It returns full current entries (including guidance and
+boundaries), stable IDs and versions, the original correction and comparison
+instructions. Preparation is read-only and does not require a valid general pack.
+No model is called by the server; the host agent compares the candidates:
+
+| Decision | When | Action |
+|---|---|---|
+| Add | Independent knowledge or no relevant existing rule | `remember_correction` without ID/version |
+| Revise | Same rule, with corrected meaning or additional conditions | `remember_correction` with existing ID and `expected_version` |
+| Noop | Existing guidance already fully covers the feedback | No write; identify the covering rule to the user |
+
+Example revision after the host determines an existing order-status rule applies
+(replace the example ID/version with a returned candidate):
+
+```json
+{"project":"/work/my-app","correction":"Pending orders need a yellow badge.","experience_id":"0123456789abcdef0123456789abcdef","expected_version":1,"guidance":"For the order list, status 2 means pending confirmation and uses a yellow badge. Check the project API enum; do not guess status meanings."}
+```
+
+The guidance contains the still-valid old rule plus the new correction. History
+retains earlier user quotes verbatim; only the latest quote belongs in the new
+revision's `correction`. Similar symptoms with different APIs, objects or business
+scope remain separate. If feedback clearly replaces an old rule, revise it; if
+that relationship is ambiguous and changes business behavior, clarify it. This
+comparison is a host-agent responsibility, not a semantic guarantee by MCP.
+
+An empty lexical result does not prove there is no related experience. Pass a
+broader `query` to `prepare_correction`, or call `recall_experience` with
+`source=personal`, the returned query and `offset=next_offset` to inspect further
+matches. An empty recall query lists entries. Do not substitute generic experience
+for these five personal update candidates.
+
+Direct `remember_correction` calls remain supported for explicit additions or a
+known revision; preparation is the recommended workflow, not a new admission or
+approval gate. Empty projects can record corrections immediately.
 
 Example MCP tool arguments (the host supplies the tools/call envelope):
 
