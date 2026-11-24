@@ -385,7 +385,7 @@ class V4Tests(unittest.TestCase):
         (current/'entries.json').write_text(json.dumps(dict(schema_version=compact.VERSION,experiences=[item('approved','Keep entry snapshot.')])))
         approve_abstracts(current);f.store=current;approved=approval.freeze(current)['entries'][0]['bundle']
         with patch('temporal_contract_analyzer.preanalysis.analyze_candidate',side_effect=AssertionError('AST must not run')):
-            loop=self.prepare(store=str(f.store),mode='testing',condition='structured',ast_policy='disabled',
+            loop=self.prepare(store=str(f.store),mode='testing',condition='structured',
                 task='Preserve accepted work. Keep the entry snapshot.',memory_snapshot=approval.freeze(f.store),
                 gold_evaluator=dict(command=['synthetic-gold']),visible_evaluator=None)
         backend=Backend();state=loop.run(backend,execute=True)
@@ -398,7 +398,16 @@ class V4Tests(unittest.TestCase):
             if stage in ('contract','action'):self.assertIn(approved['rules'][0]['body'],payload['experience'])
         self.assertEqual(loop.verify()['total_request_cap'],48)
         self.assertEqual(read(loop.root/'ast-evidence.json'),{})
+        self.assertEqual(loop.verify()['ast_policy'],'disabled')
         self.assertEqual((loop.root/'original/main.py').read_text(),'value = 0\n')
+
+    def test_ast_can_be_explicitly_enabled(self):
+        from unittest.mock import patch
+        with patch('temporal_contract_analyzer.preanalysis.analyze_candidate',return_value=({'status':'complete'},{'events':[]})) as analyze:
+            loop=self.prepare(ast_policy='enabled')
+        analyze.assert_called_once()
+        self.assertEqual(loop.verify()['ast_policy'],'enabled')
+        self.assertEqual(read(loop.root/'ast-evidence.json'),{'events':[]})
 
     def test_unknown_ast_policy_is_rejected(self):
         with self.assertRaisesRegex(EvidenceError,'Invalid AST policy'):

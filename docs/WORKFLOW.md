@@ -36,12 +36,15 @@ new V13 trajectory; older protocols remain available for read-only inspection. P
 
 The current configuration is one group with all approved experience available
 for retrieval, `condition=structured`, `retrieval_profile=business-source-v1`,
-and frozen memory. It does not automatically launch A/B or no-memory groups.
+frozen memory, and `ast_policy=disabled`. New trajectories skip AST extraction
+and pass no AST hints to selection, Contract or Action. Set `ast_policy=enabled`
+explicitly (or use `prepare_selected.py --with-ast`) to enable this optional aid.
+It does not automatically launch A/B or no-memory groups.
 The latest test10 run froze 39 approved entries and used four workers; these are
 batch settings, not a fixed library size or four attempts on each task.
 
 ```text
-Original task + public source + available AST evidence
+Original task + public source
   -> business applicability selection from a frozen approved bank
   -> Auto-Contract draft
   -> one bounded repair Action and final submission

@@ -76,12 +76,15 @@ same frozen approved bank and current single-submission testing protocol. One ca
 error does not abort the other cases, and incomplete previously started stages
 are not replayed. Results retain the full denominator and archive after completion.
 
-For an explicit AST ablation, prepare a new root with `--no-ast`. The frozen
+New trajectories default to no AST. The frozen
 protocol records `ast_policy=disabled`; analysis is skipped and selection,
 Contract and Action receive an empty AST object. Original source files, memory
 retrieval, repair budgets and final Gold scoring are retained. Selection is
-rerun without AST, so this measures its effect across the full pipeline rather
-than holding the per-case experience deliveries fixed.
+run without AST. Use `--with-ast` to opt in for a new comparison run;
+`--no-ast` remains an explicit alias for the default. Selection reruns in each
+condition, so comparisons measure effects across the full pipeline rather than
+holding per-case experience deliveries fixed. Existing trajectories retain their
+frozen configuration.
 The current study uses the full approved categorized library as its retrieval pool;
 A/B is historical and is not launched by this command.
 

@@ -207,7 +207,8 @@ class Trajectory:
     def prepare(self, config):
         if self.root.exists():raise EvidenceError('Use a new trajectory root')
         cfg=deepcopy(config)
-        if cfg.get('ast_policy','enabled') not in ('enabled','disabled'):
+        cfg.setdefault('ast_policy','disabled')
+        if cfg['ast_policy'] not in ('enabled','disabled'):
             raise EvidenceError('Invalid AST policy')
         policy=cfg.get('learning_policy','frozen')
         if policy not in ('frozen','online'):raise EvidenceError('Invalid learning policy')
@@ -293,7 +294,7 @@ class Trajectory:
             cfg['frozen_experience_delivery']=replay(cfg['frozen_selection'],cfg['task'],sources,[e['bundle'] for e in bank['entries']],summaries={e['bundle']['sha256']:e['retrieval_summary'] for e in bank['entries'] if 'retrieval_summary' in e},learning={e['bundle']['sha256']:e['learning'] for e in bank['entries'] if 'learning' in e},model=identity(settings)['model'])
         from .preanalysis import analyze_candidate
         if cfg.get('ast_policy')=='disabled':
-            full,ast=dict(status='disabled',reason='explicit_no_ast_ablation'),{}
+            full,ast=dict(status='disabled',reason='ast_policy_disabled'),{}
         elif cfg.get('backend',{}).get('kind')=='docker':
             from .tempoevo_docker import analyze,image_identity
             image_identity(cfg['backend']['grader_image'])

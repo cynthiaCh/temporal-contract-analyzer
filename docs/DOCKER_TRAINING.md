@@ -1,7 +1,7 @@
 # Docker construction and testing
 
 New live `tempoevo run --execute` runs require Docker. The host schedules bounded
-stages and preserves archives; AST extraction, every model role and both
+stages and preserves archives; optional AST extraction, every model role and both
 assessments execute in containers. Historical trajectories are not migrated.
 `tempoevo status` reads retained results without rewriting or requiring current
 runtime hashes; resuming/executing still verifies frozen bindings.
@@ -39,7 +39,9 @@ Grader sources and submissions remain read-only; only disposable `/tmp`, native
 compilation caches and wire-log directories are writable. All owned containers
 must stop before candidate snapshots or evaluation returns.
 
-Go/Ruby/PHP/Java source reads now count toward body proof. Their AST coverage
+New trajectories default to `ast_policy=disabled`; AST extraction and hints are
+optional (`prepare_selected.py --with-ast`). Full public sources remain available.
+When AST is enabled, Go/Ruby/PHP/Java source reads count toward body proof. Their AST coverage
 remains explicitly `unsupported_language`, not invented syntax facts; Python and
 JS/TS/Vue retain deterministic parsers. Missing AST coverage does not silently
 invent contract premises. Public-source textual routing must still establish

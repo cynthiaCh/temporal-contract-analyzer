@@ -25,7 +25,10 @@ parser.add_argument('--retrieval-profile',choices=['business-source-v1'],help='M
 parser.add_argument('--approved-supplement-store',type=Path,help='Additional reviewed memory store for frozen testing only')
 parser.add_argument('--approved-supplement-snapshot',type=Path,help='Exact audited snapshot from the supplemental store')
 parser.add_argument('--memory-snapshot',type=Path,help='Exact audited approved snapshot; validated against --store')
-parser.add_argument('--no-ast',action='store_true',help='Ablation: omit AST analysis and hints from every model stage; retain all public sources')
+ast_options=parser.add_mutually_exclusive_group()
+ast_options.add_argument('--with-ast',dest='ast_policy',action='store_const',const='enabled',help='Opt in to AST analysis and hints for model stages')
+ast_options.add_argument('--no-ast',dest='ast_policy',action='store_const',const='disabled',help='Omit AST analysis and hints (default); retain all public sources')
+parser.set_defaults(ast_policy='disabled')
 args=parser.parse_args()
 if bool(args.frozen_selections)!=(args.condition=='latent_experience'):parser.error('Latent experience requires --frozen-selections; other conditions cannot use it')
 if args.condition=='latent_experience' and (args.mode!='testing' or args.learning_policy!='frozen'):parser.error('Latent experience requires frozen testing')
@@ -118,7 +121,7 @@ for row in rows:
   config=dict(task_id=cid,task=c['task'],candidate=str(r/'public'),store=str(store),mode='learning',condition='structured',max_attempts=3,model=MODEL,binary=agent_binary,backend=dict(kind='docker',solver_image=solver,grader_image=grader,solver_node='/runtime/node16/bin/node'),memory_snapshot=bank,training_evaluator=gold,training_feedback=feedback,protected_paths=['README.md'])
   if visible:config['visible_evaluator']=visible
   config.update(model=identity(settings),model_profile=settings['profile'],condition=args.condition,training_feedback=family_feedback.get(family,feedback))
-  if args.no_ast:config['ast_policy']='disabled'
+  config['ast_policy']=args.ast_policy
   if args.retrieval_profile:config['retrieval_profile']=args.retrieval_profile
   if args.frozen_selections:config['frozen_selection']=frozen_selections[cid]
   if args.approved_supplement_store:config['approved_memory_supplements']=[dict(store=str(args.approved_supplement_store.resolve()),snapshot=json.loads(args.approved_supplement_snapshot.read_text()))]
