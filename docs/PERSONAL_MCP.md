@@ -18,7 +18,7 @@ Task + current source
   -> recall general temporal guidance + current-project personal corrections
   -> agent checks applicability, exclusions, conflicts and redundant advice
   -> agent uses at most three useful entries (or none), edits and validates
-  -> agent extracts durable corrections from user dialogue and task context
+  -> agent extracts perspective + modification from durable user corrections
   -> recall_experience: source=personal, limit=5
   -> read_experience if full history is needed
   -> agent selects add / update / delete / restore / noop
@@ -128,15 +128,16 @@ CLAUDE.md (Claude Code), preserving existing instructions:
 - Before coding, use `tempoevo.recall_experience` with this project's absolute
   root and task query. Check applicability and exclusions against current source;
   use at most three nonredundant entries, or none. Scan temporal behavior when useful.
-- Extract durable corrections from user dialogue and current task context. Keep
-  user words separate from model guidance; do not invent causes or validation.
+- Extract durable corrections into `perspective` (problem understanding) and
+  `modification` (repair/checking steps). Keep user words in `correction`, with
+  scope/exclusions separate. Do not invent causes or claim unperformed validation.
 - Before updating personal memory, call `recall_experience` with `source=personal`,
   `limit=5` and a query combining the feedback with task/module context. Use
   `read_experience` for full content and history when needed.
-- Compare objects/APIs, scenarios and scope. Use `update_experience` with `add`
+- Compare perspective, objects/APIs, scenarios and scope before adapting modification steps. Use `update_experience` with `add`
   for independent knowledge, `update` for the same rule's correction or extension,
   or `noop` if already covered. Shared vocabulary alone does not justify merging.
-- Preserve valid old constraints in cumulative guidance. Update only the affected
+- Preserve valid old constraints in cumulative perspective and modification. Update only the affected
   ID and pass its current version. Omitted fields retain old values; an explicit
   empty string clears obsolete content. History keeps original user quotes.
 - Use `delete` only for a clearly withdrawn rule; use `restore` at user request.
@@ -168,12 +169,42 @@ cross-project fallback or global-scope inference.
 | `restore` | `experience_id`, `expected_version` | Restore a deleted personal rule |
 | `noop` | None, or both `experience_id` and `expected_version` | No writes/versions; targeted noop checks a current active rule |
 
-Only `add` and `update` accept content: optional `guidance`, `context`, `mistake`,
+Only `add` and `update` accept content: optional `perspective`, `modification`, `guidance`, `context`, `mistake`,
 `applicability`, `exclusions` and `related_general_id`. Other operations reject
 content rather than silently ignoring it. A targetless noop returns
 `experience: null` and does not create the personal directory. A targeted noop
 rejects a stale version or deleted rule. `changed` is false for exact duplicate
 adds/updates and already-deleted/restored entries; these report `operation: noop`.
+
+## Two facets of a personal repair experience
+
+Borrowing SWE-Exp's representation, the host agent can separate:
+
+| Field | Content | Example |
+|---|---|---|
+| `correction` | New verbatim user feedback | Pending orders need a yellow badge. |
+| `perspective` | How to understand the problem, supported mechanism and key distinctions | Order status is a project API contract; numeric values cannot be inferred from generic labels. |
+| `modification` | Reusable repair and checking steps | Use the existing enum mapping; render pending in yellow; check other statuses and empty-state behavior. |
+| `applicability` / `exclusions` | Where this advice does or does not apply | This project's order list, not the separate payment-status field. |
+
+`perspective` and `modification` are optional strings (up to 4096 characters each).
+Modification can contain several readable steps. We borrow the two-facet idea,
+not SWE-Exp's complete representation or search architecture. A raw correction
+can still be saved without a supported explanation; missing facets are unknown,
+not invented. Both facets participate in lexical recall and are returned in full
+when present. Use perspective while understanding/localizing a problem and
+modification while editing and checking; do not reuse a strategy solely because
+the patch looks similar.
+
+Updates preserve omitted facets; explicitly pass an empty string to clear an
+obsolete explanation or strategy. Delete/restore preserve them and version history
+keeps previous text and original feedback. Existing `guidance` remains readable
+as free-text context, not automatically reclassified or copied into the facets.
+When replacing older guidance with a structured explanation, the agent should
+reconcile the text and explicitly clear obsolete guidance rather than leave
+contradictory instructions. The reviewed general pack remains unchanged; its
+existing applicability, recommendation and preservation fields retain their
+original meaning and are not relabeled as inferred root causes.
 
 Examples of tool arguments (the agent client supplies the MCP envelope):
 
@@ -184,10 +215,11 @@ Examples of tool arguments (the agent client supplies the MCP envelope):
 After inspecting a candidate, update it using its actual returned ID/version:
 
 ```json
-{"project":"/work/my-app","operation":"update","experience_id":"0123456789abcdef0123456789abcdef","expected_version":1,"correction":"Pending orders need a yellow badge.","guidance":"For this project's order list, status 2 means pending confirmation and uses a yellow badge. Check the API enum; do not guess status meanings."}
+{"project":"/work/my-app","operation":"update","experience_id":"0123456789abcdef0123456789abcdef","expected_version":1,"correction":"Pending orders need a yellow badge.","perspective":"Order status meanings come from this project's API enum, not general naming conventions.","modification":"For the order list, map status 2 to pending confirmation and render it with a yellow badge. Preserve other status mappings and check their display."}
 ```
 
-Here guidance preserves the old status meaning while adding the new display rule.
+Here perspective states the problem understanding, while modification preserves
+the old status meaning and adds the new display rule.
 The new `correction` contains only the new verbatim user feedback; old quotes stay
 unchanged in history. To add an independent rule, use `operation=add` and omit
 ID/version. To confirm already-covered feedback without changing storage:
@@ -214,8 +246,8 @@ no experience tools, memory access or everyday workflow instructions.
 
 ## Design references and evaluation scope
 
-- [SWE-Exp, §3](https://arxiv.org/html/2507.23361v2): distill reusable understanding
-  and modification guidance; adapt it to current source.
+- [SWE-Exp, §3](https://arxiv.org/html/2507.23361v2): separate perspective (problem understanding)
+  and modification (repair strategy); adapt both to current source.
 - [ACE, §3](https://arxiv.org/html/2510.04618v3): itemized local updates instead of
   rewriting the whole context.
 - [Mem0, §2.1](https://arxiv.org/html/2504.19413v1): extract information from dialogue,

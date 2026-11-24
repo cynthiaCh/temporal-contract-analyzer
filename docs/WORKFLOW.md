@@ -109,7 +109,8 @@ results describe diagnostic performance, not unseen-source generalization.
 The local MCP recalls a read-only general temporal guidance pack together with
 project-scoped personal corrections. The host agent checks current applicability
 and chooses a few useful entries. For durable corrections extracted from user
-dialogue, `recall_experience` queries up to five personal candidates and
+dialogue, the host separates problem understanding (`perspective`) from repair
+strategy (`modification`), retaining user quotes and scope. `recall_experience` queries up to five personal candidates and
 `read_experience` provides full history when needed. The agent selects an operation
 for `update_experience`: add, update, delete, restore or noop. Updates preserve
 history and do not change the general pack. See [MCP workflow](PERSONAL_MCP.md).

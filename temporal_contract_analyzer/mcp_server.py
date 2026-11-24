@@ -47,15 +47,17 @@ TOOLS = [
 
 
 PERSONAL_TOOLS = [
-    tool('recall_experience', 'Before coding, recall read-only general temporal guidance and current-project personal corrections (any coding topic). Pass absolute project root and task query; empty query lists entries. source=personal supports checking existing corrections before writing. Candidates are interleaved by source: inspect full applicability, exclusions and current source; use at most 3 nonredundant entries. Follow next_offset as needed.',
+    tool('recall_experience', 'Before coding, recall read-only general temporal guidance and current-project personal corrections (any coding topic). Pass absolute project root and task query; empty query lists entries. source=personal with limit=5 checks existing corrections before writing. Use perspective to assess the problem and scope before adapting modification steps. Candidates are interleaved by source: inspect full applicability, exclusions and current source; use at most 3 nonredundant entries. Follow next_offset as needed.',
          dict(project=STRING, query=STRING, source={'type': 'string', 'enum': ['all', 'personal', 'general']}, limit={'type': 'integer', 'minimum': 1, 'maximum': 20},
               offset={'type': 'integer', 'minimum': 0}), ['project', 'query']),
     tool('read_experience', 'Read one full experience by ID. Personal entries include version history and deleted status; general guidance is read-only and versioned by pack. Use before updating a personal rule or restoring a deleted entry.',
          dict(project=STRING, experience_id=STRING,
               source={'type': 'string', 'enum': ['personal', 'general']}), ['project', 'experience_id']),
-    tool('update_experience', 'Apply a host-agent decision to personal memory only: add/update/delete/restore/noop. First extract user feedback, recall source=personal with limit=5, and compare scope and meaning. add/update require verbatim correction; update/delete/restore require ID and expected_version. Preserve valid prior rules in cumulative guidance. noop changes no files or versions. A targeted noop requires ID/version; no-target noop is allowed. Only add/update accept content fields. Never invent feedback or write the general pack.',
+    tool('update_experience', 'Apply a host-agent decision to personal memory only: add/update/delete/restore/noop. First extract user feedback into perspective (problem understanding) and modification (repair/checking strategy), recall source=personal with limit=5, and compare scope and meaning. Leave unknown explanations empty. add/update require verbatim correction; update/delete/restore require ID and expected_version. Preserve valid prior rules in cumulative perspective and modification. noop changes no files or versions. A targeted noop requires ID/version; no-target noop is allowed. Only add/update accept content fields. Never invent feedback or write the general pack.',
          dict(project=STRING, operation={'type': 'string', 'enum': ['add', 'update', 'delete', 'restore', 'noop']},
               correction=STRING, guidance=STRING, experience_id=STRING,
+              perspective=dict(type='string', description='Evidence-backed understanding of the problem and important distinctions; not an invented root cause.'),
+              modification=dict(type='string', description='Reusable repair and validation steps, including constraints to preserve; text may contain multiple steps.'),
               context=STRING, mistake=STRING, applicability=STRING, exclusions=STRING, related_general_id=STRING,
               expected_version={'type': 'integer', 'minimum': 1}), ['project', 'operation'], writes=True),
 ]
@@ -65,8 +67,9 @@ PERSONAL_INSTRUCTIONS = (' TempoEvo specializes in temporal-contract-aware maint
     'force temporal labels on them. Check full applicability/exclusions against current requirements and source, '
     'select at most 3 nonredundant entries or none, and use temporal scans when relevant. Current explicit requirements '
     'take precedence; project corrections specialize general advice only within their scope. '
-    'Extract durable corrections from user dialogue and current task context; distinguish explicit corrections, '
-    'temporary instructions and requirements changes. Preserve original user words and leave uncertain causes empty. '
+    'Extract durable corrections into perspective (problem understanding) and modification (repair/checking strategy), '
+    'distinguishing explicit corrections, temporary instructions and requirements changes. Preserve original user words '
+    'in correction. Keep scope and exclusions separate and leave uncertain causes empty. '
     'Before storing feedback, call recall_experience with source=personal, limit=5 and a query combining the correction '
     'with task/module context. Inspect candidates, optionally call read_experience for full history, then choose '
     'an operation for update_experience. Only delete when the user clearly withdraws an old rule; use scoped update '

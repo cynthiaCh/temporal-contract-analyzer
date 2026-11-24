@@ -11,7 +11,8 @@ import uuid
 from . import archive
 from .core import EvidenceError
 
-DETAIL_FIELDS = ('context', 'mistake', 'applicability', 'exclusions', 'related_general_id')
+DETAIL_FIELDS = ('context', 'mistake', 'applicability', 'exclusions', 'related_general_id',
+                 'perspective', 'modification')
 
 
 def store_path(store=None):
@@ -41,8 +42,13 @@ CORRECTION_INSTRUCTIONS = (
     'clearly replaces an earlier rule, update that rule; otherwise clarify a material unresolved '
     'business conflict rather than silently overwriting it. For update, use the exact candidate '
     'experience_id and version as expected_version; inspect its history with read_experience '
-    'when needed. Write cumulative guidance that preserves still-valid old requirements and '
-    'incorporates the new correction; keep the new verbatim user words in correction, never rewrite '
+    'when needed. Structure extracted experience as perspective (how to understand the problem, supported '
+    'mechanism and important distinctions) and modification (concrete reusable repair/checking steps). '
+    'Infer neither a root cause nor successful verification from a fix alone; leave unsupported explanations '
+    'empty. Compare perspective and scope before reusing modification; similar edits can address different '
+    'problems. Use perspective during diagnosis and modification during code changes and validation. '
+    'Write cumulative perspective/modification that preserve still-valid old requirements and '
+    'incorporate the new correction; keep the new verbatim user words in correction, never rewrite '
     'historical quotes. Omitted optional fields retain their previous values; replace or explicitly '
     'clear obsolete fields. For add, omit experience_id and expected_version. For noop, do not write '
     'or increment a version; identify the covering rule with its ID/current version when available. Leave unknown reasons '
@@ -104,12 +110,14 @@ class PersonalMemory:
             raise EvidenceError('Experience changed or expected_version missing; read current version first')
 
     def update(self, project, operation, correction=None, guidance=None, experience_id=None, expected_version=None,
-               context=None, mistake=None, applicability=None, exclusions=None, related_general_id=None):
+               context=None, mistake=None, applicability=None, exclusions=None, related_general_id=None,
+               perspective=None, modification=None):
         project = project_path(project)
         if operation not in ('add', 'update', 'delete', 'restore', 'noop'):
             raise EvidenceError('Unknown personal memory operation')
         details = dict(context=context, mistake=mistake, applicability=applicability,
-                       exclusions=exclusions, related_general_id=related_general_id)
+                       exclusions=exclusions, related_general_id=related_general_id,
+                       perspective=perspective, modification=modification)
         if operation in ('add', 'update'):
             if not isinstance(correction, str) or not correction.strip():
                 raise EvidenceError('A verbatim user correction is required')

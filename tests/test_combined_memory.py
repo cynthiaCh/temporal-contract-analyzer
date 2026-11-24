@@ -39,6 +39,39 @@ class CombinedMemoryTests(unittest.TestCase):
         result = self.session.call(name, dict(project=str(self.project), **arguments))
         return result['experience'] if name == 'update_experience' else result
 
+    def test_perspective_and_modification_are_searchable_versioned_and_preserved(self):
+        original = self.call('update_experience', operation='add', correction='This interpretation is incorrect.',
+                             perspective='Treat the repository enum as a business contract, not a guessed label.',
+                             modification='Use the explicit mapping and render a yellow badge for pending.',
+                             applicability='Order list only.')
+        for query in ('enum', 'yellow'):
+            result = self.call('recall_experience', source='personal', query=query)
+            self.assertEqual(result['items'][0]['experience_id'], original['experience_id'])
+            self.assertEqual(result['items'][0]['perspective'], original['history'][0]['perspective'])
+            self.assertEqual(result['items'][0]['modification'], original['history'][0]['modification'])
+        updated = self.call('update_experience', operation='update', correction='Also preserve the empty-state display.',
+                            experience_id=original['experience_id'], expected_version=1,
+                            modification=original['history'][0]['modification']+' Preserve the empty-state display.')
+        self.assertEqual(updated['history'][-1]['perspective'], original['history'][0]['perspective'])
+        self.assertEqual(updated['history'][0]['correction'], 'This interpretation is incorrect.')
+        self.assertIn('empty-state', updated['history'][-1]['modification'])
+        self.assertEqual(updated['history'][-1]['applicability'], 'Order list only.')
+        cleared = self.call('update_experience', operation='update', correction='Do not infer the cause yet.',
+                            experience_id=original['experience_id'], expected_version=2, perspective='')
+        self.assertEqual(cleared['history'][-1]['perspective'], '')
+        self.assertEqual(self.call('recall_experience', source='personal', query='enum')['total'], 0)
+        self.call('update_experience', operation='delete', experience_id=original['experience_id'], expected_version=3)
+        restored = self.call('update_experience', operation='restore', experience_id=original['experience_id'], expected_version=4)
+        self.assertEqual(restored['history'][-1]['modification'], cleared['history'][-1]['modification'])
+        self.assertEqual(self.call('read_experience', experience_id=original['experience_id'])['history'][0], original['history'][0])
+
+    def test_structured_content_is_text_and_cannot_be_silently_ignored(self):
+        for arguments in (dict(operation='add', correction='User correction', modification=['step']),
+                          dict(operation='noop', perspective='Would be silently lost')):
+            with self.subTest(arguments=arguments), self.assertRaises(EvidenceError):
+                self.call('update_experience', **arguments)
+        self.assertFalse(self.personal.exists())
+
     def test_mem0_style_recall_update_and_noop_preserve_scope_and_quotes(self):
         first = self.call('update_experience', operation='add', correction='Status 2 means pending.',
                           guidance='For orders, status 2 means pending; read the API enum.', applicability='Orders only.')
@@ -139,7 +172,7 @@ class CombinedMemoryTests(unittest.TestCase):
         row = memory.update(str(self.project), 'add', 'Old correction', guidance='Old guidance')['experience']
         path = self.personal/(row['experience_id']+'.json')
         legacy = copy.deepcopy(row)
-        for key in ('context', 'mistake', 'applicability', 'exclusions', 'related_general_id'):
+        for key in ('context', 'mistake', 'applicability', 'exclusions', 'related_general_id', 'perspective', 'modification'):
             legacy['history'][0].pop(key)
         path.write_text(json.dumps(legacy))
         self.assertEqual(self.call('recall_experience', query='Old', source='personal')['total'], 1)
