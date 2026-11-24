@@ -71,6 +71,13 @@ class GeneralMemory:
         return dict(items=matches, version=value['version'], bank_count=len(seen))
 
 
+    def read(self, experience_id):
+        entry = next((row for row in self.recall('')['items'] if row['experience_id'] == experience_id), None)
+        if entry is None:
+            raise EvidenceError('Unknown general experience')
+        return entry
+
+
 def recall_combined(personal, general, project, query, limit=5, offset=0, source='all'):
     """Interleave candidates so neither source monopolizes the first page."""
     if source not in ('all', 'personal', 'general'):

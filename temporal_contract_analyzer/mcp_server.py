@@ -50,16 +50,14 @@ PERSONAL_TOOLS = [
     tool('recall_experience', 'Before coding, recall read-only general temporal guidance and current-project personal corrections (any coding topic). Pass absolute project root and task query; empty query lists entries. source=personal supports checking existing corrections before writing. Candidates are interleaved by source: inspect full applicability, exclusions and current source; use at most 3 nonredundant entries. Follow next_offset as needed.',
          dict(project=STRING, query=STRING, source={'type': 'string', 'enum': ['all', 'personal', 'general']}, limit={'type': 'integer', 'minimum': 1, 'maximum': 20},
               offset={'type': 'integer', 'minimum': 0}), ['project', 'query']),
-    tool('prepare_correction', 'Before storing explicit user feedback, match the top 5 personal experiences in the current project. Read-only: returns original correction, candidate IDs/versions and instructions for the host LLM to choose add, revise or noop. Pass task/module context; optional query can broaden lexical matching. Never reads the general pack or calls a model. Then use remember_correction for add/revise; skip writes for noop.',
-         dict(project=STRING, correction=STRING, context=STRING, query=STRING), ['project', 'correction']),
-    tool('remember_correction', 'Record an explicit user correction immediately in personal memory, without research approval. Preserve verbatim correction separately from optional model guidance. Any coding topic is allowed, not only temporal bugs. Prefer prepare_correction first: compare its top-5 candidates and choose add, revise or noop. Preserve valid prior constraints in cumulative guidance when revising. Noop requires no write. Direct writes remain supported, with exact-repeat protection. Default to the current project root. Never invent user feedback or claim test verification. Revise a known entry with experience_id and its expected_version; do not silently replace another rule.',
-         dict(project=STRING, correction=STRING, guidance=STRING, experience_id=STRING,
-              context=STRING, mistake=STRING, applicability=STRING, exclusions=STRING, related_general_id=STRING,
-              expected_version={'type': 'integer', 'minimum': 1}), ['project', 'correction'], writes=True),
-    tool('manage_experience', 'Show personal experience and version history, or soft-delete/restore it at user request. Mutations require expected_version from a fresh read. Deleted content remains on disk for recovery but is excluded from recall.',
+    tool('read_experience', 'Read one full experience by ID. Personal entries include version history and deleted status; general guidance is read-only and versioned by pack. Use before updating a personal rule or restoring a deleted entry.',
          dict(project=STRING, experience_id=STRING,
-              action={'type': 'string', 'enum': ['show', 'delete', 'restore']},
-              expected_version={'type': 'integer', 'minimum': 1}), ['project', 'experience_id'], writes=True),
+              source={'type': 'string', 'enum': ['personal', 'general']}), ['project', 'experience_id']),
+    tool('update_experience', 'Apply a host-agent decision to personal memory only: add/update/delete/restore/noop. First extract user feedback, recall source=personal with limit=5, and compare scope and meaning. add/update require verbatim correction; update/delete/restore require ID and expected_version. Preserve valid prior rules in cumulative guidance. noop changes no files or versions. A targeted noop requires ID/version; no-target noop is allowed. Only add/update accept content fields. Never invent feedback or write the general pack.',
+         dict(project=STRING, operation={'type': 'string', 'enum': ['add', 'update', 'delete', 'restore', 'noop']},
+              correction=STRING, guidance=STRING, experience_id=STRING,
+              context=STRING, mistake=STRING, applicability=STRING, exclusions=STRING, related_general_id=STRING,
+              expected_version={'type': 'integer', 'minimum': 1}), ['project', 'operation'], writes=True),
 ]
 PERSONAL_INSTRUCTIONS = (' TempoEvo specializes in temporal-contract-aware maintenance. Before coding, call '
     'recall_experience with the absolute project root and task query to consult general temporal guidance and personal '
@@ -67,13 +65,16 @@ PERSONAL_INSTRUCTIONS = (' TempoEvo specializes in temporal-contract-aware maint
     'force temporal labels on them. Check full applicability/exclusions against current requirements and source, '
     'select at most 3 nonredundant entries or none, and use temporal scans when relevant. Current explicit requirements '
     'take precedence; project corrections specialize general advice only within their scope. '
-    'When the user explicitly corrects a mistake or asks to remember a rule, call prepare_correction with their '
-    'verbatim feedback and current task/module context. It returns up to 5 personal candidates. Analyze them using '
-    'the following rules, then call remember_correction for add/revise, or skip writes for noop. '
+    'Extract durable corrections from user dialogue and current task context; distinguish explicit corrections, '
+    'temporary instructions and requirements changes. Preserve original user words and leave uncertain causes empty. '
+    'Before storing feedback, call recall_experience with source=personal, limit=5 and a query combining the correction '
+    'with task/module context. Inspect candidates, optionally call read_experience for full history, then choose '
+    'an operation for update_experience. Only delete when the user clearly withdraws an old rule; use scoped update '
+    'for a supplement or exception and clarify ambiguous conflicts. '
     + CORRECTION_INSTRUCTIONS +
     ' Link a project exception with related_general_id when applicable; never write the general pack. Corrections '
-    'take effect immediately and are not independently verified. Use manage_experience for history or user-requested '
-    'delete/restore. Do not claim a memory operation succeeded unless the tool succeeded.')
+    'take effect immediately and are not independently verified. Use update_experience for user-requested deletion '
+    'or restore. Do not claim a memory operation succeeded unless the tool succeeded.')
 
 
 def validate(definition, args):
@@ -147,12 +148,14 @@ class Session:
         if name == 'recall_experience':
             from .general_memory import recall_combined
             return recall_combined(self.personal_memory, self.general_memory, **args)
-        if name == 'prepare_correction':
-            return self.personal_memory.prepare_correction(**args)
-        if name == 'remember_correction':
-            return self.personal_memory.remember(**args)
-        if name == 'manage_experience':
-            return self.personal_memory.manage(**args)
+        if name == 'read_experience':
+            from .personal_memory import project_path
+            project_path(args['project'])
+            if args.get('source', 'personal') == 'general':
+                return self.general_memory.read(args['experience_id'])
+            return self.personal_memory.read(args['project'], args['experience_id'])
+        if name == 'update_experience':
+            return self.personal_memory.update(**args)
         if name == 'scan_project':
             if not Path(args['path']).is_absolute():
                 raise EvidenceError('scan_project requires an absolute candidate path')

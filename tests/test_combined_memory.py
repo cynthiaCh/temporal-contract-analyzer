@@ -36,74 +36,50 @@ class CombinedMemoryTests(unittest.TestCase):
         self.session = Session(self.root/'reports', personal_store=self.personal, general_store=self.pack)
 
     def call(self, name, **arguments):
-        return self.session.call(name, dict(project=str(self.project), **arguments))
+        result = self.session.call(name, dict(project=str(self.project), **arguments))
+        return result['experience'] if name == 'update_experience' else result
 
-    def test_prepare_correction_returns_top_five_personal_candidates_readonly(self):
-        saved = []
-        for index in range(7):
-            saved.append(self.call('remember_correction', correction='Save rule '+str(index),
-                                   context='Order editor', guidance='Preserve save rule '+str(index)))
-        other = self.root/'other'
-        other.mkdir()
-        PersonalMemory(self.personal).remember(str(other), 'Save rule foreign project')
-        before = {path.name: path.read_bytes() for path in self.personal.iterdir()}
-        # Preparing personal feedback is independent of the general guidance pack.
+    def test_mem0_style_recall_update_and_noop_preserve_scope_and_quotes(self):
+        first = self.call('update_experience', operation='add', correction='Status 2 means pending.',
+                          guidance='For orders, status 2 means pending; read the API enum.', applicability='Orders only.')
+        for i in range(6):
+            self.call('update_experience', operation='add', correction='Order rule '+str(i))
         self.pack.write_text('{}')
-        prepared = self.call('prepare_correction', correction='Save must finish after closing.', context='Order editor')
-        self.assertEqual(len(prepared['candidates']), 5)
-        self.assertEqual(prepared['total_matches'], 7)
-        self.assertEqual(prepared['next_offset'], 5)
-        self.assertEqual(prepared['write_defaults']['correction'], 'Save must finish after closing.')
-        self.assertEqual(prepared['source'], 'personal')
-        self.assertEqual([row['score'] for row in prepared['candidates']],
-                         sorted((row['score'] for row in prepared['candidates']), reverse=True))
-        for candidate in prepared['candidates']:
-            self.assertEqual(candidate['source'], 'personal')
-            self.assertEqual(candidate['version'], 1)
-            self.assertIn(candidate['experience_id'], {row['experience_id'] for row in saved})
-        self.assertEqual(before, {path.name: path.read_bytes() for path in self.personal.iterdir()})
-
-    def test_prepare_empty_store_and_query_broadening(self):
-        first = self.call('prepare_correction', correction='Unrelated words')
-        self.assertEqual(first['candidates'], [])
-        self.assertNotIn('context', first['write_defaults'])
-        self.assertFalse(self.personal.exists())
-        self.call('remember_correction', correction='Status 2 means pending.', guidance='Use the order API enum.')
-        no_match = self.call('prepare_correction', correction='Unrelated words')
-        self.assertEqual(no_match['total_matches'], 0)
-        broadened = self.call('prepare_correction', correction='Unrelated words', query='order API')
-        self.assertEqual(broadened['total_matches'], 1)
-        self.assertIn('not proof', broadened['instructions'])
-        with self.assertRaises(EvidenceError):
-            self.call('prepare_correction', correction='   ')
-
-    def test_prepare_then_host_selected_revision_keeps_quotes_and_cumulative_guidance(self):
-        original = self.call('remember_correction', correction='Status 2 means pending.',
-                             guidance='Status 2 means pending; consult the order API enum.',
-                             applicability='Order API only.')
-        prepared = self.call('prepare_correction', correction='Pending needs a yellow badge.', query='Status pending')
-        candidate = prepared['candidates'][0]
-        # Simulate the host choosing a revision; no model executes in this test.
-        revised = self.call('remember_correction', correction=prepared['correction'],
+        candidates = self.call('recall_experience', source='personal', limit=5, query='Order status pending')
+        self.assertEqual(len(candidates['items']), 5)
+        self.assertEqual(candidates['total'], 7)
+        self.assertTrue(all(row['source']=='personal' for row in candidates['items']))
+        candidate = next(row for row in candidates['items'] if row['experience_id']==first['experience_id'])
+        history = self.call('read_experience', experience_id=candidate['experience_id'])
+        self.assertEqual(history['history'][0]['correction'], 'Status 2 means pending.')
+        updated = self.call('update_experience', operation='update', correction='Pending needs a yellow badge.',
                             experience_id=candidate['experience_id'], expected_version=candidate['version'],
-                            guidance=candidate['guidance']+' Pending uses a yellow badge.')
-        self.assertEqual(revised['experience_id'], original['experience_id'])
-        self.assertEqual(revised['version'], 2)
-        self.assertEqual(revised['history'][0]['correction'], original['history'][0]['correction'])
-        self.assertEqual(revised['history'][1]['correction'], 'Pending needs a yellow badge.')
-        self.assertIn('Status 2 means pending', revised['history'][-1]['guidance'])
-        self.assertIn('yellow badge', revised['history'][-1]['guidance'])
-        self.assertEqual(revised['history'][-1]['applicability'], 'Order API only.')
+                            guidance=candidate['guidance']+' Pending needs a yellow badge.')
+        self.assertEqual(updated['history'][-1]['applicability'], 'Orders only.')
+        self.assertIn('status 2 means pending', updated['history'][-1]['guidance'])
+        self.assertEqual(updated['history'][0]['correction'], 'Status 2 means pending.')
+        result = self.session.call('update_experience', dict(project=str(self.project), operation='noop',
+                                  experience_id=first['experience_id'], expected_version=2))
+        self.assertFalse(result['changed'])
+        self.assertEqual(result['experience']['version'], 2)
         with self.assertRaises(EvidenceError):
-            self.call('remember_correction', correction=prepared['correction'],
+            self.call('update_experience', operation='update', correction='Stale update',
                       experience_id=candidate['experience_id'], expected_version=candidate['version'])
-        duplicate = self.call('prepare_correction', correction='Pending needs a yellow badge.')
-        self.assertIn('noop', duplicate['instructions'])
-        # Host chooses noop by issuing no write; prepare itself adds no revision.
-        self.assertEqual(self.call('manage_experience', experience_id=original['experience_id'])['version'], 2)
+
+    def test_read_general_is_readonly_and_update_cannot_target_it(self):
+        before = self.pack.read_bytes()
+        row = self.call('read_experience', source='general', experience_id='general-save')
+        self.assertEqual(row['source'], 'general')
+        self.assertTrue(row['read_only'])
+        self.assertEqual(row['version'], 'fixture-v1')
+        with self.assertRaises(EvidenceError):
+            self.call('update_experience', source='general', operation='delete',
+                      experience_id='general-save', expected_version=1)
+        self.assertEqual(self.pack.read_bytes(), before)
+        self.assertFalse(self.personal.exists())
 
     def test_combined_candidates_keep_sources_and_full_boundaries(self):
-        self.call('remember_correction', correction='Accepted saves must finish after close.',
+        self.call('update_experience', operation='add', correction='Accepted saves must finish after close.',
                   applicability='Only the edit page.', related_general_id='general-save')
         result = self.call('recall_experience', query='save close')
         self.assertEqual([x['source'] for x in result['items']], ['personal', 'general'])
@@ -118,7 +94,7 @@ class CombinedMemoryTests(unittest.TestCase):
 
     def test_pagination_and_source_filter_do_not_starve_either_pool(self):
         for i in range(3):
-            self.call('remember_correction', correction='Save rule '+str(i))
+            self.call('update_experience', operation='add', correction='Save rule '+str(i))
         first = self.call('recall_experience', query='save', limit=2)
         self.assertEqual([x['source'] for x in first['items']], ['personal', 'general'])
         next_page = self.call('recall_experience', query='save', limit=2, offset=first['next_offset'])
@@ -129,18 +105,18 @@ class CombinedMemoryTests(unittest.TestCase):
         self.assertEqual(self.call('recall_experience', query='no_matches')['total'], 0)
 
     def test_non_temporal_corrections_and_local_revisions_preserve_omitted_fields(self):
-        saved = self.call('remember_correction', correction='Status 2 means pending confirmation.',
+        saved = self.call('update_experience', operation='add', correction='Status 2 means pending confirmation.',
                           guidance='Read the API enum instead of guessing.', context='Order badge',
                           mistake='Treated 2 as completed.', applicability='Order endpoint only.',
                           exclusions='Not the payment status.')
-        revised = self.call('remember_correction', correction='Status 2 also needs a yellow badge.',
+        revised = self.call('update_experience', operation='update', correction='Status 2 also needs a yellow badge.',
                             experience_id=saved['experience_id'], expected_version=1)
         for key in ('guidance', 'context', 'mistake', 'applicability', 'exclusions'):
             self.assertEqual(revised['history'][-1][key], saved['history'][-1][key])
         matches = self.call('recall_experience', query='endpoint', source='personal')['items']
         self.assertEqual(matches[0]['experience_id'], saved['experience_id'])
-        deleted = self.call('manage_experience', experience_id=saved['experience_id'], action='delete', expected_version=2)
-        restored = self.call('manage_experience', experience_id=saved['experience_id'], action='restore', expected_version=3)
+        deleted = self.call('update_experience', experience_id=saved['experience_id'], operation='delete', expected_version=2)
+        restored = self.call('update_experience', experience_id=saved['experience_id'], operation='restore', expected_version=3)
         self.assertTrue(deleted['deleted'])
         self.assertEqual(restored['history'][-1]['exclusions'], 'Not the payment status.')
         self.assertEqual(restored['history'][0]['correction'], 'Status 2 means pending confirmation.')
@@ -148,26 +124,26 @@ class CombinedMemoryTests(unittest.TestCase):
     def test_exact_duplicate_is_noop_and_general_content_is_never_written(self):
         before = self.pack.read_bytes()
         args = dict(correction='Save correction', guidance='Preserve accepted saves.', related_general_id='general-save')
-        first = self.call('remember_correction', **args)
-        repeated = self.call('remember_correction', **args)
+        first = self.call('update_experience', operation='add', **args)
+        repeated = self.call('update_experience', operation='add', **args)
         self.assertEqual(first, repeated)
         self.assertEqual(len(list(self.personal.glob('*.json'))), 1)
-        same = self.call('remember_correction', **args, experience_id=first['experience_id'], expected_version=1)
+        same = self.call('update_experience', operation='update', **args, experience_id=first['experience_id'], expected_version=1)
         self.assertEqual(same['version'], 1)
         with self.assertRaises(EvidenceError):
-            self.call('manage_experience', experience_id='general-save', action='delete', expected_version=1)
+            self.call('update_experience', experience_id='general-save', operation='delete', expected_version=1)
         self.assertEqual(self.pack.read_bytes(), before)
 
     def test_legacy_personal_files_remain_readable_and_explicit_empty_clears(self):
         memory = PersonalMemory(self.personal)
-        row = memory.remember(str(self.project), 'Old correction', guidance='Old guidance')
+        row = memory.update(str(self.project), 'add', 'Old correction', guidance='Old guidance')['experience']
         path = self.personal/(row['experience_id']+'.json')
         legacy = copy.deepcopy(row)
         for key in ('context', 'mistake', 'applicability', 'exclusions', 'related_general_id'):
             legacy['history'][0].pop(key)
         path.write_text(json.dumps(legacy))
         self.assertEqual(self.call('recall_experience', query='Old', source='personal')['total'], 1)
-        revised = self.call('remember_correction', correction='New correction', guidance='',
+        revised = self.call('update_experience', operation='update', correction='New correction', guidance='',
                             experience_id=row['experience_id'], expected_version=1)
         self.assertEqual(revised['history'][-1]['guidance'], '')
         self.assertEqual(revised['history'][0], legacy['history'][0])
@@ -231,10 +207,10 @@ class CombinedMemoryTests(unittest.TestCase):
     def test_stdio_new_session_uses_general_and_personal_sources(self):
         messages = [dict(jsonrpc='2.0', id=1, method='initialize', params={}),
                     dict(jsonrpc='2.0', method='notifications/initialized'),
-                    dict(jsonrpc='2.0', id=2, method='tools/call', params=dict(name='remember_correction',
-                         arguments=dict(project=str(self.project), correction='Save project exception'))),
-                    dict(jsonrpc='2.0', id=3, method='tools/call', params=dict(name='prepare_correction',
-                         arguments=dict(project=str(self.project), correction='Save project exception'))),
+                    dict(jsonrpc='2.0', id=2, method='tools/call', params=dict(name='update_experience',
+                         arguments=dict(project=str(self.project), operation='add', correction='Save project exception'))),
+                    dict(jsonrpc='2.0', id=3, method='tools/call', params=dict(name='recall_experience',
+                         arguments=dict(project=str(self.project), query='Save project exception', source='personal', limit=5))),
                     dict(jsonrpc='2.0', id=4, method='tools/call', params=dict(name='recall_experience',
                          arguments=dict(project=str(self.project), query='save')))]
         process = subprocess.run([sys.executable, '-I', '-S', '-B', str(ROOT/'temporal_contract_analyzer/hub_entry.py'),
@@ -244,8 +220,7 @@ class CombinedMemoryTests(unittest.TestCase):
         self.assertEqual(process.returncode, 0, process.stderr)
         responses = [json.loads(x) for x in process.stdout.splitlines()]
         prepared = json.loads(responses[-2]['result']['content'][0]['text'])
-        self.assertEqual(len(prepared['candidates']), 1)
-        self.assertEqual(prepared['candidate_limit'], 5)
+        self.assertEqual(len(prepared['items']), 1)
         recalled = json.loads(responses[-1]['result']['content'][0]['text'])
         self.assertEqual([x['source'] for x in recalled['items']], ['personal', 'general'])
-        self.assertIn('remember_correction', responses[0]['result']['instructions'])
+        self.assertIn('update_experience', responses[0]['result']['instructions'])

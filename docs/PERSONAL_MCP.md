@@ -18,21 +18,24 @@ Task + current source
   -> recall general temporal guidance + current-project personal corrections
   -> agent checks applicability, exclusions, conflicts and redundant advice
   -> agent uses at most three useful entries (or none), edits and validates
-  -> explicit user correction
-  -> prepare_correction: top-5 project candidates + comparison instructions
-  -> host agent chooses add / revise locally / noop
-  -> remember_correction for add/revise; no write for noop
-  -> later task or session recalls the current versions
+  -> agent extracts durable corrections from user dialogue and task context
+  -> recall_experience: source=personal, limit=5
+  -> read_experience if full history is needed
+  -> agent selects add / update / delete / restore / noop
+  -> update_experience executes the selected personal-memory operation
 ```
 
-The server performs lexical recall and storage; the current coding agent makes
-semantic decisions. It does not introduce a separate reflector, curator or model
-call. Temporal source scans remain useful for relevant tasks, not mandatory for
-all coding work. Current explicit requirements take precedence; a scoped project
-correction may specialize general guidance, but does not license inventing backend
-semantics. Ask the user when a material business conflict remains unresolved.
-Corrections do not modify the read-only general pack.
+The server performs lexical recall and storage; the host coding agent extracts
+information, compares scope and decides operations. It does not introduce another
+model call, autonomous conversation listener, reflector or curator. Personal
+corrections are not restricted to temporal bugs. Separate durable corrections
+from temporary requests and changed requirements. Temporal scans are useful when
+relevant, not mandatory for all coding work.
 
+Current explicit requirements take precedence. Project corrections specialize
+general guidance only within their scope; ask about unresolved business semantics.
+A supplement or scoped exception usually updates a rule rather than deleting it.
+Delete only when the user clearly withdraws it. Never modify the general pack.
 
 ## Connect an agent
 
@@ -106,160 +109,120 @@ No experience is automatically promoted from personal to general storage.
 
 ## Call from normal conversation
 
-Start with:
-
 > Before editing, use tempoevo recall_experience for this project's absolute root
-> and the current task. Check both general and personal candidates against the source.
+> and task. Check general and personal candidates against the current source.
 
 When correcting an agent:
 
-> Closing the page must not cancel already-submitted saves. Fix this and use
-> tempoevo remember_correction to remember my exact correction for this project.
+> Status 2 means pending confirmation and needs a yellow badge. Fix this and
+> remember the correction for this project's order list.
 
-The service's MCP initialization instructions explain this workflow. MCP does not
-listen to the full conversation or force calls. For persistent instructions,
-append the following to the consuming project's AGENTS.md (Codex) or CLAUDE.md
-(Claude Code), preserving existing content:
+The MCP initialization instructions describe extraction, top-5 comparison and
+operations. MCP does not listen to the full conversation or force calls. For
+persistent guidance, append this to the consuming project's AGENTS.md (Codex) or
+CLAUDE.md (Claude Code), preserving existing instructions:
 
 ```markdown
 ## TempoEvo
 
-- Before coding, call MCP service `tempoevo`, tool `recall_experience`, using
-  this project's absolute root and a task query. Consult general temporal guidance
-  and personal project corrections; personal experience is not limited to time/order.
-- Check full conditions and exclusions against current task/source, remove redundant
-  advice and use at most three entries, or none. Use source analysis when relevant.
-- Current explicit requirements take precedence. Project corrections specialize
-  general advice only within their scope; ask about unresolved business conflicts.
-- When the user explicitly corrects a mistake or requests a remembered rule,
-  call `prepare_correction` with the verbatim correction and current task/module
-  context. Compare its top-5 personal candidates by object, scenario and scope.
-  Add an independent rule, revise a correction/extension of the same rule using
-  `remember_correction` with its ID/current version, or skip writes when already
-  fully covered. Similar words alone do not justify a merge. This is direct
-  personal recording, not research review.
-- Preserve user words in `correction`. Put model guidance, context, the prior mistake,
-  applicability and exclusions in separate fields; leave unknowns empty.
-- Revise only the affected entry. Preserve valid prior constraints in the updated
-  guidance; omitted optional fields retain previous values. Use an explicit empty
-  string to clear obsolete content. Do not rewrite or merge the whole library.
-- Use `related_general_id` for a known project-specific exception; never rewrite
-  the general pack. Do not infer that a correction is universally applicable.
-- Show, delete or restore personal entries with `manage_experience` at user request.
-- Report tool failures honestly; do not claim a stored correction is test-verified.
+- Before coding, use `tempoevo.recall_experience` with this project's absolute
+  root and task query. Check applicability and exclusions against current source;
+  use at most three nonredundant entries, or none. Scan temporal behavior when useful.
+- Extract durable corrections from user dialogue and current task context. Keep
+  user words separate from model guidance; do not invent causes or validation.
+- Before updating personal memory, call `recall_experience` with `source=personal`,
+  `limit=5` and a query combining the feedback with task/module context. Use
+  `read_experience` for full content and history when needed.
+- Compare objects/APIs, scenarios and scope. Use `update_experience` with `add`
+  for independent knowledge, `update` for the same rule's correction or extension,
+  or `noop` if already covered. Shared vocabulary alone does not justify merging.
+- Preserve valid old constraints in cumulative guidance. Update only the affected
+  ID and pass its current version. Omitted fields retain old values; an explicit
+  empty string clears obsolete content. History keeps original user quotes.
+- Use `delete` only for a clearly withdrawn rule; use `restore` at user request.
+  Clarify material ambiguous conflicts. Noop does not write or add a version.
+- Personal corrections may cover any coding topic and take effect without research
+  review. Never write general guidance. Report failed operations honestly.
 ```
 
-## Tools and arguments
+The dotted names above identify the service and tool, not a client-specific
+internal tool-name format. Clients may display names differently.
 
-All four tools require `project`: the same existing absolute project root on
-record and recall. Symlink paths are resolved. There is no cross-project fallback
-or global-scope inference. A project rename requires an explicit future migration;
-this version does not infer renamed repositories.
+## Three experience tools
+
+Each tool requires `project`: the same existing absolute project root used when
+recording. Symlinks are resolved. There is no automatic project-rename migration,
+cross-project fallback or global-scope inference.
 
 | Tool | Arguments | Result |
 |---|---|---|
-| `recall_experience` | `project`, `query`; optional `source` (`all`, `personal`, `general`; default `all`), `limit` (1–20, default 5), `offset` | General and personal candidates with provenance, counts and `next_offset` |
-| `prepare_correction` | `project`, `correction`; optional task/module `context`, broader `query` | Up to 5 project-only candidates, IDs/versions, comparison instructions and write defaults; no writes |
-| `remember_correction` | `project`, `correction`; optional `guidance`, `context`, `mistake`, `applicability`, `exclusions`, `related_general_id` | New active entry, stable ID, version and history |
-| `remember_correction` (revision) | Same fields plus `experience_id`, `expected_version` | New revision of that entry; prior revisions retained |
-| `manage_experience` | `project`, `experience_id`; optional `action` (`show`, `delete`, `restore`; default `show`) | Full entry and history; mutations require `expected_version` |
+| `recall_experience` | `project`, `query`; optional `source` (`all`, `personal`, `general`), `limit` (1–20, default 5), `offset` | Current candidates with source, version, conditions, counts and `next_offset` |
+| `read_experience` | `project`, `experience_id`; optional `source` (`personal` default, or `general`) | Personal content/history/deleted status, or full read-only general guidance |
+| `update_experience` | `project`, `operation`; fields below depend on operation | `{operation, changed, experience}`; actual operation may be `noop` |
 
-## Match before adding or revising
-
-For an explicit correction, first call `prepare_correction` (the host supplies the
-MCP tools/call envelope):
-
-```json
-{"project":"/work/my-app","correction":"Pending orders need a yellow badge.","context":"Order list; status 2 means pending confirmation."}
-```
-
-The server searches only active personal experience in this project, with a fixed
-candidate limit of 5. It returns full current entries (including guidance and
-boundaries), stable IDs and versions, the original correction and comparison
-instructions. Preparation is read-only and does not require a valid general pack.
-No model is called by the server; the host agent compares the candidates:
-
-| Decision | When | Action |
+| Operation | Required fields beyond project/operation | Behavior |
 |---|---|---|
-| Add | Independent knowledge or no relevant existing rule | `remember_correction` without ID/version |
-| Revise | Same rule, with corrected meaning or additional conditions | `remember_correction` with existing ID and `expected_version` |
-| Noop | Existing guidance already fully covers the feedback | No write; identify the covering rule to the user |
+| `add` | `correction` | New personal rule; omit ID/version |
+| `update` | `correction`, `experience_id`, `expected_version` | Local revision under the same ID; preserve prior history |
+| `delete` | `experience_id`, `expected_version` | Soft-delete; exclude from recall but retain recoverable content |
+| `restore` | `experience_id`, `expected_version` | Restore a deleted personal rule |
+| `noop` | None, or both `experience_id` and `expected_version` | No writes/versions; targeted noop checks a current active rule |
 
-Example revision after the host determines an existing order-status rule applies
-(replace the example ID/version with a returned candidate):
+Only `add` and `update` accept content: optional `guidance`, `context`, `mistake`,
+`applicability`, `exclusions` and `related_general_id`. Other operations reject
+content rather than silently ignoring it. A targetless noop returns
+`experience: null` and does not create the personal directory. A targeted noop
+rejects a stale version or deleted rule. `changed` is false for exact duplicate
+adds/updates and already-deleted/restored entries; these report `operation: noop`.
 
-```json
-{"project":"/work/my-app","correction":"Pending orders need a yellow badge.","experience_id":"0123456789abcdef0123456789abcdef","expected_version":1,"guidance":"For the order list, status 2 means pending confirmation and uses a yellow badge. Check the project API enum; do not guess status meanings."}
-```
-
-The guidance contains the still-valid old rule plus the new correction. History
-retains earlier user quotes verbatim; only the latest quote belongs in the new
-revision's `correction`. Similar symptoms with different APIs, objects or business
-scope remain separate. If feedback clearly replaces an old rule, revise it; if
-that relationship is ambiguous and changes business behavior, clarify it. This
-comparison is a host-agent responsibility, not a semantic guarantee by MCP.
-
-An empty lexical result does not prove there is no related experience. Pass a
-broader `query` to `prepare_correction`, or call `recall_experience` with
-`source=personal`, the returned query and `offset=next_offset` to inspect further
-matches. An empty recall query lists entries. Do not substitute generic experience
-for these five personal update candidates.
-
-Direct `remember_correction` calls remain supported for explicit additions or a
-known revision; preparation is the recommended workflow, not a new admission or
-approval gate. Empty projects can record corrections immediately.
-
-Example MCP tool arguments (the host supplies the tools/call envelope):
+Examples of tool arguments (the agent client supplies the MCP envelope):
 
 ```json
-{"project":"/work/my-app","correction":"Closing the page must not cancel already-submitted saves.","guidance":"Stop UI updates after close; preserve submitted save requests."}
+{"project":"/work/my-app","query":"order status pending yellow badge","source":"personal","limit":5}
 ```
 
-Recall from the same root:
+After inspecting a candidate, update it using its actual returned ID/version:
 
 ```json
-{"project":"/work/my-app","query":"closing page save cancellation"}
+{"project":"/work/my-app","operation":"update","experience_id":"0123456789abcdef0123456789abcdef","expected_version":1,"correction":"Pending orders need a yellow badge.","guidance":"For this project's order list, status 2 means pending confirmation and uses a yellow badge. Check the API enum; do not guess status meanings."}
 ```
 
-Use an empty query to list active candidates from both sources, or `source=personal`
-to list only project corrections; follow `next_offset` for more.
-Search uses lowercase word tokens and Chinese character bigrams, not embeddings
-or automatic semantic applicability judgments. Different vocabulary can miss a
-relevant entry; use broader queries or list entries when needed. Each input string
-is capped at 4096 characters. An exact repeat of current personal content is a no-op, without a new ID/version.
-Similar but nonidentical text is not automatically merged; the agent must decide
-which rule, if any, should be revised. Recall returns current text only; history is
-available through `manage_experience`.
+Here guidance preserves the old status meaning while adding the new display rule.
+The new `correction` contains only the new verbatim user feedback; old quotes stay
+unchanged in history. To add an independent rule, use `operation=add` and omit
+ID/version. To confirm already-covered feedback without changing storage:
 
-For revision/delete/restore, supply the `expected_version` returned by recall or
-show. A stale version fails without overwriting another client's change. Re-read
-and reconcile before retrying. Each entry is one JSON file; a process lock protects
-writes by cooperating clients. Reads see either the old or new complete file.
-A query over several entries is not a frozen experimental snapshot.
+```json
+{"project":"/work/my-app","operation":"noop","experience_id":"0123456789abcdef0123456789abcdef","expected_version":2}
+```
 
-Delete is reversible: it excludes the entry from recall and retains its content
-on disk. Restore requires the current version and the saved experience ID.
-There is no permanent-erasure tool in this version. User corrections are guidance,
-not independently verified assertions. Record them immediately; do not invent
-feedback or silently extend a project-specific rule to other projects.
+Top-5 is a candidate limit, not a semantic conclusion. Search uses lowercase words
+and Chinese bigrams, not embeddings. Different wording can miss a relevant rule;
+broaden the query, paginate, or use an empty query to list active personal entries.
+No match does not prove absence. General guidance does not occupy the personal
+update candidates. Each input string is limited to 4096 characters.
 
-Research sessions bound with `--report-id` and `--layer` still expose only their
-assigned frozen report, without either memory source, memory tools or everyday workflow instructions.
+Writes use a local process lock and atomic replacement. A stale expected version
+fails; read again and reconcile instead of blindly retrying. Reads see complete
+individual files, but multi-entry recall is not a frozen experimental snapshot.
+Existing personal JSON records remain readable; no content migration is needed.
+There is no permanent-erasure operation. General-pack updates are separate explicit
+exports/package changes, never a side effect of personal corrections.
 
+Restricted `--report-id`/`--layer` sessions expose only the assigned report, with
+no experience tools, memory access or everyday workflow instructions.
 
 ## Design references and evaluation scope
 
-- [SWE-Exp, §3](https://arxiv.org/html/2507.23361v2): distinguish reusable
-  understanding from modification guidance; adapt experience to current source.
-- [ACE, §3](https://arxiv.org/html/2510.04618v3): use itemized local updates instead
-  of rewriting the entire accumulated context.
-- [Mem0, §2.1](https://arxiv.org/html/2504.19413v1): compare new information with
-  related memory before choosing add, update, delete or no-op.
+- [SWE-Exp, §3](https://arxiv.org/html/2507.23361v2): distill reusable understanding
+  and modification guidance; adapt it to current source.
+- [ACE, §3](https://arxiv.org/html/2510.04618v3): itemized local updates instead of
+  rewriting the whole context.
+- [Mem0, §2.1](https://arxiv.org/html/2504.19413v1): extract information from dialogue,
+  compare related memory, then choose add/update/delete/noop.
 
 These inform the workflow, not a reproduction of their algorithms. This version
 uses lexical retrieval and the host agent, not their embedding/model pipelines.
-It does not claim automatic semantic deduplication, autonomous experience
-extraction or a measured reduction in repeated mistakes. Offline tests establish
-storage, retrieval, source isolation and protocol behavior. Real agent use and
-repair effectiveness require separate evaluation; historical frozen test scores
-remain evidence for their original protocol only.
+It does not claim automatic server-side semantic merging or measured reductions
+in repeated mistakes. Offline tests establish storage, protocol behavior and
+source isolation. Historical frozen scores apply to their original protocol only.

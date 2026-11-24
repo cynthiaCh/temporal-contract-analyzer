@@ -106,11 +106,12 @@ results describe diagnostic performance, not unseen-source generalization.
 
 ## Everyday agent use (separate from experimental evaluation)
 
-The local MCP now recalls a read-only general temporal guidance pack together with
+The local MCP recalls a read-only general temporal guidance pack together with
 project-scoped personal corrections. The host agent checks current applicability
-and chooses a few useful entries. Explicit user corrections on any coding topic
-use `prepare_correction` to recall up to five project rules for host-agent
-comparison, then enter personal memory through add/revise (or skip as covered).
-Local revisions preserve history and do not change the general pack. See [MCP setup and workflow](PERSONAL_MCP.md).
+and chooses a few useful entries. For durable corrections extracted from user
+dialogue, `recall_experience` queries up to five personal candidates and
+`read_experience` provides full history when needed. The agent selects an operation
+for `update_experience`: add, update, delete, restore or noop. Updates preserve
+history and do not change the general pack. See [MCP workflow](PERSONAL_MCP.md).
 This path does not run the construction controller or Gold, and does not replace
 the frozen experimental protocol or its historical result interpretation.

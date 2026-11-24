@@ -25,8 +25,8 @@ class PersonalMemoryTests(unittest.TestCase):
         self.memory = PersonalMemory(self.store)
 
     def record(self, **kwargs):
-        return self.memory.remember(str(self.project), '关闭页面不能取消已提交的保存请求。',
-                                    guidance='Preserve accepted saves after closing.', **kwargs)
+        return self.memory.update(str(self.project), 'update' if kwargs.get('experience_id') else 'add', '关闭页面不能取消已提交的保存请求。',
+                                    guidance='Preserve accepted saves after closing.', **kwargs)['experience']
 
     def test_empty_reads_do_not_create_store_and_projects_are_isolated(self):
         self.assertEqual(self.memory.recall(str(self.project), '')['items'], [])
@@ -34,38 +34,38 @@ class PersonalMemoryTests(unittest.TestCase):
         row = self.record()
         self.assertEqual(self.memory.recall(str(self.other), '')['items'], [])
         with self.assertRaises(EvidenceError):
-            self.memory.manage(str(self.other), row['experience_id'])
+            self.memory.read(str(self.other), row['experience_id'])
         with self.assertRaises(EvidenceError):
             self.memory.recall('relative/path', '')
 
     def test_original_correction_and_revision_survive_new_client(self):
         old = self.record()
-        revised = self.memory.remember(str(self.project), '只适用于编辑页面。',
-                                       experience_id=old['experience_id'], expected_version=1)
+        revised = self.memory.update(str(self.project), 'update', '只适用于编辑页面。',
+                                       experience_id=old['experience_id'], expected_version=1)['experience']
         new_client = PersonalMemory(self.store)
-        row = new_client.manage(str(self.project), old['experience_id'])
+        row = new_client.read(str(self.project), old['experience_id'])
         self.assertEqual(row, revised)
         self.assertEqual(row['history'][0]['correction'], '关闭页面不能取消已提交的保存请求。')
         self.assertEqual(row['history'][1]['correction'], '只适用于编辑页面。')
         with self.assertRaises(EvidenceError):
             self.record(experience_id=old['experience_id'], expected_version=1)
-        self.assertEqual(new_client.manage(str(self.project), old['experience_id'])['version'], 2)
+        self.assertEqual(new_client.read(str(self.project), old['experience_id'])['version'], 2)
 
     def test_delete_restore_and_stale_writes(self):
         row = self.record()
-        deleted = self.memory.manage(str(self.project), row['experience_id'], 'delete', 1)
+        deleted = self.memory.update(str(self.project), 'delete', experience_id=row['experience_id'], expected_version=1)["experience"]
         self.assertTrue(deleted['deleted'])
         self.assertFalse(self.memory.recall(str(self.project), '')['items'])
         with self.assertRaises(EvidenceError):
-            self.memory.manage(str(self.project), row['experience_id'], 'restore', 1)
-        restored = self.memory.manage(str(self.project), row['experience_id'], 'restore', 2)
+            self.memory.update(str(self.project), 'restore', experience_id=row['experience_id'], expected_version=1)["experience"]
+        restored = self.memory.update(str(self.project), 'restore', experience_id=row['experience_id'], expected_version=2)["experience"]
         self.assertEqual(restored['version'], 3)
         self.assertEqual(self.memory.recall(str(self.project), '保存')['items'][0]['experience_id'], row['experience_id'])
 
     def test_recall_uses_current_text_and_paginates_without_cross_project_matches(self):
         self.record()
-        self.memory.remember(str(self.project), '保存前检查请求身份。')
-        self.memory.remember(str(self.other), '保存 unrelated project')
+        self.memory.update(str(self.project), 'add', '保存前检查请求身份。')['experience']
+        self.memory.update(str(self.other), 'add', '保存 unrelated project')['experience']
         first = self.memory.recall(str(self.project), '保存', limit=1)
         second = self.memory.recall(str(self.project), '保存', limit=1, offset=first['next_offset'])
         self.assertEqual(first['total'], 2)
@@ -77,21 +77,21 @@ class PersonalMemoryTests(unittest.TestCase):
         row = self.record()
         for code in ('../outside', '', 'a'*33):
             with self.assertRaises(EvidenceError):
-                self.memory.manage(str(self.project), code)
+                self.memory.read(str(self.project), code)
         with self.assertRaises(EvidenceError):
-            self.memory.manage(str(self.project), row['experience_id'], 'delete')
+            self.memory.update(str(self.project), 'delete', experience_id=row['experience_id'], expected_version=None)["experience"]
         with self.assertRaises(EvidenceError):
-            self.memory.remember(str(self.project), '   ')
+            self.memory.update(str(self.project), 'add', '   ')['experience']
 
     def test_mcp_instructions_and_validation(self):
         session = Session(self.root/'reports', personal_store=self.store)
         result = session.handle(dict(jsonrpc='2.0', id=1, method='initialize', params={}))
-        self.assertIn('remember_correction', result['result']['instructions'])
+        self.assertIn('update_experience', result['result']['instructions'])
         session.handle(dict(jsonrpc='2.0', method='notifications/initialized'))
         for arguments in ({'project': str(self.project)},
                           {'project': str(self.project), 'correction': 'x', 'unexpected': 'x'}):
             result = session.handle(dict(jsonrpc='2.0', id=2, method='tools/call',
-                                         params=dict(name='remember_correction', arguments=arguments)))
+                                         params=dict(name='update_experience', arguments=arguments)))
             self.assertTrue(result['result']['isError'])
         self.assertFalse(self.store.exists())
 
@@ -110,9 +110,9 @@ class PersonalMemoryTests(unittest.TestCase):
             result = json.loads(process.stdout.splitlines()[-1])['result']
             self.assertFalse(result['isError'], result)
             return json.loads(result['content'][0]['text'])
-        saved = run('remember_correction', dict(project=str(self.project), correction='Do not cancel accepted saves.'))
+        saved = run('update_experience', dict(project=str(self.project), operation='add', correction='Do not cancel accepted saves.'))
         recalled = run('recall_experience', dict(project=str(self.project), query='accepted saves'))
-        self.assertEqual(recalled['items'][0]['experience_id'], saved['experience_id'])
+        self.assertEqual(recalled['items'][0]['experience_id'], saved['experience']['experience_id'])
         self.assertFalse((self.root/'reports').exists())
 
     def test_concurrent_clients_cannot_overwrite_same_version(self):
@@ -121,8 +121,8 @@ class PersonalMemoryTests(unittest.TestCase):
 
         def revise(correction):
             try:
-                PersonalMemory(self.store).remember(str(self.project), correction,
-                    experience_id=row['experience_id'], expected_version=1)
+                PersonalMemory(self.store).update(str(self.project), 'update', correction,
+                    experience_id=row['experience_id'], expected_version=1)['experience']
                 return 'saved'
             except EvidenceError:
                 return 'stale'
@@ -130,17 +130,57 @@ class PersonalMemoryTests(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=2) as workers:
             results = list(workers.map(revise, ['first correction', 'second correction']))
         self.assertEqual(sorted(results), ['saved', 'stale'])
-        self.assertEqual(self.memory.manage(str(self.project), row['experience_id'])['version'], 2)
+        self.assertEqual(self.memory.read(str(self.project), row['experience_id'])['version'], 2)
 
     def test_restricted_session_cannot_access_personal_memory(self):
         with patch('temporal_contract_analyzer.archive.layer_text', return_value='frozen evidence'):
             session = Session(self.root/'reports', report_id='bound', layer='facts',
                               personal_store=self.store)
         self.assertEqual([tool['name'] for tool in session.definitions()], ['read_report'])
-        for name in ('prepare_correction', 'remember_correction'):
+        for name in ('recall_experience', 'read_experience', 'update_experience'):
             with self.subTest(tool=name), self.assertRaises(EvidenceError):
                 session.call(name, dict(project=str(self.project), correction='x'))
         self.assertFalse(self.store.exists())
+
+    def test_noop_preserves_files_and_rejects_stale_or_deleted_coverage(self):
+        empty = self.memory.update(str(self.project), 'noop')
+        self.assertEqual(empty, dict(operation='noop', changed=False, experience=None))
+        self.assertFalse(self.store.exists())
+        row = self.record()
+        (self.store/'.lock').unlink()
+        before = {p.name: p.read_bytes() for p in self.store.iterdir()}
+        result = self.memory.update(str(self.project), 'noop', experience_id=row['experience_id'], expected_version=1)
+        self.assertFalse(result['changed'])
+        self.assertEqual(before, {p.name: p.read_bytes() for p in self.store.iterdir()})
+        self.memory.update(str(self.project), 'delete', experience_id=row['experience_id'], expected_version=1)
+        for version in (1, 2):
+            with self.subTest(version=version), self.assertRaises(EvidenceError):
+                self.memory.update(str(self.project), 'noop', experience_id=row['experience_id'], expected_version=version)
+
+    def test_invalid_operation_combinations_cannot_create_storage(self):
+        cases = [dict(operation='unknown'), dict(operation='update', correction='New rule'),
+                 dict(operation='add', correction='New rule', experience_id='a'*32),
+                 dict(operation='delete', experience_id='a'*32, expected_version=1, correction='Ignored text'),
+                 dict(operation='noop', guidance='Must not be silently ignored'),
+                 dict(operation='restore', experience_id='a'*32, expected_version=True)]
+        for arguments in cases:
+            with self.subTest(arguments=arguments), self.assertRaises(EvidenceError):
+                self.memory.update(str(self.project), **arguments)
+        self.assertFalse(self.store.exists())
+
+    def test_repeated_add_delete_restore_report_noop_without_extra_versions(self):
+        arguments = dict(correction='Status 2 is pending.', guidance='Read the API enum.')
+        added = self.memory.update(str(self.project), 'add', **arguments)
+        self.assertTrue(added['changed'])
+        repeated = self.memory.update(str(self.project), 'add', **arguments)
+        self.assertEqual(repeated['operation'], 'noop')
+        row = added['experience']
+        for operation, first_version in (('delete', 1), ('restore', 2)):
+            changed = self.memory.update(str(self.project), operation, experience_id=row['experience_id'], expected_version=first_version)
+            unchanged = self.memory.update(str(self.project), operation, experience_id=row['experience_id'], expected_version=first_version+1)
+            self.assertTrue(changed['changed'])
+            self.assertFalse(unchanged['changed'])
+            self.assertEqual(unchanged['experience']['version'], first_version+1)
 
     def test_environment_selects_personal_store(self):
         with patch.dict(os.environ, TCA_PERSONAL_MEMORY=str(self.store)):
