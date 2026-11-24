@@ -60,6 +60,24 @@ Model applicability judgments remain fallible; unknown premises do not count as
 satisfied. Requirements come from current task/source evidence, not experience.
 
 The default testing budget is 48 requests: selection 12, Contract 12 and Action 24.
+New trajectories also freeze `contract_output_max_chars=8000`: the initial
+Contract must fit that many characters in canonical JSON (including field names
+and evidence), not 8,000 tokens. This is a new explicit ceiling; historical runs
+had no separate Contract character cap. Set the same value in compared new runs.
+Contract drafting identifies the requested change and only relevant preservation
+obligations. Each obligation states a trigger, observable outcome and evidence
+location, distinguishing explicit requirements from inferred preservation.
+Required orderings explain their observable consequence; unsupported policies
+and task/source conflicts remain unknown. Existing behavior is not automatically
+normative when the task asks to change it. Experience suggests boundaries to
+inspect but cannot supply requirements. Obligations carry the main description;
+other fields add necessary details or IDs rather than repeating it, and may be
+empty. No fields or model stages are added. An oversized draft uses the existing
+single correction in the original Contract budget, then falls back without a
+Contract if still unusable; it is never silently truncated. This bound applies
+to the initial draft, not subsequent learning-time diagnosis revisions.
+Source quotation validation does not prove semantic entailment; accuracy gains
+from these drafting instructions still require paired experimental evaluation.
 Each stage has a 600-second limit. The Action may inspect sources, run existing
 public tests and revise code inside its budget, then submits one final candidate.
 Gold runs once afterward. Neither its verdict nor failure details return to the

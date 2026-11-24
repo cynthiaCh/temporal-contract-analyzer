@@ -28,15 +28,29 @@ CONTRACT_FIELDS = ('scope', 'triggers', 'ordering_barriers', 'lifecycle_identity
                    'preservation', 'forbidden_effects', 'checkpoints', 'unknowns')
 BEHAVIOR_FIELDS = tuple(k for k in CONTRACT_FIELDS if k != 'unknowns') + ('obligations',)
 CONTRACT_INSTRUCTION = (
-    'Infer a temporal Contract grounded in the original task and public sources. '
-    'Include only obligations supported by those inputs. Distinguish explicitly stated requirements '
-    'from inferred preservation obligations in the obligation text. '
-    'Support every obligation with exact original task or public-source quotations in supporting_evidence. '
-    'Check any proposed business obligations against the same original evidence. '
-    'When preservation is requested, inspect existing observable behavior and callback-capable boundaries; '
-    'absence of an explicit prose deadline does not authorize weakening existing behavior. '
-    'Record unresolved questions in unknowns rather than inventing requirements. '
-    'Do not infer requirements from experience alone.')
+    'Infer a concise temporal Contract from the original task and public sources. '
+    'First identify the requested behavioral change; then identify preservation obligations at operations '
+    'that this change can affect, including callback-capable boundaries. Do not preserve a behavior the task '
+    'explicitly asks to change, or assume every existing behavior is correct. '
+    'In each obligation text distinguish explicit task requirements from inferred preservation. '
+    'Describe the applicable trigger and concrete observable outcome, using current source operation/object names. '
+    'For an inferred obligation, briefly explain why the cited original behavior must survive this change. '
+    'For every required ordering, identify the observable effect that depends on it; do not invent a universal '
+    'flush-before-retirement or cancel-drops-work policy. Distinguish accepting new work, completing already '
+    'accepted work, and publishing results to a current owner whenever relevant to this task. '
+    'Support each obligation with short exact original task/source quotes in supporting_evidence; '
+    'identify its supporting file and quote in the obligation text without repeating the full quote. '
+    'A quotation being present does not establish that it entails the proposed rule. Check the entailment, '
+    'including any proposed business obligations. Use experience to find boundaries to inspect, never as '
+    'normative evidence or as a repair policy to copy. Absence of a prose deadline does not authorize '
+    'weakening observable behavior when preservation is requested. '
+    'Put unsupported policies, ambiguous preservation inferences and task/source conflicts in unknowns '
+    'rather than mandatory obligations. Do not invent certainty or requirements to fill fields. '
+    'Use obligations as the primary behavior description. Other fields contain only additional necessary '
+    'details or obligation IDs, not paraphrases; use empty arrays when unnecessary. Merge duplicate '
+    'obligations, omit generic advice and implementation recipes, and keep checkpoints to brief observable '
+    'checks, not full test scenarios. Obey output_budget for the complete serialized JSON; shorten redundant '
+    'prose before removing distinct supported obligations. Return the existing schema only.')
 DIAGNOSIS_INSTRUCTION = '''Classify implementation_gap/contract_gap/both/unknown. Preserve original obligations.
 Observations and a failed acceptance verdict are not new business requirements or proof of a failure cause.
 Compare behavioral fields (scope, triggers, ordering_barriers, lifecycle_identity, preservation,
@@ -210,6 +224,9 @@ class Trajectory:
         cfg.setdefault('ast_policy','disabled')
         if cfg['ast_policy'] not in ('enabled','disabled'):
             raise EvidenceError('Invalid AST policy')
+        cfg.setdefault('contract_output_max_chars',8000)
+        if type(cfg['contract_output_max_chars']) is not int or cfg['contract_output_max_chars']<1:
+            raise EvidenceError('Invalid Contract output character budget')
         policy=cfg.get('learning_policy','frozen')
         if policy not in ('frozen','online'):raise EvidenceError('Invalid learning policy')
         if policy=='online' and (cfg.get('mode')!='learning' or cfg.get('condition') not in ('structured',) or not cfg.get('online_memory') or not memory.text(cfg.get('task_id'))):raise EvidenceError('Online memory requires memory-enabled learning and an explicit training pool')
@@ -601,8 +618,11 @@ class Trajectory:
             if p['condition'] not in ('baseline','latent_experience') and state['contract'] is None and not state.get('contract_preparation_complete'):
                 def validate_draft(output):
                     check_contract(output,p['task'],sources)
+                    cap=p.get('contract_output_max_chars')
+                    if cap is not None and len(canonical(output))>cap:
+                        raise EvidenceError('Contract exceeds output budget of '+str(cap)+' serialized JSON characters; compress duplication without inventing or dropping supported requirements')
                     return deepcopy(output)
-                draft=self._preparation_output(p,backend,'contract','contract',dict(public,experience=delivery['experience_text'],business_obligations=delivery.get('business_obligations',[]),instruction=CONTRACT_INSTRUCTION,schema=CONTRACT_SCHEMA),validate_draft)
+                draft=self._preparation_output(p,backend,'contract','contract',dict(public,experience=delivery['experience_text'],business_obligations=delivery.get('business_obligations',[]),instruction=CONTRACT_INSTRUCTION,output_budget=dict(max_serialized_json_characters=p.get('contract_output_max_chars'),unit='characters in canonical JSON, not tokens'),schema=CONTRACT_SCHEMA),validate_draft)
                 state=self.state();state.update(contract=draft,contract_preparation_complete=True)
                 self.save('initial-contract.json',draft);self.save('state.json',state)
             self.status('contract_ready');state=self.state()

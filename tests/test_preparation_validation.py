@@ -8,7 +8,7 @@ import unittest
 from temporal_contract_analyzer import experience_memory as memory, experience_approval as approval
 from temporal_contract_analyzer import preparation_validation as advisory, experience_routing as routing, taxonomy
 from temporal_contract_analyzer.tempoevo_v4 import Trajectory, MODEL, read
-from temporal_contract_analyzer.core import EvidenceError
+from temporal_contract_analyzer.core import EvidenceError, canonical
 from test_tempoevo_v4 import Backend, contract
 
 
@@ -74,6 +74,39 @@ class AdvisoryTests(unittest.TestCase):
         self.assertEqual(next(x[3]['requests'] for x in backend.calls if x[0]=='action'),24)
         self.assertEqual(loop.report()['requests'],13)
 
+    def test_contract_at_character_budget_is_delivered_without_correction(self):
+        cap=len(canonical(contract()))
+        loop=self.prepare(contract_output_max_chars=cap)
+        backend=Backend();state=loop.run(backend,execute=True)
+        self.assertEqual(state['status'],'scored',state.get('error'))
+        self.assertEqual([c[0] for c in backend.calls],['contract','action'])
+        self.assertEqual(backend.calls[0][1]['output_budget']['max_serialized_json_characters'],cap)
+        self.assertEqual(backend.calls[1][1]['contract'],contract())
+
+    def test_oversized_contract_is_corrected_or_discarded_within_original_budget(self):
+        for correct in (True,False):
+            class Oversized(Backend):
+                def execute(inner,kind,payload,*args):
+                    result=super().execute(kind,payload,*args)
+                    if kind=='contract' and not (correct and 'validation_feedback' in payload):
+                        result['output']['scope']=['x'*8001]
+                    return result
+            loop=self.prepare();backend=Oversized();state=loop.run(backend,execute=True)
+            self.assertEqual(state['status'],'scored',state.get('error'))
+            drafts=[c for c in backend.calls if c[0]=='contract']
+            self.assertEqual(len(drafts),2)
+            self.assertEqual(drafts[1][3]['requests'],11)
+            self.assertIn('Contract exceeds output budget',drafts[1][1]['validation_feedback']['error'])
+            action=next(c for c in backend.calls if c[0]=='action')
+            self.assertEqual(action[1]['contract'],contract() if correct else None)
+            self.assertEqual(action[3]['requests'],24)
+            self.assertEqual(sum(s['kind']=='gold' for s in state['stages']),1)
+
+    def test_invalid_contract_character_budget_is_rejected(self):
+        for cap in (0,-1,True,'8000'):
+            with self.assertRaisesRegex(EvidenceError,'Invalid Contract output character budget'):
+                self.prepare(contract_output_max_chars=cap)
+
     def test_malformed_output_is_recoverable_but_runtime_and_boundary_errors_are_not(self):
         for failure in ('invalid_output',None,'timeout','tool_policy_denied','infrastructure_error','transient_transport_error'):
             class FailedDraft(Backend):
@@ -137,7 +170,10 @@ class AdvisoryTests(unittest.TestCase):
                 if kind=='selection':result['output']={}
                 return result
         recalled=dict(candidates=[dict(sha256='a'*64,id='synthetic',text='Synthetic recalled entry',requires=[],excludes=[])],mechanism_route={})
-        loop=self.prepare(condition='structured');backend=NoSelection()
+        from temporal_contract_analyzer import compact_experience as compact
+        current=self.root/'library';current.mkdir()
+        (current/'entries.json').write_text(json.dumps(dict(schema_version=compact.VERSION,experiences=[])))
+        loop=self.prepare(condition='structured',store=str(current),memory_snapshot=approval.freeze(current));backend=NoSelection()
         with patch('temporal_contract_analyzer.business_retrieval.recall',return_value=recalled):state=loop.run(backend,execute=True)
         self.assertEqual(state['status'],'scored',state.get('error'));self.assertEqual(len(state['attempts']),1)
         self.assertEqual([c[0] for c in backend.calls].count('selection'),2)
