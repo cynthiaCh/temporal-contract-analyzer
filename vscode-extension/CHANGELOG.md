@@ -1,3 +1,11 @@
+## 0.3.0
+
+- Replace the scanner entrypoint with a local experience library editor.
+- Search and filter experiences; create, edit and delete with direct owner saves.
+- Save guidance and retrieval Abstract together without approval UI.
+- Detect external edits and keep restorable entry history.
+- Bundle Python library support without JavaScript source parsers.
+
 # Changelog
 
 ## 0.2.0

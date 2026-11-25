@@ -1,60 +1,64 @@
-# TempoEvo: Temporal Contract Analyzer
+# TempoEvo: My Experiences
 
-Review temporal source clues in Vue, JavaScript, TypeScript and Python from VS Code.
+A local VS Code editor for your own experience library. Browse, search, create,
+edit and delete experiences. Save applies your changes directly; no reviewer,
+approval or model call is required.
 
-## Installation and daily use
+## Use
 
-1. In the Extensions panel, choose `…` → **Install from VSIX…** and select `temporal-contract-analyzer-0.2.0.vsix`.
-2. **Python 3.9+** is required on the host. The extension discovers it automatically, or search settings for **TempoEvo** and set **Python Path**. The analyzer, Babel and Vue parsers are bundled; no pip, npm or separate Node installation is needed.
-3. Open and trust your project. Saving an edited Vue file scans it automatically. **TempoEvo: Scan current file** in the command palette also analyzes unsaved editor contents.
-4. View hints in **Problems** or the Explorer's **TempoEvo** sidebar. Expand hints for evidence, click to navigate to source, and hover for conditions and review questions.
-5. To include other files, right-click a project directory and select **TempoEvo: Scan folder…**. Directory scans include unsaved contents of open files; single-file scans analyze only the current file.
+1. Install the VSIX and open a trusted workspace. Python 3.9+ is required on the
+   extension host; configure **TempoEvo: Python Path** if automatic discovery fails.
+2. In Explorer, open **My experiences** and choose **Choose experience library**.
+   Select a categorized library directory, or an empty directory to start your
+   own. The existing repository library is `experience-memory/library`.
+3. Open the editor. Search and filter the list, select an experience, then edit
+   its title, Abstract and guidance. Select applicable obligation labels and
+   mechanisms from the existing taxonomy. At least one required mechanism is
+   needed by the current retrieval format.
+4. **Save** updates guidance and Abstract together for future library reads.
+   Existing prepared experiments retain their snapshots. The Abstract is required
+   because retrieval indexes it; keep it consistent with the guidance.
+5. **History** loads a previous saved entry into the editor. Inspect it and press
+   **Save** to restore it. Deleted entries can also be restored this way.
 
-Each scan replaces the previous editor hints and archives the report and actual source snapshot by default. Editing immediately clears stale locations; save or scan manually to refresh. The sidebar report button opens the latest complete Markdown report as a read-only snapshot, without writing project files. Historical reports are explicitly marked stale.
+Before replacing or deleting an entry, its original record is backed up under
+`LIBRARY/.history/`. External edits are detected when saving; reload before
+retrying a conflicting edit. Navigating within the editor asks before discarding
+unsaved changes. Save before closing the editor or VS Code.
 
-**TempoEvo: Open shared report archive** opens historical evidence, source snapshots, human reviews and before/after comparisons. **Copy latest report ID** hands the same report to Codex. The CLI, extension and Codex MCP share global configuration; see `docs/ANALYZER.md` in the source repository. Clearing editor results does not delete archives.
+Automatic suggestions remain separate from usable content until you explicitly
+save them. An existing pending revision is indicated; saving replaces that
+suggestion with your editor content. Historical evidence bindings are shown as
+source information. An owner edit detaches the old proposal/evidence binding
+because it no longer attests to the new guidance; the original remains in History.
 
-Single files and selected directories in multi-root workspaces are supported. Remote development requires Python on the remote extension host. Browser-based VS Code and virtual filesystems are unsupported.
+The underlying library retains its existing acceptance fields for compatibility
+with CLI consumers. Owner saves fill these internally, without an approval step.
+The standalone research review workflow is unchanged. No source scanning starts
+when this extension activates; the former scan commands are no longer contributed.
 
-## Settings
+Choosing a library remembers it on this extension host and takes precedence over
+`temporalContracts.experienceStore`. Remote development requires Python and the
+library on the remote host. Browser-based VS Code is unsupported. No library,
+source code or model credentials are uploaded or bundled into the extension.
 
-| Setting | Default | Description |
-|---|---|---|
-| `temporalContracts.scanOnSave` | `true` | Scan the current file on save; disable for manual scans only |
-| `temporalContracts.pythonPath` | Auto-detect | Python executable path, not a shell command |
-| `temporalContracts.archiveEnabled` | `true` | Save each report and source snapshot |
-| `temporalContracts.reportStore` | Global configuration | Shared archive directory, outside the scanned project |
-| `temporalContracts.timeoutSeconds` | `90` | Analysis timeout |
+## Development
 
-**TempoEvo: View runtime log** shows status and errors. Automatic scan failures also appear in the sidebar and status bar even without a popup.
-
-## Interpreting results
-
-Hints are **syntax clues requiring human review**, displayed at information level rather than claiming discovered bugs. No hints does not establish safety. Parsing failures display **Analysis incomplete**, rather than implying zero risk.
-
-Vue 2 / Vue 3 inline `<script>` and `<script setup>` support JS / TS / JSX / TSX with original `.vue` line/column locations. Template expressions, reactive dependencies, watcher scheduling, cross-script bindings and component-instance dispatch remain unmodeled. Unsupported external scripts and custom blocks are explicitly reported.
-
-Analysis runs locally on the extension host. It does not call models, upload source, execute project code, install project dependencies or automatically edit code. Directory scans use the analyzer's exclusions and size limits. In `temporal-contract-bench`, select a specific candidate project's `base/` rather than the entire research repository.
-
-## Development and packaging
-
-Install locked parser dependencies from the repository root, then prepare the extension:
+The editor bundles Python modules and needs no JavaScript source parsers. Run:
 
 ```sh
-npm ci --prefix temporal_contract_analyzer/javascript --ignore-scripts --no-audit --no-fund
 cd vscode-extension
 npm ci --ignore-scripts --no-audit --no-fund
 npm run stage
 npm test
-npm run test:host
-npm run test:browser
+npm run test:experiences
 npm run package
 ```
 
-Node 22+ is recommended for building; end users do not need Node. `runtime/` is copied from this repository's analyzer/parser dependencies during staging and should not be edited manually. The Python analyzer remains the sole rule implementation; VS Code handles invocation, presentation and navigation.
+`npm test` exercises the packaged Python experience bridge. `test:experiences` checks the owner
+editor in Chrome with a simulated VS Code messaging bridge. Legacy scan-specific
+`test:legacy`, host and browser suites apply to the former scanner, not the new entrypoint.
+The Python owner-save tests live in `tests/test_owner_experience.py`.
 
-`test:host` defaults to local VS Code on macOS, or uses `VSCODE_EXECUTABLE_PATH`. Elsewhere the testing utility downloads a host. Tests use temporary user-data directories to avoid changing editor settings.
-
-Browser tests use local Chrome, configurable with `CHROME_PATH`, and write reports to temporary directories.
-
-Output: `../dist/temporal-contract-analyzer-0.2.0.vsix`. This is a private extension for local use, not published to Marketplace. No open-source license has been selected for the project. Third-party parser licenses remain with their dependencies.
+The private VSIX is written under `../dist/`. No Marketplace publication or Git
+commit is performed by packaging.

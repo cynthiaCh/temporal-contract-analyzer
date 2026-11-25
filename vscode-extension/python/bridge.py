@@ -13,6 +13,14 @@ from temporal_contract_analyzer.report import markdown  # noqa: E402
 
 
 def run(request):
+    if request.get('operation', '').startswith('experience_'):
+        from temporal_contract_analyzer import owner_experience as owner
+        operation = request['operation']
+        if operation == 'experience_init': return owner.initialize(request['store'])
+        if operation == 'experience_list': return owner.listing(request['store'])
+        if operation == 'experience_history': return owner.history(request['store'])
+        if operation == 'experience_change': return owner.change(request['store'], request['change'])
+        raise EvidenceError('Unknown experience operation')
     node = archive.configuration().get('node') or request['node']
     if request.get('operation') == 'open_hub':
         from temporal_contract_analyzer.hub import ensure_server
