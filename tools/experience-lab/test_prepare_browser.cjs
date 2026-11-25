@@ -23,7 +23,7 @@ async function main() {
     let submitted=0, release, fail=true, exists=false;
     const config={mode:'testing',count:1};
     const result={meta:{id:'run-synthetic',recorded:false,status:'preparing',config,model:{}},cases:[],events:[{at:'SYNTHETIC',kind:'PREPARE',message:'Preparing controls. No model requests.'}],preparation_log:'',passed:0,failed:0,unscored:0};
-    await page.route('**/api/runs',r=>r.fulfill({json:exists?[{id:'run-synthetic',title:'Synthetic preparation'}]:[]}));
+    await page.route('**/api/runs',r=>r.fulfill({json:exists?[{id:'run-synthetic',title:'Synthetic preparation',mode:'testing'}]:[]}));
     await page.route(/\/api\/run\?/,r=>r.fulfill({json:result}));
     await page.route('**/api/prepare',async route=>{
       submitted++;assert.equal(route.request().postDataJSON().mode,'testing');
@@ -54,6 +54,15 @@ async function main() {
     await page.click('#refresh');await page.locator('#run-error').getByText('Synthetic evaluator failure',{exact:true}).waitFor();
     assert.equal(await page.locator('#feedback-detail').textContent(),'Synthetic evaluator failure');
     assert.match(await page.locator('#artifact').innerText(),/SYNTHETIC control failed/);
+    await page.click('#training-nav');
+    assert.equal(await page.locator('#runs option').count(),0);
+    assert.match(await page.locator('#artifact').innerText(),/No training runs yet/);
+    assert(await page.locator('#export').isDisabled());
+    assert(await page.locator('#execute').isDisabled());
+    assert.equal(await page.locator('#run-error').isVisible(),false);
+    await page.click('#testing-nav');
+    await page.locator('#run-error').getByText('Synthetic evaluator failure',{exact:true}).waitFor();
+    assert.equal(await page.locator('#runs').inputValue(),'run-synthetic');
     assert.equal(submitted,2);assert.deepEqual(errors,[]);
     console.log('PASS: invalid collapsed fields, pending requests, preparation errors and live logs are visible; no execution requests');
   } finally {
