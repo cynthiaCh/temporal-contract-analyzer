@@ -12,7 +12,7 @@ Documentation: start with the [reading guide](docs/README.md) to choose everyday
 - `tests/`: offline automated checks.
 - `test-fixtures/`: local sample projects used by analyzer regression tests and the two listener development cases.
 - `cases/train70/`, `cases/test30/`: the final training and testing cases.
-- `templates/`, `examples/`: reusable templates and usage examples.
+- `examples/`: usage examples.
 - `vscode-extension/`: optional editor integration source.
 - `experience-memory/`: original research library, when present in the development checkout. The raw bank stays outside clean source exports; `temporal_contract_analyzer/data/temporal-experience.json` supplies a reviewed guidance-only pack for everyday MCP use.
 

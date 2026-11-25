@@ -39,8 +39,6 @@ class TemporalContractLayerTests(unittest.TestCase):
                            condition='SECRET_CONDITION', review_question='SECRET_QUESTION')
         layers = render_layers(report)
         self.assertEqual(layers['audit'], AUDIT_PROMPT)
-        self.assertEqual(AUDIT_PROMPT, (Path(__file__).resolve().parents[1] /
-                         'templates/case/prompts/temporal-audit.md').read_text())
         self.assertTrue(layers['risk'].startswith(layers['audit']))
         self.assertIn('detected temporal-related clues', layers['risk'])
         for arm in ('audit', 'risk'):
