@@ -12,7 +12,7 @@ Review temporal source clues in Vue, JavaScript, TypeScript and Python from VS C
 
 Each scan replaces the previous editor hints and archives the report and actual source snapshot by default. Editing immediately clears stale locations; save or scan manually to refresh. The sidebar report button opens the latest complete Markdown report as a read-only snapshot, without writing project files. Historical reports are explicitly marked stale.
 
-**TempoEvo: Open shared report archive** opens historical evidence, source snapshots, human reviews and before/after comparisons. **Copy latest report ID** hands the same report to Codex. The CLI, extension and Codex MCP share global configuration; see `docs/REPORT_CENTER.md` in the source repository. Clearing editor results does not delete archives.
+**TempoEvo: Open shared report archive** opens historical evidence, source snapshots, human reviews and before/after comparisons. **Copy latest report ID** hands the same report to Codex. The CLI, extension and Codex MCP share global configuration; see `docs/ANALYZER.md` in the source repository. Clearing editor results does not delete archives.
 
 Single files and selected directories in multi-root workspaces are supported. Remote development requires Python on the remote extension host. Browser-based VS Code and virtual filesystems are unsupported.
 

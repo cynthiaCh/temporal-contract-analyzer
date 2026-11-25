@@ -2,6 +2,8 @@
 
 TempoEvo combines temporal-contract analysis, contract-guided repair and reusable experience. Its Temporal Contract Analyzer component extracts syntax facts, source locations and conservative review hints for JavaScript, TypeScript, Vue and Python. A parsed report is not a proof of a defect or of safety.
 
+Documentation: start with the [reading guide](docs/README.md) to choose everyday use, analysis or research instructions.
+
 ## Tool layout
 
 - `temporal_contract_analyzer/`: analyzer, CLI, report UI, source retrieval, experience memory and bounded expert-gated evolution.
@@ -14,7 +16,7 @@ TempoEvo combines temporal-contract analysis, contract-guided repair and reusabl
 - `vscode-extension/`: optional editor integration source.
 - `experience-memory/`: original research library, when present in the development checkout. The raw bank stays outside clean source exports; `temporal_contract_analyzer/data/temporal-experience.json` supplies a reviewed guidance-only pack for everyday MCP use.
 
-Historical experiments, raw model outputs, interrupted runs, scores and publication material are preserved in a separate research archive. See [archive boundaries](docs/ARCHIVE.md). Removing working files does not rewrite Git history.
+Historical experiments, raw model outputs, interrupted runs, scores and publication material are preserved in a separate research archive. See [archive boundaries](docs/ARCHITECTURE.md#archive-boundaries). Removing working files does not rewrite Git history.
 
 ## Requirements and use
 
@@ -48,7 +50,7 @@ python3 -B -m temporal_contract_analyzer experience-memory verify --store /path/
 python3 -B -m temporal_contract_analyzer experience-memory review --store /path/to/memory
 ```
 
-[Architecture and source map](docs/ARCHITECTURE.md), [experience storage and review](experience-memory/README.md), [taxonomy](docs/CONTRACT_TAXONOMY.md), and [current workflow](docs/WORKFLOW.md) document the interfaces. Experience Review edits stable entries in place; content changes require renewed approval. Accepted, active entries enter frozen retrieval snapshots when current task/source evidence supports their applicability and exclusions. Cross-case effect validation is not an eligibility gate. Success candidates and human failure summaries remain unapproved until reviewed. Opening or submitting the review page cannot start model execution. Held-out testing reads a frozen approved snapshot and cannot learn. No paid calls are authorized by reading this README.
+[Architecture and source map](docs/ARCHITECTURE.md), [experience storage and review](experience-memory/README.md), [taxonomy](docs/ARCHITECTURE.md#seven-obligation-classes), and [current workflow](docs/WORKFLOW.md) document the interfaces. Experience Review edits stable entries in place; content changes require renewed approval. Accepted, active entries enter frozen retrieval snapshots when current task/source evidence supports their applicability and exclusions. Cross-case effect validation is not an eligibility gate. Success candidates and human failure summaries remain unapproved until reviewed. Opening or submitting the review page cannot start model execution. Held-out testing reads a frozen approved snapshot and cannot learn. No paid calls are authorized by reading this README.
 
 ## Personal use with coding agents
 
@@ -72,7 +74,7 @@ Shared native/Docker/scoring infrastructure remains separate from trajectory pol
 - On macOS, double-click `launch-ast-review.command` to open AST evidence review. It restarts the configured report service in the foreground; keep the terminal open and press Ctrl+C to stop it. Report annotations, analysis review and experience activation use separate records.
 - Benchmark execution requires the separately provisioned benchmark, matching scoring runtime and calibration. Set `TCA_BENCH_ROOT` explicitly for reproducible use; checkout-based sibling discovery remains a compatibility convenience.
 - The shared native runner requires explicit executables, isolation tools and frozen runtime/evaluator bindings; importing it cannot start a historical scheduler.
-- The [Docker backend](docs/DOCKER_BACKEND.md) provides shared isolation, zero-model calibration and trusted scoring infrastructure using pinned SWE-TempoC images. All new V13 model stages, optional AST extraction and evaluators use Docker; `tempoevo run --execute` remains the sole training entrypoint. New trajectories default to no AST; `prepare_selected.py --with-ast` explicitly enables it. See [Docker training setup](docs/DOCKER_TRAINING.md).
+- The [Docker backend](docs/DOCKER_TRAINING.md) provides shared isolation, zero-model calibration and trusted scoring infrastructure using pinned SWE-TempoC images. The documented batch workflow uses Docker for model stages, optional AST extraction and evaluators; `tempoevo run --execute` remains the sole training entrypoint. New trajectories default to no AST; `prepare_selected.py --with-ast` explicitly enables it.
 
 ## Offline verification
 

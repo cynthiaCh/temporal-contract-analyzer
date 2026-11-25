@@ -60,8 +60,9 @@ expert identity, summary, review or acceptance.
 
 The public training/testing model-execution entrypoint is
 `tempoevo run --execute`, after `tempoevo prepare` creates a fresh trajectory.
-Preparation and inspection do not call a model. The live CLI requires Docker and
-containerized evaluators. This prompt neither implements nor launches a scheduler.
+Preparation and inspection do not call a model. The documented batch workflow
+uses Docker and containerized evaluators; the core backend also retains a native
+isolated execution branch. This prompt neither implements nor launches a scheduler.
 
 Model profiles are selectable at preparation through `--model-config` and
 `--model-profile`; the resolved settings are frozen in the trajectory's
