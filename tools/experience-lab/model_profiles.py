@@ -28,7 +28,8 @@ class Profiles:
         data = read(self.path)
         qoder = dict(name='Qoder Credits', wire_api='qoder_cli', requires_openai_auth=False)
         changed = False
-        for ident, model, effort in [('qoder-deepseek-flash-low', 'DeepSeek-Flash', 'low'),
+        for ident, model, effort in [('qoder-efficient', 'Efficient', None),
+                                      ('qoder-deepseek-flash-low', 'DeepSeek-Flash', 'low'),
                                       ('qoder-deepseek-flash-high', 'DeepSeek-Flash', 'high'),
                                       ('qoder-deepseek-pro-high', 'DeepSeek-V4-Pro', 'high')]:
             if ident not in data['profiles']:

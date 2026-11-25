@@ -27,10 +27,22 @@ class ProfileEditing(unittest.TestCase):
 
     def test_seed_includes_codex_and_qoder_credits_presets(self):
         profiles = self.store.snapshot()['profiles']
-        self.assertEqual(len(profiles), 9)
+        self.assertEqual(len(profiles), 10)
         self.assertEqual(profiles['qoder-deepseek-flash-low']['request_unit'], 'model turns')
         self.assertEqual(profiles['sol56-medium']['model'], 'gpt-5.6-sol')
         self.assertEqual(profiles['sol56-medium']['reasoning_effort'], 'medium')
+        self.assertEqual(profiles['qoder-efficient'], dict(model='Efficient', reasoning_effort=None, service_tier=None, request_unit='model turns'))
+
+    def test_existing_workspace_gets_efficient_without_replacing_profiles(self):
+        data = runner.read(self.path)
+        data['profiles'].pop('qoder-efficient')
+        data['profiles']['qoder-deepseek-flash-low']['reasoning_effort'] = 'max'
+        self.path.write_text(json.dumps(data))
+        Profiles(self.path)
+        updated = runner.read(self.path)
+        self.assertIn('qoder-efficient', updated['profiles'])
+        self.assertEqual(updated['profiles']['qoder-deepseek-flash-low']['reasoning_effort'], 'max')
+        self.assertEqual(updated['default_profile'], data['default_profile'])
 
     def test_add_edit_restart_and_frozen_runtime(self):
         runtime = runner.REPO/'temporal_contract_analyzer/_session_runtime/model-profiles.json'

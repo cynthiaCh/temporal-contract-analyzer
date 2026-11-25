@@ -32,6 +32,12 @@ async function main() {
       else {exists=true;await route.fulfill({status:202,json:{id:'run-synthetic'}});}
     });
     await page.goto(address);await page.locator('#prepare:not([disabled])').waitFor();await page.click('#testing-nav');
+    await page.selectOption('#profile','qoder-efficient');
+    assert.match(await page.locator('#profile option:checked').textContent(),/Efficient.*free.*eligible/);
+    assert(await page.locator('#profile-note').isVisible());
+    assert.match(await page.locator('#profile-note').textContent(),/Service Accounts/);
+    await page.selectOption('#profile','sol61-medium');
+    assert(await page.locator('#profile-note').isHidden());
     const benchmark=await page.locator('#benchmark').inputValue();assert(benchmark);
     await page.locator('#benchmark').evaluate(e=>{e.value='';});
     await page.click('#prepare');

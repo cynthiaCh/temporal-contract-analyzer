@@ -24,7 +24,8 @@ def validate_settings(value):
         raise ValueError('Only Codex Responses or Qoder CLI providers are supported')
     if provider['wire_api'] == 'qoder_cli':
         efforts = {'DeepSeek-Flash': ('low', 'high', 'max'),
-                   'DeepSeek-V4-Pro': ('high', 'max'), 'MiniMax-M3.1-Flash': ()}
+                   'DeepSeek-V4-Pro': ('high', 'max'), 'MiniMax-M3.1-Flash': (),
+                   'Efficient': ()}
         if set(provider) != required or provider['requires_openai_auth'] or value['model'] not in efforts or value['service_tier'] is not None:
             raise ValueError('Qoder Credits requires a supported built-in model without an API endpoint/key or service tier')
         supported = efforts[value['model']]

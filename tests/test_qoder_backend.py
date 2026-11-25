@@ -145,6 +145,18 @@ class Parsing(unittest.TestCase):
             with self.subTest(data=data, model=model), self.assertRaises(ValueError):
                 parse_events(data, model, 2)
 
+    def test_efficient_tier_requires_exact_model_name(self):
+        data = events()
+        data[0]['model'] = 'Efficient'
+        self.assertEqual(parse_events(data, 'Efficient', 2)['num_turns'], 1)
+        for requested, reported in [('Efficient', 'efficient'),
+                                    ('Efficient', 'DeepSeek-Flash'),
+                                    ('DeepSeek-Flash', 'Efficient')]:
+            data = events()
+            data[0]['model'] = reported
+            with self.subTest(requested=requested, reported=reported), self.assertRaises(ValueError):
+                parse_events(data, requested, 2)
+
     def test_custom_key_and_external_tools_are_rejected(self):
         for key, value in [('apiKeySource', 'custom'), ('mcp_servers', ['fixture']), ('plugins', ['fixture'])]:
             data = events()

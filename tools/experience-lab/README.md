@@ -118,6 +118,15 @@ version manifest; it adds no Python/Node dependencies:
 python3 -B tools/experience-lab/setup_qoder.py --login
 ```
 
+The workspace also provides `qoder-efficient`, selecting the CLI's `Efficient`
+tier with provider-default effort and no service tier. This is a routed model
+pool, not a fixed DeepSeek/MiniMax model. Qoder's
+[limited-time offer](https://docs.qoder.com/events/efficientunlimited) covers
+eligible paid/trial accounts using Efficient; Service Accounts and specific-model
+sub-agent calls are excluded. The page does not verify account eligibility or
+promise zero billing. Stage records retain actual reported Credits. Existing
+prepared runs keep their frozen settings; select this profile for fresh runs.
+
 The workspace provides `qoder-deepseek-flash-low`,
 `qoder-deepseek-flash-high`, and `qoder-deepseek-pro-high`. These select the
 account's built-in `DeepSeek-Flash` / `DeepSeek-V4-Pro` models and spend Qoder
