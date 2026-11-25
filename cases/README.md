@@ -18,7 +18,7 @@ Each case directory preserves its original `case.json`, initial code `base/`, ta
 
 Model execution receives only the public maintenance task and `base/`. `oracle/`, `reference/` and `mutants/` are separate scoring/calibration material, excluded from model input. Minimum runtime versions, original launch instructions and dependencies remain in each case's original documentation.
 
-`train70/` and `test30/` have disjoint case IDs; the 30 test cases match the final results. Training here means development/repair and experience processing, without model-parameter training. Cases have historical exposure and partially shared source mechanisms; this split is not an independent unseen-source test set.
+`train70/` and `test30/` have disjoint case IDs; the 30 test cases match the final results. Training here means development/repair and experience processing, without model-parameter training. 
 
 Verify integrity:
 
