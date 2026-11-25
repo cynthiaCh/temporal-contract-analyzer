@@ -59,7 +59,7 @@ def collect(directory):
     if not root.is_dir() or root.is_symlink():raise EvidenceError('Use a candidate source directory, not a symlink')
     root=root.resolve()
     if root.name in EXCLUDED or any(part in {'oracle','reference','references','mutants','negative-controls'} for part in root.parts):raise EvidenceError('Scorers, results, references and dependencies cannot be scan roots')
-    if (root/'case.json').is_file() or (root/'case-clusters').is_dir():raise EvidenceError('Scan the candidate base/ or patched project, not the case or benchmark root')
+    if (root/'case.json').is_file() or (root/'test-fixtures').is_dir():raise EvidenceError('Scan the candidate base/ or patched project, not the case or benchmark root')
     sources={};skipped=[];total=0
     for folder,dirs,files in os.walk(root,followlinks=False):
         keep=[]

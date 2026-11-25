@@ -351,7 +351,7 @@ function second(instrument, dashboard) {
 
     def test_document_candidate_base_is_nonempty_without_external_contract_data(self):
         root = Path(__file__).resolve().parents[1]
-        candidate = root/'case-clusters/document-review-binding/arms/document-submit-snapshot-vanilla/base'
+        candidate = root/'test-fixtures/document-review-binding/arms/document-submit-snapshot-vanilla/base'
         report = scan(candidate)
         self.assertTrue(RULES <= self.rules(report))
         self._assert_shared_bundle(report)

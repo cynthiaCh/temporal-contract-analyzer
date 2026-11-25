@@ -12,7 +12,7 @@ def inspect(root, report=False):
     protocol=root/'protocol.json'
     if protocol.is_symlink():raise EvidenceError('Historical file must not be a symlink')
     value=json.loads(protocol.read_text())
-    if value.get('schema_version') not in VERSIONS:raise EvidenceError('Only historical V1–V3 batches; use tempoevo for V4')
+    if value.get('schema_version') not in VERSIONS:raise EvidenceError('Only historical V1–V3 batches; use tempoevo for current trajectories')
     result=dict(root=str(root),schema_version=value['schema_version'],read_only=True,execution_supported=False,files={})
     for name in FILES:
         path=root/name

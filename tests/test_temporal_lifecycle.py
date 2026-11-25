@@ -87,7 +87,7 @@ class Unrelated { close() { clearInterval(timer); } }
 
     def test_download_development_case_has_nonempty_shared_frozen_selection(self):
         root = Path(__file__).resolve().parents[1]
-        report = scan(root/'case-clusters/download-polling-restoration/arms/download-polling-restoration-react18/base')
+        report = scan(root/'test-fixtures/download-polling-restoration/arms/download-polling-restoration-react18/base')
         counts = coverage_summary(report)
         self.assertTrue(counts['has_substantive_report'])
         self.assertGreater(counts['selected_locations'], 0)

@@ -11,7 +11,7 @@ from temporal_contract_analyzer.core import analyze_sources, scan, compare, Evid
 from temporal_contract_analyzer.report import html_report
 
 ROOT=Path(__file__).resolve().parents[1]
-LISTENER=ROOT/'case-clusters/listener-registration-order/arms/listener-registration-order-vanilla/base'
+LISTENER=ROOT/'test-fixtures/listener-registration-order/arms/listener-registration-order-vanilla/base'
 
 
 class TemporalEvidenceTests(unittest.TestCase):

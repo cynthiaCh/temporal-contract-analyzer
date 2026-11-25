@@ -7,7 +7,10 @@ TempoEvo combines temporal-contract analysis, contract-guided repair and reusabl
 - `temporal_contract_analyzer/`: analyzer, CLI, report UI, source retrieval, experience memory and bounded expert-gated evolution.
 - `temporal_contract_analyzer/javascript/`: pinned Babel/Vue parser resources and npm lockfile.
 - `MASTER_PROMPT.md`: link to the canonical [controller prompt](temporal_contract_analyzer/prompts/MASTER_PROMPT.md).
-- `tests/`, `case-clusters/`, `templates/`, `examples/`: offline checks and small fixtures.
+- `tests/`: offline automated checks.
+- `test-fixtures/`: local sample projects used by analyzer regression tests and the two listener development cases.
+- `cases/train70/`, `cases/test30/`: the final training and testing cases.
+- `templates/`, `examples/`: reusable templates and usage examples.
 - `vscode-extension/`: optional editor integration source.
 - `experience-memory/`: original research library, when present in the development checkout. The raw bank stays outside clean source exports; `temporal_contract_analyzer/data/temporal-experience.json` supplies a reviewed guidance-only pack for everyday MCP use.
 

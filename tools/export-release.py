@@ -8,7 +8,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TREES = ('temporal_contract_analyzer', 'tests', 'case-clusters', 'templates', 'containers',
+TREES = ('temporal_contract_analyzer', 'tests', 'test-fixtures', 'templates', 'containers',
          'examples', 'docs', 'tools', 'vscode-extension')
 FILES = ('README.md', 'MASTER_PROMPT.md', 'pyproject.toml', 'setup.cfg',
          'setup.py', '.gitignore', 'experiments/local-cases.json', 'experiments/training-cases.json',

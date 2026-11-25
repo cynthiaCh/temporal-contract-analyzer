@@ -1,6 +1,6 @@
 > Shared offline Docker/calibration infrastructure is retained. For deterministic checks use
 > `docker_backend.offline(config, new_root, calibrate=False|True)` from Python;
-> V4 model execution remains `tempoevo run --execute`. This document retains
+> Current model execution remains `tempoevo run --execute`. This document retains
 > image/isolation details, not an executable legacy workflow.
 
 # SWE-TempoC Docker backend
@@ -10,7 +10,7 @@ images. It keeps its own guarded single-session runner, schemas, accounting,
 archival, expert gate and stop rules. It never imports a SWE experiment scheduler.
 The adapter covers the current registered `legacy-js`/`python` probe contracts;
 it does not claim support for every SWE-TempoC task. The standalone legacy calibration API remains limited to self-contained vanilla-js
-and the Python adapter. V4 native-language training uses the case-specific Docker
+and the Python adapter. Current native-language training uses the case-specific Docker
 preparation and calibration path described in [Docker training](DOCKER_TRAINING.md);
 it verifies each registered case before model dispatch. These are separate
 preparation APIs sharing the same container transport.
@@ -84,22 +84,25 @@ errors. No model is called and no reference patch is sent to a solver.
 Use the [current workflow and CLI](WORKFLOW.md) for new learning and testing.
 `tempoevo run --execute` is the only model-execution entrypoint. New live runs
 require `backend.kind=docker` and containerized visible/gold evaluators. All model
-roles use the shared Docker transport. AST extraction runs in a separate offline
-solver container; the host retains scheduling and archive management. See
+roles use the shared Docker transport. Optional AST extraction runs in a separate
+offline solver container; new trajectories disable it by default. The host retains
+scheduling and archive management. See
 [Docker training setup](DOCKER_TRAINING.md). Historical V1–V3 batches are read-only.
 
-V4 accepts separate visible and gold evaluator commands, each receiving the
+Current trajectories accept separate visible and gold evaluator commands, each receiving the
 candidate path as its final argument. A trusted evaluator wrapper can invoke
 `DockerBackend.raw_score(protocol, candidate, output_directory)` with frozen case,
 image and scoring-input identities for independent gold scoring. Keep its output
 directory outside the candidate. Gold scores and hidden behavior details cannot
 be used as visible feedback; public checks must be supplied separately.
 
-All V4 model stages use `gpt-6.1-sol / medium`. Each independent trajectory has at
-most three Actions and stops at the first visible pass. Success experience remains
-a candidate until human acceptance; three valid failures request a real human
-expert summary. Testing reads frozen approved memory and cannot write experience.
-See the V4 protocol for stage budgets, feedback boundaries and recovery semantics.
+Training allows at most three Actions; the training Oracle decides acceptance,
+while public checks provide advisory feedback. Success experience remains a
+candidate until human acceptance; three effective failures request a real human
+expert summary. Testing uses one Action and independent final Gold scoring,
+reads frozen approved memory and cannot write experience. Model settings and
+stage budgets are frozen at preparation; see [the current workflow](WORKFLOW.md)
+for defaults, feedback boundaries and recovery semantics.
 
 ## Isolation and retained results
 

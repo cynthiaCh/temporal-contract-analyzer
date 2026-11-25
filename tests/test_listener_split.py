@@ -12,7 +12,7 @@ from temporal_contract_analyzer.case_catalog import catalog, case_input
 from temporal_contract_analyzer.candidate_files import capture
 from temporal_contract_analyzer.case_evaluation import scoring_inputs
 
-CASES = ROOT/'case-clusters/listener-registration-order/arms'
+CASES = ROOT/'test-fixtures/listener-registration-order/arms'
 BOOTSTRAP = 'listener-bootstrap-reentrancy-vanilla'
 DECODE = 'listener-decode-retirement-vanilla'
 NODE = shutil.which('node') or 'node'
