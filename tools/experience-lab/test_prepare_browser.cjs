@@ -1,5 +1,5 @@
 'use strict';
-// Real UI/server with synthetic preparation responses; never starts models or Docker jobs.
+// Real UI/server with synthetic preparation/stop responses; never starts models or Docker jobs.
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
@@ -23,7 +23,7 @@ async function main() {
     let submitted=0, release, fail=true, exists=false;
     const config={mode:'testing',count:1};
     const result={meta:{id:'run-synthetic',recorded:false,status:'preparing',config,model:{}},cases:[],events:[{at:'SYNTHETIC',kind:'PREPARE',message:'Preparing controls. No model requests.'}],preparation_log:'',passed:0,failed:0,unscored:0};
-    await page.route('**/api/runs',r=>r.fulfill({json:exists?[{id:'run-synthetic',title:'Synthetic preparation',mode:'testing'}]:[]}));
+    await page.route('**/api/runs',r=>r.fulfill({json:exists?[{id:'run-synthetic',title:'Synthetic preparation',mode:config.mode}]:[]}));
     await page.route(/\/api\/run\?/,r=>r.fulfill({json:result}));
     await page.route('**/api/prepare',async route=>{
       submitted++;assert.equal(route.request().postDataJSON().mode,'testing');
@@ -63,8 +63,36 @@ async function main() {
     await page.click('#testing-nav');
     await page.locator('#run-error').getByText('Synthetic evaluator failure',{exact:true}).waitFor();
     assert.equal(await page.locator('#runs').inputValue(),'run-synthetic');
-    assert.equal(submitted,2);assert.deepEqual(errors,[]);
-    console.log('PASS: invalid collapsed fields, pending requests, preparation errors and live logs are visible; no execution requests');
+    assert.equal(submitted,2);
+    let stopRequests=0, releaseStop;
+    await page.route('**/api/start',()=>{throw Error('UI checks must not start execution');});
+    await page.route('**/api/stop',async route=>{
+      stopRequests++;assert.deepEqual(route.request().postDataJSON(),{id:'run-synthetic'});
+      await new Promise(resolve=>{releaseStop=resolve;});
+      result.meta.status='stopping';await route.fulfill({status:202,json:{status:'stopping'}});
+    });
+    for(const testMode of ['testing','learning']){
+      config.mode=testMode;result.meta.status='running';delete result.meta.error;
+      await page.reload();await page.locator('#prepare:not([disabled])').waitFor();
+      if(testMode==='testing')await page.click('#testing-nav');
+      await page.getByRole('button',{name:'Stop',exact:true}).waitFor();
+      await page.locator('#stop:not([disabled])').waitFor();
+      // Stop must precede the expanding feedback/workflow area, including on small screens.
+      assert(await page.locator('#stop').evaluate(e=>Boolean(e.compareDocumentPosition(document.querySelector('#run-feedback')) & Node.DOCUMENT_POSITION_FOLLOWING)));
+      assert.equal(await page.locator('#stop').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(255, 77, 79)');
+      releaseStop=null;await page.click('#stop');
+      while(!releaseStop)await new Promise(r=>setTimeout(r,10));
+      assert(await page.locator('#stop').isDisabled());releaseStop();
+      await page.getByRole('button',{name:'Stopping…',exact:true}).waitFor();
+      assert(await page.locator('#stop').isDisabled());
+      assert.match(await page.locator('#stop-note').textContent(),/No new cases will start/);
+      result.meta.status='stopped';await page.click('#refresh');
+      await page.locator('#run-status').filter({hasText:/^stopped$/}).waitFor();
+      assert(await page.locator('#stop').isDisabled());
+      assert(await page.locator('#stop-note').isHidden());
+    }
+    assert.equal(stopRequests,2);assert.deepEqual(errors,[]);
+    console.log('PASS: preparation feedback and Stop for testing/training, pending and stopped states; no real execution requests');
   } finally {
     if(browser)await browser.close();server.kill();await exit;await fs.rm(temporary,{recursive:true,force:true});
   }
