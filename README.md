@@ -76,6 +76,28 @@ Shared native/Docker/scoring infrastructure remains separate from trajectory pol
 - The shared native runner requires explicit executables, isolation tools and frozen runtime/evaluator bindings; importing it cannot start a historical scheduler.
 - The [Docker backend](docs/DOCKER_TRAINING.md) provides shared isolation, zero-model calibration and trusted scoring infrastructure using pinned SWE-TempoC images. The documented batch workflow uses Docker for model stages, optional AST extraction and evaluators; `tempoevo run --execute` remains the sole training entrypoint. New trajectories default to no AST; `prepare_selected.py --with-ast` explicitly enables it.
 
+## Experiment configuration
+
+The reported experiments used the following configuration:
+
+| Setting | Configuration |
+|---|---|
+| Operating system | Ubuntu 20.04.6 |
+| Container runtime | Docker 28.1.1 |
+| Models | `gpt-6.1-sol` and `gpt-5.6-sol` |
+| Reasoning effort | `medium` |
+| Service tier | `priority` |
+| Training-set replay | Up to three repair Actions per task |
+| Testing | One repair Action per task, followed by final scoring by the Gold evaluator |
+| Per-Action budget | Up to 24 LLM requests and 600 seconds |
+| Evaluation experience | Frozen experience libraries |
+
+For these experiments, a senior software engineer (Q. Y. C.) with 16 years of
+development experience reviewed candidate repair experience before approving it
+for reuse. This describes the research workflow; users editing their own library
+through the [VS Code extension](vscode-extension/README.md) save changes directly,
+without a separate approval step.
+
 ## Offline verification
 
 ```sh
