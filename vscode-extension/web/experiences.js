@@ -7,7 +7,7 @@ function fitField(input) {
   input.style.height = 'auto';
   input.style.height = `${input.scrollHeight + input.offsetHeight - input.clientHeight}px`;
 }
-function fitSummaryFields() { for (const input of $('fields').querySelectorAll('#field-title, #field-abstract')) fitField(input); }
+function fitAutoSizeFields() { for (const input of $('fields').querySelectorAll('textarea[data-autosize]')) fitField(input); }
 function mark(value) { dirty = value; $('dirty').textContent = value ? 'Unsaved changes' : ''; }
 function confirmChange(text) {
   return new Promise(resolve => {
@@ -69,9 +69,27 @@ function edit(entry) {
   const checks = document.createElement('div'); checks.className = 'field-grid';
   const metadata = document.createElement('details'), metadataTitle = document.createElement('summary'), metadataHelp = document.createElement('p'), metadataFields = document.createElement('div');
   metadata.className = 'metadata'; metadata.open = !entry; metadataTitle.textContent = 'Labels & mechanisms';
-  metadataHelp.className = 'section-help'; metadataHelp.textContent = 'Choose at least one required mechanism. Hold Ctrl or ⌘ to select multiple items.';
+  metadataHelp.className = 'section-help'; metadataHelp.textContent = 'Check all items that apply. Choose at least one required mechanism.';
   metadataFields.className = 'field-grid'; metadata.append(metadataTitle, metadataHelp, metadataFields);
   for (const [key, title] of fields) {
+    if (['labels', 'requires', 'excludes'].includes(key)) {
+      const group = document.createElement('fieldset'), legend = document.createElement('legend'), optionsList = document.createElement('div');
+      group.id = `field-${key}`; group.className = 'field choice-group'; legend.className = 'field-label'; legend.textContent = title;
+      optionsList.className = 'choice-list'; group.append(legend, optionsList);
+      const options = key === 'labels' ? (taxonomy.codebook || []).map(row => [row.code, `${row.code} · ${row.family}`]) : Object.keys(taxonomy.mechanism_predicates || {}).map(code => [code, code.replaceAll('_', ' ')]);
+      const validate = () => {
+        const first = optionsList.querySelector('input');
+        if (key === 'requires' && first) first.setCustomValidity(optionsList.querySelector('input:checked') ? '' : 'Choose at least one required mechanism.');
+      };
+      for (const [code, text] of options) {
+        const option = document.createElement('label'), checkbox = document.createElement('input'), caption = document.createElement('span');
+        option.className = 'choice'; checkbox.type = 'checkbox'; checkbox.value = code; checkbox.checked = (entry?.record[key] || []).includes(code);
+        caption.textContent = text; option.append(checkbox, caption); optionsList.append(option);
+        checkbox.onchange = () => { validate(); mark(true); };
+        checkbox.addEventListener('invalid', () => { metadata.open = true; });
+      }
+      validate(); metadataFields.append(group); continue;
+    }
     const label = document.createElement('label'), caption = document.createElement('span');
     label.className = `field field-${key}`; caption.className = 'field-label'; caption.textContent = title;
     const symbol = {abstract: '▤', applicability: '✓', event_relation: '→'}[key];
@@ -83,24 +101,15 @@ function edit(entry) {
       const help = document.createElement('span'); help.className = 'field-help';
       help.textContent = 'A short summary that helps retrieve this experience for a future task.'; label.append(help);
     }
-    const array = ['labels', 'requires', 'excludes'].includes(key);
-    const input = document.createElement(array ? 'select' : 'textarea');
-    const autoSize = ['title', 'abstract'].includes(key);
-    if (autoSize) input.rows = 1;
-    if (array) {
-      input.multiple = true; input.size = 5;
-      const options = key === 'labels' ? (taxonomy.codebook || []).map(row => [row.code, `${row.code} · ${row.family}`]) : Object.keys(taxonomy.mechanism_predicates || {}).map(code => [code, code.replaceAll('_', ' ')]);
-      for (const [code, text] of options) { const option = document.createElement('option'); option.value = code; option.textContent = text; input.append(option); }
-    } input.id = `field-${key}`; input.required = !['labels', 'excludes'].includes(key);
-    let value = entry?.record[key];
-    if (key === 'abstract') value = entry?.record.summary?.text;
-    if (array) { for (const option of input.options) option.selected = (value || []).includes(option.value); }
-    else input.value = value || '';
+    const input = document.createElement('textarea');
+    const autoSize = ['title', 'abstract', 'applicability', 'event_relation'].includes(key);
+    if (autoSize) { input.rows = 1; input.dataset.autosize = 'true'; }
+    if (key === 'title') { caption.classList.add('sr-only'); input.placeholder = 'Experience title'; input.title = 'Edit experience title'; }
+    input.id = `field-${key}`; input.required = true;
+    input.value = (key === 'abstract' ? entry?.record.summary?.text : entry?.record[key]) || '';
     input.oninput = () => { mark(true); if (autoSize) fitField(input); };
-    input.addEventListener('invalid', () => { if (array) metadata.open = true; });
     label.append(input);
-    if (array) metadataFields.append(label);
-    else if (['title', 'abstract'].includes(key)) $('fields').append(label);
+    if (['title', 'abstract'].includes(key)) $('fields').append(label);
     else if (['preservation', 'exclusion'].includes(key)) checks.append(label);
     else {
       if (key === 'verification') guidance.append(checks);
@@ -116,12 +125,12 @@ function edit(entry) {
   }
   $('delete').disabled = !entry; render();
   vscode.setState({id: entry?.id});
-  requestAnimationFrame(fitSummaryFields);
+  requestAnimationFrame(fitAutoSizeFields);
 }
 let editorWidth;
 new ResizeObserver(([entry]) => {
   if (entry.contentRect.width === editorWidth) return;
-  editorWidth = entry.contentRect.width; fitSummaryFields();
+  editorWidth = entry.contentRect.width; fitAutoSizeFields();
 }).observe($('fields'));
 $('search').oninput = render; $('category').onchange = render;
 $('new').onclick = async () => { if (await leave()) edit(null); };
@@ -130,7 +139,7 @@ $('editor').onsubmit = event => {
   event.preventDefault(); if (busy) return;
   try {
     const record = {};
-    for (const [key] of fields) record[key] = ['labels', 'requires', 'excludes'].includes(key) ? Array.from($(`field-${key}`).selectedOptions, option => option.value) : $(`field-${key}`).value.trim();
+    for (const [key] of fields) record[key] = ['labels', 'requires', 'excludes'].includes(key) ? Array.from($(`field-${key}`).querySelectorAll('input:checked'), option => option.value) : $(`field-${key}`).value.trim();
     record.expert_questions = selected?.record.summary?.expert_questions || 'None.';
     setBusy(true);
     send('change', {change: {action: 'save', id: selected?.id || `personal-${crypto.randomUUID()}`, revision: selected?.revision ?? null, record}});
@@ -145,7 +154,10 @@ window.addEventListener('message', async event => {
   if (data.type === 'choose-request') { if (await leave()) send('choose'); }
   else if (data.type === 'loaded' || data.type === 'saved') {
     entries = data.entries; taxonomy = data.taxonomy; setBusy(false); categories();
-    if (data.store) $('store').textContent = data.store;
+    if (data.store) {
+      $('store').textContent = data.store.split(/[\\/]/).filter(Boolean).slice(-2).join('/') || data.store;
+      $('store').title = data.store;
+    }
     const id = data.type === 'saved' ? data.id : selected?.id || vscode.getState()?.id;
     edit(entries.find(e => e.id === id) || entries[0] || null);
     message(data.type === 'saved' ? 'Saved. Future uses read the current content; existing run snapshots stay unchanged.' : `${entries.length} experiences`);
