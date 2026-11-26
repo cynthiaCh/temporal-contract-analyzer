@@ -8,7 +8,9 @@ const {chromium} = require('playwright');
   try {
     const page = await browser.newPage();
     const errors = []; page.on('pageerror', e => errors.push(e.message));
-    await page.setContent('<header><button id="choose"></button><button id="reload"></button><button id="history"></button><span id="store"></span></header><p id="message"></p><input id="search"><select id="category"></select><button id="new">New</button><nav id="list"></nav><form id="editor"><p id="identity"></p><p id="notice"></p><div id="fields"></div><button id="save" type="submit">Save</button><button id="delete" type="button">Delete</button><span id="dirty"></span></form><div id="history-list" hidden></div>');
+    const template = await fs.readFile(path.join(__dirname, '../web/experiences.html'), 'utf8');
+    await page.setContent(template.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/, '').replace(/<link[^>]*>/, '').replace(/<script[^>]*>[\s\S]*?<\/script>/, ''));
+    await page.addStyleTag({content: await fs.readFile(path.join(__dirname, '../web/experiences.css'), 'utf8')});
     await page.evaluate(() => { window.sent = []; window.acquireVsCodeApi = () => ({postMessage: m => window.sent.push(m), setState: () => {}, getState: () => null}); });
     await page.addScriptTag({content: await fs.readFile(path.join(__dirname, '../web/experiences.js'), 'utf8')});
     const record = {title: '<b>Entry identity</b>', labels: ['I'], requires: ['entry_snapshot'], excludes: [], summary: {text: 'Capture identity.'}, review: {decision: 'accept'}};
@@ -32,7 +34,37 @@ const {chromium} = require('playwright');
     await page.evaluate(record => window.dispatchEvent(new MessageEvent('message', {data: {type: 'history', history: [{id: 'entry', at: '2026-11-25', action: 'save', category: 'Personal', record}]}})), record);
     await page.locator('#history-list button').click();
     assert.equal(await page.locator('#dirty').textContent(), 'Unsaved changes');
+    await page.locator('#search').fill('');
+    await page.locator('#list button').click();
+    await page.getByRole('button', {name: 'Continue', exact: true}).click();
+    assert.equal(await page.locator('.metadata').getAttribute('open'), null);
+    await page.getByText('Labels & mechanisms', {exact: true}).click();
+    await page.locator('#field-requires').selectOption([]);
+    await page.getByText('Labels & mechanisms', {exact: true}).click();
+    await page.locator('#save').click();
+    assert.equal(await page.locator('#field-requires').isVisible(), true, 'Invalid required fields must expand');
+    await page.locator('#field-requires').selectOption('entry_snapshot');
+    await page.evaluate(data => window.dispatchEvent(new MessageEvent('message', {data})), data);
+    await page.evaluate(() => window.dispatchEvent(new MessageEvent('message', {data: {type: 'error', message: 'Library changed outside the editor.'}})));
+    assert.equal(await page.locator('#message').getAttribute('class'), 'error');
+    await page.evaluate(data => window.dispatchEvent(new MessageEvent('message', {data})), data);
+    const themes = {
+      dark: {'editor-background': '#1f1f1f', 'sideBar-background': '#181818', foreground: '#cccccc', descriptionForeground: '#9d9d9d', 'panel-border': '#333333', 'input-background': '#313131', 'input-foreground': '#cccccc', 'button-background': '#0078d4', 'button-foreground': '#ffffff', 'list-inactiveSelectionBackground': '#37373d', focusBorder: '#0078d4'},
+      light: {'editor-background': '#ffffff', 'sideBar-background': '#f8f8f8', foreground: '#3b3b3b', descriptionForeground: '#616161', 'panel-border': '#e5e5e5', 'input-background': '#ffffff', 'input-foreground': '#3b3b3b', 'button-background': '#0078d4', 'button-foreground': '#ffffff', 'button-secondaryBackground': '#e5e5e5', 'list-inactiveSelectionBackground': '#e4e6f1', focusBorder: '#005fb8', 'badge-background': '#e5e5e5', 'badge-foreground': '#3b3b3b', 'textLink-foreground': '#005fb8'},
+      'high-contrast': {'editor-background': '#000000', 'sideBar-background': '#000000', foreground: '#ffffff', descriptionForeground: '#ffffff', 'panel-border': '#6fc3df', 'input-background': '#000000', 'input-foreground': '#ffffff', 'button-background': '#000000', 'button-foreground': '#ffffff', 'list-inactiveSelectionBackground': '#000000', focusBorder: '#f38518', contrastActiveBorder: '#f38518'},
+    };
+    for (const [theme, tokens] of Object.entries(themes)) {
+      await page.evaluate(({theme, tokens}) => {
+        document.body.className = `vscode-${theme}`; document.documentElement.removeAttribute('style');
+        for (const [key, value] of Object.entries(tokens)) document.documentElement.style.setProperty(`--vscode-${key}`, value);
+      }, {theme, tokens});
+      for (const width of [1280, 800, 390]) {
+        await page.setViewportSize({width, height: 900});
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${theme} at ${width}px must not overflow`);
+        assert.equal(await page.locator('#save').isVisible(), true);
+      }
+    }
     assert.deepEqual(errors, []);
-    console.log('PASS: owner editor fields, safe text, dirty guard, direct save, filtering, history restore');
+    console.log('PASS: actual editor template, safe text, dirty guard, save, filtering, history, required-field expansion and dark/light/high-contrast responsive layouts');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

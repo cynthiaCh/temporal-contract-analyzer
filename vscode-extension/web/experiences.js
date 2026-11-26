@@ -19,7 +19,7 @@ function confirmChange(text) {
 async function leave() { return !busy && (!dirty || await confirmChange('Discard unsaved changes?')); }
 function send(type, extra = {}) { vscode.postMessage({type, ...extra}); }
 function setBusy(value) { busy = value; $('save').disabled = value; for (const field of $('fields').querySelectorAll('input, textarea, select')) field.disabled = value; }
-function message(text) { $('message').textContent = text; }
+function message(text, error = false) { $('message').textContent = text; $('message').classList.toggle('error', error); }
 function categories() {
   const before = $('category').value;
   $('category').replaceChildren();
@@ -31,27 +31,52 @@ function categories() {
 function render() {
   const query = $('search').value.toLowerCase(), category = $('category').value;
   $('list').replaceChildren();
-  for (const entry of entries.filter(e => (!category || e.category === category) && JSON.stringify(e.record).toLowerCase().includes(query))) {
-    const button = document.createElement('button'); button.textContent = entry.record.title; button.title = entry.category;
-    button.className = entry.id === selected?.id ? 'selected' : '';
+  const matches = entries.filter(e => (!category || e.category === category) && JSON.stringify(e.record).toLowerCase().includes(query));
+  $('count').textContent = String(entries.length);
+  for (const entry of matches) {
+    const button = document.createElement('button'); button.title = entry.record.title;
+    button.className = `entry${entry.id === selected?.id ? ' selected' : ''}`;
+    button.setAttribute('aria-current', entry.id === selected?.id ? 'true' : 'false');
+    const title = document.createElement('span'), preview = document.createElement('span'), meta = document.createElement('span');
+    title.className = 'entry-title'; title.textContent = entry.record.title;
+    preview.className = 'entry-preview'; preview.textContent = entry.record.summary?.text || '';
+    meta.className = 'entry-meta'; meta.textContent = [entry.category, (entry.record.labels || []).join(' · ')].filter(Boolean).join(' / ');
+    button.append(title, preview, meta);
     button.onclick = async () => { if (await leave()) edit(entry); }; $('list').append(button);
+  }
+  if (!matches.length) {
+    const empty = document.createElement('div'), title = document.createElement('strong'), hint = document.createElement('span');
+    empty.className = 'empty-state';
+    title.textContent = entries.length ? 'No matching experiences' : 'A place for what you learn';
+    hint.textContent = entries.length ? 'Try another search or category.' : 'Choose your library, then add your first experience.';
+    empty.append(title, hint); $('list').append(empty);
   }
 }
 function edit(entry) {
   selected = entry; mark(false); $('history-list').hidden = true; $('editor').hidden = false;
+  $('editor-kind').textContent = entry ? 'EDIT EXPERIENCE' : 'NEW EXPERIENCE';
   $('identity').textContent = entry ? `${entry.id} · ${entry.category}` : 'New personal experience';
   $('notice').textContent = entry?.record.pending_revision ? 'An automatic revision suggestion exists. Saving here replaces it with your content.' : entry && entry.record.review?.decision !== 'accept' ? 'Suggestion: save to add this content to your usable library.' : 'Save applies your content directly. No review is required.';
   $('fields').replaceChildren();
-  if (entry) {
-    const source = document.createElement('details'), title = document.createElement('summary'), body = document.createElement('pre');
-    title.textContent = 'Source information';
-    body.textContent = JSON.stringify({file: entry.file, evidence: entry.record.evidence_ref || null, origin: entry.record.learning?.origin || null}, null, 2);
-    source.append(title, body); $('fields').append(source);
-  }
+  const guidance = document.createElement('section'), guidanceTitle = document.createElement('h3'), guidanceHelp = document.createElement('p');
+  guidance.className = 'field-section'; guidanceTitle.textContent = 'Guidance';
+  guidanceHelp.className = 'section-help'; guidanceHelp.textContent = 'When to use this experience, what to preserve, and how to check it.';
+  guidance.append(guidanceTitle, guidanceHelp);
+  const checks = document.createElement('div'); checks.className = 'field-grid';
+  const metadata = document.createElement('details'), metadataTitle = document.createElement('summary'), metadataHelp = document.createElement('p'), metadataFields = document.createElement('div');
+  metadata.className = 'metadata'; metadata.open = !entry; metadataTitle.textContent = 'Labels & mechanisms';
+  metadataHelp.className = 'section-help'; metadataHelp.textContent = 'Choose at least one required mechanism. Hold Ctrl or ⌘ to select multiple items.';
+  metadataFields.className = 'field-grid'; metadata.append(metadataTitle, metadataHelp, metadataFields);
   for (const [key, title] of fields) {
-    const label = document.createElement('label'); label.textContent = title;
+    const label = document.createElement('label'), caption = document.createElement('span');
+    label.className = 'field'; caption.className = 'field-label'; caption.textContent = title; label.append(caption);
+    if (key === 'abstract') {
+      const help = document.createElement('span'); help.className = 'field-help';
+      help.textContent = 'A short summary that helps retrieve this experience for a future task.'; label.append(help);
+    }
     const array = ['labels', 'requires', 'excludes'].includes(key);
-    const input = document.createElement(array ? 'select' : key === 'title' ? 'input' : 'textarea');
+    const input = document.createElement(array ? 'select' : 'textarea');
+    if (key === 'title') input.rows = 3;
     if (array) {
       input.multiple = true; input.size = 5;
       const options = key === 'labels' ? (taxonomy.codebook || []).map(row => [row.code, `${row.code} · ${row.family}`]) : Object.keys(taxonomy.mechanism_predicates || {}).map(code => [code, code.replaceAll('_', ' ')]);
@@ -61,7 +86,23 @@ function edit(entry) {
     if (key === 'abstract') value = entry?.record.summary?.text;
     if (array) { for (const option of input.options) option.selected = (value || []).includes(option.value); }
     else input.value = value || '';
-    input.oninput = () => mark(true); label.append(input); $('fields').append(label);
+    input.oninput = () => mark(true);
+    input.addEventListener('invalid', () => { if (array) metadata.open = true; });
+    label.append(input);
+    if (array) metadataFields.append(label);
+    else if (['title', 'abstract'].includes(key)) $('fields').append(label);
+    else if (['preservation', 'exclusion'].includes(key)) checks.append(label);
+    else {
+      if (key === 'verification') guidance.append(checks);
+      guidance.append(label);
+    }
+  }
+  $('fields').append(guidance, metadata);
+  if (entry) {
+    const source = document.createElement('details'), title = document.createElement('summary'), body = document.createElement('pre');
+    source.className = 'source-info'; title.textContent = 'Source information';
+    body.textContent = JSON.stringify({file: entry.file, evidence: entry.record.evidence_ref || null, origin: entry.record.learning?.origin || null}, null, 2);
+    source.append(title, body); $('fields').append(source);
   }
   $('delete').disabled = !entry; render();
   vscode.setState({id: entry?.id});
@@ -93,11 +134,16 @@ window.addEventListener('message', async event => {
     edit(entries.find(e => e.id === id) || entries[0] || null);
     message(data.type === 'saved' ? 'Saved. Future uses read the current content; existing run snapshots stay unchanged.' : `${entries.length} experiences`);
   } else if (data.type === 'select') { if (await leave()) edit(entries.find(e => e.id === data.id) || null); }
-  else if (data.type === 'error') { setBusy(false); message(data.message); }
+  else if (data.type === 'error') { setBusy(false); message(data.message, true); }
   else if (data.type === 'history') {
     $('editor').hidden = true; $('history-list').hidden = false; $('history-list').replaceChildren();
+    const title = document.createElement('h2'), help = document.createElement('p');
+    title.textContent = 'Library history'; help.className = 'section-help'; help.textContent = 'Select a saved version to inspect it. Save to restore its content.';
+    $('history-list').append(title, help);
     for (const row of data.history.sort((a,b) => b.at.localeCompare(a.at))) {
-      const button = document.createElement('button'); button.textContent = `${row.at} · ${row.action} · ${row.record.title}`;
+      const button = document.createElement('button'), stamp = document.createElement('small'), title = document.createElement('span');
+      button.className = 'history-row'; stamp.textContent = `${row.at} · ${row.action}`; title.textContent = row.record.title;
+      button.append(stamp, title);
       button.onclick = () => {
         const current = entries.find(e => e.id === row.id);
         edit({...row, revision: current?.revision ?? null}); mark(true);

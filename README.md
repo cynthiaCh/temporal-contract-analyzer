@@ -144,8 +144,5 @@ python3 tools/generate_bootstrap_indices.py --reference case-results.csv \
   --label-column passed --output-dir /tmp/tempoevo-bootstrap
 ```
 
-New runs require fresh V13 roots. Historical results and decisions stay unchanged.
 The sole current split is [cases/split.json](cases/split.json): 70 development
-cases and 30 test cases, with no overlapping case IDs. Reserved test IDs cannot
-run learning. The cases have historical exposure and shared source mechanisms;
-this split is not certified unseen.
+cases and 30 test cases, with no overlapping case IDs. 

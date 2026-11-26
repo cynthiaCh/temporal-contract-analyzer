@@ -1,3 +1,10 @@
+## 0.3.1
+
+- Refresh the experience editor with a compact library list, summary previews and grouped guidance fields.
+- Fold labels, mechanisms and source details away from the main writing area; expand missing required fields during validation.
+- Follow VS Code theme colors and adapt to narrow editor groups with independently scrolling list and editor panes.
+- Keep save actions visible and allow long experience titles to wrap while editing.
+
 ## 0.3.0
 
 - Replace the scanner entrypoint with a local experience library editor.

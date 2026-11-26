@@ -2,6 +2,7 @@
 const vscode = require('vscode');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 const {invoke} = require('./runner');
 
 function activate(context) {
@@ -48,7 +49,9 @@ function activate(context) {
     const nonce = crypto.randomBytes(18).toString('base64');
     const script = panel.webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, 'web/experiences.js')));
     const style = panel.webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, 'web/experiences.css')));
-    panel.webview.html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${panel.webview.cspSource}; script-src 'nonce-${nonce}';"><link rel="stylesheet" href="${style}"></head><body><header><strong>My experiences</strong><button id="choose">Choose library</button><button id="reload">Reload</button><button id="history">History</button><span id="store"></span></header><p id="message" role="status"></p><main><aside><input id="search" placeholder="Search experiences" aria-label="Search experiences"><select id="category" aria-label="Category"></select><button id="new">New experience</button><nav id="list"></nav></aside><section><form id="editor"><p id="identity"></p><p id="notice"></p><div id="fields"></div><footer><button id="save" type="submit">Save</button><button id="delete" type="button">Delete</button><span id="dirty"></span></footer></form><div id="history-list" hidden></div></section></main><script nonce="${nonce}" src="${script}"></script></body></html>`;
+    const template = fs.readFileSync(path.join(context.extensionPath, 'web/experiences.html'), 'utf8');
+    panel.webview.html = template.replace(/\{\{(cspSource|nonce|style|script)\}\}/g,
+      (_, key) => ({cspSource: panel.webview.cspSource, nonce, style, script})[key]);
     current.onDidDispose(() => { if (panel === current) panel = undefined; });
     current.webview.onDidReceiveMessage(async message => {
       try {
