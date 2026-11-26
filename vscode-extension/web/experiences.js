@@ -69,7 +69,12 @@ function edit(entry) {
   metadataFields.className = 'field-grid'; metadata.append(metadataTitle, metadataHelp, metadataFields);
   for (const [key, title] of fields) {
     const label = document.createElement('label'), caption = document.createElement('span');
-    label.className = 'field'; caption.className = 'field-label'; caption.textContent = title; label.append(caption);
+    label.className = `field field-${key}`; caption.className = 'field-label'; caption.textContent = title;
+    const symbol = {abstract: '▤', applicability: '✓', event_relation: '→'}[key];
+    if (symbol) {
+      const icon = document.createElement('span'); icon.className = 'field-icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = symbol; caption.prepend(icon);
+    }
+    label.append(caption);
     if (key === 'abstract') {
       const help = document.createElement('span'); help.className = 'field-help';
       help.textContent = 'A short summary that helps retrieve this experience for a future task.'; label.append(help);
