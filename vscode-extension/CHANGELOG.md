@@ -1,3 +1,11 @@
+## 0.3.4
+
+- Highlight the selected experience with theme selection colors, a side marker and a clearer keyboard focus outline.
+
+## 0.3.3
+
+- Fix stored experience titles directly and remove Candidate display overrides and review badges.
+
 ## 0.3.1
 
 - Refresh the experience editor with a compact library list, summary previews and grouped guidance fields.

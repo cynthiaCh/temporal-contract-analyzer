@@ -365,7 +365,7 @@ def publish_candidate(path, record):
                 if target is None or _bundle(target[0],target[1])[0]['sha256']!=code:raise EvidenceError('Merge target changed')
         found=next(((file,value,item) for file,value in values for item in value['experiences'] if item['id']==primary),None)
         if primary and found is None:raise EvidenceError('Stable update target not found')
-        item=dict(title=found[2]['title'] if found else 'Candidate: '+experience['rules'][0]['body'].splitlines()[0][:120],
+        item=dict(title=found[2]['title'] if found else experience['rules'][0]['body'].splitlines()[0][:120],
                   labels=experience['labels'],requires=experience['requires'],excludes=experience['excludes'])
         for key,_ in SECTIONS:item[key]='\n\n'.join(r['body'] for r in experience['rules'] if r['category']==key) or 'Not specified in this candidate.'
         if experience.get('limitations'):item['exclusion']+='\n\nCandidate limitations:\n'+'\n'.join('- '+v for v in experience['limitations'])
