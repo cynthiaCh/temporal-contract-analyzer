@@ -25,6 +25,13 @@ class IncrementalSplitTests(unittest.TestCase):
   with self.assertRaises(EvidenceError):split.enforce(cfg)
   self.selection.write_text('changed')
   with self.assertRaises(EvidenceError):split.enforce(self.config('test0','testing'))
+ def test_registry_edits_ignore_legacy_digest(self):
+  cfg=self.config('test0','testing');cfg['evaluation_split']=split.enforce(cfg)
+  self.assertNotIn('registry_sha256',cfg['evaluation_split'])
+  cfg['evaluation_split']['registry_sha256']=hashlib.sha256(self.registry.read_bytes()).hexdigest()
+  self.value['training_case_ids'].reverse()
+  self.registry.write_text(json.dumps(self.value,indent=2)+'\n')
+  self.assertEqual(split.enforce(cfg)['role'],'testing')
  def test_duplicate_ids_or_wrong_denominator_rejected(self):
   self.value['testing_case_ids'][0]='train0';self.write()
   with self.assertRaises(EvidenceError):split.enforce(self.config('train0','learning'))

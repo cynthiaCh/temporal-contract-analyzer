@@ -1,5 +1,7 @@
 # TempoEvo
 
+The name **TempoEvo** combines **temporal** and **evolution**. “Temporal” refers to timing and the order of events in a program. “Evolution” refers to learning from past tasks and reusing those lessons in future tasks.
+
 GitHub repository: [cynthiaCh/temporal-contract-analyzer](https://github.com/cynthiaCh/temporal-contract-analyzer).
 
 TempoEvo combines temporal-contract analysis, contract-guided repair and reusable experience. Its Temporal Contract Analyzer component extracts syntax facts, source locations and conservative review hints for JavaScript, TypeScript, Vue and Python. A parsed report is not a proof of a defect or of safety.

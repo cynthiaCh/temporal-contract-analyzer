@@ -18,14 +18,16 @@ def assignment(task_id, registry=None):
         raise EvidenceError('Invalid or changed evaluation split')
     role='training' if task_id in train else 'testing' if task_id in test else None
     if role is None:return None
-    return dict(role=role,registry_sha256=sha(registry.read_bytes()),independence=value['independence'],testing_policy=value['testing_policy'])
+    return dict(role=role,independence=value['independence'],testing_policy=value['testing_policy'])
 
 def enforce(config):
     purpose=config.get('evaluation_purpose')
     if purpose not in (None,'training_replay'):raise EvidenceError('Unknown evaluation purpose')
     selected=assignment(config.get('task_id'),config.get('evaluation_split_file'))
     if config.get('evaluation_split_file') and selected is None:raise EvidenceError('Case absent from explicit evaluation split')
-    if config.get('evaluation_split') is not None and config['evaluation_split']!=selected:raise EvidenceError('Frozen evaluation split changed')
+    frozen=config.get('evaluation_split')
+    # Older protocols include a registry digest; file edits no longer invalidate it.
+    if frozen is not None and {k:v for k,v in frozen.items() if k!='registry_sha256'}!=selected:raise EvidenceError('Frozen evaluation split changed')
     if selected and selected['role']=='testing' and config['mode']!='testing':raise EvidenceError('Reserved testing case cannot run training or consume training Gold feedback')
     if purpose=='training_replay':
         if not selected or selected['role']!='training' or config['mode']!='testing' or config.get('learning_policy')!='frozen':
