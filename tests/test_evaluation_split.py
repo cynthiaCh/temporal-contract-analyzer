@@ -20,7 +20,7 @@ class SplitTests(unittest.TestCase):
         with self.assertRaises(EvidenceError):self.prepare(task_id=TEST,mode='testing',learning_policy='online',online_memory=str(self.root/'pool'))
         with self.assertRaises(EvidenceError):self.prepare(task_id=TRAIN,mode='testing')
         self.assertEqual(assignment(TEST)['role'],'testing')
-        self.assertTrue(assignment(TEST)['independence']['historical_outcome_selected'])
+        self.assertNotIn('registry_sha256',assignment(TEST))
 
     def test_exposed_training_replay_is_final_only_and_keeps_training_role(self):
         loop=self.prepare(task_id=TRAIN,mode='testing',condition='baseline',evaluation_purpose='training_replay',memory_snapshot=approval.freeze(self.store),visible_evaluator=None,gold_evaluator=dict(command=['synthetic-gold']))

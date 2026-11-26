@@ -32,6 +32,14 @@ class IncrementalSplitTests(unittest.TestCase):
   self.value['training_case_ids'].reverse()
   self.registry.write_text(json.dumps(self.value,indent=2)+'\n')
   self.assertEqual(split.enforce(cfg)['role'],'testing')
+ def test_missing_independence_supports_new_and_prepared_runs(self):
+  cfg=self.config('test0','testing');cfg['evaluation_split']=split.enforce(cfg)
+  cfg['evaluation_split']['registry_sha256']='legacy digest'
+  del self.value['independence'];self.write()
+  self.assertNotIn('independence',split.enforce(cfg))
+  self.assertEqual(split.enforce(self.config('train0','learning'))['role'],'training')
+  self.value['testing_policy']={'gold':'changed'};self.write()
+  with self.assertRaises(EvidenceError):split.enforce(cfg)
  def test_duplicate_ids_or_wrong_denominator_rejected(self):
   self.value['testing_case_ids'][0]='train0';self.write()
   with self.assertRaises(EvidenceError):split.enforce(self.config('train0','learning'))
