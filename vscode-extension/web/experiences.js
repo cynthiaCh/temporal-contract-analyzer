@@ -3,6 +3,11 @@ const vscode = acquireVsCodeApi();
 const $ = id => document.getElementById(id);
 let entries = [], taxonomy = {}, selected, dirty = false, busy = false;
 const fields = [['title', 'Title'], ['abstract', 'Abstract (used for retrieval)'], ['applicability', 'Applicability conditions'], ['event_relation', 'Recommendation'], ['preservation', 'Preservation requirements'], ['exclusion', 'Exclusions'], ['verification', 'Verification'], ['labels', 'Obligation labels'], ['requires', 'Required mechanisms'], ['excludes', 'Excluded mechanisms']];
+function fitField(input) {
+  input.style.height = 'auto';
+  input.style.height = `${input.scrollHeight + input.offsetHeight - input.clientHeight}px`;
+}
+function fitSummaryFields() { for (const input of $('fields').querySelectorAll('#field-title, #field-abstract')) fitField(input); }
 function mark(value) { dirty = value; $('dirty').textContent = value ? 'Unsaved changes' : ''; }
 function confirmChange(text) {
   return new Promise(resolve => {
@@ -54,9 +59,8 @@ function render() {
 }
 function edit(entry) {
   selected = entry; mark(false); $('history-list').hidden = true; $('editor').hidden = false;
-  $('editor-kind').textContent = entry ? 'EDIT EXPERIENCE' : 'NEW EXPERIENCE';
-  $('identity').textContent = entry ? `${entry.id} · ${entry.category}` : 'New personal experience';
-  $('notice').textContent = entry?.record.pending_revision ? 'An automatic revision suggestion exists. Saving here replaces it with your content.' : entry && entry.record.review?.decision !== 'accept' ? 'Suggestion: save to add this content to your usable library.' : 'Save applies your content directly. No review is required.';
+  $('notice').textContent = entry?.record.pending_revision ? 'An automatic revision suggestion exists. Saving here replaces it with your content.' : entry && entry.record.review?.decision !== 'accept' ? 'Suggestion: save to add this content to your usable library.' : '';
+  $('notice').hidden = !$('notice').textContent;
   $('fields').replaceChildren();
   const guidance = document.createElement('section'), guidanceTitle = document.createElement('h3'), guidanceHelp = document.createElement('p');
   guidance.className = 'field-section'; guidanceTitle.textContent = 'Guidance';
@@ -81,7 +85,8 @@ function edit(entry) {
     }
     const array = ['labels', 'requires', 'excludes'].includes(key);
     const input = document.createElement(array ? 'select' : 'textarea');
-    if (key === 'title') input.rows = 3;
+    const autoSize = ['title', 'abstract'].includes(key);
+    if (autoSize) input.rows = 1;
     if (array) {
       input.multiple = true; input.size = 5;
       const options = key === 'labels' ? (taxonomy.codebook || []).map(row => [row.code, `${row.code} · ${row.family}`]) : Object.keys(taxonomy.mechanism_predicates || {}).map(code => [code, code.replaceAll('_', ' ')]);
@@ -91,7 +96,7 @@ function edit(entry) {
     if (key === 'abstract') value = entry?.record.summary?.text;
     if (array) { for (const option of input.options) option.selected = (value || []).includes(option.value); }
     else input.value = value || '';
-    input.oninput = () => mark(true);
+    input.oninput = () => { mark(true); if (autoSize) fitField(input); };
     input.addEventListener('invalid', () => { if (array) metadata.open = true; });
     label.append(input);
     if (array) metadataFields.append(label);
@@ -106,12 +111,18 @@ function edit(entry) {
   if (entry) {
     const source = document.createElement('details'), title = document.createElement('summary'), body = document.createElement('pre');
     source.className = 'source-info'; title.textContent = 'Source information';
-    body.textContent = JSON.stringify({file: entry.file, evidence: entry.record.evidence_ref || null, origin: entry.record.learning?.origin || null}, null, 2);
+    body.textContent = JSON.stringify({id: entry.id, category: entry.category, file: entry.file, evidence: entry.record.evidence_ref || null, origin: entry.record.learning?.origin || null}, null, 2);
     source.append(title, body); $('fields').append(source);
   }
   $('delete').disabled = !entry; render();
   vscode.setState({id: entry?.id});
+  requestAnimationFrame(fitSummaryFields);
 }
+let editorWidth;
+new ResizeObserver(([entry]) => {
+  if (entry.contentRect.width === editorWidth) return;
+  editorWidth = entry.contentRect.width; fitSummaryFields();
+}).observe($('fields'));
 $('search').oninput = render; $('category').onchange = render;
 $('new').onclick = async () => { if (await leave()) edit(null); };
 for (const type of ['choose', 'reload', 'history']) $(type).onclick = async () => { if (await leave()) send(type); };
