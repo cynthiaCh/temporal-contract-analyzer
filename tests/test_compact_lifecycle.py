@@ -75,6 +75,21 @@ class CompactLifecycleTests(unittest.TestCase):
         self.assertEqual(self.ids(),{'entry-binding','v2'})
         self.assertEqual(view['issues'][0]['code'],'stale_target')
 
+    def test_new_publication_requires_and_preserves_a_written_title(self):
+        target=memory.records(self.path)[0]
+        experience=dict(labels=target['labels'],requires=target['requires'],excludes=target['excludes'],
+                        rules=[dict(category=r['category'],body=r['body']) for r in target['rules']],limitations=[])
+        record=dict(experience=experience,reflection_update=dict(operation='new',target_sha256s=[]),related_experiences=[])
+        before=self.path.read_bytes()
+        with self.assertRaisesRegex(EvidenceError,'descriptive experience title'):
+            compact.publish_candidate(self.path,record)
+        self.assertEqual(self.path.read_bytes(),before)
+        record['title']='Bind accepted work before callbacks'
+        compact.publish_candidate(self.path,record)
+        item=next(i for i in compact.load(self.path)['experiences'] if i['id']!='entry-binding')
+        self.assertEqual(item['title'],record['title'])
+        self.assertNotEqual(item['title'],experience['rules'][0]['body'])
+
     def test_new_publication_binds_target_and_prevents_stale_branch_acceptance(self):
         target=memory.records(self.path)[0]
         exp=dict(labels=target['labels'],requires=target['requires'],excludes=target['excludes'],

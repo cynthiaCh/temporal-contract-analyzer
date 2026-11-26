@@ -117,7 +117,8 @@ CONTRIBUTION_SCHEMA=obj_schema(dict(experience_sha256=STR,rule_id=STR,rule_quote
     decision=dict(type='string',enum=['adopted','misleading','rule_error']),
     before=obj_schema(dict(file=STR,quote=STR)),after=obj_schema(dict(file=STR,quote=STR)),
     supporting_evidence=EVIDENCE,reason=STR))
-REFLECTION_SCHEMA=obj_schema(dict(experience=EXPERIENCE_SCHEMA,update=REFLECTION_UPDATE_SCHEMA,
+REFLECTION_SCHEMA=obj_schema(dict(title=dict(type='string',minLength=1,maxLength=120),
+    experience=EXPERIENCE_SCHEMA,update=REFLECTION_UPDATE_SCHEMA,
     abstract=dict(type='string',minLength=1,maxLength=1000),
     contributions=dict(type='array',maxItems=3,items=CONTRIBUTION_SCHEMA)))
 
@@ -750,6 +751,7 @@ class Trajectory:
                             'Extract only a reusable correction, not routine syntax/import/path fixes. Classify implementation-only work as implementation_gap. '
                             'Prefer evidence or an in-place revision over new entries; merge only explicitly overlapping guidance. '
                             'Use actual failed AND successful supporting_attempts. Preserve still-applicable obligations and distinguish unknown causes. '
+                            'Write a concise English title naming the reusable action and its key boundary, not an applicability sentence or a truncated excerpt. '
                             'Write a concise English abstract within 1000 characters, covering applicability, recommendation, preservation and exclusions. '
                             'Retain material conditions, negations, operation order and exceptions; do not turn conditional settlement into a universal deadline. Omit historical outcomes and repeated context. '
                             'For each contribution, quote an exact delivered rule, before code from any failed attempt and after code retained in the final successful attempt, plus original TASK/source evidence. For pure additions or deletions, include adjacent context on the unchanged side of the same edit. '
@@ -774,7 +776,7 @@ class Trajectory:
                             self.save('candidate-pool/success.json',dict(status='awaiting_content_review',origin='success',
                                 task=p['task'],evidence=evidence,training_accepted=True,final_training_acceptance=self.state()['final_acceptance'],
                                 source_sha256=p['source_sha256'],initial_contract=read(self.root/'initial-contract.json') if p['condition']!='baseline' else None,
-                                final_contract=self.state()['contract'],trajectory=state['attempts'],experience=learned['experience'],abstract=learned['abstract'],
+                                final_contract=self.state()['contract'],trajectory=state['attempts'],title=learned['title'],experience=learned['experience'],abstract=learned['abstract'],
                                 learning=metadata,reflection_update=update,related_experiences=related,effectiveness_verified=False))
                             self._enqueue_online(p,'success')
                     except Exception as error:
@@ -823,7 +825,7 @@ class Trajectory:
         self.save('expert-summary-task.json',task)
         self.status('awaiting_content_review')
         self.save('candidate-pool/expert.json',dict(status='awaiting_content_review',origin='expert_failure',summary=task,
-            experience=summary['experience'],reflection_update=update,related_experiences=task.get('related_experiences',[]),effectiveness_verified=False))
+            title=summary.get('title'),experience=summary['experience'],reflection_update=update,related_experiences=task.get('related_experiences',[]),effectiveness_verified=False))
         self._enqueue_online(p,'expert')
         return task
 

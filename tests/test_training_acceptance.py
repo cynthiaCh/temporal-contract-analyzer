@@ -326,7 +326,7 @@ class CompactPublicationTests(unittest.TestCase):
     def test_failure_summary_publishes_pending_without_claiming_success(self):
         snapshot=approval.freeze(self.store);loop=self.prepare()
         self.assertEqual(loop.run(fixtures.Backend(99),execute=True)['status'],'awaiting_expert_summary')
-        summary=dict(expert='SYNTHETIC_HUMAN',confirmed_conclusions=[],unverified_hypotheses=[],
+        summary=dict(title='Close owned sources before reporting completion',expert='SYNTHETIC_HUMAN',confirmed_conclusions=[],unverified_hypotheses=[],
             unresolved_behaviors=['Still failing'],boundaries_counterexamples=[],suggested_checks=[],
             experience=dict(labels=['I'],requires=['entry_snapshot'],excludes=[],
                 rules=[dict(category='verification',body='Check retained selection identity.')],limitations=['Not a successful repair']))

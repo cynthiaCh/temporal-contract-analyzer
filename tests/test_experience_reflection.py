@@ -102,7 +102,7 @@ class ReflectionTests(unittest.TestCase):
                 result=super().execute(kind,payload,model,limits,directory)
                 if kind=='extract':
                     self.asserted=payload['related_experiences']
-                    result['output']=dict(experience=exp,update=dict(update,supporting_attempts=[1,2]),abstract='Preserve accepted identity.',contributions=[])
+                    result['output']=dict(title='Preserve accepted identity across callback reentry',experience=exp,update=dict(update,supporting_attempts=[1,2]),abstract='Preserve accepted identity.',contributions=[])
                 return result
         loop=self.prepare();backend=Backend(2)
         with patch('temporal_contract_analyzer.experience_reflection.related',return_value=[a]):state=loop.run(backend,execute=True)

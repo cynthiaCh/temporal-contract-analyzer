@@ -48,7 +48,9 @@ selects once. Cumulative task-local reflections are fallible, not approved memor
 
 First-Action success skips extraction. Confirmed failure followed by success can
 produce a reusable correction; routine implementation-only fixes add no guidance.
-Extraction can fail or yield no publishable experience. Three unsuccessful Actions
+Extraction can fail or yield no publishable experience. New proposals require a separately
+written `title` naming the reusable action and its key boundary (at most 120 characters);
+expert summaries must also supply it before publication. Titles are not extracted from rule text. Three unsuccessful Actions
 request a real expert summary; a smaller Action budget does not reach that branch.
 
 Prefer in-place updates under stable IDs; content and Abstract changes need renewed

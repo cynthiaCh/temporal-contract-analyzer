@@ -46,7 +46,7 @@ class Backend:
         else:
             sources=deepcopy(payload['candidate_sources']);n=int(sources['main.py'].split('=')[1])+1;sources['main.py']='value = '+str(n)+'\n'
             return dict(valid=True,requests=1,tokens=dict(total_tokens=10),model=MODEL,candidate_sources=sources)
-        if stage=='extract':out=dict(experience=out,abstract='Preserve accepted identity across callback reentry.',contributions=[],update=dict(operation='new',target_sha256s=[],reason='Synthetic new rule.',change_summary=['Independent synthetic increment.'],failure_attribution='experience_gap',supporting_attempts=[a['number'] for a in payload['trajectory']]))
+        if stage=='extract':out=dict(title='Preserve accepted identity across callback reentry',experience=out,abstract='Preserve accepted identity across callback reentry.',contributions=[],update=dict(operation='new',target_sha256s=[],reason='Synthetic new rule.',change_summary=['Independent synthetic increment.'],failure_attribution='experience_gap',supporting_attempts=[a['number'] for a in payload['trajectory']]))
         return dict(valid=True,requests=1,tokens=dict(total_tokens=10),model=MODEL,output=out)
     def evaluate(self,stage,payload,directory):
         n=int((Path(payload['candidate'])/'main.py').read_text().split('=')[1])
@@ -271,7 +271,7 @@ class V4Tests(unittest.TestCase):
 
     def test_human_summary_remains_failure_candidate_not_success(self):
         loop=self.prepare();loop.run(Backend(99),execute=True)
-        summary=dict(expert='SYNTHETIC_HUMAN',confirmed_conclusions=[],unverified_hypotheses=[],
+        summary=dict(title='Close owned sources before reporting completion',expert='SYNTHETIC_HUMAN',confirmed_conclusions=[],unverified_hypotheses=[],
             unresolved_behaviors=['Still failing'],boundaries_counterexamples=['Synthetic'],suggested_checks=['Recheck'],
             experience=dict(labels=['I'],requires=['entry_snapshot'],excludes=[],rules=[dict(category='verification',body='Check retained selection identity.')],limitations=['Not a successful repair']))
         task=loop.submit_expert(summary);self.assertEqual(task['expert'],'SYNTHETIC_HUMAN')
